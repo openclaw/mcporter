@@ -388,6 +388,15 @@ What MCPorter handles for you:
 - Stdio commands inherit the directory of the file that defined them (imports or local config).
 - Import precedence matches the array order; omit `imports` to use the default `["cursor", "claude-code", "claude-desktop", "codex", "windsurf", "opencode", "vscode"]`.
 
+#### OAuth-protected servers
+
+If an HTTP MCP requires browser login (OAuth), persist it with `--auth oauth` (or set `"auth": "oauth"` in JSON), then run `mcporter auth` once:
+
+```bash
+npx mcporter config add notion https://mcp.notion.com/mcp --auth oauth
+npx mcporter auth notion
+```
+
 Provide `configPath` or `rootDir` to CLI/runtime calls when you juggle multiple config files side by side.
 
 #### Config resolution order & system-level configs
