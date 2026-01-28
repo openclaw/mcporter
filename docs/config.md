@@ -41,6 +41,7 @@ mcporter keeps three configuration buckets in sync: repository-scoped JSON (`con
 1. Create `config/mcporter.json` at the repo root:
    ```jsonc
    {
+     "$schema": "https://raw.githubusercontent.com/steipete/mcporter/main/mcporter.schema.json",
      "mcpServers": {
        "linear": {
          "description": "Linear issues",
@@ -51,6 +52,7 @@ mcporter keeps three configuration buckets in sync: repository-scoped JSON (`con
      "imports": ["cursor", "claude-code", "claude-desktop", "codex", "windsurf", "opencode", "vscode"]
    }
    ```
+   The `$schema` property enables IDE autocomplete and validation. Use the raw GitHub URL for the latest schema, or copy `mcporter.schema.json` locally.
 2. Run `mcporter list linear` (or `mcporter config list linear`) to make sure the runtime can reach it.
 3. Use `mcporter config add shadcn https://www.shadcn.io/api/mcp` to persist another server without editing JSON.
 4. Authenticate any OAuth-backed server with either `mcporter auth <name>` or `mcporter config login <name>`; tokens land under `~/.mcporter/<name>/` unless you override `tokenCacheDir`.
@@ -134,6 +136,26 @@ Use `--scope home|project` with `mcporter config add` to pick the write target e
 - `--allow-http` is mandatory for cleartext endpoints so we never downgrade transport silently.
 - Add `--persist <path>` (defaulting to `config/mcporter.json` when omitted) to copy the ad-hoc definition into config. We reuse the same serializer as the import pipeline, so copying from Cursor → local config produces identical structure and preserves custom env/header fields.
 - `--env KEY=VAL` entries merge with existing `env` dictionaries if you later persist the same server; nothing is lost when you alternate between CLI flags and JSON edits.
+
+## JSON Schema for IDE Support
+mcporter provides a JSON Schema for config file validation and autocompletion. Add the `$schema` property to your config file:
+
+```jsonc
+{
+  "$schema": "https://raw.githubusercontent.com/steipete/mcporter/main/mcporter.schema.json",
+  "mcpServers": { ... }
+}
+```
+
+For local development, you can reference the schema from the repo root:
+```jsonc
+{
+  "$schema": "../mcporter.schema.json",
+  "mcpServers": { ... }
+}
+```
+
+The schema is auto-generated from the Zod validation schemas using `pnpm generate:schema`.
 
 ## Schema Reference
 Top-level structure:

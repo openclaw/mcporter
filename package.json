@@ -43,6 +43,7 @@
     "dev": "tsc -w -p tsconfig.build.json",
     "prepublishOnly": "pnpm check && pnpm test && pnpm build",
     "docs:list": "pnpm exec tsx scripts/docs-list.ts",
+    "generate:schema": "tsx scripts/generate-json-schema.ts",
     "mcporter:list": "pnpm exec tsx src/cli.ts list",
     "mcporter:call": "pnpm exec tsx src/cli.ts call"
   },

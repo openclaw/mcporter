@@ -1,0 +1,255 @@
+{
+  "$id": "https://raw.githubusercontent.com/steipete/mcporter/main/mcporter.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "mcporter configuration file schema",
+  "type": "object",
+  "properties": {
+    "mcpServers": {
+      "description": "Map of server names to their configurations",
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "description": "MCP server definition supporting both HTTP/SSE and stdio transports",
+        "type": "object",
+        "properties": {
+          "description": {
+            "description": "Human-readable description of the server",
+            "type": "string"
+          },
+          "baseUrl": {
+            "description": "Base URL for HTTP/SSE transport (camelCase)",
+            "type": "string"
+          },
+          "base_url": {
+            "description": "Base URL for HTTP/SSE transport (snake_case)",
+            "type": "string"
+          },
+          "url": {
+            "description": "Server URL for HTTP/SSE transport",
+            "type": "string"
+          },
+          "serverUrl": {
+            "description": "Server URL for HTTP/SSE transport (camelCase)",
+            "type": "string"
+          },
+          "server_url": {
+            "description": "Server URL for HTTP/SSE transport (snake_case)",
+            "type": "string"
+          },
+          "command": {
+            "description": "Command to spawn for stdio transport (string or array of arguments)",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "executable": {
+            "description": "Executable path for stdio transport",
+            "type": "string"
+          },
+          "args": {
+            "description": "Arguments to pass to the stdio command",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "headers": {
+            "description": "HTTP headers for requests. Supports $VAR and $env:VAR placeholders",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "env": {
+            "description": "Environment variables for stdio commands. Supports $VAR and fallback syntax",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "auth": {
+            "description": "Authentication method (e.g., \"oauth\")",
+            "type": "string"
+          },
+          "tokenCacheDir": {
+            "description": "Directory for caching OAuth tokens (camelCase)",
+            "type": "string"
+          },
+          "token_cache_dir": {
+            "description": "Directory for caching OAuth tokens (snake_case)",
+            "type": "string"
+          },
+          "clientName": {
+            "description": "Client identifier for server telemetry (camelCase)",
+            "type": "string"
+          },
+          "client_name": {
+            "description": "Client identifier for server telemetry (snake_case)",
+            "type": "string"
+          },
+          "oauthRedirectUrl": {
+            "description": "Custom OAuth redirect URL (camelCase)",
+            "type": "string"
+          },
+          "oauth_redirect_url": {
+            "description": "Custom OAuth redirect URL (snake_case)",
+            "type": "string"
+          },
+          "oauthCommand": {
+            "description": "Custom OAuth command configuration for stdio servers (camelCase)",
+            "type": "object",
+            "properties": {
+              "args": {
+                "description": "Arguments for the OAuth command",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          "oauth_command": {
+            "description": "Custom OAuth command configuration for stdio servers (snake_case)",
+            "type": "object",
+            "properties": {
+              "args": {
+                "description": "Arguments for the OAuth command",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "args"
+            ],
+            "additionalProperties": false
+          },
+          "bearerToken": {
+            "description": "Static bearer token for authentication (camelCase)",
+            "type": "string"
+          },
+          "bearer_token": {
+            "description": "Static bearer token for authentication (snake_case)",
+            "type": "string"
+          },
+          "bearerTokenEnv": {
+            "description": "Environment variable name containing the bearer token (camelCase)",
+            "type": "string"
+          },
+          "bearer_token_env": {
+            "description": "Environment variable name containing the bearer token (snake_case)",
+            "type": "string"
+          },
+          "lifecycle": {
+            "description": "Server connection lifecycle: keep-alive maintains persistent connections, ephemeral connects on-demand",
+            "anyOf": [
+              {
+                "description": "Keep the server connection alive",
+                "type": "string",
+                "const": "keep-alive"
+              },
+              {
+                "description": "Connect only when needed",
+                "type": "string",
+                "const": "ephemeral"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "description": "Connection lifecycle mode",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "const": "keep-alive"
+                      },
+                      {
+                        "type": "string",
+                        "const": "ephemeral"
+                      }
+                    ]
+                  },
+                  "idleTimeoutMs": {
+                    "description": "Idle timeout in milliseconds before disconnecting",
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "mode"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "logging": {
+            "description": "Logging configuration for the server",
+            "type": "object",
+            "properties": {
+              "daemon": {
+                "description": "Daemon-specific logging configuration",
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "description": "Enable daemon logging for this server",
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "imports": {
+      "description": "Editor configurations to import servers from. Omit to use defaults, or set to [] to disable imports",
+      "type": "array",
+      "items": {
+        "description": "Supported editor/client configurations to import MCP servers from",
+        "type": "string",
+        "enum": [
+          "cursor",
+          "claude-code",
+          "claude-desktop",
+          "codex",
+          "windsurf",
+          "opencode",
+          "vscode"
+        ]
+      }
+    },
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema URL for IDE validation and autocomplete"
+    }
+  },
+  "required": [
+    "mcpServers"
+  ],
+  "additionalProperties": false
+}
