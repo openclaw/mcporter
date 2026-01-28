@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathsForImport, readExternalEntries } from './config-imports.js';
 import { normalizeServerEntry } from './config-normalize.js';
+import { parseJsonBuffer } from './config/imports/shared.js';
 import {
   DEFAULT_IMPORTS,
   type LoadConfigOptions,
@@ -209,7 +210,7 @@ async function readConfigFile(configPath: string, explicit: boolean): Promise<Ra
   }
   try {
     const buffer = await fs.readFile(configPath, 'utf8');
-    return RawConfigSchema.parse(JSON.parse(buffer));
+    return RawConfigSchema.parse(parseJsonBuffer(buffer));
   } catch (error) {
     if (!explicit && isMissingConfigError(error)) {
       return { mcpServers: {} };
