@@ -9,10 +9,8 @@ export function maybeEnableOAuth(definition: ServerDefinition, logger: Logger): 
   if (definition.command.kind !== 'http') {
     return undefined;
   }
-  const isAdHocSource = definition.source && definition.source.kind === 'local' && definition.source.path === '<adhoc>';
-  if (!isAdHocSource) {
-    return undefined;
-  }
+  // Allow OAuth promotion for any HTTP server that returns 401,
+  // not just ad-hoc servers (fixes issue #38)
   logger.info(`Detected OAuth requirement for '${definition.name}'. Launching browser flow...`);
   return {
     ...definition,
