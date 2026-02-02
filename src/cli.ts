@@ -16,6 +16,8 @@ import { looksLikeHttpUrl } from './cli/http-utils.js';
 import { handleInspectCli } from './cli/inspect-cli-command.js';
 import { buildConnectionIssueEnvelope } from './cli/json-output.js';
 import { handleList, printListHelp } from './cli/list-command.js';
+import { handleSearch, printSearchHelp } from './cli/search-command.js';
+import { handleDescribe, printDescribeHelp } from './cli/describe-command.js';
 import { logError, logInfo, logWarn } from './cli/logger-context.js';
 import { consumeOutputFormat } from './cli/output-format.js';
 import { DEBUG_HANG, dumpActiveHandles, terminateChildProcesses } from './cli/runtime-debug.js';
@@ -155,6 +157,26 @@ export async function runCli(argv: string[]): Promise<void> {
       return;
     }
 
+    if (resolvedCommand === 'search') {
+      if (consumeHelpTokens(resolvedArgs)) {
+        printSearchHelp();
+        process.exitCode = 0;
+        return;
+      }
+      await handleSearch(runtime, resolvedArgs);
+      return;
+    }
+
+    if (resolvedCommand === 'describe') {
+      if (consumeHelpTokens(resolvedArgs)) {
+        printDescribeHelp();
+        process.exitCode = 0;
+        return;
+      }
+      await handleDescribe(runtime, resolvedArgs);
+      return;
+    }
+
     if (resolvedCommand === 'call') {
       if (consumeHelpTokens(resolvedArgs)) {
         printCallHelp();
@@ -270,6 +292,16 @@ function buildCommandSections(colorize: boolean): string[] {
           name: 'list',
           summary: 'List configured servers (add --schema for tool docs)',
           usage: 'mcporter list [name] [--schema] [--json]',
+        },
+        {
+          name: 'search',
+          summary: 'Search for tools across all servers (compact output for AI agents)',
+          usage: 'mcporter search <query> [--limit N] [--json]',
+        },
+        {
+          name: 'describe',
+          summary: 'Get full schema for a single tool (without loading entire server)',
+          usage: 'mcporter describe <server.tool> [--json]',
         },
         {
           name: 'call',
