@@ -16,10 +16,6 @@ export function inferCommandRouting(
     return { kind: 'command', command: token, args };
   }
 
-  if (token === 'describe') {
-    return { kind: 'command', command: 'list', args };
-  }
-
   // Hidden alias kept for muscle memory / older docs.
   if (token === 'list-tools') {
     return { kind: 'command', command: 'list', args };
@@ -84,7 +80,7 @@ function isCallLikeToken(token: string): boolean {
 }
 
 function isExplicitCommand(token: string): boolean {
-  return token === 'list' || token === 'call' || token === 'auth';
+  return token === 'list' || token === 'call' || token === 'auth' || token === 'search' || token === 'describe';
 }
 
 function isUrlToken(token: string): boolean {
