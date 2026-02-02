@@ -105,21 +105,84 @@ export async function createClientContext(
       return { client, transport, definition: activeDefinition, oauthSession: undefined };
     }
 
+    // Track whether we've already attempted token refresh to avoid infinite loops
+    let refreshAttempted = false;
+
     while (true) {
       const command = activeDefinition.command;
       if (command.kind !== 'http') {
         throw new Error(`Server '${activeDefinition.name}' is not configured for HTTP transport.`);
-      }
-      let oauthSession: OAuthSession | undefined;
-      const shouldEstablishOAuth = activeDefinition.auth === 'oauth' && options.maxOAuthAttempts !== 0;
-      if (shouldEstablishOAuth) {
-        oauthSession = await createOAuthSession(activeDefinition, logger);
       }
 
       const resolvedHeaders = materializeHeaders(command.headers, activeDefinition.name);
       const requestInit: RequestInit | undefined = resolvedHeaders
         ? { headers: resolvedHeaders as HeadersInit }
         : undefined;
+
+      // First, try to connect WITHOUT an OAuth session to detect expired tokens
+      // This allows us to try token refresh before falling back to browser OAuth
+      const shouldTryRefreshFirst = activeDefinition.auth === 'oauth' && !refreshAttempted;
+      
+      if (shouldTryRefreshFirst) {
+        const baseOptionsNoAuth = { requestInit };
+        const streamableTransport = new StreamableHTTPClientTransport(command.url, baseOptionsNoAuth);
+        try {
+          // Try connecting without OAuth session - if token is valid, this succeeds
+          // If token is expired, we get a 401 that we can handle with refresh
+          await connectWithAuth(client, streamableTransport, undefined, logger, {
+            serverName: activeDefinition.name,
+            maxAttempts: 0, // Don't retry with OAuth here
+          });
+          return {
+            client,
+            transport: streamableTransport,
+            definition: activeDefinition,
+            oauthSession: undefined,
+          } as ClientContext;
+        } catch (initialError) {
+          await closeTransportAndWait(logger, streamableTransport).catch(() => {});
+          
+          if (isUnauthorizedError(initialError)) {
+            // Token is expired or invalid - try to refresh before browser OAuth
+            logger.info(`Token expired for '${activeDefinition.name}', attempting refresh...`);
+            refreshAttempted = true;
+            
+            const refreshedToken = await tryRefreshTokens(activeDefinition, logger);
+            if (refreshedToken) {
+              // Update the definition with the new token and retry
+              const existingHeaders = activeDefinition.command.kind === 'http' 
+                ? activeDefinition.command.headers ?? {} 
+                : {};
+              activeDefinition = {
+                ...activeDefinition,
+                command: {
+                  ...activeDefinition.command,
+                  headers: {
+                    ...existingHeaders,
+                    Authorization: `Bearer ${refreshedToken}`,
+                  },
+                },
+              } as ServerDefinition;
+              options.onDefinitionPromoted?.(activeDefinition);
+              logger.info(`Token refreshed successfully for '${activeDefinition.name}', retrying connection...`);
+              continue; // Retry with the refreshed token
+            }
+            logger.info(`Token refresh failed for '${activeDefinition.name}', falling back to OAuth flow...`);
+            // Fall through to full OAuth flow below
+          } else {
+            // Not an auth error - might need to try SSE transport
+            // Fall through to the full connection logic
+          }
+        }
+      }
+
+      // Full connection attempt with OAuth session if needed
+      let oauthSession: OAuthSession | undefined;
+      const shouldEstablishOAuth = activeDefinition.auth === 'oauth' && options.maxOAuthAttempts !== 0;
+      if (shouldEstablishOAuth) {
+        oauthSession = await createOAuthSession(activeDefinition, logger);
+      }
+
       const baseOptions = {
         requestInit,
         authProvider: oauthSession?.provider,
@@ -151,31 +214,6 @@ export async function createClientContext(
         if (isUnauthorizedError(primaryError)) {
           await oauthSession?.close().catch(() => {});
           oauthSession = undefined;
-          
-          // Try to refresh the token before falling back to full OAuth flow
-          if (activeDefinition.auth === 'oauth') {
-            logger.info(`Token expired for '${activeDefinition.name}', attempting refresh...`);
-            const refreshedToken = await tryRefreshTokens(activeDefinition, logger);
-            if (refreshedToken) {
-              // Update the definition with the new token and retry
-              const existingHeaders = activeDefinition.command.kind === 'http' 
-                ? activeDefinition.command.headers ?? {} 
-                : {};
-              activeDefinition = {
-                ...activeDefinition,
-                command: {
-                  ...activeDefinition.command,
-                  headers: {
-                    ...existingHeaders,
-                    Authorization: `Bearer ${refreshedToken}`,
-                  },
-                },
-              } as ServerDefinition;
-              options.onDefinitionPromoted?.(activeDefinition);
-              continue; // Retry with the refreshed token
-            }
-            logger.info(`Token refresh failed for '${activeDefinition.name}', falling back to OAuth flow...`);
-          }
           
           if (options.maxOAuthAttempts !== 0) {
             const promoted = maybeEnableOAuth(activeDefinition, logger);
