@@ -156,6 +156,54 @@ describe('createCallResult json extraction', () => {
   });
 });
 
+describe('createCallResult json multiple results', () => {
+  it('returns all JSON objects when content has multiple text entries with JSON', () => {
+    const response = {
+      content: [
+        { type: 'text', text: '{"id": 1, "name": "Alice"}' },
+        { type: 'text', text: '{"id": 2, "name": "Bob"}' },
+        { type: 'text', text: '{"id": 3, "name": "Charlie"}' },
+      ],
+    };
+    const result = createCallResult(response);
+    expect(result.json()).toEqual([
+      { id: 1, name: 'Alice' },
+      { id: 2, name: 'Bob' },
+      { id: 3, name: 'Charlie' },
+    ]);
+  });
+
+  it('returns all JSON objects when content has multiple json type entries', () => {
+    const response = {
+      content: [
+        { type: 'json', json: { foo: 'bar' } },
+        { type: 'json', json: { baz: 'qux' } },
+      ],
+    };
+    const result = createCallResult(response);
+    expect(result.json()).toEqual([{ foo: 'bar' }, { baz: 'qux' }]);
+  });
+
+  it('returns single object (not array) when content has only one JSON entry', () => {
+    const response = {
+      content: [{ type: 'text', text: '{"id": 1}' }],
+    };
+    const result = createCallResult(response);
+    expect(result.json()).toEqual({ id: 1 });
+  });
+
+  it('returns all JSON objects from mixed content types', () => {
+    const response = {
+      content: [
+        { type: 'json', json: { from: 'json-type' } },
+        { type: 'text', text: '{"from": "text-type"}' },
+      ],
+    };
+    const result = createCallResult(response);
+    expect(result.json()).toEqual([{ from: 'json-type' }, { from: 'text-type' }]);
+  });
+});
+
 describe('createCallResult structured accessors', () => {
   it('content() returns nested raw content array', () => {
     const nested = [{ type: 'text', text: 'Hello' }];

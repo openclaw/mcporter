@@ -169,13 +169,14 @@ export function createCallResult<T = unknown>(raw: T): CallResult<T> {
 
       const content = extractContentArray(raw);
       if (content) {
+        const results: unknown[] = [];
         for (const entry of content) {
           if (entry && typeof entry === 'object') {
             const typedEntry = entry as Record<string, unknown>;
             if (typedEntry.type === 'json') {
               const parsed = tryParseJson(entry);
               if (parsed !== null) {
-                return parsed as J;
+                results.push(parsed);
               }
               continue;
             }
@@ -184,7 +185,7 @@ export function createCallResult<T = unknown>(raw: T): CallResult<T> {
               if (typeof text === 'string') {
                 const parsedText = tryParseJson(text);
                 if (parsedText !== null) {
-                  return parsedText as J;
+                  results.push(parsedText);
                 }
               }
               continue;
@@ -193,9 +194,15 @@ export function createCallResult<T = unknown>(raw: T): CallResult<T> {
           if (typeof entry === 'string') {
             const parsed = tryParseJson(entry);
             if (parsed !== null) {
-              return parsed as J;
+              results.push(parsed);
             }
           }
+        }
+        if (results.length === 1) {
+          return results[0] as J;
+        }
+        if (results.length > 1) {
+          return results as J;
         }
       }
 
