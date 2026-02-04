@@ -49,4 +49,29 @@ describe('parseCallArguments', () => {
     );
     warnSpy.mockRestore();
   });
+
+  it('coerces numeric strings to numbers by default', () => {
+    const parsed = parseCallArguments(['server.tool', 'code=123456']);
+    expect(parsed.args.code).toBe(123456);
+    expect(typeof parsed.args.code).toBe('number');
+  });
+
+  it('preserves numeric strings when --raw-strings flag is used', () => {
+    const parsed = parseCallArguments(['--raw-strings', 'server.tool', 'code=123456']);
+    expect(parsed.args.code).toBe('123456');
+    expect(typeof parsed.args.code).toBe('string');
+    expect(parsed.rawStrings).toBe(true);
+  });
+
+  it('preserves leading zeros when --raw-strings flag is used', () => {
+    const parsed = parseCallArguments(['--raw-strings', 'server.tool', 'pin=000123']);
+    expect(parsed.args.pin).toBe('000123');
+    expect(typeof parsed.args.pin).toBe('string');
+  });
+
+  it('preserves numeric strings when --no-coerce alias is used', () => {
+    const parsed = parseCallArguments(['--no-coerce', 'server.tool', 'id=007']);
+    expect(parsed.args.id).toBe('007');
+    expect(typeof parsed.args.id).toBe('string');
+  });
 });

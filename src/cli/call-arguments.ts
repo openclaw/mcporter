@@ -17,6 +17,7 @@ export interface CallArgsParseResult {
   output: OutputFormat;
   timeoutMs?: number;
   ephemeral?: EphemeralServerSpec;
+  rawStrings?: boolean;
 }
 
 export function parseCallArguments(args: string[]): CallArgsParseResult {
@@ -65,6 +66,11 @@ export function parseCallArguments(args: string[]): CallArgsParseResult {
       continue;
     }
     if (token === '--yes') {
+      index += 1;
+      continue;
+    }
+    if (token === '--raw-strings' || token === '--no-coerce') {
+      result.rawStrings = true;
       index += 1;
       continue;
     }
@@ -168,12 +174,12 @@ export function parseCallArguments(args: string[]): CallArgsParseResult {
     }
     const parsed = parseKeyValueToken(token, positional[index + 1]);
     if (!parsed) {
-      trailingPositional.push(coerceValue(token));
+      trailingPositional.push(coerceValue(token, result.rawStrings));
       index += 1;
       continue;
     }
     index += parsed.consumed;
-    const value = coerceValue(parsed.rawValue);
+    const value = coerceValue(parsed.rawValue, result.rawStrings);
     if (parsed.key === 'tool' && !result.tool) {
       if (typeof value !== 'string') {
         throw new Error("Argument 'tool' must be a string value.");
@@ -273,7 +279,7 @@ function extractHttpCallExpression(raw: string): ReturnType<typeof parseCallExpr
   };
 }
 
-function coerceValue(value: string): unknown {
+function coerceValue(value: string, rawStrings = false): unknown {
   const trimmed = value.trim();
   if (trimmed === '') {
     return '';
@@ -284,7 +290,8 @@ function coerceValue(value: string): unknown {
   if (trimmed === 'null' || trimmed === 'none') {
     return null;
   }
-  if (!Number.isNaN(Number(trimmed)) && trimmed === `${Number(trimmed)}`) {
+  // Skip numeric coercion when --raw-strings (or --no-coerce) flag is used
+  if (!rawStrings && !Number.isNaN(Number(trimmed)) && trimmed === `${Number(trimmed)}`) {
     return Number(trimmed);
   }
   if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
