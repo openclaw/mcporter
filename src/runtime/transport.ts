@@ -163,6 +163,13 @@ export async function createClientContext(
           await oauthSession?.close().catch(() => {});
           throw primaryError;
         }
+        // When OAuth is active the server already accepted a POST (returning 401),
+        // so it speaks Streamable HTTP.  Falling back to SSE (GET) would fail with
+        // 405 Method Not Allowed or a fresh 401 that can never be resolved.
+        if (activeDefinition.auth === 'oauth') {
+          await oauthSession?.close().catch(() => {});
+          throw primaryError;
+        }
         if (primaryError instanceof Error) {
           logger.info(`Falling back to SSE transport for '${activeDefinition.name}': ${primaryError.message}`);
         }

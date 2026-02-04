@@ -46,6 +46,24 @@ describe('createClientContext (HTTP)', () => {
     expect(clientConnect).toHaveBeenCalledTimes(2);
   });
 
+  it('does not fall back to SSE when OAuth is active', async () => {
+    const definition: ServerDefinition = {
+      ...stubHttpDefinition('https://example.com/mcp'),
+      auth: 'oauth',
+    };
+    const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+    const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+
+    vi.spyOn(Client.prototype, 'connect').mockImplementation(async (transport) => {
+      expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
+      throw new Error('connection failed');
+    });
+
+    await expect(
+      createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 })
+    ).rejects.toThrow('connection failed');
+  });
+
   it.skip('promotes ad-hoc HTTP servers to OAuth after unauthorized, then retries', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
       return new Response(null, { status: 401, statusText: 'Unauthorized' });
