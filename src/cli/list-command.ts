@@ -8,6 +8,7 @@ import { prepareEphemeralServerTarget } from './ephemeral-target.js';
 import { splitHttpToolSelector } from './http-utils.js';
 import { chooseClosestIdentifier, renderIdentifierResolutionMessages } from './identifier-helpers.js';
 import { formatExampleBlock } from './list-detail-helpers.js';
+import { filterToolsByPattern } from './list-filter.js';
 import type { ListSummaryResult, StatusCategory } from './list-format.js';
 import { classifyListError, formatSourceSuffix, renderServerListRow } from './list-format.js';
 import {
@@ -16,6 +17,7 @@ import {
   createEmptyStatusCounts,
   createUnknownResult,
   type ListJsonServerEntry,
+  printBriefToolList,
   printSingleServerHeader,
   printToolDetail,
   summarizeStatusCounts,
@@ -34,12 +36,14 @@ export function extractListFlags(args: string[]): {
   format: ListOutputFormat;
   verbose: boolean;
   includeSources: boolean;
+  brief: boolean;
 } {
   let schema = false;
   let timeoutMs: number | undefined;
   let requiredOnly = true;
   let verbose = false;
   let includeSources = false;
+  let brief = false;
   const format = consumeOutputFormat(args, {
     defaultFormat: 'text',
     allowed: ['text', 'json'],
@@ -74,13 +78,36 @@ export function extractListFlags(args: string[]): {
       args.splice(index, 1);
       continue;
     }
+    if (token === '--brief') {
+      brief = true;
+      args.splice(index, 1);
+      continue;
+    }
     if (token === '--timeout') {
       timeoutMs = consumeTimeoutFlag(args, index, { flagName: '--timeout' });
       continue;
     }
     index += 1;
   }
-  return { schema, timeoutMs, requiredOnly, ephemeral, format, verbose, includeSources };
+
+  // Validate mutual exclusion for --brief
+  if (brief) {
+    const conflicts: string[] = [];
+    if (schema) {
+      conflicts.push('--schema');
+    }
+    if (verbose) {
+      conflicts.push('--verbose');
+    }
+    if (!requiredOnly) {
+      conflicts.push('--all-parameters');
+    }
+    if (conflicts.length > 0) {
+      throw new Error(`--brief cannot be used with ${conflicts.join(', ')}`);
+    }
+  }
+
+  return { schema, timeoutMs, requiredOnly, ephemeral, format, verbose, includeSources, brief };
 }
 
 type ListOutputFormat = 'text' | 'json';
@@ -98,6 +125,10 @@ export async function handleList(
       target = split.baseUrl;
     }
   }
+
+  // Parse optional tool pattern (second positional argument)
+  // Only treat as tool pattern if it doesn't look like a flag
+  const toolPattern = args.length > 0 && args[0] !== undefined && !args[0].startsWith('-') ? args.shift() : undefined;
 
   const prepared = await prepareEphemeralServerTarget({
     runtime,
@@ -297,8 +328,34 @@ export async function handleList(
   }
   try {
     // Always request schemas so we can render CLI-style parameter hints without re-querying per tool.
-    const metadataEntries = await withTimeout(loadToolMetadata(runtime, target, { includeSchema: true }), timeoutMs);
+    let metadataEntries = await withTimeout(loadToolMetadata(runtime, target, { includeSchema: true }), timeoutMs);
     const durationMs = Date.now() - startedAt;
+
+    // Apply tool pattern filter if specified
+    if (toolPattern) {
+      const filteredNames = new Set(
+        filterToolsByPattern(
+          metadataEntries.map((entry) => ({ name: entry.tool.name })),
+          toolPattern
+        ).map((f) => f.name)
+      );
+      metadataEntries = metadataEntries.filter((e) => filteredNames.has(e.tool.name));
+    }
+
+    // Handle --brief output mode
+    if (flags.brief) {
+      if (metadataEntries.length === 0) {
+        if (toolPattern) {
+          console.log(`No tools matching pattern '${toolPattern}'.`);
+        } else {
+          console.log('No tools available.');
+        }
+        return;
+      }
+      printBriefToolList(metadataEntries, { colorize: true });
+      return;
+    }
+
     const summaryLine = printSingleServerHeader(
       definition,
       metadataEntries.length,
@@ -310,7 +367,11 @@ export async function handleList(
       }
     );
     if (metadataEntries.length === 0) {
-      console.log('  Tools: <none>');
+      if (toolPattern) {
+        console.log(`  Tools: <no matches for '${toolPattern}'>`);
+      } else {
+        console.log('  Tools: <none>');
+      }
       console.log(summaryLine);
       console.log('');
       return;
@@ -354,7 +415,11 @@ export async function handleList(
 
 export function printListHelp(): void {
   const lines = [
-    'Usage: mcporter list [server | url] [flags]',
+    'Usage: mcporter list [server | url] [tool-pattern] [flags]',
+    '',
+    'Arguments:',
+    '  <server>               Server name from config or URL',
+    "  <tool-pattern>         Filter tools by name (supports glob: 'amz_*')",
     '',
     'Targets:',
     '  <name>                 Use a server from config/mcporter.json or editor imports.',
@@ -373,6 +438,8 @@ export function printListHelp(): void {
     '  --yes                  Skip confirmation prompts when persisting.',
     '',
     'Display flags:',
+    '  --brief                Show tools as function signatures only.',
+    '                         Cannot be used with --schema, --verbose, --all-parameters.',
     '  --schema               Show tool schemas when listing servers.',
     '  --all-parameters       Include optional parameters in tool docs.',
     '  --json                 Emit a JSON summary instead of text.',
@@ -383,6 +450,9 @@ export function printListHelp(): void {
     'Examples:',
     '  mcporter list',
     '  mcporter list linear --schema',
+    '  mcporter list linear --brief',
+    "  mcporter list linear 'add_*'",
+    '  mcporter list linear add_user --schema',
     '  mcporter list https://mcp.example.com/mcp',
     '  mcporter list --http-url https://localhost:3333/mcp --schema',
   ];

@@ -5,6 +5,7 @@ import { formatErrorMessage, serializeConnectionIssue } from './json-output.js';
 import { buildToolDoc } from './list-detail-helpers.js';
 import type { ListSummaryResult, StatusCategory } from './list-format.js';
 import { classifyListError } from './list-format.js';
+import { formatFunctionSignature } from './list-signature.js';
 import { boldText, extraDimText } from './terminal.js';
 import { formatTransportSummary } from './transport-utils.js';
 
@@ -117,6 +118,18 @@ function buildExampleOptions(
     return { selector: url, wrapExpression: true };
   }
   return undefined;
+}
+
+/**
+ * Print tools as compact function signatures for --brief mode.
+ */
+export function printBriefToolList(metadataEntries: ToolMetadata[], options?: { colorize?: boolean }): void {
+  for (const entry of metadataEntries) {
+    const signature = formatFunctionSignature(entry.tool.name, entry.options, entry.tool.outputSchema, {
+      colorize: options?.colorize,
+    });
+    console.log(signature);
+  }
 }
 
 export function createEmptyStatusCounts(): Record<StatusCategory, number> {
