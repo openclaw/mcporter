@@ -117,7 +117,24 @@ export async function handleList(
   args: string[]
 ): Promise<void> {
   const flags = extractListFlags(args);
-  let target = args.shift();
+  let target: string | undefined;
+  let toolPattern: string | undefined;
+
+  // In ephemeral mode (e.g. --http-url), positional args are treated as the tool pattern.
+  // In normal mode, the first arg is the target (name/URL), second is the pattern.
+  if (flags.ephemeral) {
+    if (args.length > 0 && args[0] !== undefined && !args[0].startsWith('-')) {
+      toolPattern = args.shift();
+    }
+  } else {
+    // Standard mode: [target] [pattern]
+    if (args.length > 0 && args[0] !== undefined && !args[0].startsWith('-')) {
+      target = args.shift();
+    }
+    if (args.length > 0 && args[0] !== undefined && !args[0].startsWith('-')) {
+      toolPattern = args.shift();
+    }
+  }
 
   if (target) {
     const split = splitHttpToolSelector(target);
@@ -125,10 +142,6 @@ export async function handleList(
       target = split.baseUrl;
     }
   }
-
-  // Parse optional tool pattern (second positional argument)
-  // Only treat as tool pattern if it doesn't look like a flag
-  const toolPattern = args.length > 0 && args[0] !== undefined && !args[0].startsWith('-') ? args.shift() : undefined;
 
   const prepared = await prepareEphemeralServerTarget({
     runtime,
@@ -170,8 +183,8 @@ export async function handleList(
       const renderedResults =
         flags.format === 'text'
           ? (Array.from({ length: servers.length }, () => undefined) as Array<
-              ReturnType<typeof renderServerListRow> | undefined
-            >)
+            ReturnType<typeof renderServerListRow> | undefined
+          >)
           : undefined;
       const summaryResults: Array<ListSummaryResult | undefined> = Array.from(
         { length: servers.length },
