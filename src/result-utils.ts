@@ -169,13 +169,15 @@ export function createCallResult<T = unknown>(raw: T): CallResult<T> {
 
       const content = extractContentArray(raw);
       if (content) {
+        // Collect all JSON-parseable entries so multi-item responses are not truncated (#65).
+        const collected: unknown[] = [];
         for (const entry of content) {
           if (entry && typeof entry === 'object') {
             const typedEntry = entry as Record<string, unknown>;
             if (typedEntry.type === 'json') {
               const parsed = tryParseJson(entry);
               if (parsed !== null) {
-                return parsed as J;
+                collected.push(parsed);
               }
               continue;
             }
@@ -184,7 +186,7 @@ export function createCallResult<T = unknown>(raw: T): CallResult<T> {
               if (typeof text === 'string') {
                 const parsedText = tryParseJson(text);
                 if (parsedText !== null) {
-                  return parsedText as J;
+                  collected.push(parsedText);
                 }
               }
               continue;
@@ -193,9 +195,17 @@ export function createCallResult<T = unknown>(raw: T): CallResult<T> {
           if (typeof entry === 'string') {
             const parsed = tryParseJson(entry);
             if (parsed !== null) {
-              return parsed as J;
+              collected.push(parsed);
             }
           }
+        }
+        // Return single item unwrapped for backward compatibility;
+        // wrap multiple items in an array.
+        if (collected.length === 1) {
+          return collected[0] as J;
+        }
+        if (collected.length > 1) {
+          return collected as J;
         }
       }
 
