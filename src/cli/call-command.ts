@@ -90,9 +90,13 @@ export async function handleCall(
 
   const timeoutMs = resolveCallTimeout(parsed.timeoutMs);
   const hydratedArgs = await hydratePositionalArguments(runtime, server, tool, parsed.args, parsed.positionalArgs);
+  // Reconcile coerced argument types with the tool's input schema so that
+  // numeric-looking strings (e.g. tabId="2003886907") are not incorrectly
+  // passed as numbers when the schema declares them as strings (#63).
+  const reconciledArgs = await reconcileArgsWithSchema(runtime, server, tool, hydratedArgs);
   let invocation: { result: unknown; resolvedTool: string };
   try {
-    invocation = await invokeWithAutoCorrection(runtime, server, tool, hydratedArgs, timeoutMs);
+    invocation = await invokeWithAutoCorrection(runtime, server, tool, reconciledArgs, timeoutMs);
   } catch (error) {
     const issue = maybeReportConnectionIssue(server, tool, error);
     if (parsed.output === 'json' || parsed.output === 'raw') {
@@ -266,6 +270,42 @@ async function hydratePositionalArguments(
     hydrated[target.property] = value;
   });
   return hydrated;
+}
+
+/**
+ * Walk the parsed arguments and convert values whose runtime type doesn't match the
+ * tool's declared JSON Schema type.  The most common case is numeric-looking strings
+ * (e.g. tabId="2003886907") that `coerceValue` eagerly converted to `number` but the
+ * schema declares as `string` (#63).
+ */
+async function reconcileArgsWithSchema(
+  runtime: Awaited<ReturnType<typeof import('../runtime.js')['createRuntime']>>,
+  server: string,
+  tool: string,
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  if (Object.keys(args).length === 0) {
+    return args;
+  }
+  const tools = await loadToolMetadata(runtime, server, { includeSchema: true }).catch(() => undefined);
+  if (!tools) {
+    return args;
+  }
+  const toolInfo = tools.find((entry) => entry.tool.name === tool);
+  const properties = (toolInfo?.tool.inputSchema as Record<string, unknown> | undefined)?.properties as
+    | Record<string, { type?: string }>
+    | undefined;
+  if (!properties) {
+    return args;
+  }
+  const reconciled: Record<string, unknown> = { ...args };
+  for (const [key, value] of Object.entries(reconciled)) {
+    const schemaType = properties[key]?.type;
+    if (schemaType === 'string' && typeof value === 'number') {
+      reconciled[key] = String(value);
+    }
+  }
+  return reconciled;
 }
 
 type ToolResolution = IdentifierResolution;

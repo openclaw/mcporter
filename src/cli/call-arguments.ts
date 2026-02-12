@@ -273,10 +273,16 @@ function extractHttpCallExpression(raw: string): ReturnType<typeof parseCallExpr
   };
 }
 
-function coerceValue(value: string): unknown {
+function coerceValue(value: string, schemaType?: string): unknown {
   const trimmed = value.trim();
   if (trimmed === '') {
     return '';
+  }
+  // When the schema explicitly declares a string type, skip all coercion and
+  // return the raw value so that numeric-looking strings like tabId="2003886907"
+  // are not accidentally converted to numbers (see #63).
+  if (schemaType === 'string') {
+    return trimmed;
   }
   if (trimmed === 'true' || trimmed === 'false') {
     return trimmed === 'true';
