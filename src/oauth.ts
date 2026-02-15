@@ -66,6 +66,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   private readonly persistence: OAuthPersistence;
   private redirectUrlValue: URL;
   private authorizationDeferred: Deferred<string> | null = null;
+  private redirectInitiatedDeferred: Deferred<void> | null = null;
   private server?: http.Server;
 
   private constructor(
@@ -254,6 +255,9 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {
     this.logger.info(`Authorization required for ${this.definition.name}. Opening browser...`);
     this.authorizationDeferred = createDeferred<string>();
+    // Resolve the redirect initiated deferred so waitForAuthorizationCode can proceed
+    this.redirectInitiatedDeferred?.resolve();
+    this.redirectInitiatedDeferred = null;
     openExternal(authorizationUrl.toString());
     this.logger.info(`If the browser did not open, visit ${authorizationUrl.toString()} manually.`);
   }
@@ -276,9 +280,20 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   }
 
   // waitForAuthorizationCode resolves once the local callback server captures a redirect.
+  // This must use the same deferred created by redirectToAuthorization; do not create
+  // a new one here to avoid race conditions where the callback resolves a different promise.
+  // If called before redirectToAuthorization, this method waits for it to be initiated.
   async waitForAuthorizationCode(): Promise<string> {
+    // If redirectToAuthorization hasn't been called yet, wait for it
     if (!this.authorizationDeferred) {
-      this.authorizationDeferred = createDeferred<string>();
+      if (!this.redirectInitiatedDeferred) {
+        this.redirectInitiatedDeferred = createDeferred<void>();
+      }
+      await this.redirectInitiatedDeferred.promise;
+    }
+    // Now authorizationDeferred must exist
+    if (!this.authorizationDeferred) {
+      throw new Error('OAuth authorization deferred was not created after redirect initiation.');
     }
     return this.authorizationDeferred.promise;
   }
@@ -289,6 +304,11 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       // If the CLI is tearing down mid-flow, reject the pending wait promise so runtime shutdown isn't blocked.
       this.authorizationDeferred.reject(new Error('OAuth session closed before receiving authorization code.'));
       this.authorizationDeferred = null;
+    }
+    if (this.redirectInitiatedDeferred) {
+      // Clean up the redirect initiated deferred to prevent memory leaks
+      this.redirectInitiatedDeferred.reject(new Error('OAuth session closed before redirect was initiated.'));
+      this.redirectInitiatedDeferred = null;
     }
     if (!this.server) {
       return;
