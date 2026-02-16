@@ -25,14 +25,15 @@ describe('maybeEnableOAuth', () => {
     expect(logger.info).toHaveBeenCalled();
   });
 
-  it('does not mutate non-ad-hoc servers', () => {
+  it('promotes config-defined HTTP servers to OAuth', () => {
     const def: ServerDefinition = {
       name: 'local-server',
       command: { kind: 'http', url: new URL('https://example.com') },
       source: { kind: 'local', path: '/tmp/config.json' },
     };
     const updated = maybeEnableOAuth(def, logger as never);
-    expect(updated).toBeUndefined();
+    expect(updated).toBeDefined();
+    expect(updated?.auth).toBe('oauth');
   });
 });
 

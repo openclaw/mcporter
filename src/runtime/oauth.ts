@@ -31,12 +31,21 @@ export async function connectWithAuth(
 ): Promise<void> {
   const { serverName, maxAttempts = 3, oauthTimeoutMs = DEFAULT_OAUTH_CODE_TIMEOUT_MS } = options;
   let attempt = 0;
+  let authCompleted = false;
   while (true) {
     try {
       await client.connect(transport);
       return;
     } catch (error) {
       if (!isUnauthorizedError(error) || !session) {
+        throw error;
+      }
+      // If we already completed auth (finishAuth succeeded) but reconnection still
+      // fails with 401, don't wait for another browser approval — it won't come.
+      // Throw so the outer loop in createClientContext can retry with a fresh transport
+      // that will pick up the cached tokens.
+      if (authCompleted) {
+        logger.info('Auth tokens saved but transport reconnection failed. Will retry with fresh transport...');
         throw error;
       }
       attempt += 1;
@@ -53,6 +62,7 @@ export async function connectWithAuth(
         );
         if (typeof transport.finishAuth === 'function') {
           await transport.finishAuth(code);
+          authCompleted = true;
           logger.info('Authorization code accepted. Retrying connection...');
         } else {
           logger.warn('Transport does not support finishAuth; cannot complete OAuth flow automatically.');

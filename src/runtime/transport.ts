@@ -104,6 +104,7 @@ export async function createClientContext(
       return { client, transport, definition: activeDefinition, oauthSession: undefined };
     }
 
+    let cachedTokenRetried = false;
     while (true) {
       const command = activeDefinition.command;
       if (command.kind !== 'http') {
@@ -148,6 +149,35 @@ export async function createClientContext(
         return await attemptConnect();
       } catch (primaryError) {
         if (isUnauthorizedError(primaryError)) {
+          // If OAuth is already enabled and we have cached tokens, retry with a fresh
+          // transport that will pick up the cached tokens from the auth provider.
+          // This handles the case where finishAuth saved tokens but the transport
+          // couldn't reconnect (e.g. SDK Client doesn't support reconnection).
+          if (activeDefinition.auth === 'oauth' && oauthSession) {
+            let hasTokens = false;
+            try {
+              const tokens = await oauthSession.provider.tokens();
+              hasTokens = !!tokens?.access_token;
+            } catch {
+              // tokens() may throw if no tokens cached yet
+            }
+            if (hasTokens) {
+              // Guard against infinite retries if the cached token is stale/rejected.
+              // Only retry once with cached tokens before giving up.
+              if (!cachedTokenRetried) {
+                cachedTokenRetried = true;
+                logger.info(`Retrying with fresh transport using cached OAuth tokens for '${activeDefinition.name}'...`);
+                await oauthSession.close().catch(() => {});
+                oauthSession = undefined;
+                continue;
+              }
+              logger.warn(`Cached OAuth token for '${activeDefinition.name}' was rejected. Clearing credentials.`);
+              const invalidateResult = oauthSession.provider.invalidateCredentials?.('all');
+              if (invalidateResult && typeof (invalidateResult as Promise<void>).catch === 'function') {
+                await (invalidateResult as Promise<void>).catch(() => {});
+              }
+            }
+          }
           await oauthSession?.close().catch(() => {});
           oauthSession = undefined;
           if (options.maxOAuthAttempts !== 0) {

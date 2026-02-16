@@ -9,10 +9,9 @@ export function maybeEnableOAuth(definition: ServerDefinition, logger: Logger): 
   if (definition.command.kind !== 'http') {
     return undefined;
   }
-  const isAdHocSource = definition.source && definition.source.kind === 'local' && definition.source.path === '<adhoc>';
-  if (!isAdHocSource) {
-    return undefined;
-  }
+  // Allow OAuth auto-promotion for any HTTP server, not just ad-hoc sources.
+  // Config-defined servers behind OAuth (e.g. Backstage MCP) also need auto-promotion
+  // when they return 401 with WWW-Authenticate headers.
   logger.info(`Detected OAuth requirement for '${definition.name}'. Launching browser flow...`);
   return {
     ...definition,
