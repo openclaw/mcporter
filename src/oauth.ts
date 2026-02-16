@@ -134,16 +134,23 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     // previous client registration is cached with a different redirect URI the
     // auth server will reject the request with `invalid_redirect_uri`.  Clear
     // the stale registration so the next flow re-registers with the new URI.
+    // Wrapped in try/catch so persistence errors (malformed JSON, permission
+    // issues) close the already-bound callback server instead of leaking it.
     if (usesDynamicPort) {
-      const cachedClient = await persistence.readClientInfo();
-      if (cachedClient && Array.isArray((cachedClient as Record<string, unknown>).redirect_uris)) {
-        const cachedRedirect = ((cachedClient as Record<string, unknown>).redirect_uris as string[])[0];
-        if (cachedRedirect && cachedRedirect !== redirectUrl.toString()) {
-          logger.info(
-            `Redirect URI changed (${cachedRedirect} → ${redirectUrl.toString()}); clearing stale client registration.`
-          );
-          await persistence.clear('client');
+      try {
+        const cachedClient = await persistence.readClientInfo();
+        if (cachedClient && Array.isArray((cachedClient as Record<string, unknown>).redirect_uris)) {
+          const cachedRedirect = ((cachedClient as Record<string, unknown>).redirect_uris as string[])[0];
+          if (cachedRedirect && cachedRedirect !== redirectUrl.toString()) {
+            logger.info(
+              `Redirect URI changed (${cachedRedirect} → ${redirectUrl.toString()}); clearing stale client registration.`
+            );
+            await persistence.clear('client');
+          }
         }
+      } catch (error) {
+        server.close();
+        throw error;
       }
     }
 
