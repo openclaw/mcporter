@@ -47,8 +47,13 @@ function openExternal(url: string) {
       });
       child.unref();
     } else {
-      const child = spawn('xdg-open', [url], { stdio, detached: true });
-      child.unref();
+      try {
+        const child = spawn('xdg-open', [url], { stdio, detached: true });
+        child.on('error', () => {}); // swallow ENOENT on headless servers
+        child.unref();
+      } catch {
+        // headless server — no browser available
+      }
     }
   } catch {
     // best-effort: fall back to printing URL
@@ -79,7 +84,10 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
       token_endpoint_auth_method: 'none',
-      scope: 'mcp:tools',
+      // Omit scope so the MCP SDK can derive it from the server's metadata
+      // (resource metadata scopes_supported or auth server scopes_supported).
+      // Hardcoding 'mcp:tools' breaks providers like Granola whose auth server
+      // does not recognise that scope value.
     };
   }
 
@@ -120,6 +128,23 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     }
     if (!overrideRedirect || overrideRedirect.pathname === '/' || overrideRedirect.pathname === '') {
       redirectUrl.pathname = callbackPath;
+    }
+
+    // When using a dynamic port, the redirect URI changes every run.  If a
+    // previous client registration is cached with a different redirect URI the
+    // auth server will reject the request with `invalid_redirect_uri`.  Clear
+    // the stale registration so the next flow re-registers with the new URI.
+    if (usesDynamicPort) {
+      const cachedClient = await persistence.readClientInfo();
+      if (cachedClient && Array.isArray((cachedClient as Record<string, unknown>).redirect_uris)) {
+        const cachedRedirect = ((cachedClient as Record<string, unknown>).redirect_uris as string[])[0];
+        if (cachedRedirect && cachedRedirect !== redirectUrl.toString()) {
+          logger.info(
+            `Redirect URI changed (${cachedRedirect} → ${redirectUrl.toString()}); clearing stale client registration.`
+          );
+          await persistence.clear('client');
+        }
+      }
     }
 
     const provider = new PersistentOAuthClientProvider(definition, persistence, redirectUrl, logger);
