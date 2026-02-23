@@ -16,6 +16,12 @@ export function printCallOutput<T>(wrapped: CallResult<T>, raw: T, format: Outpu
       if (jsonValue !== null && attemptPrintJson(jsonValue)) {
         return;
       }
+      // When wrapped.json() returns null (e.g. structuredContent responses),
+      // fall back to JSON.stringify on the raw response before resorting to
+      // util.inspect, which produces output that isn't valid JSON.
+      if (attemptPrintJson(raw)) {
+        return;
+      }
       printRaw(raw);
       return;
     }
