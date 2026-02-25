@@ -113,6 +113,17 @@
         "npm_config_loglevel": "error"
       }
     },
+    "assimilate": {
+      "description": "Assimilate Live FX / SCRATCH — 88 tools for professional color grading, compositing, rendering, and virtual production.",
+      "command": "npx",
+      "args": [
+        "-y",
+        "assimilate-mcp"
+      ],
+      "env": {
+        "npm_config_loglevel": "error"
+      }
+    },
     "XcodeBuildMCP": {
       "description": "XcodeBuild MCP server for building, testing, and inspecting Xcode projects and simulators.",
       "command": "npx",
