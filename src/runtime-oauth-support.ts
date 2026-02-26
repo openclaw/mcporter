@@ -9,11 +9,14 @@ export function maybeEnableOAuth(definition: ServerDefinition, logger: Logger): 
   if (definition.command.kind !== 'http') {
     return undefined;
   }
-  const isAdHocSource = definition.source && definition.source.kind === 'local' && definition.source.path === '<adhoc>';
-  if (!isAdHocSource) {
+  // Allow users to opt out of auto-OAuth per server with `"autoOAuth": false`.
+  if (definition.autoOAuth === false) {
     return undefined;
   }
-  logger.info(`Detected OAuth requirement for '${definition.name}'. Launching browser flow...`);
+  const sourceHint = definition.source
+    ? ` (from ${definition.source.importKind ?? definition.source.kind}: ${definition.source.path})`
+    : '';
+  logger.info(`Detected OAuth requirement for '${definition.name}'${sourceHint}. Launching browser flow...`);
   return {
     ...definition,
     auth: 'oauth',

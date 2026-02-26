@@ -6,6 +6,18 @@ import { isUnauthorizedError } from '../runtime-oauth-support.js';
 
 export const DEFAULT_OAUTH_CODE_TIMEOUT_MS = 60_000;
 
+/**
+ * Signals that the OAuth browser flow completed successfully and tokens were saved.
+ * The caller should create a fresh Client + Transport and retry the connection,
+ * because the SDK's StreamableHTTPClientTransport cannot be re-started.
+ */
+export class OAuthCompletedError extends Error {
+  constructor() {
+    super('OAuth flow completed; retry with fresh transport.');
+    this.name = 'OAuthCompletedError';
+  }
+}
+
 export class OAuthTimeoutError extends Error {
   public readonly timeoutMs: number;
   public readonly serverName: string;
@@ -53,12 +65,19 @@ export async function connectWithAuth(
         );
         if (typeof transport.finishAuth === 'function') {
           await transport.finishAuth(code);
-          logger.info('Authorization code accepted. Retrying connection...');
+          logger.info('Authorization code accepted. Tokens saved — reconnecting with fresh transport.');
+          // The SDK's StreamableHTTPClientTransport throws "already started" if
+          // we call client.connect(transport) again. Signal the caller to create
+          // a new Client + Transport pair for the retry.
+          throw new OAuthCompletedError();
         } else {
           logger.warn('Transport does not support finishAuth; cannot complete OAuth flow automatically.');
           throw error;
         }
       } catch (authError) {
+        if (authError instanceof OAuthCompletedError) {
+          throw authError;
+        }
         logger.error('OAuth authorization failed while waiting for callback.', authError);
         throw authError;
       }

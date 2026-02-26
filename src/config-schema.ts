@@ -62,6 +62,10 @@ export const RawEntrySchema = z.object({
   client_name: z.string().optional(),
   oauthRedirectUrl: z.string().optional(),
   oauth_redirect_url: z.string().optional(),
+  autoOAuth: z.boolean().optional(),
+  auto_oauth: z.boolean().optional(),
+  oauthScope: z.string().optional(),
+  oauth_scope: z.string().optional(),
   oauthCommand: z
     .object({
       args: z.array(z.string()),
@@ -130,6 +134,8 @@ export interface ServerDefinition {
   readonly command: CommandSpec;
   readonly env?: Record<string, string>;
   readonly auth?: string;
+  readonly autoOAuth?: boolean;
+  readonly oauthScope?: string;
   readonly tokenCacheDir?: string;
   readonly clientName?: string;
   readonly oauthRedirectUrl?: string;

@@ -121,6 +121,11 @@ function convertExternalEntry(value: Record<string, unknown>): RawEntry | null {
     result.auth = auth;
   }
 
+  const autoOAuth = value.autoOAuth ?? value.auto_oauth;
+  if (typeof autoOAuth === 'boolean') {
+    result.autoOAuth = autoOAuth;
+  }
+
   const tokenCacheDir = asString(value.tokenCacheDir ?? value.token_cache_dir ?? value.token_cacheDir);
   if (tokenCacheDir) {
     result.tokenCacheDir = tokenCacheDir;

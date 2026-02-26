@@ -79,7 +79,10 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
       token_endpoint_auth_method: 'none',
-      scope: 'mcp:tools',
+      // Use the configured scope if set; otherwise omit scope entirely so the
+      // server / SDK can negotiate the appropriate value.  The previous hardcoded
+      // 'mcp:tools' broke servers that use standard OIDC scopes (see #85).
+      ...(definition.oauthScope != null && definition.oauthScope !== '' ? { scope: definition.oauthScope } : {}),
     };
   }
 

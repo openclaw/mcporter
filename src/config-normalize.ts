@@ -12,6 +12,8 @@ export function normalizeServerEntry(
   const description = raw.description;
   const env = raw.env ? { ...raw.env } : undefined;
   const auth = normalizeAuth(raw.auth);
+  const autoOAuth = raw.autoOAuth ?? raw.auto_oauth;
+  const oauthScope = raw.oauthScope ?? raw.oauth_scope ?? undefined;
   const tokenCacheDir = normalizePath(raw.tokenCacheDir ?? raw.token_cache_dir);
   const clientName = raw.clientName ?? raw.client_name;
   const oauthRedirectUrl = raw.oauthRedirectUrl ?? raw.oauth_redirect_url ?? undefined;
@@ -55,6 +57,8 @@ export function normalizeServerEntry(
     command,
     env,
     auth,
+    autoOAuth,
+    oauthScope,
     tokenCacheDir,
     clientName,
     oauthRedirectUrl,

@@ -11,7 +11,7 @@ import { readCachedAccessToken } from '../oauth-persistence.js';
 import { materializeHeaders } from '../runtime-header-utils.js';
 import { isUnauthorizedError, maybeEnableOAuth } from '../runtime-oauth-support.js';
 import { closeTransportAndWait } from '../runtime-process-utils.js';
-import { connectWithAuth, OAuthTimeoutError } from './oauth.js';
+import { connectWithAuth, OAuthCompletedError, OAuthTimeoutError } from './oauth.js';
 import { resolveCommandArgument, resolveCommandArguments } from './utils.js';
 
 const STDIO_TRACE_ENABLED = process.env.MCPORTER_STDIO_TRACE === '1';
@@ -140,6 +140,26 @@ export async function createClientContext(
           } as ClientContext;
         } catch (error) {
           await closeTransportAndWait(logger, streamableTransport).catch(() => {});
+          if (error instanceof OAuthCompletedError) {
+            // OAuth flow completed and tokens were saved. Create a fresh
+            // Client + Transport pair and retry — the auth provider will
+            // supply the newly-acquired tokens automatically.
+            logger.info(`Reconnecting to '${activeDefinition.name}' with fresh transport after OAuth.`);
+            const freshClient = new Client(clientInfo);
+            const freshTransport = new StreamableHTTPClientTransport(command.url, baseOptions);
+            try {
+              await freshClient.connect(freshTransport);
+              return {
+                client: freshClient,
+                transport: freshTransport,
+                definition: activeDefinition,
+                oauthSession,
+              } as ClientContext;
+            } catch (retryError) {
+              await closeTransportAndWait(logger, freshTransport).catch(() => {});
+              throw retryError;
+            }
+          }
           throw error;
         }
       };
@@ -178,6 +198,25 @@ export async function createClientContext(
           return { client, transport: sseTransport, definition: activeDefinition, oauthSession };
         } catch (sseError) {
           await closeTransportAndWait(logger, sseTransport).catch(() => {});
+          if (sseError instanceof OAuthCompletedError) {
+            // OAuth flow completed via SSE transport. Retry with fresh transport.
+            logger.info(`Reconnecting to '${activeDefinition.name}' with fresh SSE transport after OAuth.`);
+            const freshClient = new Client(clientInfo);
+            const freshSseTransport = new SSEClientTransport(command.url, { ...baseOptions });
+            try {
+              await freshClient.connect(freshSseTransport);
+              return {
+                client: freshClient,
+                transport: freshSseTransport,
+                definition: activeDefinition,
+                oauthSession,
+              };
+            } catch (retryError) {
+              await closeTransportAndWait(logger, freshSseTransport).catch(() => {});
+              await oauthSession?.close().catch(() => {});
+              throw retryError;
+            }
+          }
           await oauthSession?.close().catch(() => {});
           if (sseError instanceof OAuthTimeoutError) {
             throw sseError;

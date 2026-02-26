@@ -25,14 +25,79 @@ describe('maybeEnableOAuth', () => {
     expect(logger.info).toHaveBeenCalled();
   });
 
-  it('does not mutate non-ad-hoc servers', () => {
+  it('promotes configured HTTP servers on 401 (not just ad-hoc)', () => {
     const def: ServerDefinition = {
-      name: 'local-server',
+      name: 'configured-server',
       command: { kind: 'http', url: new URL('https://example.com') },
       source: { kind: 'local', path: '/tmp/config.json' },
     };
     const updated = maybeEnableOAuth(def, logger as never);
+    expect(updated).toBeDefined();
+    expect(updated?.auth).toBe('oauth');
+  });
+
+  it('promotes imported HTTP servers (e.g. from claude-code)', () => {
+    const def: ServerDefinition = {
+      name: 'datadog',
+      command: { kind: 'http', url: new URL('https://mcp.datadoghq.eu/api/unstable/mcp-server/mcp') },
+      source: { kind: 'import', path: '~/.claude/settings.json', importKind: 'claude-code' },
+    };
+    const updated = maybeEnableOAuth(def, logger as never);
+    expect(updated).toBeDefined();
+    expect(updated?.auth).toBe('oauth');
+  });
+
+  it('does not promote servers that already have auth: oauth', () => {
+    const def: ServerDefinition = {
+      ...baseDefinition,
+      auth: 'oauth',
+    };
+    const updated = maybeEnableOAuth(def, logger as never);
     expect(updated).toBeUndefined();
+  });
+
+  it('does not promote stdio servers', () => {
+    const def: ServerDefinition = {
+      name: 'stdio-server',
+      command: { kind: 'stdio', command: 'node', args: ['server.js'], cwd: '/tmp' },
+    };
+    const updated = maybeEnableOAuth(def, logger as never);
+    expect(updated).toBeUndefined();
+  });
+
+  it('does not promote when autoOAuth is explicitly false', () => {
+    const def: ServerDefinition = {
+      name: 'no-auto-oauth',
+      command: { kind: 'http', url: new URL('https://example.com') },
+      autoOAuth: false,
+    };
+    const updated = maybeEnableOAuth(def, logger as never);
+    expect(updated).toBeUndefined();
+  });
+
+  it('promotes when autoOAuth is explicitly true', () => {
+    const def: ServerDefinition = {
+      name: 'yes-auto-oauth',
+      command: { kind: 'http', url: new URL('https://example.com') },
+      autoOAuth: true,
+    };
+    const updated = maybeEnableOAuth(def, logger as never);
+    expect(updated).toBeDefined();
+    expect(updated?.auth).toBe('oauth');
+  });
+
+  it('includes source info in log message', () => {
+    const infoSpy = vi.fn();
+    const testLogger = { info: infoSpy, warn: vi.fn(), error: vi.fn() };
+    const def: ServerDefinition = {
+      name: 'imported-server',
+      command: { kind: 'http', url: new URL('https://example.com') },
+      source: { kind: 'import', path: '~/.claude/settings.json', importKind: 'claude-code' },
+    };
+    maybeEnableOAuth(def, testLogger as never);
+    expect(infoSpy).toHaveBeenCalledWith(
+      expect.stringContaining('claude-code')
+    );
   });
 });
 

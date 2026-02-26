@@ -5,7 +5,7 @@ import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it, vi } from 'vitest';
 import type { Logger } from '../src/logging.js';
 import type { OAuthSession } from '../src/oauth.js';
-import { connectWithAuth } from '../src/runtime/oauth.js';
+import { connectWithAuth, OAuthCompletedError } from '../src/runtime/oauth.js';
 
 // Minimal mock transport that records finishAuth calls.
 class MockTransport implements Transport {
@@ -23,8 +23,9 @@ class MockTransport implements Transport {
 }
 
 describe('connectWithAuth', () => {
-  it('waits for authorization code and retries connection', async () => {
-    // First connect throws Unauthorized, second succeeds after finishAuth.
+  it('waits for authorization code then throws OAuthCompletedError for fresh retry', async () => {
+    // First connect throws Unauthorized; after finishAuth the function signals
+    // the caller to create a fresh Client + Transport via OAuthCompletedError.
     const connect = vi
       .fn()
       .mockRejectedValueOnce(new UnauthorizedError('auth needed'))
@@ -63,10 +64,33 @@ describe('connectWithAuth', () => {
     // Simulate browser callback arrival.
     resolveCode('oauth-code-123');
 
-    await promise;
+    // After finishAuth() succeeds, connectWithAuth throws OAuthCompletedError
+    // to signal the caller to create a fresh Client + Transport for retry.
+    await expect(promise).rejects.toThrow(OAuthCompletedError);
 
     expect(waitForAuthorizationCode).toHaveBeenCalledTimes(1);
     expect(transport.calls).toEqual(['oauth-code-123']);
-    expect(connect).toHaveBeenCalledTimes(2);
+    // connect is called only once — the initial attempt that triggers 401.
+    // The retry with a fresh transport is handled by the caller (createClientContext).
+    expect(connect).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves normally when connect succeeds on first attempt', async () => {
+    const connect = vi.fn().mockResolvedValueOnce(undefined);
+    const client = { connect } as unknown as Client;
+    const transport = new MockTransport();
+    const logger: Logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+
+    await connectWithAuth(client, transport, undefined, logger, {
+      serverName: 'test-server',
+      maxAttempts: 1,
+    });
+
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(transport.calls).toHaveLength(0);
   });
 });
