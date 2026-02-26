@@ -62,6 +62,8 @@ export const RawEntrySchema = z.object({
   client_name: z.string().optional(),
   oauthRedirectUrl: z.string().optional(),
   oauth_redirect_url: z.string().optional(),
+  oauthScope: z.string().optional(),
+  oauth_scope: z.string().optional(),
   oauthCommand: z
     .object({
       args: z.array(z.string()),
@@ -133,6 +135,7 @@ export interface ServerDefinition {
   readonly tokenCacheDir?: string;
   readonly clientName?: string;
   readonly oauthRedirectUrl?: string;
+  readonly oauthScope?: string;
   readonly oauthCommand?: {
     readonly args: string[];
   };
