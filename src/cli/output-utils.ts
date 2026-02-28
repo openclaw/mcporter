@@ -16,6 +16,12 @@ export function printCallOutput<T>(wrapped: CallResult<T>, raw: T, format: Outpu
       if (jsonValue !== null && attemptPrintJson(jsonValue)) {
         return;
       }
+      // Still output valid JSON even when json() couldn't extract a typed payload.
+      // Falling through to printRaw() would emit util.inspect() output which is not
+      // valid JSON and breaks programmatic consumers.
+      if (attemptPrintJson(raw)) {
+        return;
+      }
       printRaw(raw);
       return;
     }
