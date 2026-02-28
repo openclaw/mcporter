@@ -101,9 +101,6 @@ function tryParseJson(value: unknown): unknown {
     if ('data' in (value as Record<string, unknown>)) {
       return (value as Record<string, unknown>).data ?? null;
     }
-    // Return the object itself — it is already a parsed structure (e.g. structuredContent
-    // with a results array from MCP servers like qmd).
-    return value;
   }
   if (typeof value === 'string') {
     try {
