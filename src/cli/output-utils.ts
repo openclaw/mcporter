@@ -156,5 +156,5 @@ function printRaw(raw: unknown): void {
     console.log(raw.toString());
     return;
   }
-  console.log(inspect(raw, { depth: 2, maxStringLength: null, breakLength: 80 }));
+  console.log(inspect(raw, { depth: null, maxStringLength: null, breakLength: 80 }));
 }

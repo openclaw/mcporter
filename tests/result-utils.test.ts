@@ -143,6 +143,36 @@ describe('createCallResult json extraction', () => {
     expect(result.json()).toEqual({ foo: 'bar' });
   });
 
+  it('returns all items when content array has multiple json entries', () => {
+    const response = {
+      content: [
+        { type: 'json', json: { id: 1, name: 'first' } },
+        { type: 'json', json: { id: 2, name: 'second' } },
+        { type: 'json', json: { id: 3, name: 'third' } },
+      ],
+    };
+    const result = createCallResult(response);
+    expect(result.json()).toEqual([
+      { id: 1, name: 'first' },
+      { id: 2, name: 'second' },
+      { id: 3, name: 'third' },
+    ]);
+  });
+
+  it('returns all items when content has mixed json and text-parseable-as-json entries', () => {
+    const response = {
+      content: [
+        { type: 'json', json: { source: 'json-type' } },
+        { type: 'text', text: '{"source":"text-type"}' },
+      ],
+    };
+    const result = createCallResult(response);
+    expect(result.json()).toEqual([
+      { source: 'json-type' },
+      { source: 'text-type' },
+    ]);
+  });
+
   it('extracts json from structuredContent nested inside raw wrapper', () => {
     const response = {
       raw: {
