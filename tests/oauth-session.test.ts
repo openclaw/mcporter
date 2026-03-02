@@ -4,12 +4,39 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ServerDefinition } from '../src/config.js';
-import { createOAuthSession } from '../src/oauth.js';
+import { __oauthInternals, createOAuthSession } from '../src/oauth.js';
+
+type StatefulProvider = {
+  redirectUrl: string | URL;
+  state: () => Promise<string>;
+  redirectToAuthorization: (authorizationUrl: URL) => Promise<void>;
+};
+
+const requestStatus = (target: URL): Promise<number> =>
+  new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        hostname: target.hostname,
+        port: target.port,
+        path: `${target.pathname}${target.search}`,
+        family: 4,
+        method: 'GET',
+      },
+      (res) => {
+        const status = res.statusCode ?? 0;
+        res.resume();
+        resolve(status);
+      }
+    );
+    req.on('error', reject);
+    req.end();
+  });
 
 describe('FileOAuthClientProvider session lifecycle', () => {
   const tempDirs: string[] = [];
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
   });
 
@@ -122,5 +149,68 @@ describe('FileOAuthClientProvider session lifecycle', () => {
     } finally {
       createServerSpy.mockRestore();
     }
+  });
+
+  it('resolves waiters created before redirectToAuthorization', async () => {
+    const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+    tempDirs.push(tokenCacheDir);
+    const definition: ServerDefinition = {
+      name: 'test-oauth-wait-before-redirect',
+      description: 'Test OAuth server',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'oauth',
+      tokenCacheDir,
+    };
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+
+    const session = await createOAuthSession(definition, logger);
+    const provider = session.provider as StatefulProvider;
+    vi.spyOn(__oauthInternals, 'openExternal').mockImplementation(() => {});
+    const waitPromise = session.waitForAuthorizationCode();
+    await provider.redirectToAuthorization(new URL('https://example.com/auth'));
+
+    const callback = new URL(String(provider.redirectUrl));
+    callback.hostname = '127.0.0.1';
+    callback.searchParams.set('code', 'prewait-code');
+    const status = await requestStatus(callback);
+    expect(status).toBe(200);
+    await expect(waitPromise).resolves.toBe('prewait-code');
+    await session.close();
+  });
+
+  it('does not replace the pending authorization deferred on repeated redirect calls', async () => {
+    const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+    tempDirs.push(tokenCacheDir);
+    const definition: ServerDefinition = {
+      name: 'test-oauth-repeat-redirect',
+      description: 'Test OAuth server',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'oauth',
+      tokenCacheDir,
+    };
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+
+    const session = await createOAuthSession(definition, logger);
+    const provider = session.provider as StatefulProvider;
+    vi.spyOn(__oauthInternals, 'openExternal').mockImplementation(() => {});
+    const waitPromise = session.waitForAuthorizationCode();
+    await provider.redirectToAuthorization(new URL('https://example.com/auth-one'));
+    await provider.redirectToAuthorization(new URL('https://example.com/auth-two'));
+
+    const callback = new URL(String(provider.redirectUrl));
+    callback.hostname = '127.0.0.1';
+    callback.searchParams.set('code', 'stable-deferred-code');
+    const status = await requestStatus(callback);
+    expect(status).toBe(200);
+    await expect(waitPromise).resolves.toBe('stable-deferred-code');
+    await session.close();
   });
 });

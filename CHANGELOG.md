@@ -7,6 +7,7 @@
 - OAuth: avoid crashing on headless Linux when `xdg-open` is unavailable; clear stale dynamic-port client registrations; close callback server if stale-client persistence reads fail. (PR #72, thanks @mgonto)
 - Added optional `oauthScope`/`oauth_scope` config override as an escape hatch for providers that require explicit scopes.
 - `createCallResult().json()` now collects all parseable JSON entries from MCP content arrays (single item stays backward-compatible), and raw inspect depth now stays readable without unbounded traversal. (PR #91, thanks @Blankdlh)
+- OAuth wait/redirect now share one deferred to eliminate authorization race windows and preserve stable close-path errors, including wait-before-redirect and repeated-redirect flows. (PR #70, thanks @monotykamary)
 
 ### Tooling / Dependencies
 - Updated dependencies to latest releases (including MCP SDK, Rolldown RC, Zod, Biome, Oxlint, Vitest, Bun types).
