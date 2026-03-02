@@ -156,6 +156,7 @@ Server definition fields (subset of what `RawEntrySchema` accepts):
 | `tokenCacheDir` | Directory for OAuth tokens; still honored, but mcporter now keeps a centralized vault in `~/.mcporter/credentials.json` (legacy per-server caches are auto-migrated). Supports `~` expansion. |
 | `clientName` | Optional identifier some servers use for telemetry/audience segmentation. |
 | `oauthRedirectUrl` | Override the default localhost callback. Useful when tunneling OAuth through Codespaces or remote dev boxes. |
+| `oauthScope` | Optional explicit OAuth scope string. If omitted, mcporter lets the MCP SDK derive scope from server/auth metadata. Use this as an escape hatch for providers that require explicit scopes but don’t publish `scopes_supported`. |
 | `oauthCommand.args` | For STDIO servers that ship a custom auth subcommand (e.g., Gmail MCP). mcporter will spawn the stdio command with these args when you run `mcporter auth <name>`, so you don’t need to call `npx ... auth` manually. |
 
 mcporter normalizes headers to include `Accept: application/json, text/event-stream` automatically, matching the runtime’s streaming expectations.

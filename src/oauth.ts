@@ -33,22 +33,21 @@ function createDeferred<T>(): Deferred<T> {
 }
 
 // openExternal attempts to launch the system browser cross-platform.
-function openExternal(url: string) {
-  const platform = process.platform;
+function openExternal(url: string, platform: NodeJS.Platform = process.platform, launch: typeof spawn = spawn) {
   const stdio = 'ignore';
   try {
     if (platform === 'darwin') {
-      const child = spawn('open', [url], { stdio, detached: true });
+      const child = launch('open', [url], { stdio, detached: true });
       child.unref();
     } else if (platform === 'win32') {
-      const child = spawn('cmd', ['/c', 'start', '""', url], {
+      const child = launch('cmd', ['/c', 'start', '""', url], {
         stdio,
         detached: true,
       });
       child.unref();
     } else {
       try {
-        const child = spawn('xdg-open', [url], { stdio, detached: true });
+        const child = launch('xdg-open', [url], { stdio, detached: true });
         child.on('error', () => {}); // swallow ENOENT on headless servers
         child.unref();
       } catch {
@@ -88,6 +87,8 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       // (resource metadata scopes_supported or auth server scopes_supported).
       // Hardcoding 'mcp:tools' breaks providers like Granola whose auth server
       // does not recognise that scope value.
+      // If oauthScope is explicitly configured, prefer that exact value.
+      ...(definition.oauthScope !== undefined ? { scope: definition.oauthScope || undefined } : {}),
     };
   }
 
@@ -139,17 +140,17 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     if (usesDynamicPort) {
       try {
         const cachedClient = await persistence.readClientInfo();
-        if (cachedClient && Array.isArray((cachedClient as Record<string, unknown>).redirect_uris)) {
-          const cachedRedirect = ((cachedClient as Record<string, unknown>).redirect_uris as string[])[0];
-          if (cachedRedirect && cachedRedirect !== redirectUrl.toString()) {
-            logger.info(
-              `Redirect URI changed (${cachedRedirect} → ${redirectUrl.toString()}); clearing stale client registration.`
-            );
-            await persistence.clear('client');
-          }
+        const cachedRedirect = firstRedirectUri(cachedClient);
+        if (cachedRedirect && cachedRedirect !== redirectUrl.toString()) {
+          logger.info(
+            `Redirect URI changed (${cachedRedirect} → ${redirectUrl.toString()}); clearing stale client registration.`
+          );
+          await persistence.clear('client');
         }
       } catch (error) {
-        server.close();
+        await new Promise<void>((resolve) => {
+          server.close(() => resolve());
+        });
         throw error;
       }
     }
@@ -322,3 +323,19 @@ export interface OAuthLogger {
   warn(message: string): void;
   error(message: string, error?: unknown): void;
 }
+
+function firstRedirectUri(client: OAuthClientInformationMixed | undefined): string | undefined {
+  if (!client || typeof client !== 'object') {
+    return undefined;
+  }
+  const redirectUris = (client as Record<string, unknown>).redirect_uris;
+  if (!Array.isArray(redirectUris)) {
+    return undefined;
+  }
+  const [first] = redirectUris;
+  return typeof first === 'string' ? first : undefined;
+}
+
+export const __oauthInternals = {
+  openExternal,
+};

@@ -10,6 +10,7 @@ export type SerializedServerDefinition = {
   tokenCacheDir?: string;
   clientName?: string;
   oauthRedirectUrl?: string;
+  oauthScope?: string;
   env?: Record<string, string>;
   transport: 'http' | 'stdio';
   baseUrl?: string;
@@ -30,6 +31,7 @@ export function serializeDefinition(definition: ServerDefinition): SerializedSer
       tokenCacheDir: definition.tokenCacheDir,
       clientName: definition.clientName,
       oauthRedirectUrl: definition.oauthRedirectUrl,
+      oauthScope: definition.oauthScope,
       env: definition.env,
       transport: 'http',
       baseUrl: definition.command.url.href,
@@ -44,6 +46,7 @@ export function serializeDefinition(definition: ServerDefinition): SerializedSer
     tokenCacheDir: definition.tokenCacheDir,
     clientName: definition.clientName,
     oauthRedirectUrl: definition.oauthRedirectUrl,
+    oauthScope: definition.oauthScope,
     env: definition.env,
     transport: 'stdio',
     command: definition.command.command,

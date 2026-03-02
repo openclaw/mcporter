@@ -24,6 +24,7 @@ export interface SerializedServerDefinition {
   readonly tokenCacheDir?: string;
   readonly clientName?: string;
   readonly oauthRedirectUrl?: string;
+  readonly oauthScope?: string;
 }
 
 export interface CliArtifactMetadata {
@@ -141,6 +142,7 @@ export function serializeDefinition(definition: ServerDefinition): SerializedSer
       tokenCacheDir: definition.tokenCacheDir,
       clientName: definition.clientName,
       oauthRedirectUrl: definition.oauthRedirectUrl,
+      oauthScope: definition.oauthScope,
     };
   }
   return {
@@ -157,5 +159,6 @@ export function serializeDefinition(definition: ServerDefinition): SerializedSer
     tokenCacheDir: definition.tokenCacheDir,
     clientName: definition.clientName,
     oauthRedirectUrl: definition.oauthRedirectUrl,
+    oauthScope: definition.oauthScope,
   };
 }

@@ -4,6 +4,8 @@
 
 ### CLI
 - Preserve default imports when `mcporter config add` writes a config file, instead of forcing `"imports": []`.
+- OAuth: avoid crashing on headless Linux when `xdg-open` is unavailable; clear stale dynamic-port client registrations; close callback server if stale-client persistence reads fail. (PR #72, thanks @mgonto)
+- Added optional `oauthScope`/`oauth_scope` config override as an escape hatch for providers that require explicit scopes.
 
 ### Tooling / Dependencies
 - Updated dependencies to latest releases (including MCP SDK, Rolldown RC, Zod, Biome, Oxlint, Vitest, Bun types).
