@@ -69,9 +69,28 @@ describe('parseCallArguments', () => {
     expect(typeof parsed.args.pin).toBe('string');
   });
 
-  it('preserves numeric strings when --no-coerce alias is used', () => {
-    const parsed = parseCallArguments(['--no-coerce', 'server.tool', 'id=007']);
+  it('still coerces booleans, nulls, and JSON with --raw-strings', () => {
+    const parsed = parseCallArguments(['--raw-strings', 'server.tool', 'enabled=true', 'value=null', 'meta={"a":1}']);
+    expect(parsed.args.enabled).toBe(true);
+    expect(parsed.args.value).toBeNull();
+    expect(parsed.args.meta).toEqual({ a: 1 });
+  });
+
+  it('keeps every value as a string when --no-coerce alias is used', () => {
+    const parsed = parseCallArguments([
+      '--no-coerce',
+      'server.tool',
+      'id=007',
+      'enabled=true',
+      'value=null',
+      'meta={"a":1}',
+      '123',
+    ]);
     expect(parsed.args.id).toBe('007');
+    expect(parsed.args.enabled).toBe('true');
+    expect(parsed.args.value).toBe('null');
+    expect(parsed.args.meta).toBe('{"a":1}');
     expect(typeof parsed.args.id).toBe('string');
+    expect(parsed.positionalArgs).toEqual(['123']);
   });
 });

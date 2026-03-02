@@ -20,8 +20,11 @@ export interface CallArgsParseResult {
   rawStrings?: boolean;
 }
 
+type CoercionMode = 'default' | 'raw-strings' | 'none';
+
 export function parseCallArguments(args: string[]): CallArgsParseResult {
   const result: CallArgsParseResult = { args: {}, tailLog: false, output: 'auto' };
+  let coercionMode: CoercionMode = 'default';
   const ephemeral = extractEphemeralServerFlags(args);
   result.ephemeral = ephemeral;
   result.output = consumeOutputFormat(args, {
@@ -69,7 +72,14 @@ export function parseCallArguments(args: string[]): CallArgsParseResult {
       index += 1;
       continue;
     }
-    if (token === '--raw-strings' || token === '--no-coerce') {
+    if (token === '--raw-strings') {
+      coercionMode = 'raw-strings';
+      result.rawStrings = true;
+      index += 1;
+      continue;
+    }
+    if (token === '--no-coerce') {
+      coercionMode = 'none';
       result.rawStrings = true;
       index += 1;
       continue;
@@ -174,12 +184,12 @@ export function parseCallArguments(args: string[]): CallArgsParseResult {
     }
     const parsed = parseKeyValueToken(token, positional[index + 1]);
     if (!parsed) {
-      trailingPositional.push(coerceValue(token, result.rawStrings));
+      trailingPositional.push(coerceValue(token, coercionMode));
       index += 1;
       continue;
     }
     index += parsed.consumed;
-    const value = coerceValue(parsed.rawValue, result.rawStrings);
+    const value = coerceValue(parsed.rawValue, coercionMode);
     if (parsed.key === 'tool' && !result.tool) {
       if (typeof value !== 'string') {
         throw new Error("Argument 'tool' must be a string value.");
@@ -279,10 +289,13 @@ function extractHttpCallExpression(raw: string): ReturnType<typeof parseCallExpr
   };
 }
 
-function coerceValue(value: string, rawStrings = false): unknown {
+function coerceValue(value: string, coercionMode: CoercionMode = 'default'): unknown {
   const trimmed = value.trim();
   if (trimmed === '') {
     return '';
+  }
+  if (coercionMode === 'none') {
+    return trimmed;
   }
   if (trimmed === 'true' || trimmed === 'false') {
     return trimmed === 'true';
@@ -290,8 +303,7 @@ function coerceValue(value: string, rawStrings = false): unknown {
   if (trimmed === 'null' || trimmed === 'none') {
     return null;
   }
-  // Skip numeric coercion when --raw-strings (or --no-coerce) flag is used
-  if (!rawStrings && !Number.isNaN(Number(trimmed)) && trimmed === `${Number(trimmed)}`) {
+  if (coercionMode === 'default' && !Number.isNaN(Number(trimmed)) && trimmed === `${Number(trimmed)}`) {
     return Number(trimmed);
   }
   if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {

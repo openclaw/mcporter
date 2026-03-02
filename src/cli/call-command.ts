@@ -130,6 +130,8 @@ export function printCallHelp(): void {
     'Runtime flags:',
     '  --timeout <ms>         Override the call timeout.',
     '  --output text|markdown|json|raw  Control formatting.',
+    '  --raw-strings          Keep numeric-looking argument values as strings.',
+    '  --no-coerce            Keep all key/value and positional arguments as raw strings.',
     '  --tail-log             Stream returned log handles.',
     '',
     'Ad-hoc servers:',
