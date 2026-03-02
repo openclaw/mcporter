@@ -167,10 +167,7 @@ describe('createCallResult json extraction', () => {
       ],
     };
     const result = createCallResult(response);
-    expect(result.json()).toEqual([
-      { source: 'json-type' },
-      { source: 'text-type' },
-    ]);
+    expect(result.json()).toEqual([{ source: 'json-type' }, { source: 'text-type' }]);
   });
 
   it('extracts json from structuredContent nested inside raw wrapper', () => {

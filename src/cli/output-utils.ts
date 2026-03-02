@@ -4,6 +4,7 @@ import type { CallResult } from '../result-utils.js';
 import { logWarn } from './logger-context.js';
 
 export type OutputFormat = 'auto' | 'text' | 'markdown' | 'json' | 'raw';
+const RAW_INSPECT_DEPTH = 8;
 
 export function printCallOutput<T>(wrapped: CallResult<T>, raw: T, format: OutputFormat): void {
   switch (format) {
@@ -156,5 +157,6 @@ function printRaw(raw: unknown): void {
     console.log(raw.toString());
     return;
   }
-  console.log(inspect(raw, { depth: null, maxStringLength: null, breakLength: 80 }));
+  // Keep nested payloads readable without unbounded inspect walks on huge objects.
+  console.log(inspect(raw, { depth: RAW_INSPECT_DEPTH, maxStringLength: null, breakLength: 80 }));
 }

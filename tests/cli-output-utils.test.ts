@@ -21,4 +21,35 @@ describe('printCallOutput raw output', () => {
       log.mockRestore();
     }
   });
+
+  it('prints nested values beyond the default inspect depth', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const raw = {
+      level1: {
+        level2: {
+          level3: {
+            level4: {
+              level5: {
+                level6: {
+                  leaf: 'done',
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+    const wrapped = createCallResult(raw);
+
+    try {
+      printCallOutput(wrapped, raw, 'raw');
+
+      expect(log).toHaveBeenCalledTimes(1);
+      const logged = log.mock.calls[0]?.[0];
+      expect(typeof logged).toBe('string');
+      expect(logged).toContain("leaf: 'done'");
+    } finally {
+      log.mockRestore();
+    }
+  });
 });
