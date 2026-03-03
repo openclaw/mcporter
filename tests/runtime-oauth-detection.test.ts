@@ -69,4 +69,9 @@ describe('isUnauthorizedError helper', () => {
   it('ignores unrelated errors', () => {
     expect(isUnauthorizedError(new Error('network timeout'))).toBe(false);
   });
+
+  it('matches errors with code=401 even when message lacks 401', () => {
+    const err = Object.assign(new Error('Error POSTing to endpoint: {}'), { code: 401 });
+    expect(isUnauthorizedError(err)).toBe(true);
+  });
 });

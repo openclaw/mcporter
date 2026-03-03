@@ -47,7 +47,8 @@ export function analyzeConnectionError(error: unknown): ConnectionIssue {
   if (stdio) {
     return { kind: 'stdio-exit', rawMessage, ...stdio };
   }
-  const statusCode = extractStatusCode(rawMessage);
+  const errorCode = extractErrorCode(error);
+  const statusCode = errorCode ?? extractStatusCode(rawMessage);
   const normalized = rawMessage.toLowerCase();
   if (AUTH_STATUSES.has(statusCode ?? -1) || containsAuthToken(normalized)) {
     return { kind: 'auth', rawMessage, statusCode };
@@ -80,6 +81,16 @@ function extractMessage(error: unknown): string {
   } catch {
     return '';
   }
+}
+
+function extractErrorCode(error: unknown): number | undefined {
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    const code = (error as Record<string, unknown>).code;
+    if (typeof code === 'number' && Number.isFinite(code) && code >= 100 && code < 600) {
+      return code;
+    }
+  }
+  return undefined;
 }
 
 function extractStatusCode(message: string): number | undefined {
