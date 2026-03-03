@@ -107,7 +107,16 @@ function resolveRenderableOutput<T>(
 
 function emitRenderableOutput(renderable: RenderableOutput): void {
   if (renderable.kind === 'json') {
-    if (!attemptPrintJson(renderable.value)) {
+    // For json format, try JSON.stringify first to ensure valid JSON output
+    if (attemptPrintJson(renderable.value)) {
+      return;
+    }
+    // Fallback: try JSON.stringify on raw value before inspect
+    try {
+      console.log(JSON.stringify(renderable.value, null, 2));
+      return;
+    } catch {
+      // If that also fails, use inspect as last resort
       printRaw(renderable.value);
     }
     return;
