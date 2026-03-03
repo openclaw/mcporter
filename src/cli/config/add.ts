@@ -121,6 +121,7 @@ function extractAddFlags(args: string[]): AddFlags {
         args.splice(index, 2);
         continue;
       case '--arg':
+      case '--args':
         flags.args.push(requireValue(args, index, token));
         args.splice(index, 2);
         continue;
