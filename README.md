@@ -345,6 +345,7 @@ See [docs/emit-ts.md](docs/emit-ts.md) for the full flag reference plus inline s
 ## Configuration Reference
 
 Manage this file with `mcporter config list|get|add|remove|import` when you’d rather avoid hand-editing JSON; see [docs/config.md](docs/config.md) for the full walkthrough.
+Config files are parsed as JSONC, so inline `//` and `/* ... */` comments plus trailing commas are supported in both `mcporter.json` and `mcporter.jsonc`.
 
 ### Manage configs with `mcporter config`
 

@@ -2,9 +2,9 @@ import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { parseJsonBuffer } from './config/imports/shared.js';
 import { pathsForImport, readExternalEntries } from './config-imports.js';
 import { normalizeServerEntry } from './config-normalize.js';
-import { parseJsonBuffer } from './config/imports/shared.js';
 import {
   DEFAULT_IMPORTS,
   type LoadConfigOptions,
