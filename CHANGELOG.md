@@ -12,6 +12,7 @@
 - Added `CallResult.images()` plus opt-in `mcporter call --save-images <dir>` so image content blocks can be persisted without changing existing stdout output contracts. (PR #61, thanks @daniella-11ways)
 - OAuth transport retries now classify HTTP 405 as HTTP (not auth) and OAuth promotion applies to configured HTTP servers too, so post-auth fallback flows no longer drop credentials on 405-only endpoints. (PR #48, thanks @caseyg)
 - Config loading now parses project and explicit config files as JSONC, so `mcporter.json` / `mcporter.jsonc` can include comments and trailing commas. (PR #42, thanks @aryasaatvik)
+- Added generated `mcporter.schema.json` plus `pnpm generate:schema` for IDE autocomplete/validation, including `$schema` and `oauthScope`/`oauth_scope` coverage. (PR #43, thanks @aryasaatvik)
 
 ### Tooling / Dependencies
 - Updated dependencies to latest releases (including MCP SDK, Rolldown RC, Zod, Biome, Oxlint, Vitest, Bun types).

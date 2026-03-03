@@ -1,17 +1,13 @@
 {
-  "$id": "https://raw.githubusercontent.com/steipete/mcporter/main/mcporter.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "mcporter configuration file schema",
   "type": "object",
   "properties": {
     "mcpServers": {
-      "description": "Map of server names to their configurations",
       "type": "object",
       "propertyNames": {
         "type": "string"
       },
       "additionalProperties": {
-        "description": "MCP server definition supporting both HTTP/SSE and stdio transports",
         "type": "object",
         "properties": {
           "description": {
@@ -111,16 +107,24 @@
             "description": "Custom OAuth redirect URL (snake_case)",
             "type": "string"
           },
+          "oauthScope": {
+            "description": "OAuth scope override (camelCase)",
+            "type": "string"
+          },
+          "oauth_scope": {
+            "description": "OAuth scope override (snake_case)",
+            "type": "string"
+          },
           "oauthCommand": {
             "description": "Custom OAuth command configuration for stdio servers (camelCase)",
             "type": "object",
             "properties": {
               "args": {
-                "description": "Arguments for the OAuth command",
                 "type": "array",
                 "items": {
                   "type": "string"
-                }
+                },
+                "description": "Arguments for the OAuth command"
               }
             },
             "required": [
@@ -133,11 +137,11 @@
             "type": "object",
             "properties": {
               "args": {
-                "description": "Arguments for the OAuth command",
                 "type": "array",
                 "items": {
                   "type": "string"
-                }
+                },
+                "description": "Arguments for the OAuth command"
               }
             },
             "required": [
@@ -162,23 +166,21 @@
             "type": "string"
           },
           "lifecycle": {
-            "description": "Server connection lifecycle: keep-alive maintains persistent connections, ephemeral connects on-demand",
             "anyOf": [
               {
-                "description": "Keep the server connection alive",
                 "type": "string",
-                "const": "keep-alive"
+                "const": "keep-alive",
+                "description": "Keep the server connection alive"
               },
               {
-                "description": "Connect only when needed",
                 "type": "string",
-                "const": "ephemeral"
+                "const": "ephemeral",
+                "description": "Connect only when needed"
               },
               {
                 "type": "object",
                 "properties": {
                   "mode": {
-                    "description": "Connection lifecycle mode",
                     "anyOf": [
                       {
                         "type": "string",
@@ -188,7 +190,8 @@
                         "type": "string",
                         "const": "ephemeral"
                       }
-                    ]
+                    ],
+                    "description": "Connection lifecycle mode"
                   },
                   "idleTimeoutMs": {
                     "description": "Idle timeout in milliseconds before disconnecting",
@@ -202,7 +205,8 @@
                 ],
                 "additionalProperties": false
               }
-            ]
+            ],
+            "description": "Server connection lifecycle: keep-alive maintains persistent connections, ephemeral connects on-demand"
           },
           "logging": {
             "description": "Logging configuration for the server",
@@ -223,14 +227,15 @@
             "additionalProperties": false
           }
         },
-        "additionalProperties": false
-      }
+        "additionalProperties": false,
+        "description": "MCP server definition supporting both HTTP/SSE and stdio transports"
+      },
+      "description": "Map of server names to their configurations"
     },
     "imports": {
       "description": "Editor configurations to import servers from. Omit to use defaults, or set to [] to disable imports",
       "type": "array",
       "items": {
-        "description": "Supported editor/client configurations to import MCP servers from",
         "type": "string",
         "enum": [
           "cursor",
@@ -240,7 +245,8 @@
           "windsurf",
           "opencode",
           "vscode"
-        ]
+        ],
+        "description": "Supported editor/client configurations to import MCP servers from"
       }
     },
     "$schema": {
@@ -251,5 +257,7 @@
   "required": [
     "mcpServers"
   ],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "description": "mcporter configuration file schema",
+  "$id": "https://raw.githubusercontent.com/steipete/mcporter/main/mcporter.schema.json"
 }
