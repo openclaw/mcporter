@@ -26,6 +26,18 @@ describe('analyzeConnectionError', () => {
     expect(issue.statusCode).toBe(429);
   });
 
+  it.each([401, 403] as const)('keeps %s classified as auth', (status) => {
+    const issue = analyzeConnectionError(new Error(`SSE error: Non-200 status code (${status})`));
+    expect(issue.kind).toBe('auth');
+    expect(issue.statusCode).toBe(status);
+  });
+
+  it('classifies HTTP 405 as transport/http instead of auth', () => {
+    const issue = analyzeConnectionError(new Error('SSE error: Non-200 status code (405)'));
+    expect(issue.kind).toBe('http');
+    expect(issue.statusCode).toBe(405);
+  });
+
   it('extracts HTTP status codes from JSON payloads', () => {
     const issue = analyzeConnectionError(new Error('{"error":{"status":503}}'));
     expect(issue.kind).toBe('http');

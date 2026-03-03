@@ -35,6 +35,25 @@ describe('maybeEnableOAuth', () => {
     expect(updated).toBeDefined();
     expect(updated?.auth).toBe('oauth');
   });
+
+  it('does not mutate stdio servers', () => {
+    const def: ServerDefinition = {
+      name: 'stdio-server',
+      command: { kind: 'stdio', command: 'echo', args: [], cwd: process.cwd() },
+    };
+    const updated = maybeEnableOAuth(def, logger as never);
+    expect(updated).toBeUndefined();
+  });
+
+  it('does not re-promote servers already configured for oauth', () => {
+    const def: ServerDefinition = {
+      name: 'oauth-server',
+      auth: 'oauth',
+      command: { kind: 'http', url: new URL('https://example.com') },
+    };
+    const updated = maybeEnableOAuth(def, logger as never);
+    expect(updated).toBeUndefined();
+  });
 });
 
 describe('isUnauthorizedError helper', () => {

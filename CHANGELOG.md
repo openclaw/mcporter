@@ -10,6 +10,7 @@
 - OAuth wait/redirect now share one deferred to eliminate authorization race windows and preserve stable close-path errors, including wait-before-redirect and repeated-redirect flows. (PR #70, thanks @monotykamary)
 - Added `--raw-strings` (numeric coercion off) and `--no-coerce` (all coercion off) for `mcporter call` argument parsing so IDs/codes can stay literal strings. (PR #59, thanks @nobrainer-tech)
 - Added `CallResult.images()` plus opt-in `mcporter call --save-images <dir>` so image content blocks can be persisted without changing existing stdout output contracts. (PR #61, thanks @daniella-11ways)
+- OAuth transport retries now classify HTTP 405 as HTTP (not auth) and OAuth promotion applies to configured HTTP servers too, so post-auth fallback flows no longer drop credentials on 405-only endpoints. (PR #48, thanks @caseyg)
 
 ### Tooling / Dependencies
 - Updated dependencies to latest releases (including MCP SDK, Rolldown RC, Zod, Biome, Oxlint, Vitest, Bun types).
