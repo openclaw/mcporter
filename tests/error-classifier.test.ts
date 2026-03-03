@@ -43,4 +43,40 @@ describe('analyzeConnectionError', () => {
     expect(issue.kind).toBe('http');
     expect(issue.statusCode).toBe(503);
   });
+
+  describe('error.code property (StreamableHTTPError / SseError)', () => {
+    it('classifies code=401 as auth even when message lacks 401', () => {
+      const err = Object.assign(new Error('Error POSTing to endpoint: {}'), { code: 401 });
+      const issue = analyzeConnectionError(err);
+      expect(issue.kind).toBe('auth');
+      expect(issue.statusCode).toBe(401);
+    });
+
+    it('classifies code=403 as auth', () => {
+      const err = Object.assign(new Error('Forbidden'), { code: 403 });
+      const issue = analyzeConnectionError(err);
+      expect(issue.kind).toBe('auth');
+      expect(issue.statusCode).toBe(403);
+    });
+
+    it('classifies code=404 as http (not auth)', () => {
+      const err = Object.assign(new Error('Not Found'), { code: 404 });
+      const issue = analyzeConnectionError(err);
+      expect(issue.kind).toBe('http');
+      expect(issue.statusCode).toBe(404);
+    });
+
+    it('classifies code=500 as http', () => {
+      const err = Object.assign(new Error('Internal Server Error'), { code: 500 });
+      const issue = analyzeConnectionError(err);
+      expect(issue.kind).toBe('http');
+      expect(issue.statusCode).toBe(500);
+    });
+
+    it('falls back to message parsing when code is absent', () => {
+      const issue = analyzeConnectionError(new Error('network timeout'));
+      expect(issue.kind).toBe('offline');
+      expect(issue.statusCode).toBeUndefined();
+    });
+  });
 });
