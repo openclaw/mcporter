@@ -49,4 +49,19 @@ describe('parseCallArguments', () => {
     );
     warnSpy.mockRestore();
   });
+
+  it('tolerates LLM flag hallucinations (strips leading dashes)', () => {
+    const parsed = parseCallArguments(['linear.get_issue', '--id=VINC-1', '--includeRelations', 'true']);
+    expect(parsed.args.id).toBe('VINC-1');
+    expect(parsed.args.includeRelations).toBe(true);
+    expect(parsed.args['--id']).toBeUndefined();
+  });
+
+  it('tolerates LLM flag hallucinations spaced format', () => {
+    const parsed = parseCallArguments(['linear.get_issue', '--id', 'VINC-1', '--dryRun', '--team', 'ENG']);
+    expect(parsed.args.id).toBe('VINC-1');
+    expect(parsed.args.dryRun).toBe(true);
+    expect(parsed.args.team).toBe('ENG');
+    expect(parsed.args['--id']).toBeUndefined();
+  });
 });

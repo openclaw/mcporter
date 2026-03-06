@@ -154,6 +154,7 @@ export function parseCallArguments(args: string[]): CallArgsParseResult {
     nextPositional !== undefined &&
     !nextPositional.includes('=') &&
     !nextPositional.includes(':') &&
+    !nextPositional.startsWith('-') &&
     !callExpressionProvidedTool
   ) {
     result.tool = positional.shift();
@@ -205,7 +206,9 @@ interface ParsedKeyValueToken {
 function parseKeyValueToken(token: string, nextToken: string | undefined): ParsedKeyValueToken | undefined {
   const eqIndex = token.indexOf('=');
   if (eqIndex !== -1) {
-    const key = token.slice(0, eqIndex);
+    let key = token.slice(0, eqIndex);
+    if (key.startsWith('--')) key = key.slice(2);
+    else if (key.startsWith('-')) key = key.slice(1);
     const rawValue = token.slice(eqIndex + 1);
     if (!key) {
       return undefined;
@@ -215,7 +218,9 @@ function parseKeyValueToken(token: string, nextToken: string | undefined): Parse
 
   const colonIndex = token.indexOf(':');
   if (colonIndex !== -1) {
-    const key = token.slice(0, colonIndex);
+    let key = token.slice(0, colonIndex);
+    if (key.startsWith('--')) key = key.slice(2);
+    else if (key.startsWith('-')) key = key.slice(1);
     const remainder = token.slice(colonIndex + 1);
     if (!key) {
       return undefined;
@@ -228,6 +233,15 @@ function parseKeyValueToken(token: string, nextToken: string | undefined): Parse
     }
     warnMissingNamedArgumentValue(key);
     return { key, rawValue: '', consumed: 1 };
+  }
+
+  if (token.startsWith('--')) {
+    const key = token.slice(2);
+    if (!key) return undefined;
+    if (nextToken !== undefined && !nextToken.startsWith('-')) {
+      return { key, rawValue: nextToken, consumed: 2 };
+    }
+    return { key, rawValue: 'true', consumed: 1 };
   }
 
   return undefined;
