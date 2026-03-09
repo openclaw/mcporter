@@ -9,6 +9,7 @@ import {
   normalizeIdentifier,
   renderIdentifierResolutionMessages,
 } from './identifier-helpers.js';
+import { saveCallImagesIfRequested } from './image-output.js';
 import { buildConnectionIssueEnvelope } from './json-output.js';
 import { handleList } from './list-command.js';
 import type { OutputFormat } from './output-utils.js';
@@ -18,13 +19,49 @@ import { dimText, redText, yellowText } from './terminal.js';
 import { resolveCallTimeout, withTimeout } from './timeouts.js';
 import { loadToolMetadata } from './tool-cache.js';
 
-export async function handleCall(
-  runtime: Awaited<ReturnType<typeof import('../runtime.js')['createRuntime']>>,
-  args: string[]
-): Promise<void> {
-  const parsed = parseCallArguments(args);
-  let ephemeralSpec = parsed.ephemeral ? { ...parsed.ephemeral } : undefined;
+type Runtime = Awaited<ReturnType<typeof import('../runtime.js')['createRuntime']>>;
 
+interface ResolvedCallTarget {
+  server: string;
+  tool: string;
+}
+
+interface PreparedCallRequest extends ResolvedCallTarget {
+  parsed: CallArgsParseResult;
+  hydratedArgs: Record<string, unknown>;
+  timeoutMs: number;
+}
+
+export async function handleCall(runtime: Runtime, args: string[]): Promise<void> {
+  const prepared = await prepareCallRequest(runtime, args);
+  if (!prepared) {
+    return;
+  }
+
+  const invocation = await invokePreparedCall(runtime, prepared);
+  if (!invocation) {
+    return;
+  }
+
+  renderCallResult(invocation.result, prepared.parsed);
+}
+
+async function prepareCallRequest(runtime: Runtime, args: string[]): Promise<PreparedCallRequest | undefined> {
+  const parsed = parseCallArguments(args);
+  await normalizeParsedCallArguments(runtime, parsed);
+  const { server, tool } = await resolveServerAndTool(runtime, parsed);
+
+  if (await maybeDescribeServer(runtime, server, tool, parsed.output)) {
+    return undefined;
+  }
+
+  const timeoutMs = resolveCallTimeout(parsed.timeoutMs);
+  const hydratedArgs = await hydratePositionalArguments(runtime, server, tool, parsed.args, parsed.positionalArgs);
+  return { parsed, server, tool, hydratedArgs, timeoutMs };
+}
+
+async function normalizeParsedCallArguments(runtime: Runtime, parsed: CallArgsParseResult): Promise<void> {
+  let ephemeralSpec = parsed.ephemeral ? { ...parsed.ephemeral } : undefined;
   const nameHints: string[] = [];
   const absorbUrlCandidate = (value: string | undefined): string | undefined => {
     if (!value) {
@@ -70,7 +107,9 @@ export async function handleCall(
   if (!parsed.selector) {
     parsed.selector = prepared.target;
   }
+}
 
+async function resolveServerAndTool(runtime: Runtime, parsed: CallArgsParseResult): Promise<ResolvedCallTarget> {
   const target = resolveCallTarget(parsed, { allowMissingTool: true });
   const server = target.server;
   let tool = target.tool;
@@ -83,30 +122,39 @@ export async function handleCall(
       throw new Error('Missing tool name. Provide it via <server>.<tool> or --tool.');
     }
   }
+  return { server, tool };
+}
 
-  if (await maybeDescribeServer(runtime, server, tool, parsed.output)) {
-    return;
-  }
-
-  const timeoutMs = resolveCallTimeout(parsed.timeoutMs);
-  const hydratedArgs = await hydratePositionalArguments(runtime, server, tool, parsed.args, parsed.positionalArgs);
+async function invokePreparedCall(
+  runtime: Runtime,
+  prepared: PreparedCallRequest
+): Promise<{ result: unknown; resolvedTool: string } | undefined> {
   let invocation: { result: unknown; resolvedTool: string };
   try {
-    invocation = await invokeWithAutoCorrection(runtime, server, tool, hydratedArgs, timeoutMs);
+    invocation = await invokeWithAutoCorrection(
+      runtime,
+      prepared.server,
+      prepared.tool,
+      prepared.hydratedArgs,
+      prepared.timeoutMs
+    );
   } catch (error) {
-    const issue = maybeReportConnectionIssue(server, tool, error);
-    if (parsed.output === 'json' || parsed.output === 'raw') {
-      const payload = buildConnectionIssueEnvelope({ server, tool, error, issue });
+    const issue = maybeReportConnectionIssue(prepared.server, prepared.tool, error);
+    if (prepared.parsed.output === 'json' || prepared.parsed.output === 'raw') {
+      const payload = buildConnectionIssueEnvelope({ server: prepared.server, tool: prepared.tool, error, issue });
       console.log(JSON.stringify(payload, null, 2));
       process.exitCode = 1;
-      return;
+      return undefined;
     }
     throw error;
   }
-  const { result } = invocation;
+  return invocation;
+}
 
+function renderCallResult(result: unknown, parsed: CallArgsParseResult): void {
   const { callResult: wrapped } = wrapCallResult(result);
   printCallOutput(wrapped, result, parsed.output);
+  saveCallImagesIfRequested(wrapped, parsed.saveImagesDir);
   tailLogIfRequested(result, parsed.tailLog);
   dumpActiveHandles('after call (formatted result)');
 }
@@ -130,6 +178,9 @@ export function printCallHelp(): void {
     'Runtime flags:',
     '  --timeout <ms>         Override the call timeout.',
     '  --output text|markdown|json|raw  Control formatting.',
+    '  --save-images <dir>    Save image content blocks to a directory.',
+    '  --raw-strings          Keep numeric-looking argument values as strings.',
+    '  --no-coerce            Keep all key/value and positional arguments as raw strings.',
     '  --tail-log             Stream returned log handles.',
     '',
     'Ad-hoc servers:',

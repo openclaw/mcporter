@@ -10,7 +10,7 @@ export interface ConnectionIssue {
   stdioSignal?: string;
 }
 
-const AUTH_STATUSES = new Set([401, 403, 405]);
+const AUTH_STATUSES = new Set([401, 403]);
 const OFFLINE_PATTERNS = [
   'fetch failed',
   'econnrefused',

@@ -4,6 +4,19 @@
 
 ### CLI
 - Preserve default imports when `mcporter config add` writes a config file, instead of forcing `"imports": []`.
+- OAuth: avoid crashing on headless Linux when `xdg-open` is unavailable; clear stale dynamic-port client registrations; close callback server if stale-client persistence reads fail. (PR #72, thanks @mgonto)
+- Added optional `oauthScope`/`oauth_scope` config override as an escape hatch for providers that require explicit scopes.
+- `createCallResult().json()` now collects all parseable JSON entries from MCP content arrays (single item stays backward-compatible), and raw inspect depth now stays readable without unbounded traversal. (PR #91, thanks @Blankdlh)
+- OAuth wait/redirect now share one deferred to eliminate authorization race windows and preserve stable close-path errors, including wait-before-redirect and repeated-redirect flows. (PR #70, thanks @monotykamary)
+- Added `--raw-strings` (numeric coercion off) and `--no-coerce` (all coercion off) for `mcporter call` argument parsing so IDs/codes can stay literal strings. (PR #59, thanks @nobrainer-tech)
+- Added `CallResult.images()` plus opt-in `mcporter call --save-images <dir>` so image content blocks can be persisted without changing existing stdout output contracts. (PR #61, thanks @daniella-11ways)
+- OAuth transport retries now classify HTTP 405 as HTTP (not auth) and OAuth promotion applies to configured HTTP servers too, so post-auth fallback flows no longer drop credentials on 405-only endpoints. (PR #48, thanks @caseyg)
+- Config loading now parses project and explicit config files as JSONC, so `mcporter.json` / `mcporter.jsonc` can include comments and trailing commas. (PR #42, thanks @aryasaatvik)
+- Added generated `mcporter.schema.json` plus `pnpm generate:schema` for IDE autocomplete/validation, including `$schema` and `oauthScope`/`oauth_scope` coverage. (PR #43, thanks @aryasaatvik)
+
+### Tooling / Dependencies
+- Updated dependencies to latest releases (including MCP SDK, Rolldown RC, Zod, Biome, Oxlint, Vitest, Bun types).
+- Synced `biome.json` schema URL to Biome `2.4.5`.
 
 ## [0.7.3] - 2025-12-29
 

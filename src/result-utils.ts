@@ -1,60 +1,61 @@
 import { analyzeConnectionError, type ConnectionIssue } from './error-classifier.js';
 
+export interface ImageContent {
+  data: string;
+  mimeType: string;
+}
+
 export interface CallResult<T = unknown> {
   raw: T;
   text(joiner?: string): string | null;
   markdown(joiner?: string): string | null;
   json<J = unknown>(): J | null;
+  images(): ImageContent[] | null;
   content(): unknown[] | null;
   structuredContent(): unknown;
 }
 
-// extractContentArray pulls the `content` array from MCP response envelopes.
-function extractContentArray(raw: unknown): unknown[] | null {
-  if (!raw || typeof raw !== 'object') {
-    return null;
-  }
-
-  const obj = raw as Record<string, unknown>;
-
-  // Check for content array at top level
-  if ('content' in obj && Array.isArray(obj.content)) {
-    return obj.content as unknown[];
-  }
-
-  // Check for content array nested inside 'raw' wrapper
-  if ('raw' in obj && obj.raw && typeof obj.raw === 'object') {
-    const nested = obj.raw as Record<string, unknown>;
-    if ('content' in nested && Array.isArray(nested.content)) {
-      return nested.content as unknown[];
-    }
-  }
-
-  return null;
+interface ExtractedEnvelope {
+  content: unknown[] | null;
+  structuredContent: unknown;
 }
 
-// extractStructuredContent returns the structuredContent field when present.
-function extractStructuredContent(raw: unknown): unknown {
+interface CollectedCallContent {
+  content: unknown[] | null;
+  structuredContent: unknown;
+  textEntries: string[];
+  markdownEntries: string[];
+  jsonCandidates: unknown[];
+  images: ImageContent[];
+}
+
+function extractEnvelope(raw: unknown): ExtractedEnvelope {
   if (!raw || typeof raw !== 'object') {
-    return null;
+    return { content: null, structuredContent: null };
   }
 
   const obj = raw as Record<string, unknown>;
+  let content: unknown[] | null = null;
+  let structuredContent: unknown = null;
 
-  // Check for structuredContent at top level
+  if ('content' in obj && Array.isArray(obj.content)) {
+    content = obj.content as unknown[];
+  }
   if ('structuredContent' in obj) {
-    return obj.structuredContent;
+    structuredContent = obj.structuredContent;
   }
 
-  // Check for structuredContent nested inside 'raw' wrapper
   if ('raw' in obj && obj.raw && typeof obj.raw === 'object') {
     const nested = obj.raw as Record<string, unknown>;
-    if ('structuredContent' in nested) {
-      return nested.structuredContent;
+    if (!content && 'content' in nested && Array.isArray(nested.content)) {
+      content = nested.content as unknown[];
+    }
+    if (structuredContent === null && 'structuredContent' in nested) {
+      structuredContent = nested.structuredContent;
     }
   }
 
-  return null;
+  return { content, structuredContent };
 }
 
 // asString converts known content/value shapes into plain strings.
@@ -69,24 +70,92 @@ function asString(value: unknown): string | null {
   return null;
 }
 
-// collectText flattens all text/markdown entries into a joined string.
-function collectText(content: unknown[], joiner: string): string | null {
-  const pieces: string[] = [];
-  for (const entry of content) {
-    if (entry && typeof entry === 'object' && 'type' in entry) {
-      const type = (entry as Record<string, unknown>).type;
-      if (type === 'text' || type === 'markdown') {
-        const text = asString(entry);
-        if (text) {
-          pieces.push(text);
-        }
+function collectCallContent(raw: unknown): CollectedCallContent {
+  const envelope = extractEnvelope(raw);
+  const textEntries: string[] = [];
+  const markdownEntries: string[] = [];
+  const jsonCandidates: unknown[] = [];
+  const images: ImageContent[] = [];
+
+  if (!envelope.content) {
+    return {
+      content: envelope.content,
+      structuredContent: envelope.structuredContent,
+      textEntries,
+      markdownEntries,
+      jsonCandidates,
+      images,
+    };
+  }
+
+  for (const entry of envelope.content) {
+    if (typeof entry === 'string') {
+      const parsed = tryParseJson(entry);
+      if (parsed !== null) {
+        jsonCandidates.push(parsed);
       }
+      continue;
+    }
+    if (!entry || typeof entry !== 'object' || !('type' in entry)) {
+      continue;
+    }
+
+    const typedEntry = entry as Record<string, unknown>;
+    if (typedEntry.type === 'json') {
+      const parsed = tryParseJson(entry);
+      if (parsed !== null) {
+        jsonCandidates.push(parsed);
+      }
+      continue;
+    }
+    if (typedEntry.type === 'image') {
+      const data = typedEntry.data;
+      const mimeType = typedEntry.mimeType ?? 'image/png';
+      if (typeof data === 'string' && typeof mimeType === 'string') {
+        images.push({ data, mimeType });
+      }
+      continue;
+    }
+    if (typedEntry.type !== 'text' && typedEntry.type !== 'markdown') {
+      continue;
+    }
+
+    const text = asString(entry);
+    if (!text) {
+      continue;
+    }
+    textEntries.push(text);
+    if (typedEntry.type === 'markdown') {
+      markdownEntries.push(text);
+    }
+    const parsed = tryParseJson(text);
+    if (parsed !== null) {
+      jsonCandidates.push(parsed);
     }
   }
-  if (pieces.length > 0) {
-    return pieces.join(joiner);
+
+  return {
+    content: envelope.content,
+    structuredContent: envelope.structuredContent,
+    textEntries,
+    markdownEntries,
+    jsonCandidates,
+    images,
+  };
+}
+
+function collectText(entries: string[], joiner: string): string | null {
+  if (entries.length === 0) {
+    return null;
   }
-  return null;
+  return entries.join(joiner);
+}
+
+function collectImages(images: ImageContent[]): ImageContent[] | null {
+  if (images.length === 0) {
+    return null;
+  }
+  return images;
 }
 
 // tryParseJson pulls JSON payloads out of structured responses or raw strings.
@@ -114,6 +183,15 @@ function tryParseJson(value: unknown): unknown {
 
 // createCallResult wraps a tool response with helpers for common content types.
 export function createCallResult<T = unknown>(raw: T): CallResult<T> {
+  let cachedContent: CollectedCallContent | undefined;
+  const getCollectedContent = (): CollectedCallContent => {
+    if (cachedContent) {
+      return cachedContent;
+    }
+    cachedContent = collectCallContent(raw);
+    return cachedContent;
+  };
+
   return {
     raw,
     text(joiner = '\n') {
@@ -124,88 +202,42 @@ export function createCallResult<T = unknown>(raw: T): CallResult<T> {
         return raw;
       }
 
-      const content = extractContentArray(raw);
-      if (content) {
-        const collected = collectText(content, joiner);
-        if (collected) {
-          return collected;
-        }
+      const collected = getCollectedContent();
+      const combinedText = collectText(collected.textEntries, joiner);
+      if (combinedText) {
+        return combinedText;
       }
-
-      const structured = extractStructuredContent(raw);
-      const asStr = asString(structured);
-      return asStr ?? null;
+      return asString(collected.structuredContent);
     },
     markdown(joiner = '\n') {
-      const structured = extractStructuredContent(raw);
+      const collected = getCollectedContent();
+      const structured = collected.structuredContent;
       if (structured && typeof structured === 'object') {
         const markdown = (structured as Record<string, unknown>).markdown;
         if (typeof markdown === 'string') {
           return markdown;
         }
       }
-
-      const content = extractContentArray(raw);
-      if (!content) {
-        return null;
-      }
-      const markdownEntries = content.filter(
-        (entry) => entry && typeof entry === 'object' && (entry as Record<string, unknown>).type === 'markdown'
-      );
-      if (markdownEntries.length === 0) {
-        return null;
-      }
-      return markdownEntries
-        .map((entry) => asString(entry) ?? '')
-        .filter(Boolean)
-        .join(joiner);
+      return collectText(collected.markdownEntries, joiner);
     },
     json<J = unknown>() {
-      const structured = extractStructuredContent(raw);
-      const parsedStructured = tryParseJson(structured);
+      const collected = getCollectedContent();
+      const parsedStructured = tryParseJson(collected.structuredContent);
       if (parsedStructured !== null) {
         return parsedStructured as J;
       }
-
-      const content = extractContentArray(raw);
-      if (content) {
-        for (const entry of content) {
-          if (entry && typeof entry === 'object') {
-            const typedEntry = entry as Record<string, unknown>;
-            if (typedEntry.type === 'json') {
-              const parsed = tryParseJson(entry);
-              if (parsed !== null) {
-                return parsed as J;
-              }
-              continue;
-            }
-            if (typedEntry.type === 'text' || typedEntry.type === 'markdown') {
-              const text = asString(entry);
-              if (typeof text === 'string') {
-                const parsedText = tryParseJson(text);
-                if (parsedText !== null) {
-                  return parsedText as J;
-                }
-              }
-              continue;
-            }
-          }
-          if (typeof entry === 'string') {
-            const parsed = tryParseJson(entry);
-            if (parsed !== null) {
-              return parsed as J;
-            }
-          }
-        }
+      if (collected.jsonCandidates.length === 1) {
+        return collected.jsonCandidates[0] as J;
       }
-
+      if (collected.jsonCandidates.length > 1) {
+        return collected.jsonCandidates as J;
+      }
       if (typeof raw === 'string') {
         const parsedRaw = tryParseJson(raw);
         if (parsedRaw !== null) {
           return parsedRaw as J;
         }
       }
-
       const textContent = this.text?.();
       if (typeof textContent === 'string') {
         const parsedText = tryParseJson(textContent);
@@ -213,7 +245,6 @@ export function createCallResult<T = unknown>(raw: T): CallResult<T> {
           return parsedText as J;
         }
       }
-
       const markdownContent = this.markdown?.();
       if (typeof markdownContent === 'string') {
         const parsedMarkdown = tryParseJson(markdownContent);
@@ -223,11 +254,15 @@ export function createCallResult<T = unknown>(raw: T): CallResult<T> {
       }
       return null;
     },
+    images() {
+      const collected = getCollectedContent();
+      return collectImages(collected.images);
+    },
     content() {
-      return extractContentArray(raw);
+      return getCollectedContent().content;
     },
     structuredContent() {
-      return extractStructuredContent(raw);
+      return getCollectedContent().structuredContent;
     },
   };
 }

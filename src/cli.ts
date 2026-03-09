@@ -1,34 +1,25 @@
 #!/usr/bin/env node
-import { spawn } from 'node:child_process';
-import fsPromises from 'node:fs/promises';
-import type { EphemeralServerSpec } from './cli/adhoc-server.js';
+import { handleAuth, printAuthHelp } from './cli/auth-command.js';
 import { printCallHelp, handleCall as runHandleCall } from './cli/call-command.js';
 import { buildGlobalContext } from './cli/cli-factory.js';
 import { inferCommandRouting } from './cli/command-inference.js';
 import { handleConfigCli } from './cli/config-command.js';
 import { handleDaemonCli } from './cli/daemon-command.js';
 import { handleEmitTs } from './cli/emit-ts-command.js';
-import { extractEphemeralServerFlags } from './cli/ephemeral-flags.js';
-import { prepareEphemeralServerTarget } from './cli/ephemeral-target.js';
 import { CliUsageError } from './cli/errors.js';
 import { handleGenerateCli } from './cli/generate-cli-runner.js';
-import { looksLikeHttpUrl } from './cli/http-utils.js';
+import { consumeHelpTokens, isHelpToken, isVersionToken, printHelp, printVersion } from './cli/help-output.js';
 import { handleInspectCli } from './cli/inspect-cli-command.js';
-import { buildConnectionIssueEnvelope } from './cli/json-output.js';
 import { handleList, printListHelp } from './cli/list-command.js';
-import { logError, logInfo, logWarn } from './cli/logger-context.js';
-import { consumeOutputFormat } from './cli/output-format.js';
+import { logError, logInfo } from './cli/logger-context.js';
 import { DEBUG_HANG, dumpActiveHandles, terminateChildProcesses } from './cli/runtime-debug.js';
-import { boldText, dimText, extraDimText, supportsAnsiColor } from './cli/terminal.js';
 import { resolveConfigPath } from './config.js';
-import type { ServerDefinition } from './config-schema.js';
 import { DaemonClient } from './daemon/client.js';
 import { createKeepAliveRuntime } from './daemon/runtime-wrapper.js';
-import { analyzeConnectionError } from './error-classifier.js';
 import { isKeepAliveServer } from './lifecycle.js';
-import { clearOAuthCaches } from './oauth-persistence.js';
-import { createRuntime, MCPORTER_VERSION } from './runtime.js';
+import { createRuntime } from './runtime.js';
 
+export { handleAuth, printAuthHelp } from './cli/auth-command.js';
 export { parseCallArguments } from './cli/call-arguments.js';
 export { handleCall } from './cli/call-command.js';
 export { handleGenerateCli } from './cli/generate-cli-runner.js';
@@ -220,211 +211,6 @@ async function main(): Promise<void> {
   await runCli(process.argv.slice(2));
 }
 
-// printHelp explains available commands and global flags.
-function printHelp(message?: string): void {
-  if (message) {
-    console.error(message);
-    console.error('');
-  }
-  const colorize = supportsAnsiColor;
-  const sections = buildCommandSections(colorize);
-  const globalFlags = formatGlobalFlags(colorize);
-  const quickStart = formatQuickStart(colorize);
-  const footer = formatHelpFooter(colorize);
-  const title = colorize
-    ? `${boldText('mcporter')} ${dimText('— Model Context Protocol CLI & generator')}`
-    : 'mcporter — Model Context Protocol CLI & generator';
-  const lines = [
-    title,
-    '',
-    'Usage: mcporter <command> [options]',
-    '',
-    ...sections,
-    '',
-    globalFlags,
-    '',
-    quickStart,
-    '',
-    footer,
-  ];
-  console.error(lines.join('\n'));
-}
-
-type HelpEntry = {
-  name: string;
-  summary: string;
-  usage: string;
-};
-
-type HelpSection = {
-  title: string;
-  entries: HelpEntry[];
-};
-
-function buildCommandSections(colorize: boolean): string[] {
-  const sections: HelpSection[] = [
-    {
-      title: 'Core commands',
-      entries: [
-        {
-          name: 'list',
-          summary: 'List configured servers (add --schema for tool docs)',
-          usage: 'mcporter list [name] [--schema] [--json]',
-        },
-        {
-          name: 'call',
-          summary: 'Call a tool by selector (server.tool) or HTTP URL; key=value flags supported',
-          usage: 'mcporter call <selector> [key=value ...]',
-        },
-        {
-          name: 'auth',
-          summary: 'Complete OAuth for a server without listing tools',
-          usage: 'mcporter auth <server | url> [--reset]',
-        },
-      ],
-    },
-    {
-      title: 'Generator & tooling',
-      entries: [
-        {
-          name: 'generate-cli',
-          summary: 'Emit a standalone CLI (supports HTTP, stdio, and inline commands)',
-          usage: 'mcporter generate-cli --server <name> | --command <ref> [options]',
-        },
-        {
-          name: 'inspect-cli',
-          summary: 'Show metadata and regen instructions for a generated CLI',
-          usage: 'mcporter inspect-cli <path> [--json]',
-        },
-        {
-          name: 'emit-ts',
-          summary: 'Generate TypeScript client/types for a server',
-          usage: 'mcporter emit-ts <server> --mode client|types [options]',
-        },
-      ],
-    },
-    {
-      title: 'Configuration',
-      entries: [
-        {
-          name: 'config',
-          summary: 'Inspect or edit config files (list, get, add, remove, import, login, logout)',
-          usage: 'mcporter config <command> [options]',
-        },
-      ],
-    },
-    {
-      title: 'Daemon',
-      entries: [
-        {
-          name: 'daemon',
-          summary: 'Manage the keep-alive daemon (start | status | stop | restart)',
-          usage: 'mcporter daemon <subcommand>',
-        },
-      ],
-    },
-  ];
-  return sections.flatMap((section) => formatCommandSection(section, colorize));
-}
-
-function formatCommandSection(section: HelpSection, colorize: boolean): string[] {
-  const maxNameLength = Math.max(...section.entries.map((entry) => entry.name.length));
-  const header = colorize ? boldText(section.title) : section.title;
-  const lines = [header];
-  section.entries.forEach((entry) => {
-    const paddedName = entry.name.padEnd(maxNameLength);
-    const renderedName = colorize ? boldText(paddedName) : paddedName;
-    const summary = colorize ? dimText(entry.summary) : entry.summary;
-    lines.push(`  ${renderedName}  ${summary}`);
-    lines.push(`    ${extraDimText('usage:')} ${entry.usage}`);
-  });
-  return [...lines, ''];
-}
-
-function formatGlobalFlags(colorize: boolean): string {
-  const title = colorize ? boldText('Global flags') : 'Global flags';
-  const entries = [
-    {
-      flag: '--config <path>',
-      summary: 'Path to mcporter.json (defaults to ./config/mcporter.json)',
-    },
-    {
-      flag: '--root <path>',
-      summary: 'Working directory for stdio servers',
-    },
-    {
-      flag: '--log-level <debug|info|warn|error>',
-      summary: 'Adjust CLI logging (defaults to warn)',
-    },
-    {
-      flag: '--oauth-timeout <ms>',
-      summary: 'Time to wait for browser-based OAuth before giving up (default 60000)',
-    },
-  ];
-  const formatted = entries.map((entry) => `  ${entry.flag.padEnd(34)}${entry.summary}`);
-  return [title, ...formatted].join('\n');
-}
-
-function formatQuickStart(colorize: boolean): string {
-  const title = colorize ? boldText('Quick start') : 'Quick start';
-  const entries = [
-    ['mcporter list', 'show configured servers'],
-    ['mcporter list linear --schema', 'view Linear tool docs'],
-    ['mcporter call linear.list_issues limit:5', 'invoke a tool with key=value arguments'],
-    ['mcporter generate-cli --command https://host/mcp --compile ./my-cli', 'build a standalone CLI/binary'],
-  ];
-  const formatted = entries.map(([cmd, note]) => {
-    const comment = colorize ? dimText(`# ${note}`) : `# ${note}`;
-    return `  ${cmd}\n    ${comment}`;
-  });
-  return [title, ...formatted].join('\n');
-}
-
-function formatHelpFooter(colorize: boolean): string {
-  const pointer = 'Run `mcporter <command> --help` for detailed flags.';
-  const autoLoad =
-    'mcporter auto-loads servers from ./config/mcporter.json and editor imports (Cursor, Claude, Codex, etc.).';
-  if (!colorize) {
-    return `${pointer}\n${autoLoad}`;
-  }
-  return `${dimText(pointer)}\n${extraDimText(autoLoad)}`;
-}
-
-async function printVersion(): Promise<void> {
-  console.log(await resolveCliVersion());
-}
-
-function isHelpToken(token: string): boolean {
-  return token === '--help' || token === '-h' || token === 'help';
-}
-
-function consumeHelpTokens(args: string[]): boolean {
-  let found = false;
-  for (let index = args.length - 1; index >= 0; index -= 1) {
-    const token = args[index];
-    if (token && isHelpToken(token)) {
-      args.splice(index, 1);
-      found = true;
-    }
-  }
-  return found;
-}
-
-function isVersionToken(token: string): boolean {
-  return token === '--version' || token === '-v' || token === '-V';
-}
-
-async function resolveCliVersion(): Promise<string> {
-  try {
-    const packageJsonPath = new URL('../package.json', import.meta.url);
-    const buffer = await fsPromises.readFile(packageJsonPath, 'utf8');
-    const pkg = JSON.parse(buffer) as { version?: string };
-    return pkg.version ?? MCPORTER_VERSION;
-  } catch {
-    return MCPORTER_VERSION;
-  }
-}
-
 if (process.env.MCPORTER_DISABLE_AUTORUN !== '1') {
   main().catch((error) => {
     if (error instanceof CliUsageError) {
@@ -437,81 +223,6 @@ if (process.env.MCPORTER_DISABLE_AUTORUN !== '1') {
     process.exit(1);
   });
 }
-// handleAuth clears cached tokens and executes standalone OAuth flows.
-export async function handleAuth(runtime: Awaited<ReturnType<typeof createRuntime>>, args: string[]): Promise<void> {
-  // Peel off optional flags before we consume positional args.
-  const resetIndex = args.indexOf('--reset');
-  const shouldReset = resetIndex !== -1;
-  if (shouldReset) {
-    args.splice(resetIndex, 1);
-  }
-  const format = consumeOutputFormat(args, {
-    defaultFormat: 'text',
-    allowed: ['text', 'json'],
-    enableRawShortcut: false,
-    jsonShortcutFlag: '--json',
-  }) as 'text' | 'json';
-  const ephemeralSpec: EphemeralServerSpec | undefined = extractEphemeralServerFlags(args);
-  let target = args.shift();
-  const nameHints: string[] = [];
-  if (ephemeralSpec && target && !looksLikeHttpUrl(target)) {
-    nameHints.push(target);
-  }
-
-  const prepared = await prepareEphemeralServerTarget({
-    runtime,
-    target,
-    ephemeral: ephemeralSpec,
-    nameHints,
-    reuseFromSpec: true,
-  });
-  target = prepared.target;
-
-  if (!target) {
-    throw new Error('Usage: mcporter auth <server | url> [--http-url <url> | --stdio <command>]');
-  }
-
-  const definition = runtime.getDefinition(target);
-  if (shouldReset) {
-    await clearOAuthCaches(definition);
-    logInfo(`Cleared cached credentials for '${target}'.`);
-  }
-
-  if (definition.command.kind === 'stdio' && definition.oauthCommand) {
-    logInfo(`Starting auth helper for '${target}' (stdio). Leave this running until the browser flow completes.`);
-    await runStdioAuth(definition);
-    logInfo(`Auth helper for '${target}' finished. You can now call tools.`);
-    return;
-  }
-
-  // Kick off the interactive OAuth flow without blocking list output. We retry once if the
-  // server gets auto-promoted to OAuth mid-flight.
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      logInfo(`Initiating OAuth flow for '${target}'...`);
-      const tools = await runtime.listTools(target, { autoAuthorize: true });
-      logInfo(`Authorization complete. ${tools.length} tool${tools.length === 1 ? '' : 's'} available.`);
-      return;
-    } catch (error) {
-      if (attempt === 0 && shouldRetryAuthError(error)) {
-        logWarn('Server signaled OAuth after the initial attempt. Retrying with browser flow...');
-        continue;
-      }
-      const message = error instanceof Error ? error.message : String(error);
-      if (format === 'json') {
-        const payload = buildConnectionIssueEnvelope({
-          server: target,
-          error,
-          issue: analyzeConnectionError(error),
-        });
-        console.log(JSON.stringify(payload, null, 2));
-        process.exitCode = 1;
-        return;
-      }
-      throw new Error(`Failed to authorize '${target}': ${message}`);
-    }
-  }
-}
 
 async function invokeAuthCommand(runtimeOptions: Parameters<typeof createRuntime>[0], args: string[]): Promise<void> {
   const runtime = await createRuntime(runtimeOptions);
@@ -520,62 +231,4 @@ async function invokeAuthCommand(runtimeOptions: Parameters<typeof createRuntime
   } finally {
     await runtime.close().catch(() => {});
   }
-}
-
-async function runStdioAuth(definition: ServerDefinition): Promise<void> {
-  const authArgs = [...(definition.command.kind === 'stdio' ? (definition.command.args ?? []) : [])];
-  if (definition.oauthCommand) {
-    authArgs.push(...definition.oauthCommand.args);
-  }
-  return new Promise((resolve, reject) => {
-    const child = spawn(definition.command.kind === 'stdio' ? definition.command.command : '', authArgs, {
-      stdio: 'inherit',
-      cwd: definition.command.kind === 'stdio' ? definition.command.cwd : process.cwd(),
-      env: process.env,
-    });
-    child.on('error', reject);
-    child.on('exit', (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`Auth helper exited with code ${code ?? 'null'}`));
-      }
-    });
-  });
-}
-
-function shouldRetryAuthError(error: unknown): boolean {
-  return analyzeConnectionError(error).kind === 'auth';
-}
-
-export function printAuthHelp(): void {
-  const lines = [
-    'Usage: mcporter auth <server | url> [flags]',
-    '',
-    'Purpose:',
-    '  Run the authentication flow for a server without listing tools.',
-    '',
-    'Common flags:',
-    '  --reset                 Clear cached credentials before re-authorizing.',
-    '  --json                  Emit a JSON envelope on failure.',
-    '',
-    'Ad-hoc targets:',
-    '  --http-url <url>        Register an HTTP server for this run.',
-    '  --allow-http            Permit plain http:// URLs with --http-url.',
-    '  --stdio <command>       Run a stdio MCP server (repeat --stdio-arg for args).',
-    '  --stdio-arg <value>     Append args to the stdio command (repeatable).',
-    '  --env KEY=value         Inject env vars for stdio servers (repeatable).',
-    '  --cwd <path>            Working directory for stdio servers.',
-    '  --name <value>          Override the display name for ad-hoc servers.',
-    '  --description <text>    Override the description for ad-hoc servers.',
-    '  --persist <path>        Write the ad-hoc definition to config/mcporter.json.',
-    '  --yes                   Skip confirmation prompts when persisting.',
-    '',
-    'Examples:',
-    '  mcporter auth linear',
-    '  mcporter auth https://mcp.example.com/mcp',
-    '  mcporter auth --stdio "npx -y chrome-devtools-mcp@latest"',
-    '  mcporter auth --http-url http://localhost:3000/mcp --allow-http',
-  ];
-  console.error(lines.join('\n'));
 }

@@ -74,6 +74,40 @@ describe('createCallResult text extraction', () => {
   });
 });
 
+describe('createCallResult image extraction', () => {
+  it('extracts image blocks from content', () => {
+    const response = {
+      content: [
+        { type: 'image', mimeType: 'image/png', data: 'aGVsbG8=' },
+        { type: 'image', mimeType: 'image/jpeg', data: 'd29ybGQ=' },
+      ],
+    };
+    const result = createCallResult(response);
+    expect(result.images()).toEqual([
+      { mimeType: 'image/png', data: 'aGVsbG8=' },
+      { mimeType: 'image/jpeg', data: 'd29ybGQ=' },
+    ]);
+  });
+
+  it('extracts image blocks nested under raw.content', () => {
+    const response = {
+      raw: {
+        content: [{ type: 'image', data: 'aGVsbG8=' }],
+      },
+    };
+    const result = createCallResult(response);
+    expect(result.images()).toEqual([{ mimeType: 'image/png', data: 'aGVsbG8=' }]);
+  });
+
+  it('returns null when no images exist', () => {
+    const response = {
+      content: [{ type: 'text', text: 'no image here' }],
+    };
+    const result = createCallResult(response);
+    expect(result.images()).toBeNull();
+  });
+});
+
 describe('createCallResult markdown extraction', () => {
   it('extracts markdown from content array', () => {
     const response = {
@@ -141,6 +175,33 @@ describe('createCallResult json extraction', () => {
     };
     const result = createCallResult(response);
     expect(result.json()).toEqual({ foo: 'bar' });
+  });
+
+  it('returns all items when content array has multiple json entries', () => {
+    const response = {
+      content: [
+        { type: 'json', json: { id: 1, name: 'first' } },
+        { type: 'json', json: { id: 2, name: 'second' } },
+        { type: 'json', json: { id: 3, name: 'third' } },
+      ],
+    };
+    const result = createCallResult(response);
+    expect(result.json()).toEqual([
+      { id: 1, name: 'first' },
+      { id: 2, name: 'second' },
+      { id: 3, name: 'third' },
+    ]);
+  });
+
+  it('returns all items when content has mixed json and text-parseable-as-json entries', () => {
+    const response = {
+      content: [
+        { type: 'json', json: { source: 'json-type' } },
+        { type: 'text', text: '{"source":"text-type"}' },
+      ],
+    };
+    const result = createCallResult(response);
+    expect(result.json()).toEqual([{ source: 'json-type' }, { source: 'text-type' }]);
   });
 
   it('extracts json from structuredContent nested inside raw wrapper', () => {

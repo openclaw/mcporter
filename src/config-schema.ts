@@ -1,14 +1,8 @@
 import { z } from 'zod';
 
-export const ImportKindSchema = z.enum([
-  'cursor',
-  'claude-code',
-  'claude-desktop',
-  'codex',
-  'windsurf',
-  'opencode',
-  'vscode',
-]);
+export const ImportKindSchema = z
+  .enum(['cursor', 'claude-code', 'claude-desktop', 'codex', 'windsurf', 'opencode', 'vscode'])
+  .describe('Supported editor/client configurations to import MCP servers from');
 
 export type ImportKind = z.infer<typeof ImportKindSchema>;
 
@@ -22,14 +16,21 @@ export const DEFAULT_IMPORTS: ImportKind[] = [
   'vscode',
 ];
 
-const RawLifecycleSchema = z.union([
-  z.literal('keep-alive'),
-  z.literal('ephemeral'),
-  z.object({
-    mode: z.union([z.literal('keep-alive'), z.literal('ephemeral')]),
-    idleTimeoutMs: z.number().int().positive().optional(),
-  }),
-]);
+const RawLifecycleSchema = z
+  .union([
+    z.literal('keep-alive').describe('Keep the server connection alive'),
+    z.literal('ephemeral').describe('Connect only when needed'),
+    z.object({
+      mode: z.union([z.literal('keep-alive'), z.literal('ephemeral')]).describe('Connection lifecycle mode'),
+      idleTimeoutMs: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe('Idle timeout in milliseconds before disconnecting'),
+    }),
+  ])
+  .describe('Server connection lifecycle: keep-alive maintains persistent connections, ephemeral connects on-demand');
 
 export type RawLifecycle = z.infer<typeof RawLifecycleSchema>;
 
@@ -37,53 +38,78 @@ const RawLoggingSchema = z
   .object({
     daemon: z
       .object({
-        enabled: z.boolean().optional(),
+        enabled: z.boolean().optional().describe('Enable daemon logging for this server'),
       })
-      .optional(),
+      .optional()
+      .describe('Daemon-specific logging configuration'),
   })
-  .optional();
+  .optional()
+  .describe('Logging configuration for the server');
 
-export const RawEntrySchema = z.object({
-  description: z.string().optional(),
-  baseUrl: z.string().optional(),
-  base_url: z.string().optional(),
-  url: z.string().optional(),
-  serverUrl: z.string().optional(),
-  server_url: z.string().optional(),
-  command: z.union([z.string(), z.array(z.string())]).optional(),
-  executable: z.string().optional(),
-  args: z.array(z.string()).optional(),
-  headers: z.record(z.string(), z.string()).optional(),
-  env: z.record(z.string(), z.string()).optional(),
-  auth: z.string().optional(),
-  tokenCacheDir: z.string().optional(),
-  token_cache_dir: z.string().optional(),
-  clientName: z.string().optional(),
-  client_name: z.string().optional(),
-  oauthRedirectUrl: z.string().optional(),
-  oauth_redirect_url: z.string().optional(),
-  oauthCommand: z
-    .object({
-      args: z.array(z.string()),
-    })
-    .optional(),
-  oauth_command: z
-    .object({
-      args: z.array(z.string()),
-    })
-    .optional(),
-  bearerToken: z.string().optional(),
-  bearer_token: z.string().optional(),
-  bearerTokenEnv: z.string().optional(),
-  bearer_token_env: z.string().optional(),
-  lifecycle: RawLifecycleSchema.optional(),
-  logging: RawLoggingSchema,
-});
+export const RawEntrySchema = z
+  .object({
+    description: z.string().optional().describe('Human-readable description of the server'),
+    baseUrl: z.string().optional().describe('Base URL for HTTP/SSE transport (camelCase)'),
+    base_url: z.string().optional().describe('Base URL for HTTP/SSE transport (snake_case)'),
+    url: z.string().optional().describe('Server URL for HTTP/SSE transport'),
+    serverUrl: z.string().optional().describe('Server URL for HTTP/SSE transport (camelCase)'),
+    server_url: z.string().optional().describe('Server URL for HTTP/SSE transport (snake_case)'),
+    command: z
+      .union([z.string(), z.array(z.string())])
+      .optional()
+      .describe('Command to spawn for stdio transport (string or array of arguments)'),
+    executable: z.string().optional().describe('Executable path for stdio transport'),
+    args: z.array(z.string()).optional().describe('Arguments to pass to the stdio command'),
+    headers: z
+      .record(z.string(), z.string())
+      .optional()
+      .describe('HTTP headers for requests. Supports $VAR and $env:VAR placeholders'),
+    env: z
+      .record(z.string(), z.string())
+      .optional()
+      .describe('Environment variables for stdio commands. Supports $VAR and fallback syntax'),
+    auth: z.string().optional().describe('Authentication method (e.g., "oauth")'),
+    tokenCacheDir: z.string().optional().describe('Directory for caching OAuth tokens (camelCase)'),
+    token_cache_dir: z.string().optional().describe('Directory for caching OAuth tokens (snake_case)'),
+    clientName: z.string().optional().describe('Client identifier for server telemetry (camelCase)'),
+    client_name: z.string().optional().describe('Client identifier for server telemetry (snake_case)'),
+    oauthRedirectUrl: z.string().optional().describe('Custom OAuth redirect URL (camelCase)'),
+    oauth_redirect_url: z.string().optional().describe('Custom OAuth redirect URL (snake_case)'),
+    oauthScope: z.string().optional().describe('OAuth scope override (camelCase)'),
+    oauth_scope: z.string().optional().describe('OAuth scope override (snake_case)'),
+    oauthCommand: z
+      .object({
+        args: z.array(z.string()).describe('Arguments for the OAuth command'),
+      })
+      .optional()
+      .describe('Custom OAuth command configuration for stdio servers (camelCase)'),
+    oauth_command: z
+      .object({
+        args: z.array(z.string()).describe('Arguments for the OAuth command'),
+      })
+      .optional()
+      .describe('Custom OAuth command configuration for stdio servers (snake_case)'),
+    bearerToken: z.string().optional().describe('Static bearer token for authentication (camelCase)'),
+    bearer_token: z.string().optional().describe('Static bearer token for authentication (snake_case)'),
+    bearerTokenEnv: z.string().optional().describe('Environment variable name containing the bearer token (camelCase)'),
+    bearer_token_env: z
+      .string()
+      .optional()
+      .describe('Environment variable name containing the bearer token (snake_case)'),
+    lifecycle: RawLifecycleSchema.optional(),
+    logging: RawLoggingSchema,
+  })
+  .describe('MCP server definition supporting both HTTP/SSE and stdio transports');
 
-export const RawConfigSchema = z.object({
-  mcpServers: z.record(z.string(), RawEntrySchema),
-  imports: z.array(ImportKindSchema).optional(),
-});
+export const RawConfigSchema = z
+  .object({
+    mcpServers: z.record(z.string(), RawEntrySchema).describe('Map of server names to their configurations'),
+    imports: z
+      .array(ImportKindSchema)
+      .optional()
+      .describe('Editor configurations to import servers from. Omit to use defaults, or set to [] to disable imports'),
+  })
+  .describe('mcporter configuration file schema');
 
 export type RawEntry = z.infer<typeof RawEntrySchema>;
 export type RawConfig = z.infer<typeof RawConfigSchema>;
@@ -133,6 +159,7 @@ export interface ServerDefinition {
   readonly tokenCacheDir?: string;
   readonly clientName?: string;
   readonly oauthRedirectUrl?: string;
+  readonly oauthScope?: string;
   readonly oauthCommand?: {
     readonly args: string[];
   };

@@ -33,22 +33,26 @@ function createDeferred<T>(): Deferred<T> {
 }
 
 // openExternal attempts to launch the system browser cross-platform.
-function openExternal(url: string) {
-  const platform = process.platform;
+function openExternal(url: string, platform: NodeJS.Platform = process.platform, launch: typeof spawn = spawn) {
   const stdio = 'ignore';
   try {
     if (platform === 'darwin') {
-      const child = spawn('open', [url], { stdio, detached: true });
+      const child = launch('open', [url], { stdio, detached: true });
       child.unref();
     } else if (platform === 'win32') {
-      const child = spawn('cmd', ['/c', 'start', '""', url], {
+      const child = launch('cmd', ['/c', 'start', '""', url], {
         stdio,
         detached: true,
       });
       child.unref();
     } else {
-      const child = spawn('xdg-open', [url], { stdio, detached: true });
-      child.unref();
+      try {
+        const child = launch('xdg-open', [url], { stdio, detached: true });
+        child.on('error', () => {}); // swallow ENOENT on headless servers
+        child.unref();
+      } catch {
+        // headless server — no browser available
+      }
     }
   } catch {
     // best-effort: fall back to printing URL
@@ -79,7 +83,12 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
       token_endpoint_auth_method: 'none',
-      scope: 'mcp:tools',
+      // Omit scope so the MCP SDK can derive it from the server's metadata
+      // (resource metadata scopes_supported or auth server scopes_supported).
+      // Hardcoding 'mcp:tools' breaks providers like Granola whose auth server
+      // does not recognise that scope value.
+      // If oauthScope is explicitly configured, prefer that exact value.
+      ...(definition.oauthScope !== undefined ? { scope: definition.oauthScope || undefined } : {}),
     };
   }
 
@@ -120,6 +129,30 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     }
     if (!overrideRedirect || overrideRedirect.pathname === '/' || overrideRedirect.pathname === '') {
       redirectUrl.pathname = callbackPath;
+    }
+
+    // When using a dynamic port, the redirect URI changes every run.  If a
+    // previous client registration is cached with a different redirect URI the
+    // auth server will reject the request with `invalid_redirect_uri`.  Clear
+    // the stale registration so the next flow re-registers with the new URI.
+    // Wrapped in try/catch so persistence errors (malformed JSON, permission
+    // issues) close the already-bound callback server instead of leaking it.
+    if (usesDynamicPort) {
+      try {
+        const cachedClient = await persistence.readClientInfo();
+        const cachedRedirect = firstRedirectUri(cachedClient);
+        if (cachedRedirect && cachedRedirect !== redirectUrl.toString()) {
+          logger.info(
+            `Redirect URI changed (${cachedRedirect} → ${redirectUrl.toString()}); clearing stale client registration.`
+          );
+          await persistence.clear('client');
+        }
+      } catch (error) {
+        await new Promise<void>((resolve) => {
+          server.close(() => resolve());
+        });
+        throw error;
+      }
     }
 
     const provider = new PersistentOAuthClientProvider(definition, persistence, redirectUrl, logger);
@@ -220,8 +253,8 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
 
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {
     this.logger.info(`Authorization required for ${this.definition.name}. Opening browser...`);
-    this.authorizationDeferred = createDeferred<string>();
-    openExternal(authorizationUrl.toString());
+    this.ensureAuthorizationDeferred();
+    __oauthInternals.openExternal(authorizationUrl.toString());
     this.logger.info(`If the browser did not open, visit ${authorizationUrl.toString()} manually.`);
   }
 
@@ -243,11 +276,9 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   }
 
   // waitForAuthorizationCode resolves once the local callback server captures a redirect.
+  // The same deferred is shared with redirectToAuthorization so callback resolution is stable.
   async waitForAuthorizationCode(): Promise<string> {
-    if (!this.authorizationDeferred) {
-      this.authorizationDeferred = createDeferred<string>();
-    }
-    return this.authorizationDeferred.promise;
+    return this.ensureAuthorizationDeferred().promise;
   }
 
   // close stops the temporary callback server created for the OAuth session.
@@ -264,6 +295,13 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       this.server?.close(() => resolve());
     });
     this.server = undefined;
+  }
+
+  private ensureAuthorizationDeferred(): Deferred<string> {
+    if (!this.authorizationDeferred) {
+      this.authorizationDeferred = createDeferred<string>();
+    }
+    return this.authorizationDeferred;
   }
 }
 
@@ -290,3 +328,19 @@ export interface OAuthLogger {
   warn(message: string): void;
   error(message: string, error?: unknown): void;
 }
+
+function firstRedirectUri(client: OAuthClientInformationMixed | undefined): string | undefined {
+  if (!client || typeof client !== 'object') {
+    return undefined;
+  }
+  const redirectUris = (client as Record<string, unknown>).redirect_uris;
+  if (!Array.isArray(redirectUris)) {
+    return undefined;
+  }
+  const [first] = redirectUris;
+  return typeof first === 'string' ? first : undefined;
+}
+
+export const __oauthInternals = {
+  openExternal,
+};

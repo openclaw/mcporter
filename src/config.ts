@@ -1,14 +1,16 @@
-import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
+import {
+  listConfigLayerPaths as discoverConfigLayerPaths,
+  resolveConfigPath as discoverConfigPath,
+} from './config/path-discovery.js';
+import { loadConfigLayers, readConfigFile } from './config/read-config.js';
 import { pathsForImport, readExternalEntries } from './config-imports.js';
 import { normalizeServerEntry } from './config-normalize.js';
 import {
   DEFAULT_IMPORTS,
   type LoadConfigOptions,
   type RawConfig,
-  RawConfigSchema,
   type RawEntry,
   RawEntrySchema,
   type ServerDefinition,
@@ -114,59 +116,7 @@ export async function listConfigLayerPaths(
   options: LoadConfigOptions = {},
   rootDir: string = process.cwd()
 ): Promise<string[]> {
-  const explicitPath = options.configPath ?? process.env.MCPORTER_CONFIG;
-  if (explicitPath) {
-    return [path.resolve(expandHome(explicitPath.trim()))];
-  }
-
-  const paths: string[] = [];
-  const homeCandidates = homeConfigCandidates();
-  const existingHome = homeCandidates.find((candidate) => pathExists(candidate));
-  if (existingHome) {
-    paths.push(existingHome);
-  }
-
-  const projectPath = path.resolve(rootDir, 'config', 'mcporter.json');
-  if (pathExists(projectPath)) {
-    paths.push(projectPath);
-  }
-
-  return paths;
-}
-
-type ConfigLayer = {
-  config: RawConfig;
-  path: string;
-  explicit: boolean;
-};
-
-async function loadConfigLayers(options: LoadConfigOptions, rootDir: string): Promise<ConfigLayer[]> {
-  const explicitPath = options.configPath ?? process.env.MCPORTER_CONFIG;
-  if (explicitPath) {
-    const resolvedPath = path.resolve(expandHome(explicitPath.trim()));
-    const config = await readConfigFile(resolvedPath, true);
-    return [{ config, path: resolvedPath, explicit: true }];
-  }
-
-  const layers: ConfigLayer[] = [];
-
-  const homeCandidates = homeConfigCandidates();
-  const existingHome = homeCandidates.find((candidate) => pathExists(candidate));
-  if (existingHome) {
-    layers.push({ config: await readConfigFile(existingHome, false), path: existingHome, explicit: false });
-  }
-
-  const projectPath = path.resolve(rootDir, 'config', 'mcporter.json');
-  if (pathExists(projectPath)) {
-    layers.push({ config: await readConfigFile(projectPath, false), path: projectPath, explicit: false });
-  }
-
-  if (layers.length === 0) {
-    // Preserve prior behavior: a missing default config returns an empty list and assumes the project path.
-    layers.push({ config: { mcpServers: {} }, path: projectPath, explicit: false });
-  }
-
-  return layers;
+  return await discoverConfigLayerPaths(options, rootDir);
 }
 
 export async function writeRawConfig(targetPath: string, config: RawConfig): Promise<void> {
@@ -182,95 +132,5 @@ export function resolveConfigPath(
   path: string;
   explicit: boolean;
 } {
-  if (configPath) {
-    return { path: path.resolve(configPath), explicit: true };
-  }
-  const envConfig = process.env.MCPORTER_CONFIG;
-  if (envConfig && envConfig.trim().length > 0) {
-    return { path: path.resolve(expandHome(envConfig.trim())), explicit: true };
-  }
-  const projectPath = path.resolve(rootDir, 'config', 'mcporter.json');
-  if (pathExists(projectPath)) {
-    return { path: projectPath, explicit: false };
-  }
-  const homeCandidates = homeConfigCandidates();
-  const existingHome = homeCandidates.find((candidate) => pathExists(candidate));
-  if (existingHome) {
-    return { path: existingHome, explicit: false };
-  }
-  return { path: projectPath, explicit: false };
-}
-
-const warnedConfigPaths = new Set<string>();
-
-async function readConfigFile(configPath: string, explicit: boolean): Promise<RawConfig> {
-  if (!explicit && !(await pathExistsAsync(configPath))) {
-    return { mcpServers: {} };
-  }
-  try {
-    const buffer = await fs.readFile(configPath, 'utf8');
-    return RawConfigSchema.parse(JSON.parse(buffer));
-  } catch (error) {
-    if (!explicit && isMissingConfigError(error)) {
-      return { mcpServers: {} };
-    }
-    if (!explicit && isSyntaxError(error)) {
-      warnConfigFallback(configPath, error);
-      return { mcpServers: {} };
-    }
-    throw error;
-  }
-}
-
-function isErrno(error: unknown, code: string): error is NodeJS.ErrnoException {
-  return Boolean(error && typeof error === 'object' && (error as NodeJS.ErrnoException).code === code);
-}
-
-function isMissingConfigError(error: unknown): boolean {
-  return isErrno(error, 'ENOENT') || includesErrnoMessage(error, 'ENOENT');
-}
-
-function isSyntaxError(error: unknown): error is SyntaxError {
-  return error instanceof SyntaxError;
-}
-
-function pathExists(filePath: string): boolean {
-  try {
-    fsSync.accessSync(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function pathExistsAsync(filePath: string): Promise<boolean> {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function warnConfigFallback(configPath: string, error: unknown): void {
-  if (warnedConfigPaths.has(configPath)) {
-    return;
-  }
-  warnedConfigPaths.add(configPath);
-  const reason = error instanceof Error ? error.message : String(error);
-  console.warn(`[mcporter] Ignoring config at ${configPath}: ${reason}`);
-}
-
-function includesErrnoMessage(error: unknown, code: string): boolean {
-  if (!error || typeof error !== 'object') {
-    return false;
-  }
-  const message = (error as { message?: unknown }).message;
-  return typeof message === 'string' && message.includes(code);
-}
-
-function homeConfigCandidates(): string[] {
-  const homeDir = os.homedir();
-  const base = path.join(homeDir, '.mcporter');
-  return [path.join(base, 'mcporter.json'), path.join(base, 'mcporter.jsonc')];
+  return discoverConfigPath(configPath, rootDir);
 }

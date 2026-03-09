@@ -15,6 +15,7 @@ export function normalizeServerEntry(
   const tokenCacheDir = normalizePath(raw.tokenCacheDir ?? raw.token_cache_dir);
   const clientName = raw.clientName ?? raw.client_name;
   const oauthRedirectUrl = raw.oauthRedirectUrl ?? raw.oauth_redirect_url ?? undefined;
+  const oauthScope = raw.oauthScope ?? raw.oauth_scope ?? undefined;
   const oauthCommandRaw = raw.oauthCommand ?? raw.oauth_command;
   const oauthCommand = oauthCommandRaw ? { args: [...oauthCommandRaw.args] } : undefined;
   const headers = buildHeaders(raw);
@@ -58,6 +59,7 @@ export function normalizeServerEntry(
     tokenCacheDir,
     clientName,
     oauthRedirectUrl,
+    oauthScope,
     oauthCommand: defaultedOauthCommand,
     source,
     sources,

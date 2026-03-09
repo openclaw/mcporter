@@ -1,11 +1,18 @@
-import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import type { ServerDefinition } from '../config.js';
-import { listConfigLayerPaths } from '../config.js';
-import { isKeepAliveServer, keepAliveIdleTimeout } from '../lifecycle.js';
+import { isKeepAliveServer } from '../lifecycle.js';
 import { createRuntime, type Runtime } from '../runtime.js';
+import { collectConfigLayers, statConfigMtime } from './config-layers.js';
+import {
+  createLogContext,
+  disposeLogContext,
+  formatError,
+  type LogContext,
+  logEvent,
+  shouldLogServer,
+} from './log-context.js';
 import type {
   CallToolParams,
   CloseServerParams,
@@ -15,6 +22,13 @@ import type {
   ListToolsParams,
   StatusResult,
 } from './protocol.js';
+import {
+  buildErrorResponse,
+  ensureManaged,
+  evictIdleServers,
+  markActivity,
+  type ServerActivity,
+} from './request-utils.js';
 
 interface DaemonHostOptions {
   readonly socketPath: string;
@@ -27,13 +41,11 @@ interface DaemonHostOptions {
   readonly logAllServers?: boolean;
 }
 
-interface ServerActivity {
-  connected: boolean;
-  lastUsedAt?: number;
-}
-
 export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
-  const configLayers = await collectConfigLayers(options);
+  const configLayers = await collectConfigLayers({
+    configPath: options.configExplicit ? options.configPath : undefined,
+    rootDir: options.rootDir,
+  });
   const runtime = await createRuntime({
     configPath: options.configExplicit ? options.configPath : undefined,
     rootDir: options.rootDir,
@@ -208,29 +220,6 @@ async function cleanupArtifacts(options: DaemonHostOptions): Promise<void> {
   } catch {
     // ignore
   }
-}
-
-async function statConfigMtime(configPath: string): Promise<number | null> {
-  try {
-    const stats = await fs.stat(configPath);
-    return stats.mtimeMs;
-  } catch {
-    return null;
-  }
-}
-
-async function collectConfigLayers(
-  options: DaemonHostOptions
-): Promise<Array<{ path: string; mtimeMs: number | null }>> {
-  const layerPaths = await listConfigLayerPaths(
-    options.configExplicit ? { configPath: options.configPath } : {},
-    options.rootDir ?? process.cwd()
-  );
-  const entries: Array<{ path: string; mtimeMs: number | null }> = [];
-  for (const layerPath of layerPaths) {
-    entries.push({ path: layerPath, mtimeMs: await statConfigMtime(layerPath) });
-  }
-  return entries;
 }
 
 async function handleSocketRequest(
@@ -444,140 +433,6 @@ async function processRequest(
       shouldShutdown: false,
     };
   }
-}
-
-function ensureManaged(server: string, managedServers: Map<string, ServerDefinition>): void {
-  if (!managedServers.has(server)) {
-    throw new Error(`Server '${server}' is not managed by the daemon.`);
-  }
-}
-
-function markActivity(server: string, activity: Map<string, ServerActivity>): void {
-  const entry = activity.get(server);
-  if (entry) {
-    entry.connected = true;
-    entry.lastUsedAt = Date.now();
-  } else {
-    activity.set(server, { connected: true, lastUsedAt: Date.now() });
-  }
-}
-
-async function evictIdleServers(
-  runtime: Runtime,
-  managedServers: Map<string, ServerDefinition>,
-  activity: Map<string, ServerActivity>
-): Promise<void> {
-  const now = Date.now();
-  await Promise.all(
-    Array.from(managedServers.entries()).map(async ([name, definition]) => {
-      const timeout = keepAliveIdleTimeout(definition);
-      if (!timeout) {
-        return;
-      }
-      const entry = activity.get(name);
-      if (!entry?.lastUsedAt) {
-        return;
-      }
-      if (now - entry.lastUsedAt < timeout) {
-        return;
-      }
-      await runtime.close(name).catch(() => {});
-      activity.set(name, { connected: false });
-    })
-  );
-}
-
-function buildErrorResponse(id: string, code: string, error?: unknown): DaemonResponse {
-  let message = code;
-  if (error instanceof Error) {
-    message = error.message;
-  } else if (typeof error === 'string') {
-    message = error;
-  }
-  return {
-    id,
-    ok: false,
-    error: {
-      code,
-      message,
-    },
-  };
-}
-
-interface LogContext {
-  enabled: boolean;
-  logAllServers: boolean;
-  servers: Set<string>;
-  writer?: fsSync.WriteStream;
-}
-
-function createLogContext(options: {
-  enabled: boolean;
-  logAllServers: boolean;
-  servers: Set<string>;
-  logPath?: string;
-}): LogContext {
-  const derivedEnabled = options.enabled || options.logAllServers || options.servers.size > 0;
-  const context: LogContext = {
-    enabled: derivedEnabled,
-    logAllServers: options.logAllServers,
-    servers: options.servers,
-  };
-  if (derivedEnabled && options.logPath) {
-    try {
-      fsSync.mkdirSync(path.dirname(options.logPath), { recursive: true });
-      context.writer = fsSync.createWriteStream(options.logPath, {
-        flags: 'a',
-      });
-    } catch (error) {
-      console.warn(`[daemon] Failed to open log file ${options.logPath}: ${(error as Error).message}`);
-    }
-  }
-  return context;
-}
-
-function logEvent(context: LogContext, message: string): void {
-  if (!context.enabled) {
-    return;
-  }
-  const line = `[daemon] ${new Date().toISOString()} ${message}`;
-  console.log(line);
-  try {
-    context.writer?.write(`${line}\n`);
-  } catch {
-    // ignore file write failures
-  }
-}
-
-async function disposeLogContext(context: LogContext): Promise<void> {
-  const writer = context.writer;
-  if (!writer) {
-    return;
-  }
-  await new Promise<void>((resolve) => {
-    writer.end(() => resolve());
-    writer.on('error', () => resolve());
-  });
-}
-
-function shouldLogServer(context: LogContext, server: string): boolean {
-  if (!context.enabled) {
-    return false;
-  }
-  if (context.logAllServers) {
-    return true;
-  }
-  return context.servers.has(server);
-}
-
-function formatError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  if (typeof error === 'string') {
-    return error;
-  }
-  return 'unknown';
 }
 
 export async function __testProcessRequest(

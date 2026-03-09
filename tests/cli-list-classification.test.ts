@@ -63,7 +63,7 @@ describe('CLI list classification and routing', () => {
     expect(
       logLines.some((line) => line.includes("vercel — Vercel MCP (auth required — run 'mcporter auth vercel'"))
     ).toBe(true);
-    expect(logLines.some((line) => line.includes("github (auth required — run 'mcporter auth github'"))).toBe(true);
+    expect(logLines.some((line) => line.includes('github') && line.includes('HTTP 405'))).toBe(true);
     const nextDevtoolsLineFound = logLines.some(
       (line) => line.startsWith('- next-devtools') && line.includes('offline — unable to reach server')
     );
@@ -75,6 +75,7 @@ describe('CLI list classification and routing', () => {
     const summaryLine = logLines.find((line) => line.startsWith('✔ Listed'));
     expect(summaryLine).toBeDefined();
     expect(summaryLine).toContain('auth required');
+    expect(summaryLine).toContain('http errors');
     expect(summaryLine).toContain('offline');
 
     logSpy.mockRestore();

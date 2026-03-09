@@ -17,6 +17,7 @@ describe('config render helpers', () => {
       tokenCacheDir: '/tmp/cache',
       clientName: 'mcporter',
       oauthRedirectUrl: 'https://example.com/callback',
+      oauthScope: 'openid profile',
       env: { FOO: 'bar' },
     };
 
@@ -30,6 +31,7 @@ describe('config render helpers', () => {
       tokenCacheDir: '/tmp/cache',
       clientName: 'mcporter',
       oauthRedirectUrl: 'https://example.com/callback',
+      oauthScope: 'openid profile',
       env: { FOO: 'bar' },
       source: { kind: 'import', path: '/tmp/source.json' },
     });

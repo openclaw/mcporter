@@ -5,6 +5,7 @@ import type { ServerDefinition } from '../../config.js';
 import { MCPORTER_VERSION } from '../../runtime.js';
 import { buildToolDoc, type ToolOptionDoc } from '../list-detail-helpers.js';
 import { markExecutable } from './fs-helpers.js';
+import { renderEmbeddedHelpSource } from './template-help.js';
 import type { GeneratedOption, ToolMetadata } from './tools.js';
 import { buildEmbeddedSchemaMap } from './tools.js';
 
@@ -158,115 +159,7 @@ const tint = {
 	},
 };
 
-function configureGeneratedCommandHelp(command: Command): void {
-	command.configureHelp({
-		commandUsage(target) {
-			const usage = (target.name() + ' ' + target.usage()).trim() || target.name();
-			return supportsAnsiColor ? tint.bold(usage) : usage;
-		},
-		optionTerm(option) {
-			const term = option.flags ?? '';
-			return supportsAnsiColor ? tint.bold(term) : term;
-		},
-		optionDescription(option) {
-			const description = option.description ?? '';
-			return supportsAnsiColor ? tint.extraDim(description) : description;
-		},
-	});
-}
-
-function configureToolCommandHelps(): void {
-	program.commands.forEach((cmd) => {
-		if (cmd.name() === '__mcporter_inspect') {
-			return;
-		}
-		configureGeneratedCommandHelp(cmd);
-	});
-}
-
-function renderStandaloneHelp(): string {
-	const colorfulTitle = tint.bold(embeddedName) + ' ' + tint.dim('— ' + embeddedDescription);
-	const plainTitle = embeddedName + ' — ' + embeddedDescription;
-	const title = supportsAnsiColor ? colorfulTitle : plainTitle;
-	const lines = [title, '', 'Usage: ' + embeddedName + ' <command> [options]', ''];
-	if (generatorTools) {
-		lines.push(formatEmbeddedTools());
-	}
-	lines.push('', formatGlobalFlags(), '', formatQuickStart());
-	if (generatorInfo) {
-		lines.push('', tint.extraDim(generatorInfo));
-	}
-	return lines.join('\\n');
-}
-
-program.helpInformation = () => renderStandaloneHelp();
-
-function formatEmbeddedTools(): string {
-	const header = supportsAnsiColor ? tint.bold('Embedded tools') : 'Embedded tools';
-	if (!generatorTools.length) {
-		return header;
-	}
-	const lines = [header];
-	generatorTools.forEach((entry) => {
-		const renderedDesc = entry.description
-			? supportsAnsiColor
-				? tint.extraDim(entry.description)
-				: entry.description
-			: undefined;
-		const base = renderedDesc ? entry.name + ' - ' + renderedDesc : entry.name;
-		lines.push('  ' + base);
-		if (entry.flags) {
-			const renderedFlags = supportsAnsiColor ? tint.extraDim(entry.flags) : entry.flags;
-			lines.push('    ' + renderedFlags);
-		}
-		lines.push('');
-	});
-	if (lines[lines.length - 1] === '') {
-		lines.pop();
-	}
-	return lines.join('\\n');
-}
-
-function formatGlobalFlags(): string {
-	const header = supportsAnsiColor ? tint.bold('Global flags') : 'Global flags';
-	const entries = [
-		['-t, --timeout <ms>', 'Call timeout in milliseconds'],
-		['-o, --output <format>', 'text | markdown | json | raw (default text)'],
-	];
-	const formatted = entries.map(([flag, summary]) => '  ' + flag.padEnd(28) + summary);
-	return [header, ...formatted].join('\\n');
-}
-
-function formatQuickStart(): string {
-  const header = supportsAnsiColor ? tint.bold('Quick start') : 'Quick start';
-  const examples = quickStartExamples();
-  if (!examples.length) {
-    return header;
-  }
-  const formatted = examples.map(([cmd, note]) => '  ' + cmd + '\\n    ' + tint.dim('# ' + note));
-  return [header, ...formatted].join('\\n');
-}
-
-function quickStartExamples(): Array<[string, string]> {
-  const examples: Array<[string, string]> = [];
-  const commandMap = new Map<string, string>();
-  program.commands.forEach((cmd) => {
-    const name = cmd.name();
-    if (name !== '__mcporter_inspect') {
-      commandMap.set(name, name);
-    }
-  });
-  const embedded = Array.isArray(generatorTools) ? generatorTools : [];
-  for (const entry of embedded.slice(0, 3)) {
-    const commandName = commandMap.get(entry.name) ?? entry.name;
-    const flags = entry.flags ? ' ' + entry.flags.replace(/<[^>]+>/g, '<value>') : '';
-    examples.push([embeddedName + ' ' + commandName + flags, 'invoke ' + commandName]);
-  }
-  if (!examples.length) {
-    examples.push([embeddedName + ' <tool> --key value', 'invoke a tool with flags']);
-  }
-  return examples;
-}
+${renderEmbeddedHelpSource()}
 
 function printResult(result: unknown, format: string) {
 \tconst wrapped = createCallResult(result);

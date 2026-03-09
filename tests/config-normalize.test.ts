@@ -35,4 +35,37 @@ describe('config normalization', () => {
     expect(headers?.accept?.toLowerCase()).toContain('application/json');
     expect(headers?.accept?.toLowerCase()).toContain('text/event-stream');
   });
+
+  it('normalizes oauthScope from camelCase and snake_case keys', async () => {
+    await fs.mkdir(TEMP_DIR, { recursive: true });
+    const configPath = path.join(TEMP_DIR, 'mcporter-oauth-scope.json');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          mcpServers: {
+            camel: {
+              baseUrl: 'https://example.com/mcp',
+              auth: 'oauth',
+              oauthScope: 'openid profile',
+            },
+            snake: {
+              baseUrl: 'https://example.com/mcp',
+              auth: 'oauth',
+              oauth_scope: 'email',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const servers = await loadServerDefinitions({ configPath });
+    const camel = servers.find((entry) => entry.name === 'camel');
+    const snake = servers.find((entry) => entry.name === 'snake');
+    expect(camel?.oauthScope).toBe('openid profile');
+    expect(snake?.oauthScope).toBe('email');
+  });
 });

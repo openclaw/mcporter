@@ -30,6 +30,9 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
   - `--server`, `--tool` – alternate way to target a tool.
   - `--timeout <ms>` – override call timeout (defaults to `CALL_TIMEOUT_MS`).
   - `--output text|markdown|json|raw` – choose how to render the `CallResult`.
+  - `--save-images <dir>` – persist image content blocks to files under the specified directory.
+  - `--raw-strings` – disable numeric coercion for flag-style and positional values.
+  - `--no-coerce` – disable all flag-style/positional value coercion.
   - `--tail-log` – stream tail output when the tool returns log handles.
 
 ## `mcporter generate-cli`
