@@ -186,8 +186,8 @@ export async function handleList(
       const renderedResults =
         flags.format === 'text'
           ? (Array.from({ length: servers.length }, () => undefined) as Array<
-            ReturnType<typeof renderServerListRow> | undefined
-          >)
+              ReturnType<typeof renderServerListRow> | undefined
+            >)
           : undefined;
       const summaryResults: Array<ListSummaryResult | undefined> = Array.from(
         { length: servers.length },

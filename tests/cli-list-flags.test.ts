@@ -70,8 +70,8 @@ describe('CLI list flag parsing', () => {
         }),
     } as unknown as Awaited<ReturnType<typeof import('../src/runtime.js')['createRuntime']>>;
 
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => { });
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => { });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     await handleList(runtime, ['--timeout', '10', 'slow-server']);
 
