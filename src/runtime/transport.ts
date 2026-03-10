@@ -1,20 +1,52 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { ServerDefinition } from '../config.js';
 import { resolveEnvValue, withEnvOverrides } from '../env.js';
+import { analyzeConnectionError } from '../error-classifier.js';
 import type { Logger } from '../logging.js';
 import { createOAuthSession, type OAuthSession } from '../oauth.js';
 import { readCachedAccessToken } from '../oauth-persistence.js';
 import { materializeHeaders } from '../runtime-header-utils.js';
 import { isUnauthorizedError, maybeEnableOAuth } from '../runtime-oauth-support.js';
 import { closeTransportAndWait } from '../runtime-process-utils.js';
-import { connectWithAuth, OAuthTimeoutError } from './oauth.js';
+import { connectWithAuth, isOAuthFlowError, isPostAuthConnectError, OAuthTimeoutError } from './oauth.js';
 import { resolveCommandArgument, resolveCommandArguments } from './utils.js';
 
 const STDIO_TRACE_ENABLED = process.env.MCPORTER_STDIO_TRACE === '1';
+
+function extractTransportStatusCode(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') {
+    return undefined;
+  }
+  const record = error as Record<string, unknown>;
+  for (const candidate of [record.code, record.status, record.statusCode]) {
+    if (typeof candidate === 'number') {
+      return candidate;
+    }
+    if (typeof candidate === 'string') {
+      const parsed = Number.parseInt(candidate, 10);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+  return undefined;
+}
+
+function isLegacySseTransportMismatch(error: unknown): boolean {
+  if (error instanceof StreamableHTTPError) {
+    return error.code === 404 || error.code === 405;
+  }
+  const directStatusCode = extractTransportStatusCode(error);
+  if (directStatusCode === 404 || directStatusCode === 405) {
+    return true;
+  }
+  const issue = analyzeConnectionError(error);
+  return issue.kind === 'http' && (issue.statusCode === 404 || issue.statusCode === 405);
+}
 
 function attachStdioTraceLogging(_transport: StdioClientTransport, _label?: string): void {
   // STDIO instrumentation is handled via sdk-patches side effects. This helper remains
@@ -133,13 +165,15 @@ export async function createClientContext(
       };
 
       const attemptConnect = async () => {
-        const streamableTransport = new StreamableHTTPClientTransport(command.url, baseOptions);
+        const createStreamableTransport = () => new StreamableHTTPClientTransport(command.url, baseOptions);
+        let streamableTransport = createStreamableTransport();
         try {
-          await connectWithAuth(client, streamableTransport, oauthSession, logger, {
+          streamableTransport = (await connectWithAuth(client, streamableTransport, oauthSession, logger, {
             serverName: activeDefinition.name,
             maxAttempts: options.maxOAuthAttempts,
             oauthTimeoutMs: options.oauthTimeoutMs,
-          });
+            recreateTransport: async () => createStreamableTransport(),
+          })) as StreamableHTTPClientTransport;
           return {
             client,
             transport: streamableTransport,
@@ -155,6 +189,15 @@ export async function createClientContext(
       try {
         return await attemptConnect();
       } catch (primaryError) {
+        if (isPostAuthConnectError(primaryError)) {
+          if (!isLegacySseTransportMismatch(primaryError)) {
+            await oauthSession?.close().catch(() => {});
+            throw primaryError;
+          }
+        } else if (isOAuthFlowError(primaryError) || primaryError instanceof OAuthTimeoutError) {
+          await oauthSession?.close().catch(() => {});
+          throw primaryError;
+        }
         if (isUnauthorizedError(primaryError)) {
           await oauthSession?.close().catch(() => {});
           oauthSession = undefined;
@@ -167,10 +210,6 @@ export async function createClientContext(
             }
           }
         }
-        if (primaryError instanceof OAuthTimeoutError) {
-          await oauthSession?.close().catch(() => {});
-          throw primaryError;
-        }
         if (primaryError instanceof Error) {
           logger.info(`Falling back to SSE transport for '${activeDefinition.name}': ${primaryError.message}`);
         }
@@ -178,12 +217,12 @@ export async function createClientContext(
           ...baseOptions,
         });
         try {
-          await connectWithAuth(client, sseTransport, oauthSession, logger, {
+          const connectedTransport = (await connectWithAuth(client, sseTransport, oauthSession, logger, {
             serverName: activeDefinition.name,
             maxAttempts: options.maxOAuthAttempts,
             oauthTimeoutMs: options.oauthTimeoutMs,
-          });
-          return { client, transport: sseTransport, definition: activeDefinition, oauthSession };
+          })) as SSEClientTransport;
+          return { client, transport: connectedTransport, definition: activeDefinition, oauthSession };
         } catch (sseError) {
           await closeTransportAndWait(logger, sseTransport).catch(() => {});
           await oauthSession?.close().catch(() => {});
