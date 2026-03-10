@@ -96,6 +96,9 @@ export const RawEntrySchema = z
       .string()
       .optional()
       .describe('Environment variable name containing the bearer token (snake_case)'),
+    manual: z.boolean().optional().describe('Use manual auth code OAuth flow (prints auth URL + prompts for code instead of opening a browser)'),
+    manualRedirectUri: z.string().optional().describe('Fixed redirect URI for manual auth code OAuth flows (camelCase)'),
+    manual_redirect_uri: z.string().optional().describe('Fixed redirect URI for manual auth code OAuth flows (snake_case)'),
     lifecycle: RawLifecycleSchema.optional(),
     logging: RawLoggingSchema,
   })
@@ -163,6 +166,8 @@ export interface ServerDefinition {
   readonly oauthCommand?: {
     readonly args: string[];
   };
+  readonly manual?: boolean;
+  readonly manualRedirectUri?: string;
   readonly source?: ServerSource;
   readonly sources?: readonly ServerSource[];
   readonly lifecycle?: ServerLifecycle;

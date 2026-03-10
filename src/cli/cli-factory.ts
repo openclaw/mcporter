@@ -11,10 +11,17 @@ export interface GlobalCliContext {
     rootDir?: string;
     logger: ReturnType<typeof getActiveLogger>;
     oauthTimeoutMs?: number;
+    manual?: boolean;
   };
 }
 
 export function buildGlobalContext(argv: string[]): GlobalCliContext | { exit: true; code: number } {
+  // Strip --manual before extractFlags since it is a boolean flag with no value.
+  const manualIndex = argv.indexOf('--manual');
+  const manual = manualIndex !== -1;
+  if (manual) {
+    argv.splice(manualIndex, 1);
+  }
   const globalFlags = extractFlags(argv, ['--config', '--root', '--log-level', '--oauth-timeout']);
   if (globalFlags['--log-level']) {
     try {
@@ -45,6 +52,7 @@ export function buildGlobalContext(argv: string[]): GlobalCliContext | { exit: t
     rootDir: rootOverride,
     logger: getActiveLogger(),
     oauthTimeoutMs: oauthTimeoutOverride,
+    manual: manual || undefined,
   };
 
   return { globalFlags, oauthTimeoutOverride, runtimeOptions };

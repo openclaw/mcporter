@@ -2,16 +2,18 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { OAuthError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { ServerDefinition } from '../config.js';
 import { resolveEnvValue, withEnvOverrides } from '../env.js';
 import type { Logger } from '../logging.js';
+import { createManualOAuthSession } from '../oauth-manual.js';
 import { createOAuthSession, type OAuthSession } from '../oauth.js';
 import { readCachedAccessToken } from '../oauth-persistence.js';
 import { materializeHeaders } from '../runtime-header-utils.js';
 import { isUnauthorizedError, maybeEnableOAuth } from '../runtime-oauth-support.js';
 import { closeTransportAndWait } from '../runtime-process-utils.js';
-import { connectWithAuth, OAuthTimeoutError } from './oauth.js';
+import { connectWithAuth, MANUAL_OAUTH_TIMEOUT_MS, OAuthTimeoutError } from './oauth.js';
 import { resolveCommandArgument, resolveCommandArguments } from './utils.js';
 
 const STDIO_TRACE_ENABLED = process.env.MCPORTER_STDIO_TRACE === '1';
@@ -31,6 +33,7 @@ export interface ClientContext {
 export interface CreateClientContextOptions {
   readonly maxOAuthAttempts?: number;
   readonly oauthTimeoutMs?: number;
+  readonly manual?: boolean;
   readonly onDefinitionPromoted?: (definition: ServerDefinition) => void;
   readonly allowCachedAuth?: boolean;
 }
@@ -111,8 +114,11 @@ export async function createClientContext(
       }
       let oauthSession: OAuthSession | undefined;
       const shouldEstablishOAuth = activeDefinition.auth === 'oauth' && options.maxOAuthAttempts !== 0;
+      const isManual = options.manual || activeDefinition.manual;
       if (shouldEstablishOAuth) {
-        oauthSession = await createOAuthSession(activeDefinition, logger);
+        oauthSession = isManual
+          ? await createManualOAuthSession(activeDefinition, logger)
+          : await createOAuthSession(activeDefinition, logger);
       }
 
       const resolvedHeaders = materializeHeaders(command.headers, activeDefinition.name);
@@ -130,7 +136,9 @@ export async function createClientContext(
           await connectWithAuth(client, streamableTransport, oauthSession, logger, {
             serverName: activeDefinition.name,
             maxAttempts: options.maxOAuthAttempts,
-            oauthTimeoutMs: options.oauthTimeoutMs,
+            oauthTimeoutMs: isManual
+              ? (options.oauthTimeoutMs ?? MANUAL_OAUTH_TIMEOUT_MS)
+              : options.oauthTimeoutMs,
           });
           return {
             client,
@@ -140,6 +148,22 @@ export async function createClientContext(
           } as ClientContext;
         } catch (error) {
           await closeTransportAndWait(logger, streamableTransport).catch(() => {});
+          // StreamableHTTPClientTransport.start() cannot be called twice on the same instance,
+          // so connectWithAuth's post-finishAuth retry always fails with a non-auth error.
+          // If tokens are now present (auth just completed), reconnect with a fresh transport.
+          if (!isUnauthorizedError(error) && !(error instanceof OAuthTimeoutError) && oauthSession) {
+            const freshTokens = await Promise.resolve(oauthSession.provider.tokens()).catch(() => undefined);
+            if (freshTokens?.access_token) {
+              const freshTransport = new StreamableHTTPClientTransport(command.url, baseOptions);
+              try {
+                await client.connect(freshTransport);
+                return { client, transport: freshTransport, definition: activeDefinition, oauthSession } as ClientContext;
+              } catch (freshError) {
+                await closeTransportAndWait(logger, freshTransport).catch(() => {});
+                throw freshError;
+              }
+            }
+          }
           throw error;
         }
       };
@@ -163,6 +187,14 @@ export async function createClientContext(
           await oauthSession?.close().catch(() => {});
           throw primaryError;
         }
+        // OAuth token exchange errors (e.g. InvalidGrantError) mean the authorization
+        // server rejected the grant — not a transport-level failure. SSE fallback
+        // would reuse the same (already-resolved) auth session and replay the same
+        // bad code, so propagate immediately instead.
+        if (primaryError instanceof OAuthError) {
+          await oauthSession?.close().catch(() => {});
+          throw primaryError;
+        }
         if (primaryError instanceof Error) {
           logger.info(`Falling back to SSE transport for '${activeDefinition.name}': ${primaryError.message}`);
         }
@@ -173,7 +205,9 @@ export async function createClientContext(
           await connectWithAuth(client, sseTransport, oauthSession, logger, {
             serverName: activeDefinition.name,
             maxAttempts: options.maxOAuthAttempts,
-            oauthTimeoutMs: options.oauthTimeoutMs,
+            oauthTimeoutMs: isManual
+              ? (options.oauthTimeoutMs ?? MANUAL_OAUTH_TIMEOUT_MS)
+              : options.oauthTimeoutMs,
           });
           return { client, transport: sseTransport, definition: activeDefinition, oauthSession };
         } catch (sseError) {

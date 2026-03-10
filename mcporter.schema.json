@@ -165,6 +165,18 @@
             "description": "Environment variable name containing the bearer token (snake_case)",
             "type": "string"
           },
+          "manual": {
+            "description": "Use manual auth code OAuth flow (prints auth URL + prompts for code instead of opening a browser)",
+            "type": "boolean"
+          },
+          "manualRedirectUri": {
+            "description": "Fixed redirect URI for manual auth code OAuth flows (camelCase)",
+            "type": "string"
+          },
+          "manual_redirect_uri": {
+            "description": "Fixed redirect URI for manual auth code OAuth flows (snake_case)",
+            "type": "string"
+          },
           "lifecycle": {
             "anyOf": [
               {

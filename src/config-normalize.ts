@@ -42,6 +42,8 @@ export function normalizeServerEntry(
     throw new Error(`Server '${name}' is missing a baseUrl/url or command definition in mcporter.json`);
   }
 
+  const manual = raw.manual;
+  const manualRedirectUri = raw.manualRedirectUri ?? raw.manual_redirect_uri ?? undefined;
   const lifecycle = resolveLifecycle(name, raw.lifecycle, command);
   const logging = normalizeLogging(raw.logging);
 
@@ -61,6 +63,8 @@ export function normalizeServerEntry(
     oauthRedirectUrl,
     oauthScope,
     oauthCommand: defaultedOauthCommand,
+    manual,
+    manualRedirectUri,
     source,
     sources,
     lifecycle,

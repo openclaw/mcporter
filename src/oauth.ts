@@ -311,6 +311,7 @@ export interface OAuthSession {
   };
   waitForAuthorizationCode: () => Promise<string>;
   close: () => Promise<void>;
+  manual?: boolean;
 }
 
 // createOAuthSession spins up a file-backed OAuth provider and callback server for the target definition.

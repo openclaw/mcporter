@@ -156,6 +156,8 @@ Helpful flags:
 - `--all-parameters` -- show every schema field when listing a server (default output shows at least five parameters plus a summary of the rest).
 - `--http-url <https://…>` / `--stdio "command …"` -- describe an ad-hoc MCP server inline. STDIO transports now inherit your current shell environment automatically; add `--env KEY=value` only when you need to inject/override variables alongside `--cwd`, `--name`, or `--persist <config.json>`. These flags now work with `mcporter auth` too, so `mcporter auth https://mcp.example.com/mcp` just works.
 - For OAuth-protected servers such as `vercel`, run `npx mcporter auth vercel` once to complete login.
+- `--manual` (on `mcporter auth` and all commands) -- use manual auth code flow: prints the authorization URL and prompts you to paste the code instead of opening a browser. Useful in SSH/browserless environments. Equivalent to setting `"manual": true` in the server's config entry.
+- `--manual-redirect-uri <uri>` (on `mcporter auth`) -- override the redirect URI used in manual auth code flows (default: `http://localhost:3333/callback`).
 
 > Tip: You can skip the verb entirely—`mcporter firecrawl` automatically runs `mcporter list firecrawl`, and dotted tokens like `mcporter linear.list_issues` dispatch to the call command (typo fixes included).
 
@@ -352,7 +354,7 @@ Config files are parsed as JSONC, so inline `//` and `/* ... */` comments plus t
 Run `mcporter config …` via your package manager (pnpm, npm, npx, etc.) when you want an interactive view of project MCPs:
 
 - `config list` shows **only local entries** by default and, on TTYs, prints a summary of every other config file (Cursor, Claude, Windsurf, VS Code, etc.) with counts and sample names. Add `--source import` to inspect those imported entries directly or `--json` for scripting.
-- `config get/remove/logout` reuse the fuzzy matching logic from `mcporter list`/`call`, so typos like `sshadcn` auto-correct to `shadcn` (with a dimmed notice) and ambiguous names surface “Did you mean …?” hints.
+- `config get/remove/logout` reuse the fuzzy matching logic from `mcporter list`/`call`, so typos like `shadcn` auto-correct to `shadcn` (with a dimmed notice) and ambiguous names surface “Did you mean …?” hints.
 - `config import <kind> --copy` pulls editor-managed entries into `config/mcporter.json`, letting you customize or remove them locally without touching upstream files.
 - Every subcommand honors `--config <path>` / `--root <dir>`, making it easy to juggle multiple project configs or workspace-specific overrides.
 

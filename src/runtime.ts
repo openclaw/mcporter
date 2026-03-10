@@ -32,6 +32,7 @@ export interface RuntimeOptions {
   };
   readonly logger?: RuntimeLogger;
   readonly oauthTimeoutMs?: number;
+  readonly manual?: boolean;
 }
 
 export type RuntimeLogger = Logger;
@@ -109,6 +110,7 @@ class McpRuntime implements Runtime {
   private readonly logger: RuntimeLogger;
   private readonly clientInfo: { name: string; version: string };
   private readonly oauthTimeoutMs?: number;
+  private readonly manual?: boolean;
 
   constructor(servers: ServerDefinition[], options: RuntimeOptions = {}) {
     this.definitions = new Map(servers.map((entry) => [entry.name, entry]));
@@ -118,6 +120,7 @@ class McpRuntime implements Runtime {
       version: CLIENT_VERSION,
     };
     this.oauthTimeoutMs = options.oauthTimeoutMs;
+    this.manual = options.manual;
   }
 
   // listServers returns configured names sorted alphabetically for stable CLI output.
@@ -250,6 +253,7 @@ class McpRuntime implements Runtime {
     const connection = createClientContext(definition, this.logger, this.clientInfo, {
       maxOAuthAttempts: options.maxOAuthAttempts,
       oauthTimeoutMs: this.oauthTimeoutMs ?? OAUTH_CODE_TIMEOUT_MS,
+      manual: this.manual,
       onDefinitionPromoted: (promoted) => this.definitions.set(promoted.name, promoted),
       allowCachedAuth: options.allowCachedAuth,
     });

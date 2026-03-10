@@ -5,6 +5,9 @@ import type { OAuthSession } from '../oauth.js';
 import { isUnauthorizedError } from '../runtime-oauth-support.js';
 
 export const DEFAULT_OAUTH_CODE_TIMEOUT_MS = 60_000;
+// Manual auth code flows require the user to copy and paste a code, so the
+// default timeout is more generous than the browser-based flow.
+export const MANUAL_OAUTH_TIMEOUT_MS = 300_000;
 
 export class OAuthTimeoutError extends Error {
   public readonly timeoutMs: number;
@@ -43,7 +46,9 @@ export async function connectWithAuth(
       if (attempt > maxAttempts) {
         throw error;
       }
-      logger.warn(`OAuth authorization required for '${serverName ?? 'unknown'}'. Waiting for browser approval...`);
+      if (!session.manual) {
+        logger.warn(`OAuth authorization required for '${serverName ?? 'unknown'}'. Waiting for browser approval...`);
+      }
       try {
         const code = await waitForAuthorizationCodeWithTimeout(
           session,

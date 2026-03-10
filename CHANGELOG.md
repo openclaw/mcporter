@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### CLI
+- Added `--manual` flag for browserless OAuth flows: prints the authorization URL and prompts the user to paste the authorization code, instead of opening a browser. Useful in SSH/CI environments. The `"manual": true` config field enables the same flow permanently per server; `"manualRedirectUri"` / `"manual_redirect_uri"` overrides the redirect URI (default: `http://localhost:3333/callback`). Invalid grant errors (bad/expired codes) are surfaced immediately and abort the flow rather than looping.
 - Preserve default imports when `mcporter config add` writes a config file, instead of forcing `"imports": []`.
 - OAuth: avoid crashing on headless Linux when `xdg-open` is unavailable; clear stale dynamic-port client registrations; close callback server if stale-client persistence reads fail. (PR #72, thanks @mgonto)
 - Added optional `oauthScope`/`oauth_scope` config override as an escape hatch for providers that require explicit scopes.

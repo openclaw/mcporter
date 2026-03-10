@@ -25,6 +25,15 @@ export async function handleAuth(runtime: Runtime, args: string[]): Promise<void
     enableRawShortcut: false,
     jsonShortcutFlag: '--json',
   }) as 'text' | 'json';
+  const manualRedirectUriIndex = args.indexOf('--manual-redirect-uri');
+  let manualRedirectUri: string | undefined;
+  if (manualRedirectUriIndex !== -1) {
+    manualRedirectUri = args[manualRedirectUriIndex + 1];
+    if (!manualRedirectUri) {
+      throw new Error("Flag '--manual-redirect-uri' requires a value.");
+    }
+    args.splice(manualRedirectUriIndex, 2);
+  }
   const ephemeralSpec: EphemeralServerSpec | undefined = extractEphemeralServerFlags(args);
   let target = args.shift();
   const nameHints: string[] = [];
@@ -45,7 +54,11 @@ export async function handleAuth(runtime: Runtime, args: string[]): Promise<void
     throw new Error('Usage: mcporter auth <server | url> [--http-url <url> | --stdio <command>]');
   }
 
-  const definition = runtime.getDefinition(target);
+  let definition = runtime.getDefinition(target);
+  if (manualRedirectUri) {
+    definition = { ...definition, manualRedirectUri };
+    runtime.registerDefinition(definition, { overwrite: true });
+  }
   if (shouldReset) {
     await clearOAuthCaches(definition);
     logInfo(`Cleared cached credentials for '${target}'.`);
@@ -120,6 +133,8 @@ export function printAuthHelp(): void {
     '',
     'Common flags:',
     '  --reset                 Clear cached credentials before re-authorizing.',
+    '  --manual                Print the auth URL and prompt for the authorization code instead of opening a browser.',
+    '  --manual-redirect-uri   Override the redirect URI used in manual auth code OAuth flows.',
     '  --json                  Emit a JSON envelope on failure.',
     '',
     'Ad-hoc targets:',
