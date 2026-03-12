@@ -11,7 +11,7 @@ import { readCachedAccessToken } from '../oauth-persistence.js';
 import { materializeHeaders } from '../runtime-header-utils.js';
 import { isUnauthorizedError, maybeEnableOAuth } from '../runtime-oauth-support.js';
 import { closeTransportAndWait } from '../runtime-process-utils.js';
-import { connectWithAuth, OAuthTimeoutError } from './oauth.js';
+import { connectWithAuth, OAuthCompletedError, OAuthTimeoutError } from './oauth.js';
 import { resolveCommandArgument, resolveCommandArguments } from './utils.js';
 
 const STDIO_TRACE_ENABLED = process.env.MCPORTER_STDIO_TRACE === '1';
@@ -147,6 +147,11 @@ export async function createClientContext(
       try {
         return await attemptConnect();
       } catch (primaryError) {
+        if (primaryError instanceof OAuthCompletedError) {
+          // OAuth succeeded but the transport is already started; retry with a fresh transport.
+          logger.info(`OAuth complete for '${activeDefinition.name}'. Reconnecting...`);
+          continue;
+        }
         if (isUnauthorizedError(primaryError)) {
           await oauthSession?.close().catch(() => {});
           oauthSession = undefined;

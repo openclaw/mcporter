@@ -19,6 +19,13 @@ export class OAuthTimeoutError extends Error {
   }
 }
 
+export class OAuthCompletedError extends Error {
+  constructor(serverName: string) {
+    super(`OAuth completed for '${serverName}'; reconnect with a fresh transport.`);
+    this.name = 'OAuthCompletedError';
+  }
+}
+
 export async function connectWithAuth(
   client: Client,
   transport: Transport & {
@@ -53,12 +60,16 @@ export async function connectWithAuth(
         );
         if (typeof transport.finishAuth === 'function') {
           await transport.finishAuth(code);
-          logger.info('Authorization code accepted. Retrying connection...');
+          logger.info('Authorization code accepted. Reconnecting with fresh transport...');
+          throw new OAuthCompletedError(serverName ?? 'unknown');
         } else {
           logger.warn('Transport does not support finishAuth; cannot complete OAuth flow automatically.');
           throw error;
         }
       } catch (authError) {
+        if (authError instanceof OAuthCompletedError) {
+          throw authError;
+        }
         logger.error('OAuth authorization failed while waiting for callback.', authError);
         throw authError;
       }

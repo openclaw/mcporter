@@ -5,7 +5,7 @@ import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it, vi } from 'vitest';
 import type { Logger } from '../src/logging.js';
 import type { OAuthSession } from '../src/oauth.js';
-import { connectWithAuth } from '../src/runtime/oauth.js';
+import { connectWithAuth, OAuthCompletedError } from '../src/runtime/oauth.js';
 
 // Minimal mock transport that records finishAuth calls.
 class MockTransport implements Transport {
@@ -23,12 +23,9 @@ class MockTransport implements Transport {
 }
 
 describe('connectWithAuth', () => {
-  it('waits for authorization code and retries connection', async () => {
-    // First connect throws Unauthorized, second succeeds after finishAuth.
-    const connect = vi
-      .fn()
-      .mockRejectedValueOnce(new UnauthorizedError('auth needed'))
-      .mockResolvedValueOnce(undefined);
+  it('throws OAuthCompletedError after successful finishAuth so caller can reconnect', async () => {
+    // connect throws Unauthorized, finishAuth succeeds, then OAuthCompletedError is thrown.
+    const connect = vi.fn().mockRejectedValueOnce(new UnauthorizedError('auth needed'));
     const client = { connect } as unknown as Client;
 
     let resolveCode: (code: string) => void = () => {};
@@ -63,10 +60,10 @@ describe('connectWithAuth', () => {
     // Simulate browser callback arrival.
     resolveCode('oauth-code-123');
 
-    await promise;
+    await expect(promise).rejects.toThrow(OAuthCompletedError);
 
     expect(waitForAuthorizationCode).toHaveBeenCalledTimes(1);
     expect(transport.calls).toEqual(['oauth-code-123']);
-    expect(connect).toHaveBeenCalledTimes(2);
+    expect(connect).toHaveBeenCalledTimes(1);
   });
 });
