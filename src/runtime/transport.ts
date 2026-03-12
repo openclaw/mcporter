@@ -149,6 +149,8 @@ export async function createClientContext(
       } catch (primaryError) {
         if (primaryError instanceof OAuthCompletedError) {
           // OAuth succeeded but the transport is already started; retry with a fresh transport.
+          // Close the current session's callback server to free the port before the next iteration.
+          await oauthSession?.close().catch(() => {});
           logger.info(`OAuth complete for '${activeDefinition.name}'. Reconnecting...`);
           continue;
         }
