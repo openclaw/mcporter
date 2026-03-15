@@ -8,6 +8,7 @@ import { handleDaemonCli } from './cli/daemon-command.js';
 import { handleEmitTs } from './cli/emit-ts-command.js';
 import { CliUsageError } from './cli/errors.js';
 import { handleGenerateCli } from './cli/generate-cli-runner.js';
+import { handleHeavyCli } from './cli/heavy-command.js';
 import { consumeHelpTokens, isHelpToken, isVersionToken, printHelp, printVersion } from './cli/help-output.js';
 import { handleInspectCli } from './cli/inspect-cli-command.js';
 import { handleList, printListHelp } from './cli/list-command.js';
@@ -23,6 +24,7 @@ export { handleAuth, printAuthHelp } from './cli/auth-command.js';
 export { parseCallArguments } from './cli/call-arguments.js';
 export { handleCall } from './cli/call-command.js';
 export { handleGenerateCli } from './cli/generate-cli-runner.js';
+export { handleHeavyCli } from './cli/heavy-command.js';
 export { handleInspectCli } from './cli/inspect-cli-command.js';
 export { extractListFlags, handleList } from './cli/list-command.js';
 export { resolveCallTimeout } from './cli/timeouts.js';
@@ -97,6 +99,11 @@ export async function runCli(argv: string[]): Promise<void> {
       },
       args
     );
+    return;
+  }
+
+  if (command === 'heavy') {
+    await handleHeavyCli(args, { configPath, rootDir: rootOverride });
     return;
   }
 

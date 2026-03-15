@@ -26,6 +26,8 @@ describe('mcporter help shortcuts (hidden)', () => {
     { args: ['call', 'help'], expectSnippet: 'Usage: mcporter call' },
     { args: ['auth', '--help'], expectSnippet: 'Usage: mcporter auth' },
     { args: ['auth', 'help'], expectSnippet: 'Usage: mcporter auth' },
+    { args: ['heavy', '--help'], expectSnippet: 'Usage: mcporter heavy' },
+    { args: ['heavy', 'help'], expectSnippet: 'Usage: mcporter heavy' },
     { args: ['list', '--help'], expectSnippet: 'Usage: mcporter list' },
     { args: ['list', 'help'], expectSnippet: 'Usage: mcporter list' },
   ];

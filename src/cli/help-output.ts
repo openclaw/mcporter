@@ -92,6 +92,11 @@ function buildCommandSections(colorize: boolean): string[] {
           summary: 'Inspect or edit config files (list, get, add, remove, import, login, logout)',
           usage: 'mcporter config <command> [options]',
         },
+        {
+          name: 'heavy',
+          summary: 'Manage large MCP definitions with on-demand activation',
+          usage: 'mcporter heavy <list|activate|deactivate>',
+        },
       ],
     },
     {
