@@ -217,6 +217,31 @@ describe('mcporter heavy CLI', () => {
     logSpy.mockRestore();
   });
 
+  it('does not list stale markers as active heavy MCPs', async () => {
+    const activePath = path.join(tempDir, 'config', 'heavy', 'active', 'chrome-devtools.json');
+    await fs.mkdir(path.dirname(activePath), { recursive: true });
+    await fs.writeFile(
+      activePath,
+      JSON.stringify({ activated: 'already', serverNames: ['chrome-devtools'] }, null, 2),
+      'utf8'
+    );
+
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((value?: unknown) => {
+      if (typeof value === 'string') {
+        logs.push(value);
+      }
+    });
+
+    await handleHeavyCli(['list'], { configPath, rootDir: tempDir });
+
+    const output = logs.join('\n');
+    expect(output).toContain('  chrome-devtools');
+    expect(output).not.toContain('chrome-devtools [active]');
+
+    logSpy.mockRestore();
+  });
+
   it('does not delete same-name custom configs during deactivate fallback', async () => {
     await fs.writeFile(
       configPath,
@@ -289,7 +314,6 @@ describe('mcporter heavy CLI', () => {
   it('ignores unrelated invalid heavy definitions during deactivate', async () => {
     await handleHeavyCli(['activate', 'chrome-devtools'], { configPath, rootDir: tempDir });
     await fs.writeFile(path.join(availableDir, 'broken.json'), JSON.stringify({ nope: true }, null, 2), 'utf8');
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const logs: string[] = [];
     const logSpy = vi.spyOn(console, 'log').mockImplementation((value?: unknown) => {
       if (typeof value === 'string') {
@@ -302,10 +326,8 @@ describe('mcporter heavy CLI', () => {
     ).resolves.toBeUndefined();
 
     expect(logs).toContain('Deactivated: chrome-devtools');
-    expect(warnSpy).toHaveBeenCalled();
 
     logSpy.mockRestore();
-    warnSpy.mockRestore();
   });
 
   it('rejects unsafe heavy MCP names before any filesystem writes', async () => {
@@ -318,17 +340,63 @@ describe('mcporter heavy CLI', () => {
     await expect(fs.readFile(configPath, 'utf8')).resolves.toBe(originalConfig);
   });
 
-  it('does not clobber heavy definitions when symlink creation races with an existing marker', async () => {
+  it('reactivates when only a stale marker file remains', async () => {
     const activePath = path.join(tempDir, 'config', 'heavy', 'active', 'chrome-devtools.json');
-    const existingMarker = JSON.stringify({ activated: 'already', serverNames: ['chrome-devtools'] }, null, 2);
     await fs.mkdir(path.dirname(activePath), { recursive: true });
-    await fs.writeFile(activePath, existingMarker, 'utf8');
+    await fs.writeFile(
+      activePath,
+      JSON.stringify({ activated: 'already', serverNames: ['stale-server'] }, null, 2),
+      'utf8'
+    );
+
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((value?: unknown) => {
+      if (typeof value === 'string') {
+        logs.push(value);
+      }
+    });
 
     await expect(
       handleHeavyCli(['activate', 'chrome-devtools'], { configPath, rootDir: tempDir })
     ).resolves.toBeUndefined();
 
-    await expect(fs.readFile(activePath, 'utf8')).resolves.toBe(existingMarker);
+    const config = JSON.parse(await fs.readFile(configPath, 'utf8')) as {
+      mcpServers: Record<string, { command: string }>;
+    };
+    expect(config.mcpServers['chrome-devtools']?.command).toBe('npx');
+    const marker = JSON.parse(await fs.readFile(activePath, 'utf8')) as { serverNames: string[] };
+    expect(marker.serverNames).toEqual(['chrome-devtools']);
+    expect(logs).toContain('Activated: chrome-devtools');
+
+    logSpy.mockRestore();
+  });
+
+  it('rejects activation when it would overwrite an existing server config', async () => {
+    await fs.writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          mcpServers: {
+            'chrome-devtools': {
+              command: 'node',
+              args: ['custom-devtools.js'],
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const originalConfig = await fs.readFile(configPath, 'utf8');
+
+    await expect(handleHeavyCli(['activate', 'chrome-devtools'], { configPath, rootDir: tempDir })).rejects.toThrow(
+      /Cannot activate heavy MCP 'chrome-devtools' because these server entries already exist with different settings: 'chrome-devtools'/
+    );
+
+    await expect(fs.readFile(configPath, 'utf8')).resolves.toBe(originalConfig);
+    await expect(fs.access(path.join(tempDir, 'config', 'heavy', 'active', 'chrome-devtools.json'))).rejects.toThrow();
   });
 
   it('deactivates an active heavy MCP even when its definition file becomes malformed', async () => {

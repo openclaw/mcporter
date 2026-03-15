@@ -16,7 +16,12 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { loadRawConfig, writeRawConfig } from '../config.js';
-import { assertValidHeavyMcpName, listHeavyMcpDefinitions, readHeavyMcpDefinition } from '../heavy/definition.js';
+import {
+  assertValidHeavyMcpName,
+  type HeavyMcpDefinition,
+  listHeavyMcpDefinitions,
+  readHeavyMcpDefinition,
+} from '../heavy/definition.js';
 import { type HeavyPaths, resolveHeavyPaths } from '../heavy/paths.js';
 import { logWarn } from './logger-context.js';
 
@@ -129,15 +134,26 @@ async function handleHeavyActivate(args: string[], paths: HeavyPaths, options: H
     throw new Error(`Heavy MCP '${name}' not found in ${paths.availableDir}`);
   }
 
-  // Check if already active
-  const active = await listActiveHeavyMcps(paths, options);
-  if (active.includes(name)) {
+  // Load current config
+  const { config, path: configPath } = await loadRawConfig(options);
+  const serverNames = Object.keys(definition.mcpServers);
+  const activePath = path.join(paths.activeDir, `${name}.json`);
+
+  if (isHeavyMcpDefinitionActiveInConfig(config.mcpServers, definition)) {
+    await fsPromises.mkdir(paths.activeDir, { recursive: true });
+    await writeActiveMarker(activePath, serverNames);
     console.log(`Heavy MCP '${name}' is already active.`);
     return;
   }
 
-  // Load current config
-  const { config, path: configPath } = await loadRawConfig(options);
+  const conflictingServerNames = findConflictingHeavyServerNames(config.mcpServers, definition);
+  if (conflictingServerNames.length > 0) {
+    throw new Error(
+      `Cannot activate heavy MCP '${name}' because these server entries already exist with different settings: ${conflictingServerNames
+        .map((serverName) => `'${serverName}'`)
+        .join(', ')}.`
+    );
+  }
 
   // Merge the heavy MCP servers into main config
   if (!config.mcpServers) {
@@ -150,10 +166,9 @@ async function handleHeavyActivate(args: string[], paths: HeavyPaths, options: H
   // Write back config
   await writeRawConfig(configPath, config);
 
-  // Create active marker (symlink)
+  // Refresh active marker metadata
   await fsPromises.mkdir(paths.activeDir, { recursive: true });
-  const activePath = path.join(paths.activeDir, `${name}.json`);
-  await writeActiveMarker(activePath, Object.keys(definition.mcpServers));
+  await writeActiveMarker(activePath, serverNames);
 
   console.log(`Activated: ${name}`);
 }
@@ -165,18 +180,38 @@ async function handleHeavyDeactivate(args: string[], paths: HeavyPaths, options:
   }
   assertValidHeavyMcpName(name);
 
-  // Check if active
-  const active = await listActiveHeavyMcps(paths, options);
-  if (!active.includes(name)) {
-    console.log(`Heavy MCP '${name}' is not active.`);
-    return;
-  }
-
   // Load current config
   const { config, path: configPath } = await loadRawConfig(options);
+  const activePath = path.join(paths.activeDir, `${name}.json`);
+
+  const marker = await readActiveMarker(activePath);
+  let serverNames: string[];
+  if (marker) {
+    if (!hasAnyConfiguredServers(config.mcpServers, marker.serverNames)) {
+      console.log(`Heavy MCP '${name}' is not active.`);
+      return;
+    }
+    serverNames = marker.serverNames;
+  } else {
+    let definition: HeavyMcpDefinition | null;
+    try {
+      definition = await readHeavyMcpDefinition(paths.availableDir, name);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Cannot deactivate heavy MCP '${name}' because its marker metadata is missing and its definition is invalid: ${message}`
+      );
+    }
+
+    if (!definition || !isHeavyMcpDefinitionActiveInConfig(config.mcpServers, definition)) {
+      console.log(`Heavy MCP '${name}' is not active.`);
+      return;
+    }
+
+    serverNames = Object.keys(definition.mcpServers);
+  }
 
   // Remove the server(s) from config
-  const serverNames = await resolveServerNamesForDeactivation(paths, name);
   for (const serverName of serverNames) {
     delete config.mcpServers?.[serverName];
   }
@@ -185,46 +220,87 @@ async function handleHeavyDeactivate(args: string[], paths: HeavyPaths, options:
   await writeRawConfig(configPath, config);
 
   // Remove active marker
-  const activePath = path.join(paths.activeDir, `${name}.json`);
   await fsPromises.unlink(activePath).catch(() => {});
 
   console.log(`Deactivated: ${name}`);
 }
 
 async function listActiveHeavyMcps(paths: HeavyPaths, options: HeavyCliOptions): Promise<string[]> {
-  const active = new Set(await listHeavyMcpDefinitions(paths.activeDir));
   const { config } = await loadRawConfig(options);
+  const active = new Set<string>();
+  const definitions = new Map<string, HeavyMcpDefinition | null>();
   const available = await listHeavyMcpDefinitions(paths.availableDir);
-  if (available.length === 0) {
-    return [...active];
-  }
-
-  const configuredServers = new Set(Object.keys(config.mcpServers ?? {}));
-  const configuredHeavyMcps = await Promise.all(
+  await Promise.all(
     available.map(async (name) => {
       const definition = await readHeavyDefinitionForActiveDetection(paths.availableDir, name);
-      if (!definition) {
-        return null;
+      definitions.set(name, definition);
+      if (definition && isHeavyMcpDefinitionActiveInConfig(config.mcpServers, definition)) {
+        active.add(name);
       }
-      const serverEntries = Object.entries(definition.mcpServers);
-      return serverEntries.every(([serverName, definitionEntry]) => {
-        if (!configuredServers.has(serverName)) {
-          return false;
-        }
-        return isDeepStrictEqual(config.mcpServers?.[serverName], definitionEntry);
-      })
-        ? name
-        : null;
     })
   );
 
-  for (const name of configuredHeavyMcps) {
-    if (name) {
-      active.add(name);
-    }
-  }
+  const marked = await listHeavyMcpDefinitions(paths.activeDir);
+  await Promise.all(
+    marked.map(async (name) => {
+      let definition: HeavyMcpDefinition | null;
+      if (definitions.has(name)) {
+        definition = definitions.get(name) ?? null;
+      } else {
+        definition = await readHeavyDefinitionForActiveDetection(paths.availableDir, name);
+        definitions.set(name, definition);
+      }
+
+      if (definition) {
+        if (isHeavyMcpDefinitionActiveInConfig(config.mcpServers, definition)) {
+          active.add(name);
+        }
+        return;
+      }
+
+      const marker = await readActiveMarker(path.join(paths.activeDir, `${name}.json`));
+      if (marker && hasAllConfiguredServers(config.mcpServers, marker.serverNames)) {
+        active.add(name);
+      }
+    })
+  );
 
   return [...active];
+}
+
+function isHeavyMcpDefinitionActiveInConfig(
+  configuredServers: Record<string, unknown> | undefined,
+  definition: HeavyMcpDefinition
+): boolean {
+  return Object.entries(definition.mcpServers).every(([serverName, definitionEntry]) =>
+    isDeepStrictEqual(configuredServers?.[serverName], definitionEntry)
+  );
+}
+
+function findConflictingHeavyServerNames(
+  configuredServers: Record<string, unknown> | undefined,
+  definition: HeavyMcpDefinition
+): string[] {
+  return Object.entries(definition.mcpServers)
+    .filter(([serverName, definitionEntry]) => {
+      const configuredEntry = configuredServers?.[serverName];
+      return configuredEntry !== undefined && !isDeepStrictEqual(configuredEntry, definitionEntry);
+    })
+    .map(([serverName]) => serverName);
+}
+
+function hasAllConfiguredServers(
+  configuredServers: Record<string, unknown> | undefined,
+  serverNames: string[]
+): boolean {
+  return serverNames.every((serverName) => configuredServers?.[serverName] !== undefined);
+}
+
+function hasAnyConfiguredServers(
+  configuredServers: Record<string, unknown> | undefined,
+  serverNames: string[]
+): boolean {
+  return serverNames.some((serverName) => configuredServers?.[serverName] !== undefined);
 }
 
 async function readHeavyDefinitionForActiveDetection(
@@ -238,30 +314,6 @@ async function readHeavyDefinitionForActiveDetection(
     logWarn(`Skipping invalid heavy MCP definition '${name}': ${message}`);
     return null;
   }
-}
-
-async function resolveServerNamesForDeactivation(paths: HeavyPaths, name: string): Promise<string[]> {
-  const activePath = path.join(paths.activeDir, `${name}.json`);
-  const marker = await readActiveMarker(activePath);
-  if (marker) {
-    return marker.serverNames;
-  }
-
-  try {
-    const definition = await readHeavyMcpDefinition(paths.availableDir, name);
-    if (definition) {
-      return Object.keys(definition.mcpServers);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `Cannot deactivate heavy MCP '${name}' because its marker metadata is missing and its definition is invalid: ${message}`
-    );
-  }
-
-  throw new Error(
-    `Cannot deactivate heavy MCP '${name}' because its marker metadata is missing and its definition file is unavailable.`
-  );
 }
 
 async function readActiveMarker(activePath: string): Promise<ActiveHeavyMcpMarker | null> {
@@ -287,16 +339,10 @@ async function writeActiveMarker(activePath: string, serverNames: string[]): Pro
     serverNames,
   };
 
-  try {
-    await fsPromises.writeFile(activePath, `${JSON.stringify(marker, null, 2)}\n`, {
-      encoding: 'utf8',
-      flag: 'wx',
-    });
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'EEXIST') {
-      return;
+  await fsPromises.unlink(activePath).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error;
     }
-    throw error;
-  }
+  });
+  await fsPromises.writeFile(activePath, `${JSON.stringify(marker, null, 2)}\n`, 'utf8');
 }

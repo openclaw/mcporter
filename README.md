@@ -195,7 +195,7 @@ npx mcporter heavy activate chrome-devtools
 npx mcporter heavy deactivate chrome-devtools
 ```
 
-Heavy definitions live next to your resolved `mcporter.json` under `heavy/available/`, and activation merges the selected definition into the main config while tracking its status under `heavy/active/`.
+Heavy definitions live next to your resolved `mcporter.json` under `heavy/available/`, and activation merges the selected definition into the main config while tracking its status under `heavy/active/`. If a heavy definition would overwrite an existing `mcpServers` entry with different settings, activation aborts instead of clobbering your config.
 
 
 ## Friendlier Tool Calls
