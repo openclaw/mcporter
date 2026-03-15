@@ -17,6 +17,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { loadRawConfig, writeRawConfig } from '../config.js';
 import { assertValidHeavyMcpName, listHeavyMcpDefinitions, readHeavyMcpDefinition } from '../heavy/definition.js';
 import { type HeavyPaths, resolveHeavyPaths } from '../heavy/paths.js';
+import { logWarn } from './logger-context.js';
 
 interface HeavyCliOptions {
   configPath?: string;
@@ -145,12 +146,7 @@ async function handleHeavyActivate(args: string[], paths: HeavyPaths, options: H
   await fsPromises.mkdir(paths.activeDir, { recursive: true });
   const activePath = path.join(paths.activeDir, `${name}.json`);
   const availablePath = path.join(paths.availableDir, `${name}.json`);
-  try {
-    await fsPromises.symlink(availablePath, activePath);
-  } catch {
-    // Fallback to creating a marker file if symlink fails (e.g., on Windows)
-    await fsPromises.writeFile(activePath, JSON.stringify({ activated: new Date().toISOString() }, null, 2));
-  }
+  await writeActiveMarker(activePath, availablePath);
 
   console.log(`Activated: ${name}`);
 }
@@ -204,7 +200,7 @@ async function listActiveHeavyMcps(paths: HeavyPaths, options: HeavyCliOptions):
   const configuredServers = new Set(Object.keys(config.mcpServers ?? {}));
   const configuredHeavyMcps = await Promise.all(
     available.map(async (name) => {
-      const definition = await readHeavyMcpDefinition(paths.availableDir, name);
+      const definition = await readHeavyDefinitionForActiveDetection(paths.availableDir, name);
       if (!definition) {
         return null;
       }
@@ -227,4 +223,37 @@ async function listActiveHeavyMcps(paths: HeavyPaths, options: HeavyCliOptions):
   }
 
   return [...active];
+}
+
+async function readHeavyDefinitionForActiveDetection(
+  availableDir: string,
+  name: string
+): Promise<Awaited<ReturnType<typeof readHeavyMcpDefinition>>> {
+  try {
+    return await readHeavyMcpDefinition(availableDir, name);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logWarn(`Skipping invalid heavy MCP definition '${name}': ${message}`);
+    return null;
+  }
+}
+
+async function writeActiveMarker(activePath: string, availablePath: string): Promise<void> {
+  try {
+    await fsPromises.symlink(availablePath, activePath);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'EEXIST') {
+      return;
+    }
+    if (!canFallbackToMarkerFile(code)) {
+      throw error;
+    }
+    // Fallback to a regular marker file on platforms where symlinks are restricted.
+    await fsPromises.writeFile(activePath, JSON.stringify({ activated: new Date().toISOString() }, null, 2), 'utf8');
+  }
+}
+
+function canFallbackToMarkerFile(code: string | undefined): boolean {
+  return code === 'EPERM' || code === 'EACCES' || code === 'ENOTSUP' || code === 'EINVAL' || code === 'UNKNOWN';
 }

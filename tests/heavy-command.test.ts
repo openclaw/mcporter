@@ -263,6 +263,50 @@ describe('mcporter heavy CLI', () => {
     );
   });
 
+  it('ignores unrelated invalid heavy definitions during activation and listing', async () => {
+    await fs.writeFile(path.join(availableDir, 'broken.json'), JSON.stringify({ nope: true }, null, 2), 'utf8');
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((value?: unknown) => {
+      if (typeof value === 'string') {
+        logs.push(value);
+      }
+    });
+
+    await expect(
+      handleHeavyCli(['activate', 'chrome-devtools'], { configPath, rootDir: tempDir })
+    ).resolves.toBeUndefined();
+    await expect(handleHeavyCli(['list'], { configPath, rootDir: tempDir })).resolves.toBeUndefined();
+
+    expect(logs.join('\n')).toContain('chrome-devtools [active]');
+    expect(warnSpy).toHaveBeenCalled();
+
+    logSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it('ignores unrelated invalid heavy definitions during deactivate', async () => {
+    await handleHeavyCli(['activate', 'chrome-devtools'], { configPath, rootDir: tempDir });
+    await fs.writeFile(path.join(availableDir, 'broken.json'), JSON.stringify({ nope: true }, null, 2), 'utf8');
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((value?: unknown) => {
+      if (typeof value === 'string') {
+        logs.push(value);
+      }
+    });
+
+    await expect(
+      handleHeavyCli(['deactivate', 'chrome-devtools'], { configPath, rootDir: tempDir })
+    ).resolves.toBeUndefined();
+
+    expect(logs).toContain('Deactivated: chrome-devtools');
+    expect(warnSpy).toHaveBeenCalled();
+
+    logSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
   it('rejects unsafe heavy MCP names before any filesystem writes', async () => {
     const originalConfig = await fs.readFile(configPath, 'utf8');
 
@@ -271,6 +315,31 @@ describe('mcporter heavy CLI', () => {
     );
 
     await expect(fs.readFile(configPath, 'utf8')).resolves.toBe(originalConfig);
+  });
+
+  it('does not clobber heavy definitions when symlink creation races with an existing marker', async () => {
+    const activePath = path.join(tempDir, 'config', 'heavy', 'active', 'chrome-devtools.json');
+    const availablePath = path.join(availableDir, 'chrome-devtools.json');
+    const originalDefinition = await fs.readFile(availablePath, 'utf8');
+    const originalSymlink = fs.symlink.bind(fs);
+    const symlinkSpy = vi.spyOn(fs, 'symlink').mockImplementation(async (target, destination, type) => {
+      const destinationPath = destination.toString();
+      await fs.mkdir(path.dirname(destinationPath), { recursive: true });
+      await originalSymlink(target, destinationPath, type);
+      const error = new Error('marker already exists') as NodeJS.ErrnoException;
+      error.code = 'EEXIST';
+      throw error;
+    });
+
+    await expect(
+      handleHeavyCli(['activate', 'chrome-devtools'], { configPath, rootDir: tempDir })
+    ).resolves.toBeUndefined();
+
+    await expect(fs.readFile(availablePath, 'utf8')).resolves.toBe(originalDefinition);
+    const stat = await fs.lstat(activePath);
+    expect(stat.isSymbolicLink()).toBe(true);
+
+    symlinkSpy.mockRestore();
   });
 
   async function writeHeavyDefinition(name: 'chrome-devtools' | 'playwright'): Promise<void> {
