@@ -191,15 +191,11 @@ async function handleHeavyDeactivate(args: string[], paths: HeavyPaths, options:
 }
 
 async function listActiveHeavyMcps(paths: HeavyPaths, options: HeavyCliOptions): Promise<string[]> {
-  const active = await listHeavyMcpDefinitions(paths.activeDir);
-  if (active.length > 0) {
-    return active;
-  }
-
+  const active = new Set(await listHeavyMcpDefinitions(paths.activeDir));
   const { config } = await loadRawConfig(options);
   const available = await listHeavyMcpDefinitions(paths.availableDir);
   if (available.length === 0) {
-    return [];
+    return [...active];
   }
 
   const configuredServers = new Set(Object.keys(config.mcpServers ?? {}));
@@ -214,5 +210,11 @@ async function listActiveHeavyMcps(paths: HeavyPaths, options: HeavyCliOptions):
     })
   );
 
-  return configuredHeavyMcps.filter((name): name is string => name !== null);
+  for (const name of configuredHeavyMcps) {
+    if (name) {
+      active.add(name);
+    }
+  }
+
+  return [...active];
 }

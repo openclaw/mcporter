@@ -17,11 +17,17 @@
 
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
+import { z } from 'zod';
 import type { RawEntry } from '../config-schema.js';
+import { RawEntrySchema } from '../config-schema.js';
 
 export interface HeavyMcpDefinition {
   mcpServers: Record<string, RawEntry>;
 }
+
+const HeavyMcpDefinitionSchema = z.object({
+  mcpServers: z.record(z.string(), RawEntrySchema),
+});
 
 /**
  * Read a heavy MCP definition file.
@@ -36,7 +42,14 @@ export async function readHeavyMcpDefinition(availableDir: string, name: string)
   try {
     const content = await fsPromises.readFile(definitionPath, 'utf8');
     const parsed = JSON.parse(content);
-    return parsed as HeavyMcpDefinition;
+    const validation = HeavyMcpDefinitionSchema.safeParse(parsed);
+    if (!validation.success) {
+      const firstIssue = validation.error.issues[0];
+      const issuePath = firstIssue?.path.length ? ` at ${firstIssue.path.join('.')}` : '';
+      const issueMessage = firstIssue?.message ?? 'expected an object with mcpServers';
+      throw new Error(`Invalid heavy MCP definition '${name}' in ${definitionPath}${issuePath}: ${issueMessage}`);
+    }
+    return validation.data;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return null;
