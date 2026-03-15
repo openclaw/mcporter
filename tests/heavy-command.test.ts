@@ -413,6 +413,36 @@ describe('mcporter heavy CLI', () => {
     logSpy.mockRestore();
   });
 
+  it('treats a marker-backed heavy MCP as already active when the current definition shrinks', async () => {
+    await writeHeavyDefinition('browser-suite', ['playwright', 'chrome-devtools']);
+    await handleHeavyCli(['activate', 'browser-suite'], { configPath, rootDir: tempDir });
+    await writeHeavyDefinition('browser-suite', ['playwright']);
+
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((value?: unknown) => {
+      if (typeof value === 'string') {
+        logs.push(value);
+      }
+    });
+
+    await expect(
+      handleHeavyCli(['activate', 'browser-suite'], { configPath, rootDir: tempDir })
+    ).resolves.toBeUndefined();
+
+    const config = JSON.parse(await fs.readFile(configPath, 'utf8')) as {
+      mcpServers: Record<string, { command: string }>;
+    };
+    expect(config.mcpServers.playwright?.command).toBe('npx');
+    expect(config.mcpServers['chrome-devtools']?.command).toBe('npx');
+    const marker = JSON.parse(
+      await fs.readFile(path.join(tempDir, 'config', 'heavy', 'active', 'browser-suite.json'), 'utf8')
+    ) as { serverNames: string[] };
+    expect(marker.serverNames).toEqual(['playwright', 'chrome-devtools']);
+    expect(logs).toContain("Heavy MCP 'browser-suite' is already active.");
+
+    logSpy.mockRestore();
+  });
+
   it('rejects activation when it would overwrite an existing server config', async () => {
     await fs.writeFile(
       configPath,
@@ -561,6 +591,33 @@ describe('mcporter heavy CLI', () => {
       fs.readFile(path.join(tempDir, 'config', 'heavy', 'active', 'chrome-devtools.json'), 'utf8')
     ).resolves.toContain('chrome-devtools');
     expect(logs).toContain("Heavy MCP 'chrome-devtools' is not active.");
+
+    logSpy.mockRestore();
+  });
+
+  it('deactivates all originally activated servers when the current definition shrinks', async () => {
+    await writeHeavyDefinition('browser-suite', ['playwright', 'chrome-devtools']);
+    await handleHeavyCli(['activate', 'browser-suite'], { configPath, rootDir: tempDir });
+    await writeHeavyDefinition('browser-suite', ['playwright']);
+
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((value?: unknown) => {
+      if (typeof value === 'string') {
+        logs.push(value);
+      }
+    });
+
+    await expect(
+      handleHeavyCli(['deactivate', 'browser-suite'], { configPath, rootDir: tempDir })
+    ).resolves.toBeUndefined();
+
+    const config = JSON.parse(await fs.readFile(configPath, 'utf8')) as {
+      mcpServers: Record<string, unknown>;
+    };
+    expect(config.mcpServers.playwright).toBeUndefined();
+    expect(config.mcpServers['chrome-devtools']).toBeUndefined();
+    await expect(fs.access(path.join(tempDir, 'config', 'heavy', 'active', 'browser-suite.json'))).rejects.toThrow();
+    expect(logs).toContain('Deactivated: browser-suite');
 
     logSpy.mockRestore();
   });
