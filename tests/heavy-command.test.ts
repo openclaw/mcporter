@@ -399,6 +399,51 @@ describe('mcporter heavy CLI', () => {
     await expect(fs.access(path.join(tempDir, 'config', 'heavy', 'active', 'chrome-devtools.json'))).rejects.toThrow();
   });
 
+  it('does not deactivate drifted marker-backed configs when the definition still exists', async () => {
+    await handleHeavyCli(['activate', 'playwright'], { configPath, rootDir: tempDir });
+    await fs.writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          mcpServers: {
+            playwright: {
+              command: 'node',
+              args: ['custom-playwright.js'],
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((value?: unknown) => {
+      if (typeof value === 'string') {
+        logs.push(value);
+      }
+    });
+
+    await expect(
+      handleHeavyCli(['deactivate', 'playwright'], { configPath, rootDir: tempDir })
+    ).resolves.toBeUndefined();
+
+    const config = JSON.parse(await fs.readFile(configPath, 'utf8')) as {
+      mcpServers: Record<string, { command: string; args: string[] }>;
+    };
+    expect(config.mcpServers.playwright).toEqual({
+      command: 'node',
+      args: ['custom-playwright.js'],
+    });
+    await expect(
+      fs.readFile(path.join(tempDir, 'config', 'heavy', 'active', 'playwright.json'), 'utf8')
+    ).resolves.toContain('playwright');
+    expect(logs).toContain("Heavy MCP 'playwright' is not active.");
+
+    logSpy.mockRestore();
+  });
+
   it('deactivates an active heavy MCP even when its definition file becomes malformed', async () => {
     await handleHeavyCli(['activate', 'chrome-devtools'], { configPath, rootDir: tempDir });
     await fs.writeFile(

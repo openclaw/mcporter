@@ -187,11 +187,28 @@ async function handleHeavyDeactivate(args: string[], paths: HeavyPaths, options:
   const marker = await readActiveMarker(activePath);
   let serverNames: string[];
   if (marker) {
-    if (!hasAnyConfiguredServers(config.mcpServers, marker.serverNames)) {
-      console.log(`Heavy MCP '${name}' is not active.`);
-      return;
+    try {
+      const definition = await readHeavyMcpDefinition(paths.availableDir, name);
+      if (definition) {
+        if (!isHeavyMcpDefinitionActiveInConfig(config.mcpServers, definition)) {
+          console.log(`Heavy MCP '${name}' is not active.`);
+          return;
+        }
+        serverNames = Object.keys(definition.mcpServers);
+      } else {
+        if (!hasAllConfiguredServers(config.mcpServers, marker.serverNames)) {
+          console.log(`Heavy MCP '${name}' is not active.`);
+          return;
+        }
+        serverNames = marker.serverNames;
+      }
+    } catch {
+      if (!hasAllConfiguredServers(config.mcpServers, marker.serverNames)) {
+        console.log(`Heavy MCP '${name}' is not active.`);
+        return;
+      }
+      serverNames = marker.serverNames;
     }
-    serverNames = marker.serverNames;
   } else {
     let definition: HeavyMcpDefinition | null;
     try {
@@ -294,13 +311,6 @@ function hasAllConfiguredServers(
   serverNames: string[]
 ): boolean {
   return serverNames.every((serverName) => configuredServers?.[serverName] !== undefined);
-}
-
-function hasAnyConfiguredServers(
-  configuredServers: Record<string, unknown> | undefined,
-  serverNames: string[]
-): boolean {
-  return serverNames.some((serverName) => configuredServers?.[serverName] !== undefined);
 }
 
 async function readHeavyDefinitionForActiveDetection(
