@@ -13,8 +13,9 @@
 
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { loadRawConfig, writeRawConfig } from '../config.js';
-import { listHeavyMcpDefinitions, readHeavyMcpDefinition } from '../heavy/definition.js';
+import { assertValidHeavyMcpName, listHeavyMcpDefinitions, readHeavyMcpDefinition } from '../heavy/definition.js';
 import { type HeavyPaths, resolveHeavyPaths } from '../heavy/paths.js';
 
 interface HeavyCliOptions {
@@ -111,6 +112,7 @@ async function handleHeavyActivate(args: string[], paths: HeavyPaths, options: H
   if (!name) {
     throw new Error('Usage: mcporter heavy activate <name>');
   }
+  assertValidHeavyMcpName(name);
 
   // Check if the heavy MCP definition exists
   const definition = await readHeavyMcpDefinition(paths.availableDir, name);
@@ -158,6 +160,7 @@ async function handleHeavyDeactivate(args: string[], paths: HeavyPaths, options:
   if (!name) {
     throw new Error('Usage: mcporter heavy deactivate <name>');
   }
+  assertValidHeavyMcpName(name);
 
   // Check if active
   const active = await listActiveHeavyMcps(paths, options);
@@ -205,8 +208,15 @@ async function listActiveHeavyMcps(paths: HeavyPaths, options: HeavyCliOptions):
       if (!definition) {
         return null;
       }
-      const serverNames = Object.keys(definition.mcpServers);
-      return serverNames.every((serverName) => configuredServers.has(serverName)) ? name : null;
+      const serverEntries = Object.entries(definition.mcpServers);
+      return serverEntries.every(([serverName, definitionEntry]) => {
+        if (!configuredServers.has(serverName)) {
+          return false;
+        }
+        return isDeepStrictEqual(config.mcpServers?.[serverName], definitionEntry);
+      })
+        ? name
+        : null;
     })
   );
 

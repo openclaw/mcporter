@@ -29,6 +29,20 @@ const HeavyMcpDefinitionSchema = z.object({
   mcpServers: z.record(z.string(), RawEntrySchema),
 });
 
+export function assertValidHeavyMcpName(name: string): void {
+  const isSafeBasename =
+    name.length > 0 &&
+    name !== '.' &&
+    name !== '..' &&
+    name === path.posix.basename(name) &&
+    name === path.win32.basename(name) &&
+    !name.includes('\0');
+
+  if (!isSafeBasename) {
+    throw new Error(`Invalid heavy MCP name '${name}'. Use a simple basename without path separators.`);
+  }
+}
+
 /**
  * Read a heavy MCP definition file.
  *
@@ -37,6 +51,7 @@ const HeavyMcpDefinitionSchema = z.object({
  * @returns The definition or null if not found
  */
 export async function readHeavyMcpDefinition(availableDir: string, name: string): Promise<HeavyMcpDefinition | null> {
+  assertValidHeavyMcpName(name);
   const definitionPath = path.join(availableDir, `${name}.json`);
 
   try {
@@ -70,6 +85,7 @@ export async function writeHeavyMcpDefinition(
   name: string,
   definition: HeavyMcpDefinition
 ): Promise<void> {
+  assertValidHeavyMcpName(name);
   await fsPromises.mkdir(availableDir, { recursive: true });
   const definitionPath = path.join(availableDir, `${name}.json`);
   const content = `${JSON.stringify(definition, null, 2)}\n`;
@@ -101,6 +117,7 @@ export async function listHeavyMcpDefinitions(availableDir: string): Promise<str
  * @param name - Name of the heavy MCP (without .json extension)
  */
 export async function deleteHeavyMcpDefinition(availableDir: string, name: string): Promise<void> {
+  assertValidHeavyMcpName(name);
   const definitionPath = path.join(availableDir, `${name}.json`);
   await fsPromises.unlink(definitionPath).catch((error) => {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {

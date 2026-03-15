@@ -182,12 +182,95 @@ describe('mcporter heavy CLI', () => {
     logSpy.mockRestore();
   });
 
+  it('does not treat same-name custom configs as active heavy MCPs', async () => {
+    await fs.writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          mcpServers: {
+            playwright: {
+              command: 'node',
+              args: ['custom-playwright.js'],
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((value?: unknown) => {
+      if (typeof value === 'string') {
+        logs.push(value);
+      }
+    });
+
+    await handleHeavyCli(['list'], { configPath, rootDir: tempDir });
+
+    const output = logs.join('\n');
+    expect(output).toContain('  playwright');
+    expect(output).not.toContain('playwright [active]');
+
+    logSpy.mockRestore();
+  });
+
+  it('does not delete same-name custom configs during deactivate fallback', async () => {
+    await fs.writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          mcpServers: {
+            playwright: {
+              command: 'node',
+              args: ['custom-playwright.js'],
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((value?: unknown) => {
+      if (typeof value === 'string') {
+        logs.push(value);
+      }
+    });
+
+    await handleHeavyCli(['deactivate', 'playwright'], { configPath, rootDir: tempDir });
+
+    const config = JSON.parse(await fs.readFile(configPath, 'utf8')) as {
+      mcpServers: Record<string, { command: string; args: string[] }>;
+    };
+    expect(config.mcpServers.playwright).toEqual({
+      command: 'node',
+      args: ['custom-playwright.js'],
+    });
+    expect(logs).toContain("Heavy MCP 'playwright' is not active.");
+
+    logSpy.mockRestore();
+  });
+
   it('rejects malformed heavy definitions with a validation error', async () => {
     await fs.writeFile(path.join(availableDir, 'broken.json'), JSON.stringify({ nope: true }, null, 2), 'utf8');
 
     await expect(handleHeavyCli(['activate', 'broken'], { configPath, rootDir: tempDir })).rejects.toThrow(
       /Invalid heavy MCP definition 'broken'/
     );
+  });
+
+  it('rejects unsafe heavy MCP names before any filesystem writes', async () => {
+    const originalConfig = await fs.readFile(configPath, 'utf8');
+
+    await expect(handleHeavyCli(['activate', '../../mcporter'], { configPath, rootDir: tempDir })).rejects.toThrow(
+      /Invalid heavy MCP name/
+    );
+
+    await expect(fs.readFile(configPath, 'utf8')).resolves.toBe(originalConfig);
   });
 
   async function writeHeavyDefinition(name: 'chrome-devtools' | 'playwright'): Promise<void> {
