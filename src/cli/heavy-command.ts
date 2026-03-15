@@ -144,7 +144,7 @@ async function handleHeavyActivate(args: string[], paths: HeavyPaths, options: H
 
   const activeDefinition = findActiveHeavyDefinition(
     config.mcpServers,
-    [markerDefinition, definition],
+    [definition, markerDefinition],
     marker?.serverNames
   );
   if (activeDefinition) {
@@ -203,7 +203,7 @@ async function handleHeavyDeactivate(args: string[], paths: HeavyPaths, options:
 
     const activeDefinition = findActiveHeavyDefinition(
       config.mcpServers,
-      [markerDefinition, currentDefinition],
+      [currentDefinition, markerDefinition],
       marker.serverNames
     );
     if (!activeDefinition) {
@@ -273,7 +273,7 @@ async function listActiveHeavyMcps(paths: HeavyPaths, options: HeavyCliOptions):
       const marker = await readActiveMarker(path.join(paths.activeDir, `${name}.json`));
       const activeDefinition = findActiveHeavyDefinition(
         config.mcpServers,
-        [marker ? getHeavyDefinitionFromMarker(marker) : null, definition],
+        [definition, marker ? getHeavyDefinitionFromMarker(marker) : null],
         marker?.serverNames
       );
       if (activeDefinition) {
@@ -288,10 +288,9 @@ async function listActiveHeavyMcps(paths: HeavyPaths, options: HeavyCliOptions):
 function isHeavyMcpDefinitionActiveInConfig(
   configuredServers: Record<string, unknown> | undefined,
   definition: HeavyMcpDefinition,
-  expectedServerNames: string[] = Object.keys(definition.mcpServers)
+  extraServerNamesMustBeAbsent: string[] = []
 ): boolean {
-  const definitionServerNames = Object.keys(definition.mcpServers);
-  if (!haveMatchingHeavyServerNames(definitionServerNames, expectedServerNames)) {
+  if (extraServerNamesMustBeAbsent.some((serverName) => configuredServers?.[serverName] !== undefined)) {
     return false;
   }
 
@@ -315,23 +314,18 @@ function findConflictingHeavyServerNames(
 function findActiveHeavyDefinition(
   configuredServers: Record<string, unknown> | undefined,
   definitions: Array<HeavyMcpDefinition | null>,
-  expectedServerNames?: string[]
+  relatedServerNames: string[] = []
 ): HeavyMcpDefinition | null {
   for (const definition of definitions) {
-    if (definition && isHeavyMcpDefinitionActiveInConfig(configuredServers, definition, expectedServerNames)) {
+    if (!definition) {
+      continue;
+    }
+    const extraRelatedServerNames = relatedServerNames.filter((serverName) => !(serverName in definition.mcpServers));
+    if (isHeavyMcpDefinitionActiveInConfig(configuredServers, definition, extraRelatedServerNames)) {
       return definition;
     }
   }
   return null;
-}
-
-function haveMatchingHeavyServerNames(definitionServerNames: string[], expectedServerNames: string[]): boolean {
-  if (definitionServerNames.length !== expectedServerNames.length) {
-    return false;
-  }
-
-  const expectedServerNameSet = new Set(expectedServerNames);
-  return definitionServerNames.every((serverName) => expectedServerNameSet.has(serverName));
 }
 
 function getHeavyDefinitionFromMarker(marker: ActiveHeavyMcpMarker): HeavyMcpDefinition | null {

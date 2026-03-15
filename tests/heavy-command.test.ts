@@ -622,6 +622,48 @@ describe('mcporter heavy CLI', () => {
     logSpy.mockRestore();
   });
 
+  it('deactivates the current definition when marker metadata still lists removed servers', async () => {
+    await writeHeavyDefinition('browser-suite', ['playwright', 'chrome-devtools']);
+    await handleHeavyCli(['activate', 'browser-suite'], { configPath, rootDir: tempDir });
+    await writeHeavyDefinition('browser-suite', ['playwright']);
+    await fs.writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          mcpServers: {
+            playwright: {
+              command: 'npx',
+              args: ['-y', 'playwright-mcp@latest'],
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((value?: unknown) => {
+      if (typeof value === 'string') {
+        logs.push(value);
+      }
+    });
+
+    await expect(
+      handleHeavyCli(['deactivate', 'browser-suite'], { configPath, rootDir: tempDir })
+    ).resolves.toBeUndefined();
+
+    const config = JSON.parse(await fs.readFile(configPath, 'utf8')) as {
+      mcpServers: Record<string, unknown>;
+    };
+    expect(config.mcpServers.playwright).toBeUndefined();
+    await expect(fs.access(path.join(tempDir, 'config', 'heavy', 'active', 'browser-suite.json'))).rejects.toThrow();
+    expect(logs).toContain('Deactivated: browser-suite');
+
+    logSpy.mockRestore();
+  });
+
   it('deactivates using marker metadata when the definition file is missing and names differ from the basename', async () => {
     await writeHeavyDefinition('browser-suite', ['playwright', 'chrome-devtools']);
     await handleHeavyCli(['activate', 'browser-suite'], { configPath, rootDir: tempDir });
