@@ -261,15 +261,11 @@ async function listActiveHeavyMcps(paths: HeavyPaths, options: HeavyCliOptions):
         definitions.set(name, definition);
       }
 
-      if (definition) {
-        if (isHeavyMcpDefinitionActiveInConfig(config.mcpServers, definition)) {
-          active.add(name);
-        }
-        return;
-      }
-
       const marker = await readActiveMarker(path.join(paths.activeDir, `${name}.json`));
-      if (marker && findActiveHeavyDefinition(config.mcpServers, getHeavyDefinitionFromMarker(marker))) {
+      const activeDefinition =
+        findActiveHeavyDefinition(config.mcpServers, definition) ??
+        findActiveHeavyDefinition(config.mcpServers, marker ? getHeavyDefinitionFromMarker(marker) : null);
+      if (activeDefinition) {
         active.add(name);
       }
     })

@@ -242,6 +242,40 @@ describe('mcporter heavy CLI', () => {
     logSpy.mockRestore();
   });
 
+  it('lists marker-backed heavy MCPs as active when the available definition drifts', async () => {
+    await handleHeavyCli(['activate', 'playwright'], { configPath, rootDir: tempDir });
+    await fs.writeFile(
+      path.join(availableDir, 'playwright.json'),
+      JSON.stringify(
+        {
+          mcpServers: {
+            playwright: {
+              command: 'npx',
+              args: ['-y', 'playwright-mcp@next'],
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((value?: unknown) => {
+      if (typeof value === 'string') {
+        logs.push(value);
+      }
+    });
+
+    await handleHeavyCli(['list'], { configPath, rootDir: tempDir });
+
+    const output = logs.join('\n');
+    expect(output).toContain('playwright [active]');
+
+    logSpy.mockRestore();
+  });
+
   it('does not delete same-name custom configs during deactivate fallback', async () => {
     await fs.writeFile(
       configPath,
