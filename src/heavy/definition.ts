@@ -25,8 +25,12 @@ export interface HeavyMcpDefinition {
   mcpServers: Record<string, RawEntry>;
 }
 
+export const HeavyMcpServersSchema = z
+  .record(z.string(), RawEntrySchema)
+  .refine((mcpServers) => Object.keys(mcpServers).length > 0, 'must contain at least one server');
+
 const HeavyMcpDefinitionSchema = z.object({
-  mcpServers: z.record(z.string(), RawEntrySchema),
+  mcpServers: HeavyMcpServersSchema,
 });
 
 export function assertValidHeavyMcpName(name: string): void {

@@ -19,6 +19,7 @@ import { loadRawConfig, writeRawConfig } from '../config.js';
 import {
   assertValidHeavyMcpName,
   type HeavyMcpDefinition,
+  HeavyMcpServersSchema,
   listHeavyMcpDefinitions,
   readHeavyMcpDefinition,
 } from '../heavy/definition.js';
@@ -33,6 +34,7 @@ interface HeavyCliOptions {
 const ActiveHeavyMcpMarkerSchema = z.object({
   activated: z.string(),
   serverNames: z.array(z.string()).min(1),
+  mcpServers: HeavyMcpServersSchema.optional(),
 });
 
 type ActiveHeavyMcpMarker = z.infer<typeof ActiveHeavyMcpMarkerSchema>;
@@ -136,12 +138,11 @@ async function handleHeavyActivate(args: string[], paths: HeavyPaths, options: H
 
   // Load current config
   const { config, path: configPath } = await loadRawConfig(options);
-  const serverNames = Object.keys(definition.mcpServers);
   const activePath = path.join(paths.activeDir, `${name}.json`);
 
   if (isHeavyMcpDefinitionActiveInConfig(config.mcpServers, definition)) {
     await fsPromises.mkdir(paths.activeDir, { recursive: true });
-    await writeActiveMarker(activePath, serverNames);
+    await writeActiveMarker(activePath, definition);
     console.log(`Heavy MCP '${name}' is already active.`);
     return;
   }
@@ -168,7 +169,7 @@ async function handleHeavyActivate(args: string[], paths: HeavyPaths, options: H
 
   // Refresh active marker metadata
   await fsPromises.mkdir(paths.activeDir, { recursive: true });
-  await writeActiveMarker(activePath, serverNames);
+  await writeActiveMarker(activePath, definition);
 
   console.log(`Activated: ${name}`);
 }
@@ -187,28 +188,20 @@ async function handleHeavyDeactivate(args: string[], paths: HeavyPaths, options:
   const marker = await readActiveMarker(activePath);
   let serverNames: string[];
   if (marker) {
+    const markerDefinition = getHeavyDefinitionFromMarker(marker);
+    let currentDefinition: HeavyMcpDefinition | null = null;
     try {
-      const definition = await readHeavyMcpDefinition(paths.availableDir, name);
-      if (definition) {
-        if (!isHeavyMcpDefinitionActiveInConfig(config.mcpServers, definition)) {
-          console.log(`Heavy MCP '${name}' is not active.`);
-          return;
-        }
-        serverNames = Object.keys(definition.mcpServers);
-      } else {
-        if (!hasAllConfiguredServers(config.mcpServers, marker.serverNames)) {
-          console.log(`Heavy MCP '${name}' is not active.`);
-          return;
-        }
-        serverNames = marker.serverNames;
-      }
-    } catch {
-      if (!hasAllConfiguredServers(config.mcpServers, marker.serverNames)) {
-        console.log(`Heavy MCP '${name}' is not active.`);
-        return;
-      }
-      serverNames = marker.serverNames;
+      currentDefinition = await readHeavyMcpDefinition(paths.availableDir, name);
+    } catch {}
+
+    const activeDefinition =
+      findActiveHeavyDefinition(config.mcpServers, currentDefinition) ??
+      findActiveHeavyDefinition(config.mcpServers, markerDefinition);
+    if (!activeDefinition) {
+      console.log(`Heavy MCP '${name}' is not active.`);
+      return;
     }
+    serverNames = Object.keys(activeDefinition.mcpServers);
   } else {
     let definition: HeavyMcpDefinition | null;
     try {
@@ -276,7 +269,7 @@ async function listActiveHeavyMcps(paths: HeavyPaths, options: HeavyCliOptions):
       }
 
       const marker = await readActiveMarker(path.join(paths.activeDir, `${name}.json`));
-      if (marker && hasAllConfiguredServers(config.mcpServers, marker.serverNames)) {
+      if (marker && findActiveHeavyDefinition(config.mcpServers, getHeavyDefinitionFromMarker(marker))) {
         active.add(name);
       }
     })
@@ -306,11 +299,15 @@ function findConflictingHeavyServerNames(
     .map(([serverName]) => serverName);
 }
 
-function hasAllConfiguredServers(
+function findActiveHeavyDefinition(
   configuredServers: Record<string, unknown> | undefined,
-  serverNames: string[]
-): boolean {
-  return serverNames.every((serverName) => configuredServers?.[serverName] !== undefined);
+  definition: HeavyMcpDefinition | null
+): HeavyMcpDefinition | null {
+  return definition && isHeavyMcpDefinitionActiveInConfig(configuredServers, definition) ? definition : null;
+}
+
+function getHeavyDefinitionFromMarker(marker: ActiveHeavyMcpMarker): HeavyMcpDefinition | null {
+  return marker.mcpServers ? { mcpServers: marker.mcpServers } : null;
 }
 
 async function readHeavyDefinitionForActiveDetection(
@@ -343,10 +340,11 @@ async function readActiveMarker(activePath: string): Promise<ActiveHeavyMcpMarke
   }
 }
 
-async function writeActiveMarker(activePath: string, serverNames: string[]): Promise<void> {
+async function writeActiveMarker(activePath: string, definition: HeavyMcpDefinition): Promise<void> {
   const marker: ActiveHeavyMcpMarker = {
     activated: new Date().toISOString(),
-    serverNames,
+    serverNames: Object.keys(definition.mcpServers),
+    mcpServers: definition.mcpServers,
   };
 
   await fsPromises.unlink(activePath).catch((error) => {

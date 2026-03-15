@@ -289,6 +289,14 @@ describe('mcporter heavy CLI', () => {
     );
   });
 
+  it('rejects empty heavy definitions with a validation error', async () => {
+    await fs.writeFile(path.join(availableDir, 'empty.json'), JSON.stringify({ mcpServers: {} }, null, 2), 'utf8');
+
+    await expect(handleHeavyCli(['activate', 'empty'], { configPath, rootDir: tempDir })).rejects.toThrow(
+      /Invalid heavy MCP definition 'empty'.*must contain at least one server/
+    );
+  });
+
   it('ignores unrelated invalid heavy definitions during activation and listing', async () => {
     await fs.writeFile(path.join(availableDir, 'broken.json'), JSON.stringify({ nope: true }, null, 2), 'utf8');
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -469,6 +477,56 @@ describe('mcporter heavy CLI', () => {
     expect(config.mcpServers['chrome-devtools']).toBeUndefined();
     await expect(fs.access(path.join(tempDir, 'config', 'heavy', 'active', 'chrome-devtools.json'))).rejects.toThrow();
     expect(logs).toContain('Deactivated: chrome-devtools');
+
+    logSpy.mockRestore();
+  });
+
+  it('does not deactivate drifted marker-backed configs when the definition becomes malformed', async () => {
+    await handleHeavyCli(['activate', 'chrome-devtools'], { configPath, rootDir: tempDir });
+    await fs.writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          mcpServers: {
+            'chrome-devtools': {
+              command: 'node',
+              args: ['custom-devtools.js'],
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+    await fs.writeFile(
+      path.join(availableDir, 'chrome-devtools.json'),
+      JSON.stringify({ nope: true }, null, 2),
+      'utf8'
+    );
+
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((value?: unknown) => {
+      if (typeof value === 'string') {
+        logs.push(value);
+      }
+    });
+
+    await expect(
+      handleHeavyCli(['deactivate', 'chrome-devtools'], { configPath, rootDir: tempDir })
+    ).resolves.toBeUndefined();
+
+    const config = JSON.parse(await fs.readFile(configPath, 'utf8')) as {
+      mcpServers: Record<string, { command: string; args: string[] }>;
+    };
+    expect(config.mcpServers['chrome-devtools']).toEqual({
+      command: 'node',
+      args: ['custom-devtools.js'],
+    });
+    await expect(
+      fs.readFile(path.join(tempDir, 'config', 'heavy', 'active', 'chrome-devtools.json'), 'utf8')
+    ).resolves.toContain('chrome-devtools');
+    expect(logs).toContain("Heavy MCP 'chrome-devtools' is not active.");
 
     logSpy.mockRestore();
   });
