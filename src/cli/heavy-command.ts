@@ -14,6 +14,7 @@
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
+import { z } from 'zod';
 import { loadRawConfig, writeRawConfig } from '../config.js';
 import { assertValidHeavyMcpName, listHeavyMcpDefinitions, readHeavyMcpDefinition } from '../heavy/definition.js';
 import { type HeavyPaths, resolveHeavyPaths } from '../heavy/paths.js';
@@ -23,6 +24,13 @@ interface HeavyCliOptions {
   configPath?: string;
   rootDir?: string;
 }
+
+const ActiveHeavyMcpMarkerSchema = z.object({
+  activated: z.string(),
+  serverNames: z.array(z.string()).min(1),
+});
+
+type ActiveHeavyMcpMarker = z.infer<typeof ActiveHeavyMcpMarkerSchema>;
 
 export async function handleHeavyCli(args: string[], options: HeavyCliOptions): Promise<void> {
   const subcommand = args.shift();
@@ -71,8 +79,8 @@ Directory structure:
   └── heavy/
       ├── available/             # Heavy MCP definitions
       │   └── chrome-devtools.json
-      └── active/                # Tracks active heavy MCPs (symlinks)
-          └── chrome-devtools.json -> ../available/chrome-devtools.json
+      └── active/                # Tracks active heavy MCPs (marker files)
+          └── chrome-devtools.json
 
 Examples:
   mcporter heavy list
@@ -145,8 +153,7 @@ async function handleHeavyActivate(args: string[], paths: HeavyPaths, options: H
   // Create active marker (symlink)
   await fsPromises.mkdir(paths.activeDir, { recursive: true });
   const activePath = path.join(paths.activeDir, `${name}.json`);
-  const availablePath = path.join(paths.availableDir, `${name}.json`);
-  await writeActiveMarker(activePath, availablePath);
+  await writeActiveMarker(activePath, Object.keys(definition.mcpServers));
 
   console.log(`Activated: ${name}`);
 }
@@ -169,14 +176,9 @@ async function handleHeavyDeactivate(args: string[], paths: HeavyPaths, options:
   const { config, path: configPath } = await loadRawConfig(options);
 
   // Remove the server(s) from config
-  const definition = await readHeavyMcpDefinition(paths.availableDir, name);
-  if (definition) {
-    for (const serverName of Object.keys(definition.mcpServers)) {
-      delete config.mcpServers?.[serverName];
-    }
-  } else {
-    // Definition file was removed, try to remove by name
-    delete config.mcpServers?.[name];
+  const serverNames = await resolveServerNamesForDeactivation(paths, name);
+  for (const serverName of serverNames) {
+    delete config.mcpServers?.[serverName];
   }
 
   // Write back config
@@ -238,22 +240,63 @@ async function readHeavyDefinitionForActiveDetection(
   }
 }
 
-async function writeActiveMarker(activePath: string, availablePath: string): Promise<void> {
+async function resolveServerNamesForDeactivation(paths: HeavyPaths, name: string): Promise<string[]> {
+  const activePath = path.join(paths.activeDir, `${name}.json`);
+  const marker = await readActiveMarker(activePath);
+  if (marker) {
+    return marker.serverNames;
+  }
+
   try {
-    await fsPromises.symlink(availablePath, activePath);
+    const definition = await readHeavyMcpDefinition(paths.availableDir, name);
+    if (definition) {
+      return Object.keys(definition.mcpServers);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Cannot deactivate heavy MCP '${name}' because its marker metadata is missing and its definition is invalid: ${message}`
+    );
+  }
+
+  throw new Error(
+    `Cannot deactivate heavy MCP '${name}' because its marker metadata is missing and its definition file is unavailable.`
+  );
+}
+
+async function readActiveMarker(activePath: string): Promise<ActiveHeavyMcpMarker | null> {
+  try {
+    const buffer = await fsPromises.readFile(activePath, 'utf8');
+    const parsed = JSON.parse(buffer);
+    const validation = ActiveHeavyMcpMarkerSchema.safeParse(parsed);
+    if (!validation.success) {
+      return null;
+    }
+    return validation.data;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return null;
+    }
+    return null;
+  }
+}
+
+async function writeActiveMarker(activePath: string, serverNames: string[]): Promise<void> {
+  const marker: ActiveHeavyMcpMarker = {
+    activated: new Date().toISOString(),
+    serverNames,
+  };
+
+  try {
+    await fsPromises.writeFile(activePath, `${JSON.stringify(marker, null, 2)}\n`, {
+      encoding: 'utf8',
+      flag: 'wx',
+    });
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === 'EEXIST') {
       return;
     }
-    if (!canFallbackToMarkerFile(code)) {
-      throw error;
-    }
-    // Fallback to a regular marker file on platforms where symlinks are restricted.
-    await fsPromises.writeFile(activePath, JSON.stringify({ activated: new Date().toISOString() }, null, 2), 'utf8');
+    throw error;
   }
-}
-
-function canFallbackToMarkerFile(code: string | undefined): boolean {
-  return code === 'EPERM' || code === 'EACCES' || code === 'ENOTSUP' || code === 'EINVAL' || code === 'UNKNOWN';
 }

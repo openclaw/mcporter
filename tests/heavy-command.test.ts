@@ -16,8 +16,8 @@ describe('mcporter heavy CLI', () => {
     await fs.mkdir(path.dirname(configPath), { recursive: true });
     await fs.writeFile(configPath, JSON.stringify({ mcpServers: {} }, null, 2), 'utf8');
     await fs.mkdir(availableDir, { recursive: true });
-    await writeHeavyDefinition('chrome-devtools');
-    await writeHeavyDefinition('playwright');
+    await writeHeavyDefinition('chrome-devtools', ['chrome-devtools']);
+    await writeHeavyDefinition('playwright', ['playwright']);
   });
 
   afterEach(async () => {
@@ -39,9 +39,10 @@ describe('mcporter heavy CLI', () => {
       mcpServers: Record<string, { command: string }>;
     };
     expect(config.mcpServers['chrome-devtools']?.command).toBe('npx');
-    await expect(
-      fs.lstat(path.join(tempDir, 'config', 'heavy', 'active', 'chrome-devtools.json'))
-    ).resolves.toBeTruthy();
+    const marker = JSON.parse(
+      await fs.readFile(path.join(tempDir, 'config', 'heavy', 'active', 'chrome-devtools.json'), 'utf8')
+    ) as { serverNames: string[] };
+    expect(marker.serverNames).toEqual(['chrome-devtools']);
     expect(logs).toContain('Activated: chrome-devtools');
 
     logSpy.mockRestore();
@@ -319,41 +320,86 @@ describe('mcporter heavy CLI', () => {
 
   it('does not clobber heavy definitions when symlink creation races with an existing marker', async () => {
     const activePath = path.join(tempDir, 'config', 'heavy', 'active', 'chrome-devtools.json');
-    const availablePath = path.join(availableDir, 'chrome-devtools.json');
-    const originalDefinition = await fs.readFile(availablePath, 'utf8');
-    const originalSymlink = fs.symlink.bind(fs);
-    const symlinkSpy = vi.spyOn(fs, 'symlink').mockImplementation(async (target, destination, type) => {
-      const destinationPath = destination.toString();
-      await fs.mkdir(path.dirname(destinationPath), { recursive: true });
-      await originalSymlink(target, destinationPath, type);
-      const error = new Error('marker already exists') as NodeJS.ErrnoException;
-      error.code = 'EEXIST';
-      throw error;
-    });
+    const existingMarker = JSON.stringify({ activated: 'already', serverNames: ['chrome-devtools'] }, null, 2);
+    await fs.mkdir(path.dirname(activePath), { recursive: true });
+    await fs.writeFile(activePath, existingMarker, 'utf8');
 
     await expect(
       handleHeavyCli(['activate', 'chrome-devtools'], { configPath, rootDir: tempDir })
     ).resolves.toBeUndefined();
 
-    await expect(fs.readFile(availablePath, 'utf8')).resolves.toBe(originalDefinition);
-    const stat = await fs.lstat(activePath);
-    expect(stat.isSymbolicLink()).toBe(true);
-
-    symlinkSpy.mockRestore();
+    await expect(fs.readFile(activePath, 'utf8')).resolves.toBe(existingMarker);
   });
 
-  async function writeHeavyDefinition(name: 'chrome-devtools' | 'playwright'): Promise<void> {
-    const args = name === 'chrome-devtools' ? ['-y', 'chrome-devtools-mcp@latest'] : ['-y', 'playwright-mcp@latest'];
+  it('deactivates an active heavy MCP even when its definition file becomes malformed', async () => {
+    await handleHeavyCli(['activate', 'chrome-devtools'], { configPath, rootDir: tempDir });
+    await fs.writeFile(
+      path.join(availableDir, 'chrome-devtools.json'),
+      JSON.stringify({ nope: true }, null, 2),
+      'utf8'
+    );
+
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((value?: unknown) => {
+      if (typeof value === 'string') {
+        logs.push(value);
+      }
+    });
+
+    await expect(
+      handleHeavyCli(['deactivate', 'chrome-devtools'], { configPath, rootDir: tempDir })
+    ).resolves.toBeUndefined();
+
+    const config = JSON.parse(await fs.readFile(configPath, 'utf8')) as {
+      mcpServers: Record<string, unknown>;
+    };
+    expect(config.mcpServers['chrome-devtools']).toBeUndefined();
+    await expect(fs.access(path.join(tempDir, 'config', 'heavy', 'active', 'chrome-devtools.json'))).rejects.toThrow();
+    expect(logs).toContain('Deactivated: chrome-devtools');
+
+    logSpy.mockRestore();
+  });
+
+  it('deactivates using marker metadata when the definition file is missing and names differ from the basename', async () => {
+    await writeHeavyDefinition('browser-suite', ['playwright', 'chrome-devtools']);
+    await handleHeavyCli(['activate', 'browser-suite'], { configPath, rootDir: tempDir });
+    await fs.unlink(path.join(availableDir, 'browser-suite.json'));
+
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((value?: unknown) => {
+      if (typeof value === 'string') {
+        logs.push(value);
+      }
+    });
+
+    await expect(
+      handleHeavyCli(['deactivate', 'browser-suite'], { configPath, rootDir: tempDir })
+    ).resolves.toBeUndefined();
+
+    const config = JSON.parse(await fs.readFile(configPath, 'utf8')) as {
+      mcpServers: Record<string, unknown>;
+    };
+    expect(config.mcpServers['chrome-devtools']).toBeUndefined();
+    expect(config.mcpServers.playwright).toBeUndefined();
+    expect(logs).toContain('Deactivated: browser-suite');
+
+    logSpy.mockRestore();
+  });
+
+  async function writeHeavyDefinition(name: string, serverNames: string[]): Promise<void> {
     await fs.writeFile(
       path.join(availableDir, `${name}.json`),
       JSON.stringify(
         {
-          mcpServers: {
-            [name]: {
-              command: 'npx',
-              args,
-            },
-          },
+          mcpServers: Object.fromEntries(
+            serverNames.map((serverName) => [
+              serverName,
+              {
+                command: 'npx',
+                args: [`-y`, `${serverName}-mcp@latest`],
+              },
+            ])
+          ),
         },
         null,
         2
