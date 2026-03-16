@@ -15,7 +15,7 @@ export function launchDaemonDetached(options: DaemonLaunchOptions): void {
   const configArgs = options.configExplicit ? ['--config', options.configPath] : [];
   const args = [
     ...process.execArgv,
-    cliEntry,
+    ...(cliEntry ? [cliEntry] : []),
     ...configArgs,
     ...(options.rootDir ? ['--root', options.rootDir] : []),
     'daemon',
@@ -36,10 +36,16 @@ export function launchDaemonDetached(options: DaemonLaunchOptions): void {
   child.unref();
 }
 
-function resolveCliEntry(): string {
+function resolveCliEntry(): string | undefined {
   const entry = process.argv[1];
   if (!entry) {
     throw new Error('Unable to resolve mcporter entry script.');
+  }
+  // In Bun compiled binaries, argv[1] is a virtual /$bunfs/... path that Bun
+  // auto-injects into every spawned child.  Including it explicitly would
+  // duplicate it and break CLI argument parsing in the child process.
+  if (entry.startsWith('/$bunfs/')) {
+    return undefined;
   }
   return path.resolve(entry);
 }
