@@ -11,7 +11,7 @@ export interface GeneratedOption {
   cliName: string;
   description?: string;
   required: boolean;
-  type: 'string' | 'number' | 'boolean' | 'array' | 'unknown';
+  type: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'unknown';
   arrayItemType?: 'string' | 'number' | 'boolean' | 'unknown';
   placeholder: string;
   exampleValue?: string;
@@ -228,7 +228,7 @@ export function inferType(descriptor: unknown): GeneratedOption['type'] {
     if (value === 'integer') {
       return 'number';
     }
-    if (value === 'string' || value === 'number' || value === 'boolean' || value === 'array') {
+    if (value === 'string' || value === 'number' || value === 'boolean' || value === 'array' || value === 'object') {
       return value;
     }
     return undefined;
