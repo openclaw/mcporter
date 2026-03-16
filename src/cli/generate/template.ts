@@ -391,6 +391,8 @@ function optionParser(option: GeneratedOption): string | undefined {
       return '(value) => parseFloat(value)';
     case 'boolean':
       return "(value) => value !== 'false'";
+    case 'object':
+      return '(value) => JSON.parse(value)';
     case 'array':
       // Coerce array elements to their proper types based on schema
       switch (option.arrayItemType) {
