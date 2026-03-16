@@ -1,4 +1,5 @@
 <shared>
+  
 # AGENTS.md
 
 Shared guardrails distilled from the various `~/Projects/*/AGENTS.md` files (state as of **November 15, 2025**). This document highlights the rules that show up again and again; still read the repo-local instructions before making changes.
