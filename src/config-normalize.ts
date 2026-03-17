@@ -7,7 +7,7 @@ export function normalizeServerEntry(
   raw: RawEntry,
   baseDir: string,
   source: ServerSource,
-  sources: readonly ServerSource[]
+  sources: readonly ServerSource[],
 ): ServerDefinition {
   const description = raw.description;
   const env = raw.env ? { ...raw.env } : undefined;
@@ -18,10 +18,16 @@ export function normalizeServerEntry(
   const oauthScope = raw.oauthScope ?? raw.oauth_scope ?? undefined;
   const oauthCommandRaw = raw.oauthCommand ?? raw.oauth_command;
   const oauthCommand = oauthCommandRaw ? { args: [...oauthCommandRaw.args] } : undefined;
-  const headers = buildHeaders(raw);
+  const headers = buildHeaders(
+    raw.bearerToken,
+    raw.bearer_token,
+    raw.bearerTokenEnv,
+    raw.bearer_token_env,
+    raw.headers,
+  );
 
   const httpUrl = getUrl(raw);
-  const stdio = getCommand(raw);
+  const stdio = getCommand(raw.command, raw.executable, raw.args);
 
   let command: CommandSpec;
 
@@ -72,7 +78,7 @@ export const __configInternals = {
   ensureHttpAcceptHeader,
 };
 
-function normalizeAuth(auth: string | undefined): string | undefined {
+export function normalizeAuth(auth: string | undefined): string | undefined {
   if (!auth) {
     return undefined;
   }
@@ -82,64 +88,79 @@ function normalizeAuth(auth: string | undefined): string | undefined {
   return undefined;
 }
 
-function normalizePath(input: string | undefined): string | undefined {
+export function normalizePath(input: string | undefined): string | undefined {
   if (!input) {
     return undefined;
   }
   return expandHome(input);
 }
 
-function getUrl(raw: RawEntry): string | undefined {
-  return raw.baseUrl ?? raw.base_url ?? raw.url ?? raw.serverUrl ?? raw.server_url ?? undefined;
+export function getUrl(rawUrls: RawEntry): string | undefined {
+  return rawUrls.baseUrl ?? rawUrls.base_url ?? rawUrls.url ?? rawUrls.serverUrl ?? rawUrls.server_url ?? undefined;
 }
 
-function getCommand(raw: RawEntry): { command: string; args: string[] } | undefined {
-  const commandValue = raw.command ?? raw.executable;
+export function getCommand(
+  command: RawEntry['command'],
+  executable: RawEntry['executable'],
+  args: RawEntry['args'] = [],
+): { command: string; args: string[] } | undefined {
+  const commandValue = command ?? executable;
   if (Array.isArray(commandValue)) {
     if (commandValue.length === 0 || typeof commandValue[0] !== 'string') {
       return undefined;
     }
+
     return { command: commandValue[0], args: commandValue.slice(1) };
   }
+
   if (typeof commandValue === 'string' && commandValue.length > 0) {
-    const args = Array.isArray(raw.args) ? raw.args : [];
     if (args.length > 0) {
       return { command: commandValue, args };
     }
+
     const tokens = parseCommandString(commandValue);
     if (tokens.length === 0) {
       return undefined;
     }
+
     const [commandToken, ...rest] = tokens;
     if (!commandToken) {
       return undefined;
     }
+
     return { command: commandToken, args: rest };
   }
+
   return undefined;
 }
 
-function buildHeaders(raw: RawEntry): Record<string, string> | undefined {
-  const headers: Record<string, string> = {};
+export function buildHeaders(
+  bearerToken?: string,
+  bearer_token?: string,
+  bearerTokenEnv?: string,
+  bearer_token_env?: string,
+  customHeaders?: Record<string, string>,
+): Record<string, string> | undefined {
+  const httpHeaders: Record<string, string> = {};
 
-  if (raw.headers) {
-    Object.assign(headers, raw.headers);
+  if (customHeaders) {
+    Object.assign(httpHeaders, customHeaders);
   }
 
-  const bearerToken = raw.bearerToken ?? raw.bearer_token;
-  if (bearerToken) {
-    headers.Authorization = `Bearer ${bearerToken}`;
+  const token = bearerToken ?? bearer_token;
+  if (token) {
+    httpHeaders.Authorization = `Bearer ${token}`;
   }
 
-  const bearerTokenEnv = raw.bearerTokenEnv ?? raw.bearer_token_env;
-  if (bearerTokenEnv) {
-    headers.Authorization = `$env:${bearerTokenEnv}`;
+  const tokenEnv = bearerTokenEnv ?? bearer_token_env;
+  if (tokenEnv) {
+    httpHeaders.Authorization = `$env:${tokenEnv}`;
   }
 
-  return Object.keys(headers).length > 0 ? headers : undefined;
+  return Object.keys(httpHeaders).length > 0 ? httpHeaders : undefined;
 }
 
-function ensureHttpAcceptHeader(headers?: Record<string, string>): Record<string, string> | undefined {
+export function ensureHttpAcceptHeader(headers?: Record<string, string>): Record<string, string> | undefined {
   const requiredAccept = 'application/json, text/event-stream';
   const normalized = headers ? { ...headers } : {};
   const acceptKey = Object.keys(normalized).find((key) => key.toLowerCase() === 'accept');
@@ -150,19 +171,19 @@ function ensureHttpAcceptHeader(headers?: Record<string, string>): Record<string
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
-function hasRequiredAcceptTokens(value: string): boolean {
-  const lower = value.toLowerCase();
+export function hasRequiredAcceptTokens(acceptTokens: string): boolean {
+  const lower = acceptTokens.toLowerCase();
   return lower.includes('application/json') && lower.includes('text/event-stream');
 }
 
-function parseCommandString(value: string): string[] {
+export function parseCommandString(commandString: string): string[] {
   const result: string[] = [];
   let current = '';
   let inSingleQuote = false;
   let inDoubleQuote = false;
   let escapeNext = false;
 
-  for (const char of value.trim()) {
+  for (const char of commandString.trim()) {
     if (escapeNext) {
       current += char;
       escapeNext = false;
@@ -206,15 +227,15 @@ function parseCommandString(value: string): string[] {
   return result;
 }
 
-export { ensureHttpAcceptHeader };
-
-function normalizeLogging(raw?: { daemon?: { enabled?: boolean } }): ServerLoggingOptions | undefined {
-  if (!raw) {
+export function normalizeLogging(logginValue?: { daemon?: { enabled?: boolean } }): ServerLoggingOptions | undefined {
+  if (!logginValue) {
     return undefined;
   }
-  if (raw.daemon) {
-    const logging: ServerLoggingOptions = { daemon: { enabled: raw.daemon.enabled } };
+
+  if (logginValue.daemon) {
+    const logging: ServerLoggingOptions = { daemon: { enabled: logginValue.daemon.enabled } };
     return logging;
   }
+
   return undefined;
 }
