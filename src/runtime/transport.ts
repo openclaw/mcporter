@@ -116,9 +116,17 @@ export async function createClientContext(
       }
 
       const resolvedHeaders = materializeHeaders(command.headers, activeDefinition.name);
-      const requestInit: RequestInit | undefined = resolvedHeaders
-        ? { headers: resolvedHeaders as HeadersInit }
-        : undefined;
+      if (shouldEstablishOAuth && resolvedHeaders) {
+        for (const key of Object.keys(resolvedHeaders)) {
+          if (key.toLowerCase() === 'authorization') {
+            delete resolvedHeaders[key];
+          }
+        }
+      }
+      const requestInit: RequestInit | undefined =
+        resolvedHeaders && Object.keys(resolvedHeaders).length > 0
+          ? { headers: resolvedHeaders as HeadersInit }
+          : undefined;
       const baseOptions = {
         requestInit,
         authProvider: oauthSession?.provider,
