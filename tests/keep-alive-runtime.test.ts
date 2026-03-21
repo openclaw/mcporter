@@ -131,6 +131,39 @@ describe('createKeepAliveRuntime', () => {
     logSpy.mockRestore();
   });
 
+  it('deduplicates concurrent restarts for the same server', async () => {
+    const runtime = new FakeRuntime(definitions);
+    let releaseClose!: () => void;
+    const closePromise = new Promise<void>((resolve) => {
+      releaseClose = resolve;
+    });
+    const daemon = {
+      callTool: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('transport hung up'))
+        .mockRejectedValueOnce(new Error('transport hung up'))
+        .mockResolvedValue('daemon-call'),
+      closeServer: vi.fn().mockImplementation(async () => {
+        await closePromise;
+      }),
+      listTools: vi.fn(),
+      listResources: vi.fn(),
+    };
+    const keepAliveRuntime = createKeepAliveRuntime(runtime as unknown as Runtime, {
+      daemonClient: daemon as never,
+      keepAliveServers: new Set(['alpha']),
+    });
+
+    const first = keepAliveRuntime.callTool('alpha', 'ping', {});
+    const second = keepAliveRuntime.callTool('alpha', 'pong', {});
+    await Promise.resolve();
+    expect(daemon.closeServer).toHaveBeenCalledTimes(1);
+    releaseClose();
+
+    await expect(Promise.all([first, second])).resolves.toEqual(['daemon-call', 'daemon-call']);
+    expect(daemon.closeServer).toHaveBeenCalledTimes(1);
+  });
+
   it('does not restart daemon servers for InvalidParams errors', async () => {
     const runtime = new FakeRuntime(definitions);
     const error = new McpError(ErrorCode.InvalidParams, 'Tool not found');

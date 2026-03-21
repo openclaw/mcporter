@@ -1,7 +1,10 @@
 import { createRequire } from 'node:module';
 
 import type { CallToolRequest, ListResourcesRequest } from '@modelcontextprotocol/sdk/types.js';
-import { loadServerDefinitions, type ServerDefinition } from './config.js';
+import { loadServerDefinitions, resolveConfigPath, type ServerDefinition } from './config.js';
+import { DaemonClient } from './daemon/client.js';
+import { createKeepAliveRuntime } from './daemon/runtime-wrapper.js';
+import { isKeepAliveServer } from './lifecycle.js';
 import { createPrefixedConsoleLogger, type Logger, type LogLevel, resolveLogLevelFromEnv } from './logging.js';
 import { closeTransportAndWait } from './runtime-process-utils.js';
 import './sdk-patches.js';
@@ -32,6 +35,10 @@ export interface RuntimeOptions {
   };
   readonly logger?: RuntimeLogger;
   readonly oauthTimeoutMs?: number;
+}
+
+export interface ManagedRuntimeOptions extends RuntimeOptions {
+  readonly configExplicit?: boolean;
 }
 
 export type RuntimeLogger = Logger;
@@ -84,6 +91,44 @@ export async function createRuntime(options: RuntimeOptions = {}): Promise<Runti
 
   const runtime = new McpRuntime(servers, options);
   return runtime;
+}
+
+// createManagedRuntime mirrors the CLI's keep-alive behavior for library consumers.
+export async function createManagedRuntime(options: ManagedRuntimeOptions = {}): Promise<Runtime> {
+  const rootDir = options.rootDir ?? process.cwd();
+  const configResolution = resolveConfigPath(options.configPath, rootDir);
+  const configPath = options.configPath ?? configResolution.path;
+  const baseRuntime = await createRuntime({
+    ...options,
+    configPath: options.servers
+      ? options.configPath
+      : (options.configExplicit ?? configResolution.explicit)
+        ? configPath
+        : undefined,
+    rootDir,
+  });
+
+  if (options.servers) {
+    return baseRuntime;
+  }
+
+  const keepAliveServers = new Set(
+    baseRuntime
+      .getDefinitions()
+      .filter(isKeepAliveServer)
+      .map((entry) => entry.name)
+  );
+
+  if (keepAliveServers.size === 0) {
+    return baseRuntime;
+  }
+
+  const daemonClient = new DaemonClient({
+    configPath,
+    configExplicit: options.configExplicit ?? configResolution.explicit,
+    rootDir,
+  });
+  return createKeepAliveRuntime(baseRuntime, { daemonClient, keepAliveServers });
 }
 
 // callOnce connects to a server, invokes a single tool, and disposes the connection immediately.

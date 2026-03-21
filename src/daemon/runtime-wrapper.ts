@@ -18,6 +18,8 @@ export function createKeepAliveRuntime(base: Runtime, options: KeepAliveRuntimeO
 }
 
 class KeepAliveRuntime implements Runtime {
+  private readonly restartPromises = new Map<string, Promise<void>>();
+
   constructor(
     private readonly base: Runtime,
     private readonly daemon: DaemonClient,
@@ -111,8 +113,24 @@ class KeepAliveRuntime implements Runtime {
       // The daemon keeps STDIO transports warm; if a call fails due to a fatal error,
       // force-close the cached server so the retry launches a fresh Chrome instance.
       logDaemonRetry(server, operation, error);
-      await this.daemon.closeServer({ server }).catch(() => {});
+      await this.restartServer(server);
       return action();
+    }
+  }
+
+  private async restartServer(server: string): Promise<void> {
+    const existing = this.restartPromises.get(server);
+    if (existing) {
+      await existing;
+      return;
+    }
+
+    const restart = this.daemon.closeServer({ server }).catch(() => {});
+    this.restartPromises.set(server, restart);
+    try {
+      await restart;
+    } finally {
+      this.restartPromises.delete(server);
     }
   }
 }

@@ -5,10 +5,11 @@ export { createCallResult, describeConnectionIssue, wrapCallResult } from './res
 export type {
   CallOptions,
   ListToolsOptions,
+  ManagedRuntimeOptions,
   Runtime,
   RuntimeLogger,
   ServerToolInfo,
 } from './runtime.js';
-export { callOnce, createRuntime } from './runtime.js';
+export { callOnce, createManagedRuntime, createRuntime } from './runtime.js';
 export type { ServerProxyOptions } from './server-proxy.js';
 export { createServerProxy } from './server-proxy.js';
