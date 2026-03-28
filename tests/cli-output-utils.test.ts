@@ -76,7 +76,36 @@ describe('printCallOutput format selection', () => {
       'json',
       'raw-only-string',
       (logged: unknown) => {
-        expect(logged).toBe('raw-only-string');
+        expect(logged).toBe('"raw-only-string"');
+      },
+    ],
+    [
+      'json emits valid JSON for object raw fallback instead of inspect output',
+      'json',
+      { content: [{ type: 'text', text: 'no json here' }] },
+      (logged: unknown) => {
+        expect(JSON.parse(String(logged))).toEqual({ content: [{ type: 'text', text: 'no json here' }] });
+      },
+    ],
+    [
+      'json emits null for undefined raw fallback',
+      'json',
+      undefined,
+      (logged: unknown) => {
+        expect(logged).toBe('null');
+      },
+    ],
+    [
+      'json emits a JSON string when raw fallback is circular',
+      'json',
+      (() => {
+        const circular: { self?: unknown } = {};
+        circular.self = circular;
+        return circular;
+      })(),
+      (logged: unknown) => {
+        expect(typeof logged).toBe('string');
+        expect(() => JSON.parse(String(logged))).not.toThrow();
       },
     ],
     [

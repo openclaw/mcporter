@@ -24,7 +24,7 @@ const PREFERRED_OUTPUT_BY_FORMAT: Record<OutputFormat, RenderableKind[]> = {
 export function printCallOutput<T>(wrapped: CallResult<T>, raw: T, format: OutputFormat): void {
   const preferredKinds = PREFERRED_OUTPUT_BY_FORMAT[format];
   const renderable = resolveRenderableOutput(wrapped, raw, preferredKinds);
-  emitRenderableOutput(renderable);
+  emitRenderableOutput(renderable, format);
 }
 
 export function tailLogIfRequested(result: unknown, enabled: boolean): void {
@@ -105,10 +105,10 @@ function resolveRenderableOutput<T>(
   return { kind: 'raw', value: raw };
 }
 
-function emitRenderableOutput(renderable: RenderableOutput): void {
+function emitRenderableOutput(renderable: RenderableOutput, requestedFormat?: OutputFormat): void {
   if (renderable.kind === 'json') {
     if (!attemptPrintJson(renderable.value)) {
-      printRaw(renderable.value);
+      printRaw(renderable.value, requestedFormat);
     }
     return;
   }
@@ -116,7 +116,7 @@ function emitRenderableOutput(renderable: RenderableOutput): void {
     console.log(String(renderable.value));
     return;
   }
-  printRaw(renderable.value);
+  printRaw(renderable.value, requestedFormat);
 }
 
 function attemptPrintJson(value: unknown): boolean {
@@ -135,7 +135,17 @@ function attemptPrintJson(value: unknown): boolean {
   }
 }
 
-function printRaw(raw: unknown): void {
+function printRaw(raw: unknown, requestedFormat?: OutputFormat): void {
+  if (requestedFormat === 'json') {
+    try {
+      const serialized = JSON.stringify(raw, null, 2);
+      console.log(typeof serialized === 'string' ? serialized : 'null');
+    } catch {
+      console.log(JSON.stringify(String(raw)));
+    }
+    return;
+  }
+
   if (typeof raw === 'string') {
     console.log(raw);
     return;
