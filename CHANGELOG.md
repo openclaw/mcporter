@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### CLI
+- Ignore static `Authorization` headers once OAuth is active so imported editor configs cannot override fresh OAuth tokens. (PR #123, thanks @ahonn)
 - Preserve full JSON/error payloads when `data` is just one field instead of collapsing the response to `data` alone. (PR #106, thanks @AielloChan)
 - Render `resource` content blocks in call output helpers instead of dropping them, including markdown resources and JSON text payloads. (PR #124, thanks @mvanhorn)
 - Preserve default imports when `mcporter config add` writes a config file, instead of forcing `"imports": []`.

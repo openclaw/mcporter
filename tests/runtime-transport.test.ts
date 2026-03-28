@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ServerDefinition } from '../src/config.js';
+import * as oauthModule from '../src/oauth.js';
 import { createClientContext } from '../src/runtime/transport.js';
 
 const logger = {
@@ -65,5 +66,39 @@ describe('createClientContext (HTTP)', () => {
     expect(context.definition.auth).toBe('oauth');
     expect(clientConnect).toHaveBeenCalledTimes(2);
     fetchSpy.mockRestore();
+  });
+
+  it('drops static Authorization headers for oauth servers but preserves other headers', async () => {
+    const definition: ServerDefinition = {
+      ...stubHttpDefinition('https://example.com/secure'),
+      auth: 'oauth',
+      command: {
+        kind: 'http',
+        url: new URL('https://example.com/secure'),
+        headers: {
+          Authorization: 'Bearer static-token',
+          'X-Trace': 'keep-me',
+        },
+      },
+    };
+    const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+    const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+    const createOAuthSessionSpy = vi.spyOn(oauthModule, 'createOAuthSession').mockResolvedValue({
+      provider: {} as never,
+      waitForAuthorizationCode: vi.fn(),
+      close: vi.fn(async () => {}),
+    });
+
+    const clientConnect = vi.spyOn(Client.prototype, 'connect').mockImplementationOnce(async (transport) => {
+      expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
+      const requestInit = (transport as { _requestInit?: RequestInit })._requestInit;
+      expect(requestInit?.headers).toEqual({ 'X-Trace': 'keep-me' });
+    });
+
+    const context = await createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 1 });
+
+    expect(createOAuthSessionSpy).toHaveBeenCalledTimes(1);
+    expect(clientConnect).toHaveBeenCalledTimes(1);
+    await context.transport.close();
   });
 });
