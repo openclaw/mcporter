@@ -192,6 +192,9 @@ function formatTypeAnnotation(option: GeneratedOption, colorize: boolean): strin
       case 'array':
         baseType = 'string[]';
         break;
+      case 'object':
+        baseType = 'Record<string, unknown>';
+        break;
       case 'string':
         baseType = 'string';
         break;

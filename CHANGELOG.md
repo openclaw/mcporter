@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### CLI
+- Generated CLIs now parse object-valued flags as JSON and render object placeholders/examples with JSON-shaped help text, so tools like Jira `fields` no longer receive raw strings. (PR #114, thanks @v2nic)
+- Deduplicate concurrent keep-alive daemon restarts per server so repeated fatal errors only force-close the cached daemon transport once before retrying. (PR #125, thanks @zm2231)
 - Keep `mcporter call --output json` parseable by emitting valid JSON even when the command falls back to raw output. (PR #128, thanks @armanddp)
 - Ignore static `Authorization` headers once OAuth is active so imported editor configs cannot override fresh OAuth tokens. (PR #123, thanks @ahonn)
 - Preserve full JSON/error payloads when `data` is just one field instead of collapsing the response to `data` alone. (PR #106, thanks @AielloChan)

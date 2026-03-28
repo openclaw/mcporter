@@ -96,6 +96,23 @@ if (process.platform !== 'win32') {
         structuredContent: { coords, flags, names, ids },
       })
     );
+    server.registerTool(
+      'object_tool',
+      {
+        title: 'Object Tool',
+        description: 'Tool with object input',
+        inputSchema: {
+          fields: z.record(z.string(), z.unknown()),
+        },
+        outputSchema: {
+          fields: z.record(z.string(), z.unknown()),
+        },
+      },
+      async ({ fields }) => ({
+        content: [{ type: 'text', text: JSON.stringify({ fields }) }],
+        structuredContent: { fields },
+      })
+    );
     server.registerResource(
       'greeting',
       new ResourceTemplate('greeting://{name}', { list: undefined }),
@@ -446,6 +463,60 @@ describeGenerateCli('generateCli', () => {
     expect(parsed.flags).toEqual([true, false]);
     expect(parsed.names).toEqual(['alpha', 'beta']);
     expect(parsed.ids).toEqual([1, 2, 3]);
+  }, 30_000);
+
+  it('parses object option values as JSON in generated CLIs', async () => {
+    const inline = JSON.stringify({
+      name: 'object-test',
+      description: 'Object parsing test',
+      command: baseUrl.toString(),
+    });
+    const outputPath = path.join(tmpDir, 'object-test.ts');
+    await fs.rm(outputPath, { force: true });
+
+    const { outputPath: renderedPath } = await generateCli({
+      serverRef: inline,
+      outputPath,
+      runtime: 'node',
+      timeoutMs: 5_000,
+    });
+    const content = await fs.readFile(renderedPath, 'utf8');
+
+    expect(content).toContain('--fields <fields:json>');
+    expect(content).toContain('(value) => JSON.parse(value)');
+    expect(content).toContain('"object-tool": "function object_tool(fields: Record<string, unknown>): object;"');
+
+    const { execFile } = await import('node:child_process');
+    const { stdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      execFile(
+        'pnpm',
+        [
+          'exec',
+          'tsx',
+          renderedPath,
+          'object-tool',
+          '--fields',
+          '{"summary":"Ship it","done":true}',
+          '--output',
+          'json',
+        ],
+        execOptions(),
+        (error: import('node:child_process').ExecFileException | null, out: string, err: string) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve({ stdout: out, stderr: err });
+        }
+      );
+    });
+
+    expect(JSON.parse(stdout)).toEqual({
+      fields: {
+        done: true,
+        summary: 'Ship it',
+      },
+    });
   }, 30_000);
 
   it('accepts both kebab-case and underscore tool names for generated CLIs', async () => {

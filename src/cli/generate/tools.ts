@@ -126,6 +126,8 @@ export function buildPlaceholder(
       return `<${normalized}:true|false>`;
     case 'array':
       return `<${normalized}:value1,value2>`;
+    case 'object':
+      return `<${normalized}:json>`;
     default:
       if (formatSlug) {
         return `<${normalized}:${formatSlug}>`;
@@ -157,6 +159,8 @@ export function buildExampleValue(
       return 'true';
     case 'array':
       return 'value1,value2';
+    case 'object':
+      return '{"key":"value"}';
     default:
       if (property.toLowerCase().includes('path')) {
         return '/path/to/file.md';
@@ -185,7 +189,7 @@ export function pickExampleLiteral(option: GeneratedOption): string | undefined 
     }
     return `[${values.map((entry) => JSON.stringify(entry)).join(', ')}]`;
   }
-  if (option.type === 'number' || option.type === 'boolean') {
+  if (option.type === 'number' || option.type === 'boolean' || option.type === 'object') {
     return option.exampleValue;
   }
   try {
@@ -207,6 +211,8 @@ export function buildFallbackLiteral(option: GeneratedOption): string {
       return 'true';
     case 'array':
       return '["value1"]';
+    case 'object':
+      return '{"key":"value"}';
     default: {
       if (option.property.toLowerCase().includes('id')) {
         return JSON.stringify('example-id');

@@ -86,13 +86,16 @@ describe('generate helpers', () => {
 
     expect(buildPlaceholder('myPath', 'string', ['s1', 's2'])).toBe('<my-path:s1|s2>');
     expect(buildPlaceholder('createdAt', 'string', undefined, 'iso-8601')).toBe('<created-at:iso-8601>');
+    expect(buildPlaceholder('fields', 'object')).toBe('<fields:json>');
     expect(buildExampleValue('itemId', 'string', undefined, undefined)).toBe('example-id');
     expect(buildExampleValue('mode', 'string', ['fast'], undefined)).toBe('fast');
+    expect(buildExampleValue('fields', 'object', undefined, undefined)).toBe('{"key":"value"}');
 
     expect(inferType({ type: 'boolean' })).toBe('boolean');
     expect(inferType({ type: 'integer' })).toBe('number');
     expect(inferType({ type: ['null', 'integer'] })).toBe('number');
     expect(inferType({ type: ['null', 'array'] })).toBe('array');
+    expect(inferType({ type: 'object' })).toBe('object');
     expect(inferType({})).toBe('unknown');
 
     expect(inferArrayItemType({ type: 'array', items: { type: 'integer' } })).toBe('number');
@@ -158,5 +161,14 @@ describe('generate helpers', () => {
         placeholder: '<labels>',
       })
     ).toBe('["value1"]');
+    expect(
+      buildFallbackLiteral({
+        type: 'object',
+        property: 'fields',
+        cliName: 'fields',
+        required: false,
+        placeholder: '<fields>',
+      })
+    ).toBe('{"key":"value"}');
   });
 });
