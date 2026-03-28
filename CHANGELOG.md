@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### CLI
+- Skip Bun compiled `/$bunfs/...` argv entries when detached daemon restarts spawn child processes, so compiled binaries do not duplicate the virtual entry path and lose the `daemon` command. (PR #112, thanks @dedene)
 - Keep `mcporter call --output json` parseable by emitting valid JSON even when the command falls back to raw output. (PR #128, thanks @armanddp)
 - Ignore static `Authorization` headers once OAuth is active so imported editor configs cannot override fresh OAuth tokens. (PR #123, thanks @ahonn)
 - Preserve full JSON/error payloads when `data` is just one field instead of collapsing the response to `data` alone. (PR #106, thanks @AielloChan)
