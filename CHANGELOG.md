@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### CLI
+- Preserve full JSON/error payloads when `data` is just one field instead of collapsing the response to `data` alone. (PR #106, thanks @AielloChan)
 - Render `resource` content blocks in call output helpers instead of dropping them, including markdown resources and JSON text payloads. (PR #124, thanks @mvanhorn)
 - Preserve default imports when `mcporter config add` writes a config file, instead of forcing `"imports": []`.
 - OAuth: avoid crashing on headless Linux when `xdg-open` is unavailable; clear stale dynamic-port client registrations; close callback server if stale-client persistence reads fail. (PR #72, thanks @mgonto)

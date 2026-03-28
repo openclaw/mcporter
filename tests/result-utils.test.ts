@@ -216,6 +216,20 @@ describe('createCallResult json extraction', () => {
     expect(result.json()).toEqual({ nested: true });
   });
 
+  it('returns plain structuredContent objects even when they are not wrapped', () => {
+    const response = {
+      structuredContent: {
+        status: 'ok',
+        summary: 'No envelope keys here',
+      },
+    };
+    const result = createCallResult(response);
+    expect(result.json()).toEqual({
+      status: 'ok',
+      summary: 'No envelope keys here',
+    });
+  });
+
   it('returns the full structuredContent object when data is only one field among many', () => {
     const response = {
       raw: {

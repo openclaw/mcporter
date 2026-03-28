@@ -199,7 +199,8 @@ function parseStructuredContent(value: unknown): unknown {
     return null;
   }
 
-  return unwrapJsonEnvelope(value as Record<string, unknown>, value);
+  const unwrapped = unwrapJsonEnvelope(value as Record<string, unknown>, value);
+  return unwrapped ?? value;
 }
 
 // tryParseJson pulls JSON payloads out of structured responses or raw strings.
