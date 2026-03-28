@@ -7,6 +7,7 @@
 - Ignore static `Authorization` headers once OAuth is active so imported editor configs cannot override fresh OAuth tokens. (PR #123, thanks @ahonn)
 - Preserve full JSON/error payloads when `data` is just one field instead of collapsing the response to `data` alone. (PR #106, thanks @AielloChan)
 - Render `resource` content blocks in call output helpers instead of dropping them, including markdown resources and JSON text payloads. (PR #124, thanks @mvanhorn)
+- Preserve OAuth flow vs post-auth transport failures so invalid OAuth/provider errors surface directly, while real legacy 404/405 transport mismatches still fall back to SSE correctly. (PR #97, thanks @mavam)
 - Preserve default imports when `mcporter config add` writes a config file, instead of forcing `"imports": []`.
 - OAuth: avoid crashing on headless Linux when `xdg-open` is unavailable; clear stale dynamic-port client registrations; close callback server if stale-client persistence reads fail. (PR #72, thanks @mgonto)
 - Added optional `oauthScope`/`oauth_scope` config override as an escape hatch for providers that require explicit scopes.
