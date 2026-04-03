@@ -40,9 +40,10 @@ function openExternal(url: string, platform: NodeJS.Platform = process.platform,
       const child = launch('open', [url], { stdio, detached: true });
       child.unref();
     } else if (platform === 'win32') {
-      const child = launch('cmd', ['/c', 'start', '""', url], {
+      const child = launch('cmd', ['/s', '/c', `start "" "${url}"`], {
         stdio,
         detached: true,
+        windowsVerbatimArguments: true,
       });
       child.unref();
     } else {
