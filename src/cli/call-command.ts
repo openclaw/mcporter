@@ -331,7 +331,13 @@ async function enforceSchemaStringTypes(
   tool: string,
   args: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  // Load tool schema to check declared types for each argument.
+  const hasCoercedNumbers = Object.values(args).some(
+    (v) => typeof v === "number",
+  );
+  if (!hasCoercedNumbers) {
+    return args;
+  }
+
   const tools = await loadToolMetadata(runtime, server, {
     includeSchema: true,
   }).catch(() => undefined);
@@ -343,16 +349,23 @@ async function enforceSchemaStringTypes(
     return args;
   }
   const schema = toolInfo.tool.inputSchema as {
-    properties?: Record<string, { type?: string }>;
+    properties?: Record<string, { type?: string | string[] }>;
   };
   if (!schema.properties) {
     return args;
   }
+
   const corrected: Record<string, unknown> = { ...args };
   for (const [key, value] of Object.entries(corrected)) {
+    if (typeof value !== "number") {
+      continue;
+    }
     const declared = schema.properties[key];
-    // If schema says this field is a string but we have a number, convert it back.
-    if (declared?.type === "string" && typeof value === "number") {
+    const declaredType = declared?.type;
+    const isStringType =
+      declaredType === "string" ||
+      (Array.isArray(declaredType) && declaredType.includes("string"));
+    if (isStringType) {
       corrected[key] = String(value);
     }
   }
