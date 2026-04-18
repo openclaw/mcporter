@@ -11,6 +11,8 @@ export type SerializedServerDefinition = {
   clientName?: string;
   oauthRedirectUrl?: string;
   oauthScope?: string;
+  allowedTools?: readonly string[];
+  blockedTools?: readonly string[];
   env?: Record<string, string>;
   transport: 'http' | 'stdio';
   baseUrl?: string;
@@ -32,6 +34,8 @@ export function serializeDefinition(definition: ServerDefinition): SerializedSer
       clientName: definition.clientName,
       oauthRedirectUrl: definition.oauthRedirectUrl,
       oauthScope: definition.oauthScope,
+      allowedTools: definition.allowedTools,
+      blockedTools: definition.blockedTools,
       env: definition.env,
       transport: 'http',
       baseUrl: definition.command.url.href,
@@ -47,6 +51,8 @@ export function serializeDefinition(definition: ServerDefinition): SerializedSer
     clientName: definition.clientName,
     oauthRedirectUrl: definition.oauthRedirectUrl,
     oauthScope: definition.oauthScope,
+    allowedTools: definition.allowedTools,
+    blockedTools: definition.blockedTools,
     env: definition.env,
     transport: 'stdio',
     command: definition.command.command,
@@ -78,6 +84,14 @@ export function printServerSummary(definition: ServerDefinition): void {
   }
   if (definition.auth === 'oauth') {
     console.log(`  ${label('Auth')}: oauth`);
+  }
+  if (definition.allowedTools !== undefined) {
+    const rendered = definition.allowedTools.length > 0 ? definition.allowedTools.join(', ') : '<none>';
+    console.log(`  ${label('Allowed tools')}: ${rendered}`);
+  }
+  if (definition.blockedTools !== undefined) {
+    const rendered = definition.blockedTools.length > 0 ? definition.blockedTools.join(', ') : '<none>';
+    console.log(`  ${label('Blocked tools')}: ${rendered}`);
   }
 }
 

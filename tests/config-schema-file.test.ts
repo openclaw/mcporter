@@ -10,7 +10,7 @@ describe('generated config schema', () => {
     expect(checkedIn).toEqual(generated);
   });
 
-  it('includes top-level $schema and oauthScope properties', async () => {
+  it('includes top-level $schema, oauthScope, and tool filter properties', async () => {
     const schemaPath = new URL('../mcporter.schema.json', import.meta.url);
     const schema = JSON.parse(await fs.readFile(schemaPath, 'utf8')) as {
       $schema?: string;
@@ -25,5 +25,9 @@ describe('generated config schema', () => {
     const entryProperties = mcpServers?.additionalProperties?.properties;
     expect(entryProperties?.oauthScope).toBeDefined();
     expect(entryProperties?.oauth_scope).toBeDefined();
+    expect(entryProperties?.allowedTools).toBeDefined();
+    expect(entryProperties?.allowed_tools).toBeDefined();
+    expect(entryProperties?.blockedTools).toBeDefined();
+    expect(entryProperties?.blocked_tools).toBeDefined();
   });
 });

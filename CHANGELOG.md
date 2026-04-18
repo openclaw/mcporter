@@ -4,6 +4,7 @@
 
 ### CLI
 
+- Add per-server exact-name tool filtering with `allowedTools` and `blockedTools`, including config serialization and runtime call/list enforcement. (Rebuild of PR #39, thanks @tonylampada)
 - Escalate stuck stdio child-process shutdowns after close timeouts instead of treating the timeout as a clean exit. (PR #39, thanks @tonylampada)
 - Quote OAuth browser URLs when launching `cmd.exe` on Windows, preserving query parameters such as `redirect_uri`. (PR #136, thanks @cosminilie)
 - Document OAuth-protected server config setup with `mcporter config add --auth oauth` and `mcporter auth`. (PR #34, thanks @prateek)

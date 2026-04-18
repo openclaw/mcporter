@@ -191,6 +191,16 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
   const tokenCacheDir = typeof def.tokenCacheDir === 'string' ? def.tokenCacheDir : undefined;
   const clientName = typeof def.clientName === 'string' ? def.clientName : undefined;
   const headers = toStringRecord((def as Record<string, unknown>).headers);
+  const record = def as Record<string, unknown>;
+  const allowedTools = getOptionalStringArray(record.allowedTools ?? record.allowed_tools, 'allowedTools');
+  const blockedTools = getOptionalStringArray(record.blockedTools ?? record.blocked_tools, 'blockedTools');
+  if (allowedTools !== undefined && blockedTools !== undefined) {
+    throw new Error(`Server definition '${name}' cannot specify both allowedTools and blockedTools.`);
+  }
+  const filters = {
+    ...(allowedTools !== undefined ? { allowedTools } : {}),
+    ...(blockedTools !== undefined ? { blockedTools } : {}),
+  };
 
   const commandValue = def.command;
   if (isCommandSpec(commandValue)) {
@@ -202,6 +212,7 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
       auth,
       tokenCacheDir,
       clientName,
+      ...filters,
     };
   }
   if (typeof commandValue === 'string' && commandValue.trim().length > 0) {
@@ -213,6 +224,7 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
       auth,
       tokenCacheDir,
       clientName,
+      ...filters,
     };
   }
   if (Array.isArray(commandValue) && commandValue.length > 0) {
@@ -228,6 +240,7 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
       auth,
       tokenCacheDir,
       clientName,
+      ...filters,
     };
   }
   throw new Error('Server definition must include command information.');
@@ -309,6 +322,16 @@ function getStringArray(value: unknown): string[] | undefined {
   }
   const entries = value.filter((item): item is string => typeof item === 'string');
   return entries.length > 0 ? entries : undefined;
+}
+
+function getOptionalStringArray(value: unknown, fieldName: string): string[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+    throw new Error(`${fieldName} must be an array of strings.`);
+  }
+  return [...value];
 }
 
 function toStringRecord(value: unknown): Record<string, string> | undefined {

@@ -34,6 +34,8 @@ const RawLifecycleSchema = z
 
 export type RawLifecycle = z.infer<typeof RawLifecycleSchema>;
 
+const ToolNamesSchema = z.array(z.string()).describe('Exact MCP tool names');
+
 const RawLoggingSchema = z
   .object({
     daemon: z
@@ -98,6 +100,21 @@ export const RawEntrySchema = z
       .describe('Environment variable name containing the bearer token (snake_case)'),
     lifecycle: RawLifecycleSchema.optional(),
     logging: RawLoggingSchema,
+    allowedTools: ToolNamesSchema.optional().describe('Only these exact tool names are exposed (camelCase)'),
+    allowed_tools: ToolNamesSchema.optional().describe('Only these exact tool names are exposed (snake_case)'),
+    blockedTools: ToolNamesSchema.optional().describe('These exact tool names are hidden and blocked (camelCase)'),
+    blocked_tools: ToolNamesSchema.optional().describe('These exact tool names are hidden and blocked (snake_case)'),
+  })
+  .superRefine((entry, ctx) => {
+    const hasAllowed = entry.allowedTools !== undefined || entry.allowed_tools !== undefined;
+    const hasBlocked = entry.blockedTools !== undefined || entry.blocked_tools !== undefined;
+    if (hasAllowed && hasBlocked) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Specify either allowedTools or blockedTools, not both.',
+        path: ['allowedTools'],
+      });
+    }
   })
   .describe('MCP server definition supporting both HTTP/SSE and stdio transports');
 
@@ -167,6 +184,10 @@ export interface ServerDefinition {
   readonly sources?: readonly ServerSource[];
   readonly lifecycle?: ServerLifecycle;
   readonly logging?: ServerLoggingOptions;
+  /** When specified, only these exact tool names are exposed. Empty array blocks all tools. */
+  readonly allowedTools?: readonly string[];
+  /** When specified, these exact tool names are hidden and blocked. Cannot be combined with allowedTools. */
+  readonly blockedTools?: readonly string[];
 }
 
 export interface LoadConfigOptions {

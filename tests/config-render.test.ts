@@ -18,6 +18,7 @@ describe('config render helpers', () => {
       clientName: 'mcporter',
       oauthRedirectUrl: 'https://example.com/callback',
       oauthScope: 'openid profile',
+      allowedTools: ['read'],
       env: { FOO: 'bar' },
     };
 
@@ -32,6 +33,7 @@ describe('config render helpers', () => {
       clientName: 'mcporter',
       oauthRedirectUrl: 'https://example.com/callback',
       oauthScope: 'openid profile',
+      allowedTools: ['read'],
       env: { FOO: 'bar' },
       source: { kind: 'import', path: '/tmp/source.json' },
     });
@@ -46,6 +48,7 @@ describe('config render helpers', () => {
         args: ['--version'],
         cwd: '/tmp',
       },
+      blockedTools: ['write'],
     };
 
     const payload = serializeDefinition(definition);
@@ -56,6 +59,7 @@ describe('config render helpers', () => {
       args: ['--version'],
       cwd: '/tmp',
       name: 'stdio-server',
+      blockedTools: ['write'],
     });
   });
 });

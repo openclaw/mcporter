@@ -219,6 +219,34 @@
               }
             },
             "additionalProperties": false
+          },
+          "allowedTools": {
+            "description": "Only these exact tool names are exposed (camelCase)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowed_tools": {
+            "description": "Only these exact tool names are exposed (snake_case)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "blockedTools": {
+            "description": "These exact tool names are hidden and blocked (camelCase)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "blocked_tools": {
+            "description": "These exact tool names are hidden and blocked (snake_case)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": false,

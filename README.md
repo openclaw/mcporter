@@ -416,6 +416,27 @@ mcporter config --config ~/.mcporter/mcporter.json add global-server https://api
 
 Set `MCPORTER_CONFIG=~/.mcporter/mcporter.json` in your shell profile when you want that file to be the default everywhere (handy for `npx mcporter …` runs).
 
+### Tool Filtering
+
+Server definitions can hide or block exact tool names with either `allowedTools` or `blockedTools`:
+
+```jsonc
+{
+  "mcpServers": {
+    "slack-readonly": {
+      "baseUrl": "https://example.com/slack/mcp",
+      "allowedTools": ["channels_list", "conversations_history"],
+    },
+    "filesystem-safe": {
+      "command": "npx -y @modelcontextprotocol/server-filesystem ~/Downloads",
+      "blockedTools": ["write_file", "delete_file", "move_file"],
+    },
+  },
+}
+```
+
+`allowedTools` is an allowlist: only listed tools appear in `mcporter list` and can be called. An empty array blocks every tool. `blockedTools` is a blocklist: listed tools are hidden and rejected by `mcporter call`. Use exact tool names only, and choose one mode per server.
+
 ## Testing and CI
 
 | Command      | Purpose                                                                 |

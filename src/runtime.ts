@@ -9,6 +9,7 @@ import { shouldResetConnection } from './runtime/errors.js';
 import { resolveOAuthTimeoutFromEnv } from './runtime/oauth.js';
 import { type ClientContext, createClientContext } from './runtime/transport.js';
 import { normalizeTimeout, raceWithTimeout } from './runtime/utils.js';
+import { filterTools, isToolAllowed, validateToolFilters } from './tool-filters.js';
 
 const PACKAGE_NAME = 'mcporter';
 // Keep version in one place by reading package.json; fall back gracefully when bundled without it (e.g., bun bundle).
@@ -111,6 +112,9 @@ class McpRuntime implements Runtime {
   private readonly oauthTimeoutMs?: number;
 
   constructor(servers: ServerDefinition[], options: RuntimeOptions = {}) {
+    for (const server of servers) {
+      validateToolFilters(server.name, server);
+    }
     this.definitions = new Map(servers.map((entry) => [entry.name, entry]));
     this.logger = options.logger ?? createConsoleLogger();
     this.clientInfo = options.clientInfo ?? {
@@ -140,6 +144,7 @@ class McpRuntime implements Runtime {
   }
 
   registerDefinition(definition: ServerDefinition, options: { overwrite?: boolean } = {}): void {
+    validateToolFilters(definition.name, definition);
     if (!options.overwrite && this.definitions.has(definition.name)) {
       throw new Error(`MCP server '${definition.name}' already exists.`);
     }
@@ -172,7 +177,7 @@ class McpRuntime implements Runtime {
         cursor = response.nextCursor ?? undefined;
       } while (cursor);
 
-      return tools;
+      return filterTools(tools, this.definitions.get(server.trim()));
     } catch (error) {
       // Keep-alive STDIO transports often die when Chrome closes; drop the cached client
       // so the next call spins up a fresh process instead of reusing the broken handle.
@@ -189,6 +194,12 @@ class McpRuntime implements Runtime {
 
   // callTool executes a tool using the args provided by the caller.
   async callTool(server: string, toolName: string, options: CallOptions = {}): Promise<unknown> {
+    const definition = this.definitions.get(server.trim());
+    if (definition && !isToolAllowed(toolName, definition)) {
+      throw new Error(
+        `Tool '${toolName}' is not accessible on server '${definition.name}' (blocked by configuration).`
+      );
+    }
     try {
       const { client } = await this.connect(server);
       const params: CallToolRequest['params'] = {

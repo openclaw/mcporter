@@ -25,6 +25,8 @@ export interface SerializedServerDefinition {
   readonly clientName?: string;
   readonly oauthRedirectUrl?: string;
   readonly oauthScope?: string;
+  readonly allowedTools?: readonly string[];
+  readonly blockedTools?: readonly string[];
 }
 
 export interface CliArtifactMetadata {
@@ -143,6 +145,8 @@ export function serializeDefinition(definition: ServerDefinition): SerializedSer
       clientName: definition.clientName,
       oauthRedirectUrl: definition.oauthRedirectUrl,
       oauthScope: definition.oauthScope,
+      allowedTools: definition.allowedTools,
+      blockedTools: definition.blockedTools,
     };
   }
   return {
@@ -160,5 +164,7 @@ export function serializeDefinition(definition: ServerDefinition): SerializedSer
     clientName: definition.clientName,
     oauthRedirectUrl: definition.oauthRedirectUrl,
     oauthScope: definition.oauthScope,
+    allowedTools: definition.allowedTools,
+    blockedTools: definition.blockedTools,
   };
 }

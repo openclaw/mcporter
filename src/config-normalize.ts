@@ -44,6 +44,8 @@ export function normalizeServerEntry(
 
   const lifecycle = resolveLifecycle(name, raw.lifecycle, command);
   const logging = normalizeLogging(raw.logging);
+  const allowedTools = raw.allowedTools ?? raw.allowed_tools;
+  const blockedTools = raw.blockedTools ?? raw.blocked_tools;
 
   const defaultedOauthCommand =
     !oauthCommand && name.toLowerCase() === 'gmail' && command.kind === 'stdio'
@@ -65,6 +67,8 @@ export function normalizeServerEntry(
     sources,
     lifecycle,
     logging,
+    ...(allowedTools !== undefined ? { allowedTools: [...allowedTools] } : {}),
+    ...(blockedTools !== undefined ? { blockedTools: [...blockedTools] } : {}),
   };
 }
 
