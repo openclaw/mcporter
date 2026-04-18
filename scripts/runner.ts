@@ -40,7 +40,7 @@ const WRAPPER_COMMANDS = new Set([
 type SummaryStyle = 'compact' | 'minimal' | 'verbose';
 const SUMMARY_STYLE = resolveSummaryStyle(process.env.RUNNER_SUMMARY_STYLE);
 
-// biome-ignore format: keep each keyword on its own line for grep-friendly diffs.
+// Keep each keyword on its own line for grep-friendly diffs.
 const LONG_SCRIPT_KEYWORDS = [
   'build',
   'test:all',
@@ -54,7 +54,7 @@ const EXTENDED_SCRIPT_KEYWORDS = ['lint', 'test', 'playwright', 'check', 'docker
 const SINGLE_TEST_SCRIPTS = new Set(['test:file']);
 const SINGLE_TEST_FLAGS = new Set(['--run', '--filter']);
 const TEST_BINARIES = new Set(['vitest', 'playwright', 'jest']);
-const LINT_BINARIES = new Set(['eslint', 'biome', 'oxlint', 'knip']);
+const LINT_BINARIES = new Set(['eslint', 'oxfmt', 'oxlint', 'knip']);
 
 type RunnerExecutionContext = {
   commandArgs: string[];
@@ -568,7 +568,7 @@ async function runCommand(context: RunnerExecutionContext): Promise<void> {
 
   let killTimer: NodeJS.Timeout | null = null;
   try {
-    const result = await new Promise<{ exitCode: number; timedOut: boolean }>((resolve, reject) => {
+    const result = await new Promise<{ exitCode: number; timedOut: boolean }>((fulfill, reject) => {
       let timedOut = false;
       const timeout = setTimeout(() => {
         timedOut = true;
@@ -600,7 +600,7 @@ async function runCommand(context: RunnerExecutionContext): Promise<void> {
           clearTimeout(killTimer);
         }
         removeSignalHandlers();
-        resolve({ exitCode: code ?? exitCodeFromSignal(signal), timedOut });
+        fulfill({ exitCode: code ?? exitCodeFromSignal(signal), timedOut });
       });
     });
     const { exitCode, timedOut } = result;
@@ -645,14 +645,14 @@ async function runCommandWithoutTimeout(context: RunnerExecutionContext): Promis
   const removeSignalHandlers = registerSignalForwarding(child);
 
   try {
-    const exitCode = await new Promise<number>((resolve, reject) => {
+    const exitCode = await new Promise<number>((fulfill, reject) => {
       child.once('error', (error) => {
         removeSignalHandlers();
         reject(error);
       });
       child.once('exit', (code, signal) => {
         removeSignalHandlers();
-        resolve(code ?? exitCodeFromSignal(signal));
+        fulfill(code ?? exitCodeFromSignal(signal));
       });
     });
     const elapsedMs = Date.now() - startTime;

@@ -2,8 +2,8 @@
   "compilerOptions": {
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "target": "ES2022",
-    "lib": ["ES2022", "DOM"],
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM"],
     "verbatimModuleSyntax": true,
     "allowImportingTsExtensions": false,
     "strict": true,

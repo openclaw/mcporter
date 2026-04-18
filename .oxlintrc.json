@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error"
+  },
+  "rules": {
+    "no-await-in-loop": "off",
+    "oxc/no-async-endpoint-handlers": "off",
+    "typescript/no-unsafe-type-assertion": "off",
+    "typescript/no-unnecessary-type-assertion": "off",
+    "typescript/no-unnecessary-type-conversion": "off",
+    "typescript/no-unnecessary-type-parameters": "off",
+    "typescript/no-unnecessary-template-expression": "off",
+    "unicorn/prefer-add-event-listener": "off"
+  },
+  "env": {
+    "builtin": true
+  }
+}

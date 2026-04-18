@@ -2,12 +2,26 @@
   "name": "mcporter",
   "version": "0.8.1",
   "description": "TypeScript runtime and CLI for connecting to configured Model Context Protocol servers.",
-  "packageManager": "pnpm@10.22.0",
-  "pnpm": {
-    "overrides": {
-      "body-parser": "2.2.1"
-    }
+  "keywords": [
+    "cli",
+    "mcp",
+    "model-context-protocol",
+    "sweetistics"
+  ],
+  "license": "MIT",
+  "author": "Sweetistics",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/steipete/mcporter"
   },
+  "bin": {
+    "mcporter": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -22,23 +36,19 @@
       "types": "./dist/cli.d.ts"
     }
   },
-  "bin": {
-    "mcporter": "dist/cli.js"
+  "publishConfig": {
+    "access": "public"
   },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
   "scripts": {
     "mcporter": "tsx src/cli.ts",
     "mcp": "pnpm exec tsx src/cli.ts",
     "build": "tsc -p tsconfig.build.json",
     "build:bun": "bun scripts/build-bun.ts",
-    "check": "pnpm lint:biome && pnpm lint:oxlint && pnpm typecheck",
+    "check": "pnpm format:check && pnpm lint:oxlint && pnpm typecheck",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
     "lint": "pnpm check",
-    "lint:biome": "biome check",
-    "lint:oxlint": "oxlint --type-aware --tsconfig tsconfig.json --max-warnings=0",
+    "lint:oxlint": "oxlint --type-aware --tsconfig tsconfig.json --report-unused-disable-directives --deny-warnings --max-warnings=0",
     "typecheck": "tsgo --project tsconfig.json --noEmit",
     "test": "cross-env MCPORTER_TEST_REPORTER=quiet pnpm test:verbose",
     "test:quiet": "cross-env MCPORTER_TEST_REPORTER=quiet pnpm test:verbose",
@@ -54,49 +64,31 @@
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@modelcontextprotocol/sdk": "^1.28.0",
     "acorn": "^8.16.0",
     "commander": "^14.0.3",
-    "es-toolkit": "^1.45.0",
+    "es-toolkit": "^1.45.1",
     "jsonc-parser": "^3.3.1",
     "ora": "^9.3.0",
-    "rolldown": "1.0.0-rc.6",
+    "rolldown": "1.0.0-rc.12",
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.5",
     "@types/estree": "^1.0.8",
     "@types/express": "^5.0.6",
-    "@types/node": "^25.3.3",
-    "@typescript/native-preview": "7.0.0-dev.20260302.1",
-    "@vitest/coverage-v8": "^4.0.18",
-    "bun-types": "^1.3.10",
+    "@types/node": "^25.5.0",
+    "@typescript/native-preview": "7.0.0-dev.20260328.1",
+    "@vitest/coverage-v8": "^4.1.2",
+    "bun-types": "^1.3.11",
     "cross-env": "^10.1.0",
     "express": "^5.2.1",
-    "oxlint": "^1.51.0",
-    "oxlint-tsgolint": "^0.15.0",
+    "oxfmt": "^0.45.0",
+    "oxlint": "^1.60.0",
+    "oxlint-tsgolint": "^0.21.1",
     "rimraf": "^6.1.3",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
-  },
-  "engines": {
-    "node": ">=20.11.0"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/steipete/mcporter"
-  },
-  "keywords": [
-    "mcp",
-    "model-context-protocol",
-    "cli",
-    "sweetistics"
-  ],
-  "author": "Sweetistics",
-  "license": "MIT",
-  "publishConfig": {
-    "access": "public"
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2"
   },
   "devEngines": {
     "runtime": [
@@ -105,5 +97,14 @@
         "version": ">=20"
       }
     ]
+  },
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "packageManager": "pnpm@10.22.0",
+  "pnpm": {
+    "overrides": {
+      "body-parser": "2.2.1"
+    }
   }
 }
