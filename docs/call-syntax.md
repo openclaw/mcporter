@@ -69,6 +69,7 @@ Key details:
 
 - `key=value`, `key:value`, and `key: value` all map to the same named-argument handling, so you can type whichever feels most natural for your shell.
 - By default, arguments keep the same validation pipeline as the function-call syntax—enums, numbers, and booleans are coerced automatically, and missing required fields raise errors.
+- Numeric-looking `key=value` arguments are restored to their original string spelling when the tool schema declares that parameter as a string, which keeps timestamp-like IDs such as Slack `thread_ts=1234567890.123456` intact.
 - `--raw-strings` disables numeric coercion for flag-style and positional values so IDs/codes stay literal strings (`code=12345` stays `"12345"`).
 - `--no-coerce` disables all coercion for flag-style and positional values (`true`, `null`, and JSON-like values remain strings).
 - Unknown long flags like `--source` now fail fast instead of silently becoming positional tool arguments. Use `source=value`, `--args '{"source":"value"}'`, or insert `--` before literal positional values that start with `--`.

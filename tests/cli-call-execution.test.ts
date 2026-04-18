@@ -41,6 +41,75 @@ describe('CLI call execution behavior', () => {
     logSpy.mockRestore();
   });
 
+  it('restores numeric-looking key=value args to schema-declared strings', async () => {
+    const { handleCall } = await cliModulePromise;
+    const { runtime, callTool, listTools } = createRuntimeStub({
+      slack: [
+        {
+          name: 'conversations_replies',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              channel_id: { type: 'string' },
+              thread_ts: { type: 'string' },
+              latest: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+              limit: { type: 'number' },
+            },
+            required: ['channel_id', 'thread_ts'],
+          },
+        },
+      ],
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleCall(runtime, [
+      'slack.conversations_replies',
+      'channel_id=C1234567890',
+      'thread_ts=1234567890.123456',
+      'latest=1234567899.987654',
+      'limit=1',
+    ]);
+
+    expect(callTool).toHaveBeenCalledWith(
+      'slack',
+      'conversations_replies',
+      expect.objectContaining({
+        args: {
+          channel_id: 'C1234567890',
+          thread_ts: '1234567890.123456',
+          latest: '1234567899.987654',
+          limit: 1,
+        },
+      })
+    );
+    expect(listTools).toHaveBeenCalledWith('slack', { autoAuthorize: true, includeSchema: true });
+    logSpy.mockRestore();
+  });
+
+  it('does not load schemas for numeric values supplied via --args JSON', async () => {
+    const { handleCall } = await cliModulePromise;
+    const { runtime, callTool, listTools } = createRuntimeStub({
+      linear: [
+        {
+          name: 'list_issues',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              limit: { type: 'number' },
+            },
+          },
+        },
+      ],
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleCall(runtime, ['linear.list_issues', '--args', '{"limit":5}']);
+
+    expect(callTool).toHaveBeenCalledWith('linear', 'list_issues', expect.objectContaining({ args: { limit: 5 } }));
+    expect(listTools).not.toHaveBeenCalled();
+    logSpy.mockRestore();
+  });
+
   it('still requires an explicit tool when multiple are available', async () => {
     const { handleCall } = await cliModulePromise;
     const { runtime, callTool } = createRuntimeStub(

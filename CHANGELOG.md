@@ -2,7 +2,8 @@
 
 ## [0.8.2] - Unreleased
 
-- Nothing yet.
+### CLI
+- Respect schema-declared string parameters when coercing numeric-looking `mcporter call` key=value arguments, so Slack timestamps like `thread_ts` stay strings. (PR #141, thanks @Hamzaa6296)
 
 ## [0.8.1] - 2026-03-29
 
