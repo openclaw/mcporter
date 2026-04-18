@@ -128,7 +128,7 @@ function waitForChildClose(child: MaybeChildProcess | undefined, timeoutMs: numb
   ) {
     return Promise.resolve();
   }
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let settled = false;
     const swallowProcessError = () => {};
     try {
@@ -136,18 +136,24 @@ function waitForChildClose(child: MaybeChildProcess | undefined, timeoutMs: numb
     } catch {
       // ignore
     }
-    const finish = () => {
+    const finish = (didExit: boolean) => {
       if (settled) {
         return;
       }
       settled = true;
       cleanup();
-      resolve();
+      if (didExit) {
+        resolve();
+      } else {
+        reject(new Error('timeout'));
+      }
     };
+    const onExit = () => finish(true);
+    const onTimeout = () => finish(false);
     const cleanup = () => {
-      child.removeListener('exit', finish);
-      child.removeListener('close', finish);
-      child.removeListener('error', finish);
+      child.removeListener('exit', onExit);
+      child.removeListener('close', onExit);
+      child.removeListener('error', onExit);
       try {
         child.removeListener?.('error', swallowProcessError);
       } catch {
@@ -157,12 +163,12 @@ function waitForChildClose(child: MaybeChildProcess | undefined, timeoutMs: numb
         clearTimeout(timer);
       }
     };
-    child.once('exit', finish);
-    child.once('close', finish);
-    child.once('error', finish);
+    child.once('exit', onExit);
+    child.once('close', onExit);
+    child.once('error', onExit);
     let timer: NodeJS.Timeout | undefined;
     if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
-      timer = setTimeout(finish, timeoutMs);
+      timer = setTimeout(onTimeout, timeoutMs);
       timer.unref?.();
     }
   });

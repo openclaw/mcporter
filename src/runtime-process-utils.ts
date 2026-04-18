@@ -57,30 +57,36 @@ async function waitForChildClose(child: ChildProcess, timeoutMs: number): Promis
   ) {
     return;
   }
-  await new Promise<void>((resolve) => {
+  await new Promise<void>((resolve, reject) => {
     let settled = false;
-    const finish = () => {
+    const finish = (didExit: boolean) => {
       if (settled) {
         return;
       }
       settled = true;
       cleanup();
-      resolve();
+      if (didExit) {
+        resolve();
+      } else {
+        reject(new Error('timeout'));
+      }
     };
+    const onExit = () => finish(true);
+    const onTimeout = () => finish(false);
     const cleanup = () => {
-      child.removeListener('close', finish);
-      child.removeListener('exit', finish);
-      child.removeListener('error', finish);
+      child.removeListener('close', onExit);
+      child.removeListener('exit', onExit);
+      child.removeListener('error', onExit);
       if (timer) {
         clearTimeout(timer);
       }
     };
-    child.once('close', finish);
-    child.once('exit', finish);
-    child.once('error', finish);
+    child.once('close', onExit);
+    child.once('exit', onExit);
+    child.once('error', onExit);
     let timer: NodeJS.Timeout | undefined;
     if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
-      timer = setTimeout(finish, timeoutMs);
+      timer = setTimeout(onTimeout, timeoutMs);
       timer.unref?.();
     }
   });
