@@ -4,6 +4,7 @@
 
 ### CLI
 
+- Document OAuth-protected server config setup with `mcporter config add --auth oauth` and `mcporter auth`. (PR #34, thanks @prateek)
 - Respect schema-declared string parameters when coercing numeric-looking `mcporter call` key=value arguments, so Slack timestamps like `thread_ts` stay strings. (PR #141, thanks @Hamzaa6296)
 
 ## [0.8.1] - 2026-03-29
