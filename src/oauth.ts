@@ -256,7 +256,10 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     this.logger.info(`Authorization required for ${this.definition.name}. Opening browser...`);
     this.ensureAuthorizationDeferred();
     __oauthInternals.openExternal(authorizationUrl.toString());
-    this.logger.info(`If the browser did not open, visit ${authorizationUrl.toString()} manually.`);
+    // warn level because this is the manual-completion fallback: on headless servers / CI
+    // where the browser never opens, the user has no other way to recover the URL, so it
+    // must survive the default 'warn' log threshold set by logging.ts.
+    this.logger.warn(`If the browser did not open, visit ${authorizationUrl.toString()} manually.`);
   }
 
   async saveCodeVerifier(codeVerifier: string): Promise<void> {

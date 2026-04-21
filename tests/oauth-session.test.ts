@@ -213,4 +213,43 @@ describe('FileOAuthClientProvider session lifecycle', () => {
     await expect(waitPromise).resolves.toBe('stable-deferred-code');
     await session.close();
   });
+
+  it('logs the manual-completion URL at warn level so headless/CI users can copy it (#139)', async () => {
+    const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+    tempDirs.push(tokenCacheDir);
+    const definition: ServerDefinition = {
+      name: 'test-oauth-headless-url',
+      description: 'Test OAuth server',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'oauth',
+      tokenCacheDir,
+    };
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+
+    const session = await createOAuthSession(definition, logger);
+    const provider = session.provider as StatefulProvider;
+    vi.spyOn(__oauthInternals, 'openExternal').mockImplementation(() => {});
+    const authorizationUrl = new URL('https://example.com/auth?code=xyz');
+    // redirectToAuthorization creates a pending wait promise internally; consume it so
+    // session.close() doesn't surface an uncaught rejection for the unresolved deferred.
+    const waitPromise = session.waitForAuthorizationCode().catch(() => undefined);
+    await provider.redirectToAuthorization(authorizationUrl);
+
+    // The manual-completion hint must go through warn, not info, because the logger
+    // threshold defaults to 'warn' (see logging.ts) — routing this line at info silently
+    // strips the URL for every headless / CI user, leaving them with no way to finish
+    // the flow.
+    const warnCall = logger.warn.mock.calls.find(
+      (call) => typeof call[0] === 'string' && call[0].includes(authorizationUrl.toString())
+    );
+    expect(warnCall, 'expected logger.warn to receive the manual OAuth URL').toBeDefined();
+    expect(warnCall?.[0]).toMatch(/If the browser did not open, visit/);
+
+    await session.close();
+    await waitPromise;
+  });
 });
