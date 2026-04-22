@@ -16,6 +16,7 @@ import {
   createEmptyStatusCounts,
   createUnknownResult,
   type ListJsonServerEntry,
+  printBriefTool,
   printSingleServerHeader,
   printToolDetail,
   summarizeStatusCounts,
@@ -34,12 +35,14 @@ export function extractListFlags(args: string[]): {
   format: ListOutputFormat;
   verbose: boolean;
   includeSources: boolean;
+  brief: boolean;
 } {
   let schema = false;
   let timeoutMs: number | undefined;
   let requiredOnly = true;
   let verbose = false;
   let includeSources = false;
+  let brief = false;
   const format = consumeOutputFormat(args, {
     defaultFormat: 'text',
     allowed: ['text', 'json'],
@@ -74,13 +77,36 @@ export function extractListFlags(args: string[]): {
       args.splice(index, 1);
       continue;
     }
+    if (token === '--brief') {
+      brief = true;
+      args.splice(index, 1);
+      continue;
+    }
     if (token === '--timeout') {
       timeoutMs = consumeTimeoutFlag(args, index, { flagName: '--timeout' });
       continue;
     }
     index += 1;
   }
-  return { schema, timeoutMs, requiredOnly, ephemeral, format, verbose, includeSources };
+  if (brief) {
+    const conflicts: string[] = [];
+    if (format === 'json') {
+      conflicts.push('--json');
+    }
+    if (schema) {
+      conflicts.push('--schema');
+    }
+    if (verbose) {
+      conflicts.push('--verbose');
+    }
+    if (!requiredOnly) {
+      conflicts.push('--all-parameters');
+    }
+    if (conflicts.length > 0) {
+      throw new Error(`--brief cannot be used with ${conflicts.join(', ')}`);
+    }
+  }
+  return { schema, timeoutMs, requiredOnly, ephemeral, format, verbose, includeSources, brief };
 }
 
 type ListOutputFormat = 'text' | 'json';
@@ -315,6 +341,20 @@ export async function handleList(
       console.log('');
       return;
     }
+    if (flags.brief) {
+      let optionalOmitted = false;
+      for (const entry of metadataEntries) {
+        const detail = printBriefTool(definition, entry, flags.requiredOnly);
+        optionalOmitted ||= detail.optionalOmitted;
+      }
+      if (flags.requiredOnly && optionalOmitted) {
+        console.log(`  ${extraDimText('Optional parameters hidden; run with --all-parameters to view all fields.')}`);
+        console.log('');
+      }
+      console.log(summaryLine);
+      console.log('');
+      return;
+    }
     const examples: string[] = [];
     let optionalOmitted = false;
     for (const entry of metadataEntries) {
@@ -372,6 +412,7 @@ export function printListHelp(): void {
     '  --yes                  Skip confirmation prompts when persisting.',
     '',
     'Display flags:',
+    '  --brief                Show compact function signatures only for a single server.',
     '  --schema               Show tool schemas when listing servers.',
     '  --all-parameters       Include optional parameters in tool docs.',
     '  --json                 Emit a JSON summary instead of text.',
@@ -382,6 +423,7 @@ export function printListHelp(): void {
     'Examples:',
     '  mcporter list',
     '  mcporter list linear --schema',
+    '  mcporter list linear --brief',
     '  mcporter list https://mcp.example.com/mcp',
     '  mcporter list --http-url https://localhost:3333/mcp --schema',
   ];

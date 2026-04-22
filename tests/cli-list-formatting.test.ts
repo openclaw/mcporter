@@ -175,6 +175,36 @@ describe('CLI list formatting', () => {
     logSpy.mockRestore();
   });
 
+  it('prints compact signatures for single server listings with --brief', async () => {
+    const { handleList } = await cliModulePromise;
+    const listToolsSpy = vi.fn((_name: string, options?: { includeSchema?: boolean }) =>
+      Promise.resolve([buildLinearDocumentsTool(options?.includeSchema)])
+    );
+    const runtime = {
+      getDefinition: () => linearDefinition,
+      listTools: listToolsSpy,
+    } as unknown as Awaited<ReturnType<(typeof import('../src/runtime.js'))['createRuntime']>>;
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleList(runtime, ['linear', '--brief']);
+
+    const lines = logSpy.mock.calls.map((call) => stripAnsi(call.join(' ')));
+    expect(lines.some((line) => line.trim().startsWith('/**'))).toBe(false);
+    expect(lines.some((line) => line.includes('Examples:'))).toBe(false);
+    expect(lines.some((line) => line.includes('@param'))).toBe(false);
+    expect(lines.some((line) => line.includes('function list_documents('))).toBe(true);
+    expect(
+      lines.some((line) => line.includes('// optional (4): projectId, initiativeId, creatorId, includeArchived'))
+    ).toBe(true);
+    expect(
+      lines.some((line) => line.includes('Optional parameters hidden; run with --all-parameters to view all fields'))
+    ).toBe(true);
+    expect(listToolsSpy).toHaveBeenCalledWith('linear', expect.objectContaining({ includeSchema: true }));
+
+    logSpy.mockRestore();
+  });
+
   it('truncates long examples for readability', async () => {
     const { handleList } = await cliModulePromise;
     const listToolsSpy = vi.fn((_name: string, options?: { includeSchema?: boolean }) =>

@@ -40,6 +40,7 @@ Key details:
 - Run `mcporter list <server> --all-parameters` whenever you want the full signature; the footer repeats `Optional parameters hidden; run with --all-parameters to view all fields.` any time truncation occurs.
 - Return types come from each tool’s output schema, so you’ll see concrete names when providers include `title` metadata (e.g. `DocumentConnection`). When no schema is advertised we omit the `: Type` suffix entirely instead of showing `unknown`.
 - Each server concludes with a short `Examples:` block that mirrors the preferred function-call syntax.
+- Run `mcporter list <server> --brief` when you only want the compact signatures and optional summaries without the doc block or examples.
 
 ## Function-Call Syntax Details
 

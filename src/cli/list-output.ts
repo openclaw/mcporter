@@ -13,6 +13,10 @@ export interface ToolDetailResult {
   optionalOmitted: boolean;
 }
 
+export interface ToolBriefResult {
+  optionalOmitted: boolean;
+}
+
 export interface ListJsonServerEntry {
   name: string;
   status: StatusCategory;
@@ -102,6 +106,30 @@ export function printToolDetail(
   console.log('');
   return {
     examples: doc.examples,
+    optionalOmitted: doc.hiddenOptions.length > 0,
+  };
+}
+
+export function printBriefTool(
+  definition: ReturnType<Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>['getDefinition']>,
+  metadata: ToolMetadata,
+  requiredOnly: boolean
+): ToolBriefResult {
+  const doc = buildToolDoc({
+    serverName: definition.name,
+    toolName: metadata.tool.name,
+    description: metadata.tool.description,
+    outputSchema: metadata.tool.outputSchema,
+    options: metadata.options,
+    requiredOnly,
+    colorize: true,
+  });
+  console.log(`  ${doc.signature}`);
+  if (doc.optionalSummary && requiredOnly) {
+    console.log(`  ${doc.optionalSummary}`);
+  }
+  console.log('');
+  return {
     optionalOmitted: doc.hiddenOptions.length > 0,
   };
 }
