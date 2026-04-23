@@ -27,6 +27,8 @@ export { handleInspectCli } from './cli/inspect-cli-command.js';
 export { extractListFlags, handleList } from './cli/list-command.js';
 export { resolveCallTimeout } from './cli/timeouts.js';
 
+const FORCE_EXIT_GRACE_MS = 50;
+
 export async function runCli(argv: string[]): Promise<void> {
   const args = [...argv];
   if (args.length === 0) {
@@ -195,7 +197,10 @@ export async function runCli(argv: string[]): Promise<void> {
       } else {
         const scheduleExit = () => {
           if (!disableForceExit || process.env.MCPORTER_FORCE_EXIT === '1') {
-            process.exit(0);
+            process.exitCode = 0;
+            setTimeout(() => {
+              process.exit(0);
+            }, FORCE_EXIT_GRACE_MS);
           }
         };
         setImmediate(scheduleExit);
