@@ -1,12 +1,27 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { __test as emitTsTestInternals, handleEmitTs } from '../src/cli/emit-ts-command.js';
 import { renderClientModule, renderTypesModule } from '../src/cli/emit-ts-templates.js';
 import { buildToolMetadata } from '../src/cli/generate/tools.js';
 import type { Runtime } from '../src/runtime.js';
+import type { ServerToolInfo } from '../src/runtime.js';
 import { integrationDefinition, listCommentsTool } from './fixtures/tool-fixtures.js';
+
+const dashedTool: ServerToolInfo = {
+  name: 'API-post-page',
+  description: 'Create a Notion page',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      parent: { type: 'string', description: 'Parent id' },
+    },
+    required: ['parent'],
+  },
+  outputSchema: { title: 'Page' },
+};
 
 function createRuntimeStub(): Runtime {
   return {
@@ -41,6 +56,73 @@ describe('emit-ts templates', () => {
     expect(source).toContain('export interface IntegrationTools');
     expect(source).toContain('Promise<CommentList>');
     expect(source).toContain('Issue identifier');
+  });
+
+  it('quotes interface members when tool names are not valid identifiers', () => {
+    const docs = emitTsTestInternals.buildDocEntries('integration', [buildToolMetadata(dashedTool)], false);
+    const metadata = {
+      server: integrationDefinition,
+      generatorLabel: 'mcporter@test',
+      generatedAt: new Date('2025-11-07T00:00:00Z'),
+    };
+    const source = renderTypesModule({ interfaceName: 'IntegrationTools', docs, metadata });
+    expect(source).toContain(`"API-post-page"(parent: string): Promise<Page>;`);
+    expect(source).not.toMatch(/^\s+API-post-page\(/m);
+  });
+
+  it('quotes client method shorthand when tool names contain dashes', () => {
+    const docs = emitTsTestInternals.buildDocEntries('integration', [buildToolMetadata(dashedTool)], true);
+    const metadata = {
+      server: integrationDefinition,
+      generatorLabel: 'mcporter@test',
+      generatedAt: new Date('2025-11-07T00:00:00Z'),
+    };
+    const source = renderClientModule({
+      interfaceName: 'IntegrationTools',
+      docs,
+      metadata,
+      typesImportPath: './integration-client',
+    });
+    expect(source).toContain(`async "API-post-page"(params: Parameters<IntegrationTools["API-post-page"]>[0])`);
+    expect(source).toContain('proxy.aPIPostPage');
+    expect(source).not.toMatch(/async API-post-page\(/);
+  });
+
+  it('emits syntactically valid TypeScript for tool names with dashes', () => {
+    const docs = emitTsTestInternals.buildDocEntries('integration', [buildToolMetadata(dashedTool)], true);
+    const metadata = {
+      server: integrationDefinition,
+      generatorLabel: 'mcporter@test',
+      generatedAt: new Date('2025-11-07T00:00:00Z'),
+    };
+    const types = renderTypesModule({ interfaceName: 'IntegrationTools', docs, metadata });
+    const client = renderClientModule({
+      interfaceName: 'IntegrationTools',
+      docs,
+      metadata,
+      typesImportPath: './integration-client',
+    });
+    for (const source of [types, client]) {
+      const parsed = ts.createSourceFile('emit.ts', source, ts.ScriptTarget.ES2022, false, ts.ScriptKind.TS);
+      const diagnostics = (parsed as { parseDiagnostics?: ts.Diagnostic[] }).parseDiagnostics ?? [];
+      expect(diagnostics.map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'))).toEqual([]);
+    }
+  });
+
+  it('leaves identifier-safe tool names unquoted in the client object', () => {
+    const docs = emitTsTestInternals.buildDocEntries('integration', [buildToolMetadata(listCommentsTool)], true);
+    const metadata = {
+      server: integrationDefinition,
+      generatorLabel: 'mcporter@test',
+      generatedAt: new Date('2025-11-07T00:00:00Z'),
+    };
+    const source = renderClientModule({
+      interfaceName: 'IntegrationTools',
+      docs,
+      metadata,
+      typesImportPath: './integration-client',
+    });
+    expect(source).toContain('async list_comments(params: Parameters<IntegrationTools["list_comments"]>[0])');
   });
 
   it('renders client module that wraps proxy calls', () => {
