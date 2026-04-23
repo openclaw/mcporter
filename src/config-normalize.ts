@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { CommandSpec, RawEntry, ServerDefinition, ServerLoggingOptions, ServerSource } from './config-schema.js';
 import { expandHome } from './env.js';
 import { resolveLifecycle } from './lifecycle.js';
@@ -36,7 +37,7 @@ export function normalizeServerEntry(
       kind: 'stdio',
       command: stdio.command,
       args: stdio.args,
-      cwd: baseDir,
+      cwd: resolveCwd(raw.cwd, baseDir),
     };
   } else {
     throw new Error(`Server '${name}' is missing a baseUrl/url or command definition in mcporter.json`);
@@ -91,6 +92,16 @@ function normalizePath(input: string | undefined): string | undefined {
     return undefined;
   }
   return expandHome(input);
+}
+
+function resolveCwd(input: string | undefined, baseDir: string): string {
+  if (!input) {
+    return baseDir;
+  }
+  // path.resolve normalizes separators and handles both branches:
+  // absolute paths (after ~ expansion) are returned normalized; relative
+  // paths are resolved against baseDir.
+  return path.resolve(baseDir, expandHome(input));
 }
 
 function getUrl(raw: RawEntry): string | undefined {

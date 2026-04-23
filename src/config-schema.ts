@@ -62,6 +62,12 @@ export const RawEntrySchema = z
       .describe('Command to spawn for stdio transport (string or array of arguments)'),
     executable: z.string().optional().describe('Executable path for stdio transport'),
     args: z.array(z.string()).optional().describe('Arguments to pass to the stdio command'),
+    cwd: z
+      .string()
+      .optional()
+      .describe(
+        'Working directory for stdio servers. A leading ~ is expanded to $HOME; relative paths resolve against the config file directory. All paths are normalized for the host platform'
+      ),
     headers: z
       .record(z.string(), z.string())
       .optional()
