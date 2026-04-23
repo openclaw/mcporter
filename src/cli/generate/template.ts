@@ -439,6 +439,8 @@ function computeRelativeStdioCwd(definition: ServerDefinition, outputPath?: stri
   return relative === '' ? '.' : relative;
 }
 
+export const templateTestHelpers = { computeRelativeStdioCwd };
+
 function optionParser(option: GeneratedOption): string | undefined {
   switch (option.type) {
     case 'number':
