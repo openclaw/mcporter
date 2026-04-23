@@ -61,6 +61,33 @@ describe('parseCallArguments', () => {
     );
   });
 
+  it('treats key:=value as an alias for key=value so the key does not keep a trailing colon', () => {
+    const parsed = parseCallArguments(['schwab.placeOrder', 'price:=5.20', 'orderType=LIMIT']);
+    expect(parsed.args.price).toBe('5.20');
+    expect(parsed.args.orderType).toBe('LIMIT');
+    expect(parsed.args).not.toHaveProperty('price:');
+  });
+
+  it('coerces numerics that round-trip cleanly when using key:=value syntax', () => {
+    const parsed = parseCallArguments(['schwab.placeOrder', 'quantity:=0', 'limit:=10']);
+    expect(parsed.args.quantity).toBe(0);
+    expect(parsed.args.limit).toBe(10);
+    expect(parsed.args).not.toHaveProperty('quantity:');
+    expect(parsed.args).not.toHaveProperty('limit:');
+  });
+
+  it('registers schema string-coercion candidates for key:=value just like key=value', () => {
+    const parsed = parseCallArguments(['schwab.placeOrder', 'limit:=10']);
+    expect(parsed.args.limit).toBe(10);
+    expect(parsed.schemaStringCoercionCandidates).toEqual({ limit: '10' });
+  });
+
+  it('only strips the colon that immediately precedes =, leaving values that contain := untouched', () => {
+    const parsed = parseCallArguments(['server.tool', 'expr=value:=x']);
+    expect(parsed.args.expr).toBe('value:=x');
+    expect(parsed.args).not.toHaveProperty('expr:');
+  });
+
   it('warns when colon-style arguments omit a value', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const parsed = parseCallArguments(['iterm-mcp.write_to_terminal', 'command:']);

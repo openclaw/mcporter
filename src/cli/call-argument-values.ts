@@ -9,7 +9,8 @@ export interface ParsedKeyValueToken {
 export function parseKeyValueToken(token: string, nextToken: string | undefined): ParsedKeyValueToken | undefined {
   const eqIndex = token.indexOf('=');
   if (eqIndex !== -1) {
-    const key = token.slice(0, eqIndex);
+    const keyEnd = eqIndex > 0 && token[eqIndex - 1] === ':' ? eqIndex - 1 : eqIndex;
+    const key = token.slice(0, keyEnd);
     const rawValue = token.slice(eqIndex + 1);
     if (!key) {
       return undefined;
