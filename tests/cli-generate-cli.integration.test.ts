@@ -741,8 +741,115 @@ await new Promise((resolve) => { transport.onclose = resolve; });
     });
     expect(result.stdout).toContain('relocated');
 
+    // Symlink-via-shim check (npm link / global bin shims resolve through
+    // symlinks to the real file). import.meta.url should report the real
+    // location, so the embedded relative cwd still anchors correctly. Skip
+    // on Windows where symlink creation typically requires elevation.
+    if (process.platform !== 'win32') {
+      const linkDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-cli-reloc-link-'));
+      const linkPath = path.join(linkDir, 'linked-cli.cjs');
+      await fs.symlink(bundlePath, linkPath);
+      const linkResult = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+        execFile(
+          process.execPath,
+          [linkPath, 'echo', '--text', 'via-symlink'],
+          { cwd: callerCwd, env: process.env },
+          (error, stdout, stderr) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve({ stdout, stderr });
+          }
+        );
+      });
+      expect(linkResult.stdout).toContain('via-symlink');
+      await fs.rm(linkDir, { recursive: true, force: true }).catch(() => {});
+    }
+
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     await fs.rm(callerCwd, { recursive: true, force: true }).catch(() => {});
+  }, 30_000);
+
+  it('falls back to the embedded absolute cwd when bundle target is on a different drive (#56)', async () => {
+    // Cross-drive only exists on Windows. When path.relative returns an
+    // absolute path because the CLI bundle and the generation-time cwd
+    // live on different drives, computeRelativeStdioCwd returns null and
+    // the generated template must not emit a relative cwd. The CLI then
+    // uses whatever cwd the runtime resolves from the embedded definition
+    // (pre-fix behavior), so it still works when invoked from the project.
+    if (process.platform !== 'win32') {
+      console.warn('cross-drive test only runs on Windows; skipping.');
+      return;
+    }
+    const altDrive = 'D:\\';
+    try {
+      await fs.access(altDrive);
+    } catch {
+      console.warn('D:\\ not accessible on this runner; skipping cross-drive test.');
+      return;
+    }
+
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-cli-xdrive-proj-'));
+    const distDir = path.join(projectDir, 'dist');
+    await fs.mkdir(distDir, { recursive: true });
+    await fs.writeFile(
+      path.join(projectDir, 'package.json'),
+      JSON.stringify({ name: 'mcporter-xdrive-e2e', version: '0.0.0' }, null, 2),
+      'utf8'
+    );
+
+    const serverPath = path.join(distDir, 'server.mjs');
+    const serverSource = `import { McpServer } from '${MCP_SERVER_MODULE}';
+import { StdioServerTransport } from '${STDIO_SERVER_MODULE}';
+import { z } from '${ZOD_MODULE}';
+
+const server = new McpServer({ name: 'xdrive', version: '1.0.0' });
+server.registerTool('echo', {
+  title: 'Echo',
+  description: 'Return the provided text',
+  inputSchema: z.object({ text: z.string() }),
+  outputSchema: z.object({ text: z.string() }),
+}, async ({ text }) => ({
+  content: [{ type: 'text', text }],
+  structuredContent: { text },
+}));
+
+const transport = new StdioServerTransport();
+await server.connect(transport);
+await new Promise((resolve) => { transport.onclose = resolve; });
+`;
+    await fs.writeFile(serverPath, serverSource, 'utf8');
+
+    const outputRoot = await fs.mkdtemp(path.join(altDrive, 'mcporter-cli-xdrive-out-'));
+    const bundlePath = path.join(outputRoot, 'reloc-cli.cjs');
+
+    await new Promise<void>((resolve, reject) => {
+      execFile(
+        process.execPath,
+        [CLI_ENTRY, 'generate-cli', '--command', 'node dist/server.mjs', '--bundle', bundlePath, '--runtime', 'node'],
+        { cwd: projectDir, env: { ...process.env, MCPORTER_NO_FORCE_EXIT: '1' } },
+        (error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        }
+      );
+    });
+
+    // The intermediate .ts template is written next to the project (same
+    // drive as process.cwd()), so find whichever .ts was produced there
+    // and assert the cross-drive guard fired.
+    const entries = await fs.readdir(projectDir);
+    const templateName = entries.find((entry) => entry.endsWith('.ts'));
+    expect(templateName, 'expected a generated .ts template in the project dir').toBeTruthy();
+    const templateSource = await fs.readFile(path.join(projectDir, templateName as string), 'utf8');
+    expect(templateSource).toContain('const __mcpRelativeStdioCwd: string | null = null;');
+
+    await fs.rm(projectDir, { recursive: true, force: true }).catch(() => {});
+    await fs.rm(outputRoot, { recursive: true, force: true }).catch(() => {});
   }, 30_000);
 
   it('compiled Bun binary resolves relative stdio args from the binary location (#56)', async () => {
