@@ -117,8 +117,14 @@ function createHttpTransportOptions(
         // Only add headers that don't already exist (case-insensitive check)
         const existingHeadersLower = new Set(Object.keys(finalHeaders).map(k => k.toLowerCase()));
         for (const [key, value] of Object.entries(envHeaders)) {
+          // Skip Authorization header if OAuth is being established to prevent conflicts
+          if (shouldEstablishOAuth && key.toLowerCase() === 'authorization') {
+            continue;
+          }
           if (!existingHeadersLower.has(key.toLowerCase()) && typeof value === 'string') {
             finalHeaders[key] = value;
+            // Update the set to prevent duplicate headers with different casing
+            existingHeadersLower.add(key.toLowerCase());
           }
         }
       }
