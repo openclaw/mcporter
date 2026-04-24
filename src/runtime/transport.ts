@@ -105,8 +105,30 @@ function createHttpTransportOptions(
   }
   const resolvedHeaders = materializeHeaders(command.headers, definition.name);
   const effectiveHeaders = shouldEstablishOAuth ? removeAuthorizationHeader(resolvedHeaders) : resolvedHeaders;
+
+  // Auto-inject headers from ENVHEADER environment variable if present (JSON format)
+  // This enables distributed tracing and custom headers when mcporter is called from OpenClaw or other systems
+  // Example: ENVHEADER='{"traceparent":"00-xxx-xxx-01","x-request-id":"abc"}'
+  const finalHeaders: Record<string, string> = effectiveHeaders ? { ...effectiveHeaders } : {};
+  if (process.env.ENVHEADER) {
+    try {
+      const envHeaders = JSON.parse(process.env.ENVHEADER);
+      if (typeof envHeaders === 'object' && envHeaders !== null) {
+        // Only add headers that don't already exist (case-insensitive check)
+        const existingHeadersLower = new Set(Object.keys(finalHeaders).map(k => k.toLowerCase()));
+        for (const [key, value] of Object.entries(envHeaders)) {
+          if (!existingHeadersLower.has(key.toLowerCase()) && typeof value === 'string') {
+            finalHeaders[key] = value;
+          }
+        }
+      }
+    } catch (error) {
+      // Silently ignore invalid JSON to avoid breaking existing behavior
+    }
+  }
+
   return {
-    requestInit: effectiveHeaders ? { headers: effectiveHeaders as HeadersInit } : undefined,
+    requestInit: Object.keys(finalHeaders).length > 0 ? { headers: finalHeaders as HeadersInit } : undefined,
     authProvider: oauthSession?.provider,
   };
 }
