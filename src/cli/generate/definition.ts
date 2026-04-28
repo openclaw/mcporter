@@ -311,7 +311,7 @@ function toCommandSpec(
     kind: 'stdio',
     command,
     args: args ?? [],
-    cwd: process.cwd(),
+    cwd: '',
   };
   return stdio;
 }

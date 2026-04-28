@@ -30,15 +30,14 @@ describe('computeRelativeStdioCwd', () => {
     expect(computeRelativeStdioCwd(httpDef, '/pkg/dist/cli.cjs')).toBeNull();
   });
 
-  it('relativizes an explicit cwd against the output directory', () => {
+  it('preserves an explicit absolute cwd from the embedded definition', () => {
     const def = stdioDef({ cwd: '/pkg' });
-    const rel = computeRelativeStdioCwd(def, '/pkg/dist/cli.cjs');
-    expect(rel).toBe('..');
+    expect(computeRelativeStdioCwd(def, '/pkg/dist/cli.cjs')).toBeNull();
   });
 
-  it('resolves to "." when cwd equals the output directory', () => {
+  it('preserves an explicit absolute cwd even when it equals the output directory', () => {
     const def = stdioDef({ cwd: '/pkg/dist' });
-    expect(computeRelativeStdioCwd(def, '/pkg/dist/cli.cjs')).toBe('.');
+    expect(computeRelativeStdioCwd(def, '/pkg/dist/cli.cjs')).toBeNull();
   });
 
   it('falls back to process.cwd() when no cwd is set (ad-hoc --command)', () => {

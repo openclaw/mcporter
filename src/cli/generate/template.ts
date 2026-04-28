@@ -412,8 +412,8 @@ function renderOption(optionDoc: ToolOptionDoc): string {
 /**
  * Computes the path, relative to the generated CLI script's directory, that the
  * generated CLI should use as its stdio spawn cwd. Returns null for HTTP-backed
- * servers, when no output path is known, or when the relative computation would
- * cross filesystem roots (Windows drive letters).
+ * servers, explicit absolute cwd values, when no output path is known, or when
+ * the relative computation would cross filesystem roots (Windows drive letters).
  *
  * Ad-hoc inline definitions (--command "node dist/index.js") arrive without a
  * cwd, so the spawned child previously inherited the user's shell cwd and could
@@ -428,6 +428,9 @@ function computeRelativeStdioCwd(definition: ServerDefinition, outputPath?: stri
     return null;
   }
   const rawCwd = definition.command.cwd;
+  if (typeof rawCwd === 'string' && path.isAbsolute(rawCwd)) {
+    return null;
+  }
   const baseCwd = typeof rawCwd === 'string' && rawCwd.length > 0 ? rawCwd : process.cwd();
   const absoluteCwd = path.isAbsolute(baseCwd) ? baseCwd : path.resolve(process.cwd(), baseCwd);
   const outputDir = path.dirname(path.resolve(outputPath));
