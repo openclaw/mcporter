@@ -190,12 +190,12 @@ export async function runCli(argv: string[]): Promise<void> {
       if (DEBUG_HANG) {
         dumpActiveHandles('after terminateChildProcesses');
         if (!disableForceExit || process.env.MCPORTER_FORCE_EXIT === '1') {
-          process.exit(0);
+          process.exit(process.exitCode ?? 0);
         }
       } else {
         const scheduleExit = () => {
           if (!disableForceExit || process.env.MCPORTER_FORCE_EXIT === '1') {
-            process.exit(0);
+            process.exit(process.exitCode ?? 0);
           }
         };
         setImmediate(scheduleExit);

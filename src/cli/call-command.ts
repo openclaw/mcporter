@@ -167,6 +167,9 @@ async function invokePreparedCall(
 
 function renderCallResult(result: unknown, parsed: CallArgsParseResult): void {
   const { callResult: wrapped } = wrapCallResult(result);
+  if (result && typeof result === 'object' && 'isError' in result && result.isError) {
+    process.exitCode = 1;
+  }
   printCallOutput(wrapped, result, parsed.output);
   saveCallImagesIfRequested(wrapped, parsed.saveImagesDir);
   tailLogIfRequested(result, parsed.tailLog);
