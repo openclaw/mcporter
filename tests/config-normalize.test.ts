@@ -61,6 +61,11 @@ describe('config normalization', () => {
               args: ['server.js'],
               cwd: '~/mcporter-cwd-home',
             },
+            tildeBackslash: {
+              command: 'node',
+              args: ['server.js'],
+              cwd: '~\\mcporter-cwd-home',
+            },
             tildeOnly: {
               command: 'node',
               args: ['server.js'],
@@ -87,6 +92,7 @@ describe('config normalization', () => {
     const absolute = servers.find((entry) => entry.name === 'absolute');
     const relative = servers.find((entry) => entry.name === 'relative');
     const tilde = servers.find((entry) => entry.name === 'tilde');
+    const tildeBackslash = servers.find((entry) => entry.name === 'tildeBackslash');
     const tildeOnly = servers.find((entry) => entry.name === 'tildeOnly');
     const empty = servers.find((entry) => entry.name === 'empty');
     const defaulted = servers.find((entry) => entry.name === 'defaulted');
@@ -99,6 +105,10 @@ describe('config normalization', () => {
     );
 
     expect(tilde?.command.kind === 'stdio' ? tilde.command.cwd : undefined).toBe(
+      path.join(os.homedir(), 'mcporter-cwd-home')
+    );
+
+    expect(tildeBackslash?.command.kind === 'stdio' ? tildeBackslash.command.cwd : undefined).toBe(
       path.join(os.homedir(), 'mcporter-cwd-home')
     );
 
