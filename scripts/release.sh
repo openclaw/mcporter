@@ -26,7 +26,7 @@ phase_artifacts() {
   run tar -C dist-bun -czf "$bun_tar" mcporter
   run shasum -a 256 "$bun_tar" | tee "${bun_tar}.sha256"
 
-  run "$RUNNER" npm pack --pack-destination /tmp
+  run "$RUNNER" pnpm pack --pack-destination /tmp
   mv "/tmp/mcporter-${VERSION}.tgz" .
   run shasum "mcporter-${VERSION}.tgz" > "mcporter-${VERSION}.tgz.sha1"
   run shasum -a 256 "mcporter-${VERSION}.tgz" > "mcporter-${VERSION}.tgz.sha256"
