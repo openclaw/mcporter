@@ -10,11 +10,44 @@ export interface DaemonLaunchOptions {
   readonly extraArgs?: string[];
 }
 
+interface DaemonLaunchProcessInfo {
+  readonly argvEntry?: string;
+  readonly env: NodeJS.ProcessEnv;
+  readonly execArgv: string[];
+  readonly execPath: string;
+  readonly platform: NodeJS.Platform;
+}
+
+interface DaemonLaunchInvocation {
+  readonly command: string;
+  readonly args: string[];
+  readonly env: NodeJS.ProcessEnv;
+}
+
 export function launchDaemonDetached(options: DaemonLaunchOptions): void {
-  const cliEntry = resolveCliEntry();
+  const invocation = buildDaemonLaunchInvocation(options);
+  const child = spawn(invocation.command, invocation.args, {
+    detached: true,
+    stdio: 'ignore',
+    env: invocation.env,
+  });
+  child.unref();
+}
+
+export function buildDaemonLaunchInvocation(
+  options: DaemonLaunchOptions,
+  processInfo: DaemonLaunchProcessInfo = {
+    argvEntry: process.argv[1],
+    env: process.env,
+    execArgv: process.execArgv,
+    execPath: process.execPath,
+    platform: process.platform,
+  }
+): DaemonLaunchInvocation {
+  const cliEntry = resolveCliEntry(processInfo.argvEntry);
   const configArgs = options.configExplicit ? ['--config', options.configPath] : [];
   const args = [
-    ...process.execArgv,
+    ...processInfo.execArgv,
     ...(cliEntry ? [cliEntry] : []),
     ...configArgs,
     ...(options.rootDir ? ['--root', options.rootDir] : []),
@@ -23,21 +56,31 @@ export function launchDaemonDetached(options: DaemonLaunchOptions): void {
     '--foreground',
     ...(options.extraArgs ?? []),
   ];
-  const child = spawn(process.execPath, args, {
-    detached: true,
-    stdio: 'ignore',
-    env: {
-      ...process.env,
-      MCPORTER_DAEMON_CHILD: '1',
-      MCPORTER_DAEMON_SOCKET: options.socketPath,
-      MCPORTER_DAEMON_METADATA: options.metadataPath,
-    },
-  });
-  child.unref();
+  const env = {
+    ...processInfo.env,
+    MCPORTER_DAEMON_CHILD: '1',
+    MCPORTER_DAEMON_SOCKET: options.socketPath,
+    MCPORTER_DAEMON_METADATA: options.metadataPath,
+  };
+  if (shouldWrapDetachedLaunchWithNohup(processInfo.platform, cliEntry)) {
+    return {
+      command: 'nohup',
+      args: [processInfo.execPath, ...args],
+      env,
+    };
+  }
+  return {
+    command: processInfo.execPath,
+    args,
+    env,
+  };
 }
 
-function resolveCliEntry(): string | undefined {
-  const entry = process.argv[1];
+function shouldWrapDetachedLaunchWithNohup(platform: NodeJS.Platform, cliEntry: string | undefined): boolean {
+  return platform === 'darwin' && cliEntry === undefined;
+}
+
+function resolveCliEntry(entry = process.argv[1]): string | undefined {
   if (!entry) {
     throw new Error('Unable to resolve mcporter entry script.');
   }

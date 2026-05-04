@@ -47,6 +47,7 @@ read_when:
 ## Lifecycle & Fault Handling
 
 - **Auto start:** First call requiring the daemon triggers a lightweight bootstrap (fork/exec via `child_process.spawn` inside the CLI). We ensure the original command waits for the socket to become available (with a short timeout).
+- **macOS Bun binaries:** Homebrew/Bun-compiled binaries wrap the detached child launch with `nohup` so the background daemon survives the parent CLI exit on macOS 26.
 - **Auto restart:** The client shim treats `ECONNREFUSED`/broken pipe as a signal that the daemon died. It retries once by re-launching the daemon before surfacing the error.
 - **Idle timeout:** Each keep-alive server can specify `idleTimeoutMs` (default `null` = never). The daemon tracks last activity timestamps and auto-closes transports (and associated external processes) after the idle window. A global `daemonIdleTimeoutMs` can shut down the entire daemon after long inactivity.
 - **Logging:** Daemon writes structured logs under `~/.mcporter/logs/daemon.log` plus per-server logs for STDIO stderr so users can debug crashing servers.
