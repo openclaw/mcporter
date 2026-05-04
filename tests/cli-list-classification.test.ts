@@ -1,3 +1,6 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { ServerDefinition } from '../src/config.js';
 import { cliModulePromise, linearDefinition } from './fixtures/cli-list-fixtures.js';
@@ -113,6 +116,51 @@ describe('CLI list classification and routing', () => {
 
     warnSpy.mockRestore();
     logSpy.mockRestore();
+  });
+
+  it('persists OAuth promotion for ad-hoc HTTP servers', async () => {
+    const { handleList } = await cliModulePromise;
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-persist-oauth-'));
+    const persistPath = path.join(tempDir, 'mcporter.json');
+    const definitions = new Map<string, ServerDefinition>();
+    const runtime = {
+      registerDefinition: vi.fn((definition: ServerDefinition) => {
+        definitions.set(definition.name, definition);
+      }),
+      getDefinition: vi.fn((name: string) => {
+        const entry = definitions.get(name);
+        if (!entry) {
+          throw new Error(`Unknown MCP server '${name}'.`);
+        }
+        return entry;
+      }),
+      getDefinitions: () => Array.from(definitions.values()),
+      listTools: vi.fn(async (name: string) => {
+        const entry = definitions.get(name);
+        if (!entry) {
+          throw new Error(`Unknown MCP server '${name}'.`);
+        }
+        definitions.set(name, { ...entry, auth: 'oauth' });
+        return [{ name: 'ok' }];
+      }),
+    } as unknown as Awaited<ReturnType<(typeof import('../src/runtime.js'))['createRuntime']>>;
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      await handleList(runtime, ['https://mcp.granola.ai/mcp', '--persist', persistPath]);
+
+      const parsed = JSON.parse(await fs.readFile(persistPath, 'utf8')) as {
+        mcpServers: Record<string, { auth?: string; baseUrl?: string }>;
+      };
+      expect(parsed.mcpServers['mcp-granola-ai-mcp']).toMatchObject({
+        baseUrl: 'https://mcp.granola.ai/mcp',
+        auth: 'oauth',
+      });
+    } finally {
+      logSpy.mockRestore();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   });
 
   it('reuses configured servers when listing by URL', async () => {

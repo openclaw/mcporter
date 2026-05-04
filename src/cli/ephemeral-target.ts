@@ -17,9 +17,10 @@ interface PrepareEphemeralServerTargetOptions {
   reuseFromSpec?: boolean;
 }
 
-interface PrepareEphemeralServerTargetResult {
+export interface PrepareEphemeralServerTargetResult {
   target?: string;
   resolution?: EphemeralServerResolution;
+  persistPath?: string;
 }
 
 export async function prepareEphemeralServerTarget(
@@ -85,7 +86,33 @@ export async function prepareEphemeralServerTarget(
     await persistEphemeralServer(resolution, spec.persistPath);
   }
   const resolvedTarget = target ?? resolution.name;
-  return { target: resolvedTarget, resolution };
+  return { target: resolvedTarget, resolution, persistPath: spec.persistPath };
+}
+
+export async function persistPreparedEphemeralServer(
+  runtime: Runtime,
+  prepared: PrepareEphemeralServerTargetResult | undefined
+): Promise<void> {
+  if (!prepared?.resolution || !prepared.persistPath) {
+    return;
+  }
+  let currentDefinition;
+  try {
+    currentDefinition = runtime.getDefinition(prepared.resolution.name);
+  } catch {
+    return;
+  }
+  const persistedEntry = { ...prepared.resolution.persistedEntry };
+  if (currentDefinition.auth === 'oauth') {
+    persistedEntry.auth = 'oauth';
+  }
+  await persistEphemeralServer(
+    {
+      ...prepared.resolution,
+      persistedEntry,
+    },
+    prepared.persistPath
+  );
 }
 
 function applyNameHints(spec: EphemeralServerSpec | undefined, hints: string[] | undefined): void {

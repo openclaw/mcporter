@@ -13,6 +13,7 @@
 - Print OAuth manual-completion URLs at the default warning log level so headless users can copy them. (PR #143 / issue #139, thanks @stainlu)
 - Support repeatable `--header KEY=value` flags for ad-hoc HTTP servers and persisted ad-hoc entries. (Issue #117)
 - Let generated CLIs use `--raw` without also passing required flags, and parse array flags containing JSON object items. (Issues #102 and #103)
+- Preserve `auth: "oauth"` when an ad-hoc HTTP server is OAuth-promoted and saved with `--persist`. (Issue #82)
 
 ### Config
 

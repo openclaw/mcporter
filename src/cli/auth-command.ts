@@ -5,7 +5,7 @@ import { clearOAuthCaches } from '../oauth-persistence.js';
 import type { createRuntime } from '../runtime.js';
 import type { EphemeralServerSpec } from './adhoc-server.js';
 import { extractEphemeralServerFlags } from './ephemeral-flags.js';
-import { prepareEphemeralServerTarget } from './ephemeral-target.js';
+import { persistPreparedEphemeralServer, prepareEphemeralServerTarget } from './ephemeral-target.js';
 import { looksLikeHttpUrl } from './http-utils.js';
 import { buildConnectionIssueEnvelope } from './json-output.js';
 import { logInfo, logWarn } from './logger-context.js';
@@ -53,8 +53,12 @@ export async function handleAuth(runtime: Runtime, args: string[]): Promise<void
 
   if (definition.command.kind === 'stdio' && definition.oauthCommand) {
     logInfo(`Starting auth helper for '${target}' (stdio). Leave this running until the browser flow completes.`);
-    await runStdioAuth(definition);
-    logInfo(`Auth helper for '${target}' finished. You can now call tools.`);
+    try {
+      await runStdioAuth(definition);
+      logInfo(`Auth helper for '${target}' finished. You can now call tools.`);
+    } finally {
+      await persistPreparedEphemeralServer(runtime, prepared);
+    }
     return;
   }
 
@@ -62,9 +66,11 @@ export async function handleAuth(runtime: Runtime, args: string[]): Promise<void
     try {
       logInfo(`Initiating OAuth flow for '${target}'...`);
       const tools = await runtime.listTools(target, { autoAuthorize: true });
+      await persistPreparedEphemeralServer(runtime, prepared);
       logInfo(`Authorization complete. ${tools.length} tool${tools.length === 1 ? '' : 's'} available.`);
       return;
     } catch (error) {
+      await persistPreparedEphemeralServer(runtime, prepared);
       if (attempt === 0 && shouldRetryAuthError(error)) {
         logWarn('Server signaled OAuth after the initial attempt. Retrying with browser flow...');
         continue;

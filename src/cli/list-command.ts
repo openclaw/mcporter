@@ -4,7 +4,7 @@ import { MCPORTER_VERSION } from '../runtime.js';
 import { setStdioLogMode } from '../sdk-patches.js';
 import type { EphemeralServerSpec } from './adhoc-server.js';
 import { extractEphemeralServerFlags } from './ephemeral-flags.js';
-import { prepareEphemeralServerTarget } from './ephemeral-target.js';
+import { persistPreparedEphemeralServer, prepareEphemeralServerTarget } from './ephemeral-target.js';
 import { splitHttpToolSelector } from './http-utils.js';
 import { chooseClosestIdentifier, renderIdentifierResolutionMessages } from './identifier-helpers.js';
 import { formatExampleBlock } from './list-detail-helpers.js';
@@ -253,6 +253,7 @@ export async function handleList(
   if (flags.format === 'json') {
     try {
       const metadataEntries = await withTimeout(loadToolMetadata(runtime, target, { includeSchema: true }), timeoutMs);
+      await persistPreparedEphemeralServer(runtime, prepared);
       const durationMs = Date.now() - startedAt;
       const payload = {
         mode: 'server',
@@ -274,6 +275,7 @@ export async function handleList(
       console.log(JSON.stringify(payload, null, 2));
       return;
     } catch (error) {
+      await persistPreparedEphemeralServer(runtime, prepared);
       const durationMs = Date.now() - startedAt;
       const authCommand = buildAuthCommandHint(definition);
       const advice = classifyListError(error, definition.name, timeoutMs, { authCommand });
@@ -298,6 +300,7 @@ export async function handleList(
   try {
     // Always request schemas so we can render CLI-style parameter hints without re-querying per tool.
     const metadataEntries = await withTimeout(loadToolMetadata(runtime, target, { includeSchema: true }), timeoutMs);
+    await persistPreparedEphemeralServer(runtime, prepared);
     const durationMs = Date.now() - startedAt;
     const summaryLine = printSingleServerHeader(
       definition,
@@ -338,6 +341,7 @@ export async function handleList(
     console.log('');
     return;
   } catch (error) {
+    await persistPreparedEphemeralServer(runtime, prepared);
     const durationMs = Date.now() - startedAt;
     printSingleServerHeader(definition, undefined, durationMs, transportSummary, sourcePath);
     const message = error instanceof Error ? error.message : 'Failed to load tool list.';

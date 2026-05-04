@@ -7,7 +7,11 @@ import {
   CALL_HELP_EXAMPLE_LINES,
   CALL_HELP_RUNTIME_FLAG_LINES,
 } from './call-help.js';
-import { prepareEphemeralServerTarget } from './ephemeral-target.js';
+import {
+  persistPreparedEphemeralServer,
+  prepareEphemeralServerTarget,
+  type PrepareEphemeralServerTargetResult,
+} from './ephemeral-target.js';
 import { looksLikeHttpUrl, normalizeHttpUrlCandidate } from './http-utils.js';
 import type { IdentifierResolution } from './identifier-helpers.js';
 import {
@@ -36,25 +40,31 @@ interface PreparedCallRequest extends ResolvedCallTarget {
   parsed: CallArgsParseResult;
   hydratedArgs: Record<string, unknown>;
   timeoutMs: number;
+  ephemeralTarget?: PrepareEphemeralServerTargetResult;
 }
 
 export async function handleCall(runtime: Runtime, args: string[]): Promise<void> {
-  const prepared = await prepareCallRequest(runtime, args);
-  if (!prepared) {
-    return;
-  }
+  let prepared: PreparedCallRequest | undefined;
+  try {
+    prepared = await prepareCallRequest(runtime, args);
+    if (!prepared) {
+      return;
+    }
 
-  const invocation = await invokePreparedCall(runtime, prepared);
-  if (!invocation) {
-    return;
-  }
+    const invocation = await invokePreparedCall(runtime, prepared);
+    if (!invocation) {
+      return;
+    }
 
-  renderCallResult(invocation.result, prepared.parsed);
+    renderCallResult(invocation.result, prepared.parsed);
+  } finally {
+    await persistPreparedEphemeralServer(runtime, prepared?.ephemeralTarget);
+  }
 }
 
 async function prepareCallRequest(runtime: Runtime, args: string[]): Promise<PreparedCallRequest | undefined> {
   const parsed = parseCallArguments(args);
-  await normalizeParsedCallArguments(runtime, parsed);
+  const ephemeralTarget = await normalizeParsedCallArguments(runtime, parsed);
   const { server, tool } = await resolveServerAndTool(runtime, parsed);
 
   if (await maybeDescribeServer(runtime, server, tool, parsed.output)) {
@@ -72,10 +82,13 @@ async function prepareCallRequest(runtime: Runtime, args: string[]): Promise<Pre
     parsed.schemaArrayCoercionCandidates,
     timeoutMs
   );
-  return { parsed, server, tool, hydratedArgs: schemaAwareArgs, timeoutMs };
+  return { parsed, server, tool, hydratedArgs: schemaAwareArgs, timeoutMs, ephemeralTarget };
 }
 
-async function normalizeParsedCallArguments(runtime: Runtime, parsed: CallArgsParseResult): Promise<void> {
+async function normalizeParsedCallArguments(
+  runtime: Runtime,
+  parsed: CallArgsParseResult
+): Promise<PrepareEphemeralServerTargetResult> {
   let ephemeralSpec = parsed.ephemeral ? { ...parsed.ephemeral } : undefined;
   const nameHints: string[] = [];
   const absorbUrlCandidate = (value: string | undefined): string | undefined => {
@@ -122,6 +135,7 @@ async function normalizeParsedCallArguments(runtime: Runtime, parsed: CallArgsPa
   if (!parsed.selector) {
     parsed.selector = prepared.target;
   }
+  return prepared;
 }
 
 async function resolveServerAndTool(runtime: Runtime, parsed: CallArgsParseResult): Promise<ResolvedCallTarget> {
