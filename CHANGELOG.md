@@ -29,6 +29,10 @@
 - Support pre-registered OAuth clients via `oauthClientId`/`oauthClientSecretEnv` and token endpoint auth method overrides for providers without dynamic client registration. (Issue #132)
 - Respect configured stdio `cwd` values, including relative paths resolved from the config file and `~` home expansion. (PR #147 / issue #146, thanks @solomonneas)
 
+### Tooling / Dependencies
+
+- Updated `zod` to 4.4.3.
+
 ## [0.9.0] - 2026-04-18
 
 ### CLI

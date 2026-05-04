@@ -71,7 +71,7 @@
     "jsonc-parser": "^3.3.1",
     "ora": "^9.4.0",
     "rolldown": "1.0.0-rc.18",
-    "zod": "^4.4.2"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/estree": "^1.0.8",
