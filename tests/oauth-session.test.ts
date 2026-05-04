@@ -37,6 +37,7 @@ describe('FileOAuthClientProvider session lifecycle', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
+    delete process.env.MCPORTER_TEST_OAUTH_SECRET;
     await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
   });
 
@@ -83,6 +84,36 @@ describe('FileOAuthClientProvider session lifecycle', () => {
     expect((session.provider as { clientMetadata: { scope?: string } }).clientMetadata.scope).toBe(
       'openid email profile'
     );
+    await session.close();
+  });
+
+  it('returns configured static OAuth client information without dynamic registration', async () => {
+    const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+    tempDirs.push(tokenCacheDir);
+    process.env.MCPORTER_TEST_OAUTH_SECRET = 'client-secret-value';
+    const definition: ServerDefinition = {
+      name: 'test-oauth-static-client',
+      description: 'Test OAuth server',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'oauth',
+      tokenCacheDir,
+      oauthClientId: 'client-123',
+      oauthClientSecretEnv: 'MCPORTER_TEST_OAUTH_SECRET',
+      oauthTokenEndpointAuthMethod: 'client_secret_post',
+    };
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+
+    const session = await createOAuthSession(definition, logger);
+    const clientInfo = await session.provider.clientInformation();
+    expect(clientInfo).toMatchObject({
+      client_id: 'client-123',
+      client_secret: 'client-secret-value',
+      token_endpoint_auth_method: 'client_secret_post',
+    });
     await session.close();
   });
 

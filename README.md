@@ -415,6 +415,26 @@ npx mcporter config add notion https://mcp.notion.com/mcp --auth oauth
 npx mcporter auth notion
 ```
 
+Providers that do not support dynamic client registration can use a pre-registered app:
+
+```jsonc
+{
+  "mcpServers": {
+    "hubspot": {
+      "baseUrl": "https://mcp.hubspot.com/mcp",
+      "auth": "oauth",
+      "oauthClientId": "your-client-id",
+      "oauthClientSecretEnv": "HUBSPOT_CLIENT_SECRET",
+      "oauthTokenEndpointAuthMethod": "client_secret_post",
+      "oauthRedirectUrl": "http://127.0.0.1:3434/callback",
+    },
+  },
+}
+```
+
+Keep client secrets in environment variables or private machine-local configs,
+and register the exact `oauthRedirectUrl` with the provider.
+
 Provide `configPath` or `rootDir` to CLI/runtime calls when you juggle multiple config files side by side.
 
 #### Config resolution order & system-level configs

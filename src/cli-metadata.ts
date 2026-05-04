@@ -23,6 +23,9 @@ export interface SerializedServerDefinition {
   readonly auth?: string;
   readonly tokenCacheDir?: string;
   readonly clientName?: string;
+  readonly oauthClientId?: string;
+  readonly oauthClientSecretEnv?: string;
+  readonly oauthTokenEndpointAuthMethod?: string;
   readonly oauthRedirectUrl?: string;
   readonly oauthScope?: string;
   readonly allowedTools?: readonly string[];
@@ -143,6 +146,9 @@ export function serializeDefinition(definition: ServerDefinition): SerializedSer
       auth: definition.auth,
       tokenCacheDir: definition.tokenCacheDir,
       clientName: definition.clientName,
+      oauthClientId: definition.oauthClientId,
+      oauthClientSecretEnv: definition.oauthClientSecretEnv,
+      oauthTokenEndpointAuthMethod: definition.oauthTokenEndpointAuthMethod,
       oauthRedirectUrl: definition.oauthRedirectUrl,
       oauthScope: definition.oauthScope,
       allowedTools: definition.allowedTools,
@@ -162,6 +168,9 @@ export function serializeDefinition(definition: ServerDefinition): SerializedSer
     auth: definition.auth,
     tokenCacheDir: definition.tokenCacheDir,
     clientName: definition.clientName,
+    oauthClientId: definition.oauthClientId,
+    oauthClientSecretEnv: definition.oauthClientSecretEnv,
+    oauthTokenEndpointAuthMethod: definition.oauthTokenEndpointAuthMethod,
     oauthRedirectUrl: definition.oauthRedirectUrl,
     oauthScope: definition.oauthScope,
     allowedTools: definition.allowedTools,

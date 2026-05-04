@@ -103,6 +103,38 @@
             "description": "Client identifier for server telemetry (snake_case)",
             "type": "string"
           },
+          "oauthClientId": {
+            "description": "Pre-registered OAuth client id (camelCase)",
+            "type": "string"
+          },
+          "oauth_client_id": {
+            "description": "Pre-registered OAuth client id (snake_case)",
+            "type": "string"
+          },
+          "oauthClientSecret": {
+            "description": "Pre-registered OAuth client secret (camelCase)",
+            "type": "string"
+          },
+          "oauth_client_secret": {
+            "description": "Pre-registered OAuth client secret (snake_case)",
+            "type": "string"
+          },
+          "oauthClientSecretEnv": {
+            "description": "Environment variable containing the OAuth client secret",
+            "type": "string"
+          },
+          "oauth_client_secret_env": {
+            "description": "Environment variable containing the OAuth client secret",
+            "type": "string"
+          },
+          "oauthTokenEndpointAuthMethod": {
+            "description": "OAuth token endpoint auth method, e.g. client_secret_post",
+            "type": "string"
+          },
+          "oauth_token_endpoint_auth_method": {
+            "description": "OAuth token endpoint auth method, e.g. client_secret_post",
+            "type": "string"
+          },
           "oauthRedirectUrl": {
             "description": "Custom OAuth redirect URL (camelCase)",
             "type": "string"

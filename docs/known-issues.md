@@ -14,8 +14,8 @@ This file tracks limitations that users regularly run into. Most of these requir
   - Use Supabase’s supported clients (Cursor, Windsurf).
   - Self-host their MCP server and configure PAT headers / custom OAuth.
   - Ask Supabase to accept the MCP scope or publish their scope list.
-- GitHub’s MCP endpoint (`https://api.githubcopilot.com/mcp/`) returns “does not support dynamic client registration” when mcporter attempts to connect. Copilot’s backend expects pre-registered client credentials. Until GitHub publishes a dynamic-registration API (or client secrets), mcporter cannot interact with their hosted server.
-- Some hosted servers reject dynamic client registration before returning any authorization URL. mcporter now fails those flows immediately instead of waiting for a browser callback that cannot arrive. If the provider supports a pre-registered client name, set `clientName` in config; otherwise use the provider's supported client or token/header workaround.
+- GitHub’s MCP endpoint (`https://api.githubcopilot.com/mcp/`) returns “does not support dynamic client registration” when mcporter attempts to connect. Copilot’s backend expects pre-registered client credentials. Configure `oauthClientId`/`oauthClientSecretEnv` only if the provider gives you a usable OAuth app; otherwise use their supported client or token/header workaround.
+- Some hosted servers reject dynamic client registration before returning any authorization URL. mcporter now fails those flows immediately instead of waiting for a browser callback that cannot arrive. If the provider supports a pre-registered OAuth app, configure `oauthClientId`, `oauthClientSecretEnv`, and the required `oauthTokenEndpointAuthMethod`; otherwise use the provider's supported client or token/header workaround.
 
 ## Output schemas missing/buggy on many servers
 

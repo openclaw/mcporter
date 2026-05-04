@@ -72,6 +72,11 @@ function serializeRawEntry(server: ServerDefinition): RawEntry {
     ...(server.auth ? { auth: server.auth } : {}),
     ...(server.tokenCacheDir ? { tokenCacheDir: server.tokenCacheDir } : {}),
     ...(server.clientName ? { clientName: server.clientName } : {}),
+    ...(server.oauthClientId ? { oauthClientId: server.oauthClientId } : {}),
+    ...(server.oauthClientSecretEnv ? { oauthClientSecretEnv: server.oauthClientSecretEnv } : {}),
+    ...(server.oauthTokenEndpointAuthMethod
+      ? { oauthTokenEndpointAuthMethod: server.oauthTokenEndpointAuthMethod }
+      : {}),
     ...(server.oauthRedirectUrl ? { oauthRedirectUrl: server.oauthRedirectUrl } : {}),
     ...(server.oauthScope ? { oauthScope: server.oauthScope } : {}),
     ...(server.oauthCommand ? { oauthCommand: server.oauthCommand } : {}),

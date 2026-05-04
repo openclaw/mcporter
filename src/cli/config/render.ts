@@ -9,6 +9,9 @@ export type SerializedServerDefinition = {
   auth?: ServerDefinition['auth'];
   tokenCacheDir?: string;
   clientName?: string;
+  oauthClientId?: string;
+  oauthClientSecretEnv?: string;
+  oauthTokenEndpointAuthMethod?: string;
   oauthRedirectUrl?: string;
   oauthScope?: string;
   allowedTools?: readonly string[];
@@ -32,6 +35,9 @@ export function serializeDefinition(definition: ServerDefinition): SerializedSer
       auth: definition.auth,
       tokenCacheDir: definition.tokenCacheDir,
       clientName: definition.clientName,
+      oauthClientId: definition.oauthClientId,
+      oauthClientSecretEnv: definition.oauthClientSecretEnv,
+      oauthTokenEndpointAuthMethod: definition.oauthTokenEndpointAuthMethod,
       oauthRedirectUrl: definition.oauthRedirectUrl,
       oauthScope: definition.oauthScope,
       allowedTools: definition.allowedTools,
@@ -49,6 +55,9 @@ export function serializeDefinition(definition: ServerDefinition): SerializedSer
     auth: definition.auth,
     tokenCacheDir: definition.tokenCacheDir,
     clientName: definition.clientName,
+    oauthClientId: definition.oauthClientId,
+    oauthClientSecretEnv: definition.oauthClientSecretEnv,
+    oauthTokenEndpointAuthMethod: definition.oauthTokenEndpointAuthMethod,
     oauthRedirectUrl: definition.oauthRedirectUrl,
     oauthScope: definition.oauthScope,
     allowedTools: definition.allowedTools,

@@ -19,6 +19,9 @@ export type AddFlags = {
   headers: Record<string, string>;
   tokenCacheDir?: string;
   clientName?: string;
+  oauthClientId?: string;
+  oauthClientSecretEnv?: string;
+  oauthTokenEndpointAuthMethod?: string;
   oauthRedirectUrl?: string;
   auth?: string;
   copyFrom?: string;
@@ -145,6 +148,18 @@ function extractAddFlags(args: string[]): AddFlags {
         continue;
       case '--client-name':
         flags.clientName = requireValue(args, index, token);
+        args.splice(index, 2);
+        continue;
+      case '--oauth-client-id':
+        flags.oauthClientId = requireValue(args, index, token);
+        args.splice(index, 2);
+        continue;
+      case '--oauth-client-secret-env':
+        flags.oauthClientSecretEnv = requireValue(args, index, token);
+        args.splice(index, 2);
+        continue;
+      case '--oauth-token-endpoint-auth-method':
+        flags.oauthTokenEndpointAuthMethod = requireValue(args, index, token);
         args.splice(index, 2);
         continue;
       case '--oauth-redirect-url':
@@ -283,6 +298,15 @@ function applyFlagsToEntry(entry: RawEntry, flags: AddFlags): void {
   }
   if (flags.clientName) {
     entry.clientName = flags.clientName;
+  }
+  if (flags.oauthClientId) {
+    entry.oauthClientId = flags.oauthClientId;
+  }
+  if (flags.oauthClientSecretEnv) {
+    entry.oauthClientSecretEnv = flags.oauthClientSecretEnv;
+  }
+  if (flags.oauthTokenEndpointAuthMethod) {
+    entry.oauthTokenEndpointAuthMethod = flags.oauthTokenEndpointAuthMethod;
   }
   if (flags.oauthRedirectUrl) {
     entry.oauthRedirectUrl = flags.oauthRedirectUrl;

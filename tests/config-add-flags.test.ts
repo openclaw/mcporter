@@ -37,6 +37,12 @@ describe('config add flag parsing', () => {
       'oauth',
       '--client-name',
       'mcporter',
+      '--oauth-client-id',
+      'client-123',
+      '--oauth-client-secret-env',
+      'HUBSPOT_CLIENT_SECRET',
+      '--oauth-token-endpoint-auth-method',
+      'client_secret_post',
       '--oauth-redirect-url',
       'https://example.com/callback',
       '--dry-run',
@@ -56,6 +62,9 @@ describe('config add flag parsing', () => {
     expect(entry.description).toBe('desc');
     expect(entry.auth).toBe('oauth');
     expect(entry.clientName).toBe('mcporter');
+    expect(entry.oauthClientId).toBe('client-123');
+    expect(entry.oauthClientSecretEnv).toBe('HUBSPOT_CLIENT_SECRET');
+    expect(entry.oauthTokenEndpointAuthMethod).toBe('client_secret_post');
     expect(entry.oauthRedirectUrl).toBe('https://example.com/callback');
   });
 

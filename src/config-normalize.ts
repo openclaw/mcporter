@@ -15,6 +15,11 @@ export function normalizeServerEntry(
   const auth = normalizeAuth(raw.auth);
   const tokenCacheDir = normalizePath(raw.tokenCacheDir ?? raw.token_cache_dir);
   const clientName = raw.clientName ?? raw.client_name;
+  const oauthClientId = raw.oauthClientId ?? raw.oauth_client_id ?? undefined;
+  const oauthClientSecret = raw.oauthClientSecret ?? raw.oauth_client_secret ?? undefined;
+  const oauthClientSecretEnv = raw.oauthClientSecretEnv ?? raw.oauth_client_secret_env ?? undefined;
+  const oauthTokenEndpointAuthMethod =
+    raw.oauthTokenEndpointAuthMethod ?? raw.oauth_token_endpoint_auth_method ?? undefined;
   const oauthRedirectUrl = raw.oauthRedirectUrl ?? raw.oauth_redirect_url ?? undefined;
   const oauthScope = raw.oauthScope ?? raw.oauth_scope ?? undefined;
   const oauthCommandRaw = raw.oauthCommand ?? raw.oauth_command;
@@ -61,6 +66,10 @@ export function normalizeServerEntry(
     auth,
     tokenCacheDir,
     clientName,
+    oauthClientId,
+    oauthClientSecret,
+    oauthClientSecretEnv,
+    oauthTokenEndpointAuthMethod,
     oauthRedirectUrl,
     oauthScope,
     oauthCommand: defaultedOauthCommand,

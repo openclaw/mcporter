@@ -16,6 +16,10 @@ describe('config render helpers', () => {
       auth: 'oauth',
       tokenCacheDir: '/tmp/cache',
       clientName: 'mcporter',
+      oauthClientId: 'client-123',
+      oauthClientSecret: 'do-not-render',
+      oauthClientSecretEnv: 'OAUTH_SECRET',
+      oauthTokenEndpointAuthMethod: 'client_secret_post',
       oauthRedirectUrl: 'https://example.com/callback',
       oauthScope: 'openid profile',
       allowedTools: ['read'],
@@ -31,12 +35,16 @@ describe('config render helpers', () => {
       auth: 'oauth',
       tokenCacheDir: '/tmp/cache',
       clientName: 'mcporter',
+      oauthClientId: 'client-123',
+      oauthClientSecretEnv: 'OAUTH_SECRET',
+      oauthTokenEndpointAuthMethod: 'client_secret_post',
       oauthRedirectUrl: 'https://example.com/callback',
       oauthScope: 'openid profile',
       allowedTools: ['read'],
       env: { FOO: 'bar' },
       source: { kind: 'import', path: '/tmp/source.json' },
     });
+    expect(payload).not.toHaveProperty('oauthClientSecret');
   });
 
   it('serializes stdio definitions with command metadata', () => {

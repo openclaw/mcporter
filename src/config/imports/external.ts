@@ -131,6 +131,28 @@ function convertExternalEntry(value: Record<string, unknown>): RawEntry | null {
     result.clientName = clientName;
   }
 
+  const oauthClientId = asString(value.oauthClientId ?? value.oauth_client_id);
+  if (oauthClientId) {
+    result.oauthClientId = oauthClientId;
+  }
+
+  const oauthClientSecret = asString(value.oauthClientSecret ?? value.oauth_client_secret);
+  if (oauthClientSecret) {
+    result.oauthClientSecret = oauthClientSecret;
+  }
+
+  const oauthClientSecretEnv = asString(value.oauthClientSecretEnv ?? value.oauth_client_secret_env);
+  if (oauthClientSecretEnv) {
+    result.oauthClientSecretEnv = oauthClientSecretEnv;
+  }
+
+  const oauthTokenEndpointAuthMethod = asString(
+    value.oauthTokenEndpointAuthMethod ?? value.oauth_token_endpoint_auth_method
+  );
+  if (oauthTokenEndpointAuthMethod) {
+    result.oauthTokenEndpointAuthMethod = oauthTokenEndpointAuthMethod;
+  }
+
   const url = asString(value.baseUrl ?? value.base_url ?? value.url ?? value.serverUrl ?? value.server_url);
   if (url) {
     result.baseUrl = url;

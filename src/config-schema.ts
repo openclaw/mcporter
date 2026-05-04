@@ -81,6 +81,20 @@ export const RawEntrySchema = z
     token_cache_dir: z.string().optional().describe('Directory for caching OAuth tokens (snake_case)'),
     clientName: z.string().optional().describe('Client identifier for server telemetry (camelCase)'),
     client_name: z.string().optional().describe('Client identifier for server telemetry (snake_case)'),
+    oauthClientId: z.string().optional().describe('Pre-registered OAuth client id (camelCase)'),
+    oauth_client_id: z.string().optional().describe('Pre-registered OAuth client id (snake_case)'),
+    oauthClientSecret: z.string().optional().describe('Pre-registered OAuth client secret (camelCase)'),
+    oauth_client_secret: z.string().optional().describe('Pre-registered OAuth client secret (snake_case)'),
+    oauthClientSecretEnv: z.string().optional().describe('Environment variable containing the OAuth client secret'),
+    oauth_client_secret_env: z.string().optional().describe('Environment variable containing the OAuth client secret'),
+    oauthTokenEndpointAuthMethod: z
+      .string()
+      .optional()
+      .describe('OAuth token endpoint auth method, e.g. client_secret_post'),
+    oauth_token_endpoint_auth_method: z
+      .string()
+      .optional()
+      .describe('OAuth token endpoint auth method, e.g. client_secret_post'),
     oauthRedirectUrl: z.string().optional().describe('Custom OAuth redirect URL (camelCase)'),
     oauth_redirect_url: z.string().optional().describe('Custom OAuth redirect URL (snake_case)'),
     oauthScope: z.string().optional().describe('OAuth scope override (camelCase)'),
@@ -181,6 +195,10 @@ export interface ServerDefinition {
   readonly auth?: string;
   readonly tokenCacheDir?: string;
   readonly clientName?: string;
+  readonly oauthClientId?: string;
+  readonly oauthClientSecret?: string;
+  readonly oauthClientSecretEnv?: string;
+  readonly oauthTokenEndpointAuthMethod?: string;
   readonly oauthRedirectUrl?: string;
   readonly oauthScope?: string;
   readonly oauthCommand?: {

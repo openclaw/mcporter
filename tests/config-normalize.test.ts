@@ -124,4 +124,45 @@ describe('config normalization', () => {
     expect(camel?.oauthScope).toBe('openid profile');
     expect(snake?.oauthScope).toBe('email');
   });
+
+  it('normalizes pre-registered OAuth client fields', async () => {
+    await fs.mkdir(TEMP_DIR, { recursive: true });
+    const configPath = path.join(TEMP_DIR, 'mcporter-oauth-client.json');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          mcpServers: {
+            camel: {
+              baseUrl: 'https://example.com/mcp',
+              auth: 'oauth',
+              oauthClientId: 'client-123',
+              oauthClientSecretEnv: 'OAUTH_SECRET',
+              oauthTokenEndpointAuthMethod: 'client_secret_post',
+            },
+            snake: {
+              baseUrl: 'https://example.com/mcp',
+              auth: 'oauth',
+              oauth_client_id: 'client-456',
+              oauth_client_secret: 'secret-inline',
+              oauth_token_endpoint_auth_method: 'client_secret_basic',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const servers = await loadServerDefinitions({ configPath });
+    const camel = servers.find((entry) => entry.name === 'camel');
+    const snake = servers.find((entry) => entry.name === 'snake');
+    expect(camel?.oauthClientId).toBe('client-123');
+    expect(camel?.oauthClientSecretEnv).toBe('OAUTH_SECRET');
+    expect(camel?.oauthTokenEndpointAuthMethod).toBe('client_secret_post');
+    expect(snake?.oauthClientId).toBe('client-456');
+    expect(snake?.oauthClientSecret).toBe('secret-inline');
+    expect(snake?.oauthTokenEndpointAuthMethod).toBe('client_secret_basic');
+  });
 });

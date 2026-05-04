@@ -51,6 +51,12 @@ export const CONFIG_HELP_ENTRIES: Record<ConfigSubcommand, ConfigHelpEntry> = {
       { flag: '--header KEY=value', description: 'Attach HTTP headers (repeatable).' },
       { flag: '--token-cache-dir <path>', description: 'Override where OAuth tokens are persisted.' },
       { flag: '--client-name <name>', description: 'Customize the OAuth client identifier.' },
+      { flag: '--oauth-client-id <id>', description: 'Use a pre-registered OAuth client id.' },
+      { flag: '--oauth-client-secret-env <env>', description: 'Read the OAuth client secret from an env var.' },
+      {
+        flag: '--oauth-token-endpoint-auth-method <method>',
+        description: 'Set token auth, e.g. client_secret_post.',
+      },
       { flag: '--oauth-redirect-url <url>', description: 'Set a custom OAuth redirect URL.' },
       { flag: '--auth <strategy>', description: 'Force the auth type (e.g., oauth).' },
       { flag: '--copy-from <import:name>', description: 'Start with an imported definition by name.' },

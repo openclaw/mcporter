@@ -114,6 +114,7 @@ Use `--scope home|project` with `mcporter config add` to pick the write target e
   - `--transport http|sse|stdio`
   - `--url` or `--command`/`--stdio`
   - `--env`, `--header`, `--token-cache-dir`, `--description`, `--tag`, `--client-name`, `--oauth-redirect-url`
+  - `--oauth-client-id`, `--oauth-client-secret-env`, `--oauth-token-endpoint-auth-method` for pre-registered OAuth clients.
   - `--copy-from importKind:name` to clone settings from an imported entry before editing.
 - `--dry-run` shows the JSON diff without writing, while `--persist <path>` overrides the destination file.
 
@@ -197,7 +198,10 @@ Server definition fields (subset of what `RawEntrySchema` accepts):
 | `auth`                           | Currently only `oauth` is recognized. Any other string is ignored (treated as undefined) to avoid stale state from other clients. `mcporter list` can still reuse an existing OAuth token cache for older HTTP entries missing this marker. |
 | `tokenCacheDir`                  | Directory for OAuth tokens; still honored, but mcporter now keeps a centralized vault in `~/.mcporter/credentials.json` (legacy per-server caches are auto-migrated). Supports `~` expansion.                                               |
 | `clientName`                     | Optional identifier some servers use for telemetry/audience segmentation.                                                                                                                                                                   |
-| `oauthRedirectUrl`               | Override the default localhost callback. Useful when tunneling OAuth through Codespaces or remote dev boxes.                                                                                                                                |
+| `oauthClientId`                  | Pre-registered OAuth client id for providers that do not support dynamic client registration.                                                                                                                                               |
+| `oauthClientSecretEnv`           | Environment variable containing the OAuth client secret. Prefer this over committing `oauthClientSecret` directly.                                                                                                                          |
+| `oauthTokenEndpointAuthMethod`   | Optional token endpoint auth method override, for example `client_secret_post` when the provider requires client credentials in the token request body.                                                                                     |
+| `oauthRedirectUrl`               | Override the default localhost callback. Required for many pre-registered OAuth apps because the provider must allowlist the exact redirect URI. Also useful when tunneling OAuth through Codespaces or remote dev boxes.                   |
 | `oauthScope`                     | Optional explicit OAuth scope string. If omitted, mcporter lets the MCP SDK derive scope from server/auth metadata. Use this as an escape hatch for providers that require explicit scopes but don’t publish `scopes_supported`.            |
 | `oauthCommand.args`              | For STDIO servers that ship a custom auth subcommand (e.g., Gmail MCP). mcporter will spawn the stdio command with these args when you run `mcporter auth <name>`, so you don’t need to call `npx ... auth` manually.                       |
 | `allowedTools` / `allowed_tools` | Optional exact-name allowlist. Only listed tools appear in `mcporter list` and can be called. An empty array blocks all tools. Cannot be combined with `blockedTools`.                                                                      |
@@ -214,6 +218,7 @@ mcporter normalizes headers to include `Accept: application/json, text/event-str
 ## Project vs. Machine Layers
 
 - Keep `config/mcporter.json` under version control. Encourage contributors to add sensitive data via env vars (`${LINEAR_API_KEY}`) rather than inline secrets.
+- For pre-registered OAuth apps, store the public `oauthClientId` in config and point `oauthClientSecretEnv` at a local environment variable. `oauthClientSecret` is supported for private machine-local configs but should not be committed.
 - Machine-specific additions can live in `~/.mcporter/local.json`; point `mcporter config --config ~/.mcporter/local.json add ...` there when you prefer not to touch the repo. Since the runtime only watches one config at a time, CI jobs should always pass `--config config/mcporter.json` (or run from the repo root) for deterministic behavior.
 - OAuth tokens, cached server metadata, and generated CLIs should remain outside the repo (`~/.mcporter/<name>/`, `dist/`).
 

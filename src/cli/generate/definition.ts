@@ -194,10 +194,18 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
   const auth = typeof def.auth === 'string' ? def.auth : undefined;
   const tokenCacheDir = typeof def.tokenCacheDir === 'string' ? def.tokenCacheDir : undefined;
   const clientName = typeof def.clientName === 'string' ? def.clientName : undefined;
+  const record = def as Record<string, unknown>;
+  const oauthClientId = stringFromAliases(record, 'oauthClientId', 'oauth_client_id');
+  const oauthClientSecret = stringFromAliases(record, 'oauthClientSecret', 'oauth_client_secret');
+  const oauthClientSecretEnv = stringFromAliases(record, 'oauthClientSecretEnv', 'oauth_client_secret_env');
+  const oauthTokenEndpointAuthMethod = stringFromAliases(
+    record,
+    'oauthTokenEndpointAuthMethod',
+    'oauth_token_endpoint_auth_method'
+  );
   const oauthRedirectUrl = typeof def.oauthRedirectUrl === 'string' ? def.oauthRedirectUrl : undefined;
   const oauthScope = typeof def.oauthScope === 'string' ? def.oauthScope : undefined;
   const headers = toStringRecord((def as Record<string, unknown>).headers);
-  const record = def as Record<string, unknown>;
   const oauthCommand = getOauthCommand(record.oauthCommand ?? record.oauth_command);
   const rawLifecycle = getRawLifecycle(record.lifecycle);
   const logging = getLogging(record.logging);
@@ -213,6 +221,10 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
     auth,
     tokenCacheDir,
     clientName,
+    oauthClientId,
+    oauthClientSecret,
+    oauthClientSecretEnv,
+    oauthTokenEndpointAuthMethod,
     oauthRedirectUrl,
     oauthScope,
     oauthCommand,
@@ -368,6 +380,16 @@ function getOauthCommand(value: unknown): ServerDefinition['oauthCommand'] | und
   }
   const args = getStringArray((value as { args?: unknown }).args);
   return args ? { args } : undefined;
+}
+
+function stringFromAliases(record: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string') {
+      return value;
+    }
+  }
+  return undefined;
 }
 
 function toStringRecord(value: unknown): Record<string, string> | undefined {

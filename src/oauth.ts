@@ -237,6 +237,10 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   }
 
   async clientInformation(): Promise<OAuthClientInformationMixed | undefined> {
+    const staticClient = buildStaticClientInformation(this.definition, this.redirectUrlValue);
+    if (staticClient) {
+      return staticClient;
+    }
     return this.persistence.readClientInfo();
   }
 
@@ -350,6 +354,38 @@ function firstRedirectUri(client: OAuthClientInformationMixed | undefined): stri
   }
   const [first] = redirectUris;
   return typeof first === 'string' ? first : undefined;
+}
+
+function buildStaticClientInformation(
+  definition: ServerDefinition,
+  redirectUrl: URL
+): OAuthClientInformationMixed | undefined {
+  if (!definition.oauthClientId) {
+    return undefined;
+  }
+  const clientSecret = resolveOAuthClientSecret(definition);
+  const metadata = {
+    client_id: definition.oauthClientId,
+    ...(clientSecret ? { client_secret: clientSecret } : {}),
+    redirect_uris: [redirectUrl.toString()],
+    grant_types: ['authorization_code', 'refresh_token'],
+    response_types: ['code'],
+    ...(definition.oauthTokenEndpointAuthMethod
+      ? { token_endpoint_auth_method: definition.oauthTokenEndpointAuthMethod }
+      : {}),
+  };
+  return metadata as OAuthClientInformationMixed;
+}
+
+function resolveOAuthClientSecret(definition: ServerDefinition): string | undefined {
+  if (definition.oauthClientSecretEnv) {
+    const value = process.env[definition.oauthClientSecretEnv];
+    if (!value) {
+      throw new Error(`Environment variable '${definition.oauthClientSecretEnv}' is required for OAuth client secret.`);
+    }
+    return value;
+  }
+  return definition.oauthClientSecret;
 }
 
 export const __oauthInternals = {
