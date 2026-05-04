@@ -10,7 +10,7 @@ RUNNER="${MCP_RUNNER:-./runner}"
 VERSION="${VERSION:-$(node -p "require('./package.json').version")}" 
 
 banner() { printf "\n==== %s ====" "$1"; printf "\n"; }
-run() { echo ">> $*"; "$@"; }
+run() { echo ">> $*" >&2; "$@"; }
 
 phase_gates() {
   banner "Gates (lint/type/test/build)"
