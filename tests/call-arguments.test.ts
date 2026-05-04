@@ -61,6 +61,21 @@ describe('parseCallArguments', () => {
     );
   });
 
+  it('treats key:=value as an alias for key=value without keeping a trailing colon', () => {
+    const parsed = parseCallArguments(['schwab.placeOrder', 'price:=5.20', 'quantity:=0', 'limit:=10']);
+    expect(parsed.args.price).toBe('5.20');
+    expect(parsed.args.quantity).toBe(0);
+    expect(parsed.args.limit).toBe(10);
+    expect(parsed.schemaStringCoercionCandidates).toEqual({ quantity: '0', limit: '10' });
+    expect(parsed.args).not.toHaveProperty('price:');
+  });
+
+  it('leaves := inside values untouched', () => {
+    const parsed = parseCallArguments(['server.tool', 'expr=value:=x']);
+    expect(parsed.args.expr).toBe('value:=x');
+    expect(parsed.args).not.toHaveProperty('expr:');
+  });
+
   it('warns when colon-style arguments omit a value', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const parsed = parseCallArguments(['iterm-mcp.write_to_terminal', 'command:']);

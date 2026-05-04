@@ -32,7 +32,7 @@ export function renderTypesModule(input: EmitTypesTemplateInput): string {
   lines.push(`export interface ${input.interfaceName} {`);
   input.docs.forEach((entry, index) => {
     lines.push(...renderDocComment(entry.doc.docLines, '  '));
-    const methodSignature = toInterfaceSignature(entry.doc.tsSignature, { wrapInPromise: true });
+    const methodSignature = toInterfaceSignature(entry.doc.tsSignature, entry.toolName, { wrapInPromise: true });
     lines.push(`  ${methodSignature}`);
     if (entry.doc.optionalSummary) {
       lines.push(`  // ${entry.doc.optionalSummary.replace(/^\/\//, '').trim()}`);
@@ -76,10 +76,11 @@ export function renderClientModule(input: EmitClientTemplateInput): string {
   lines.push(`  const proxy = createServerProxy(runtime, ${JSON.stringify(serverName)});`);
   lines.push(`  const client: ${clientType} = {`);
   input.docs.forEach((entry, _index) => {
-    const methodName = entry.doc.tsSignature.match(/^function\s+([^()]+)/)?.[1] ?? entry.toolName;
-    lines.push(`    async ${methodName}(params: Parameters<${input.interfaceName}['${methodName}']>[0]) {`);
+    const memberName = toMemberName(entry.toolName);
+    const indexKey = toIndexKey(entry.toolName);
+    lines.push(`    async ${memberName}(params: Parameters<${input.interfaceName}[${indexKey}]>[0]) {`);
     lines.push(
-      `      const tool = proxy.${entry.methodName} as (args: Parameters<${input.interfaceName}['${methodName}']>[0]) => Promise<unknown>;`
+      `      const tool = proxy.${entry.methodName} as (args: Parameters<${input.interfaceName}[${indexKey}]>[0]) => Promise<unknown>;`
     );
     lines.push('      const raw = await tool(params);');
     lines.push('      return wrapCallResult(raw).callResult;');
@@ -126,16 +127,26 @@ function renderDocComment(docLines: string[] | undefined, indent: string): strin
   return docLines.map((line) => `${indent}${line}`);
 }
 
-function toInterfaceSignature(signature: string, options?: { wrapInPromise?: boolean }): string {
+function toInterfaceSignature(signature: string, toolName: string, options?: { wrapInPromise?: boolean }): string {
   const trimmed = signature.trim();
   const match = trimmed.match(/^function\s+([^(]+)\((.*)\)\s*(?::\s*([^;]+))?;?$/);
   if (!match) {
     return trimmed.replace(/^function\s+/, '');
   }
-  const [, name, params, returnTypeRaw] = match;
+  const [, , params, returnTypeRaw] = match;
   const returnType = (returnTypeRaw ?? 'void').trim();
   const finalReturn = options?.wrapInPromise ? `Promise<${returnType}>` : returnType;
-  return `${name}(${params}): ${finalReturn};`;
+  return `${toMemberName(toolName)}(${params}): ${finalReturn};`;
+}
+
+const SAFE_IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+function toMemberName(name: string): string {
+  return SAFE_IDENTIFIER.test(name) ? name : JSON.stringify(name);
+}
+
+function toIndexKey(name: string): string {
+  return JSON.stringify(name);
 }
 
 function describeTransport(definition: ServerDefinition): string | undefined {
