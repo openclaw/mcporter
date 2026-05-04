@@ -28,6 +28,8 @@ describe('mcporter list help shortcut', () => {
     await runCli(['list', '--help']);
 
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Usage: mcporter list'));
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('--brief'));
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('--signatures'));
     expect(process.exitCode).toBe(0);
   });
 

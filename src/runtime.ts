@@ -59,6 +59,7 @@ export interface Runtime {
   getDefinitions(): ServerDefinition[];
   getDefinition(server: string): ServerDefinition;
   registerDefinition(definition: ServerDefinition, options?: { overwrite?: boolean }): void;
+  getInstructions?(server: string): Promise<string | undefined>;
   listTools(server: string, options?: ListToolsOptions): Promise<ServerToolInfo[]>;
   callTool(server: string, toolName: string, options?: CallOptions): Promise<unknown>;
   listResources(server: string, options?: Partial<ListResourcesRequest['params']>): Promise<unknown>;
@@ -150,6 +151,25 @@ class McpRuntime implements Runtime {
     }
     this.definitions.set(definition.name, definition);
     this.clients.delete(definition.name);
+  }
+
+  async getInstructions(server: string): Promise<string | undefined> {
+    const contextPromise = this.clients.get(server.trim());
+    if (!contextPromise) {
+      return undefined;
+    }
+    try {
+      const context = await contextPromise;
+      const instructions =
+        typeof context.client.getInstructions === 'function' ? context.client.getInstructions() : undefined;
+      if (typeof instructions !== 'string') {
+        return undefined;
+      }
+      const trimmed = instructions.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   // listTools queries tool metadata and optionally includes schemas when requested.

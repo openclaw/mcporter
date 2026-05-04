@@ -204,7 +204,7 @@ npx mcporter call --stdio "bun run ./local-server.ts" --name local-tools
 - **Unknown long flags fail fast.** `mcporter call server.tool --source import` now errors instead of silently turning `--source` into a positional tool argument. Use `source=import`, `--args '{"source":"import"}'`, or insert `--` before literal positional values that begin with `--`.
 - **Cheatsheet.** See [docs/tool-calling.md](docs/tool-calling.md) for a quick comparison of every supported call style (auto-inferred verbs, flags, function-calls, and ad-hoc URLs).
 - **Auto-correct.** If you typo a tool name, MCPorter inspects the server’s tool catalog, retries when the edit distance is tiny, and otherwise prints a `Did you mean …?` hint. The heuristic (and how to tune it) is captured in [docs/call-heuristic.md](docs/call-heuristic.md).
-- **Richer single-server output.** `mcporter list <server>` now prints TypeScript-style signatures, inline comments, return-shape hints, and command examples that mirror the new call syntax. Optional parameters stay hidden by default—add `--all-parameters` or `--schema` whenever you need the full JSON schema.
+- **Richer single-server output.** `mcporter list <server>` now prints TypeScript-style signatures, inline comments, return-shape hints, and command examples that mirror the new call syntax. Optional parameters stay hidden by default—add `--all-parameters` or `--schema` whenever you need the full JSON schema. Prefer a tighter scan? `mcporter list <server> --brief` (or `--signatures`) keeps just the compact signatures and optional summaries.
 
 ## Installation
 
@@ -298,7 +298,7 @@ Friendly ergonomics baked into the proxy and result helpers:
 
 Drop down to `runtime.callTool()` whenever you need explicit control over arguments, metadata, or streaming options.
 
-Call `mcporter list <server>` any time you need the TypeScript-style signature, optional parameter hints, and sample invocations that match the CLI's function-call syntax.
+Call `mcporter list <server>` any time you need the TypeScript-style signature, optional parameter hints, and sample invocations that match the CLI's function-call syntax. Add `--brief` or `--signatures` when you only want compact signatures.
 
 ## Generate a Standalone CLI
 

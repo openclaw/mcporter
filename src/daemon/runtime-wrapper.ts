@@ -47,6 +47,10 @@ class KeepAliveRuntime implements Runtime {
     }
   }
 
+  async getInstructions(server: string): Promise<string | undefined> {
+    return this.base.getInstructions?.(server);
+  }
+
   async listTools(server: string, options?: ListToolsOptions): Promise<Awaited<ReturnType<Runtime['listTools']>>> {
     if (this.shouldUseDaemon(server)) {
       return (await this.invokeWithRestart(server, 'listTools', () =>

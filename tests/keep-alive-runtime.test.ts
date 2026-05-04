@@ -35,6 +35,10 @@ class FakeRuntime implements Runtime {
     // no-op for tests
   }
 
+  async getInstructions(): Promise<string | undefined> {
+    return undefined;
+  }
+
   async listTools(server: string, options?: ListToolsOptions): Promise<Awaited<ReturnType<Runtime['listTools']>>> {
     return await this.listToolsMock(server, options);
   }

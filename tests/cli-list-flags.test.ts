@@ -8,6 +8,7 @@ describe('CLI list flag parsing', () => {
     const args = ['--timeout', '7500', '--schema', 'server'];
     const flags = extractListFlags(args);
     expect(flags).toEqual({
+      brief: false,
       schema: true,
       timeoutMs: 7500,
       requiredOnly: true,
@@ -24,6 +25,7 @@ describe('CLI list flag parsing', () => {
     const args = ['--all-parameters', 'server'];
     const flags = extractListFlags(args);
     expect(flags).toEqual({
+      brief: false,
       schema: false,
       timeoutMs: undefined,
       requiredOnly: false,
@@ -40,7 +42,31 @@ describe('CLI list flag parsing', () => {
     const args = ['--json', 'server'];
     const flags = extractListFlags(args);
     expect(flags.format).toBe('json');
+    expect(flags.brief).toBe(false);
     expect(args).toEqual(['server']);
+  });
+
+  it('parses --brief and --signatures aliases', async () => {
+    const { extractListFlags } = await cliModulePromise;
+    const briefArgs = ['--brief', 'server'];
+    const briefFlags = extractListFlags(briefArgs);
+    expect(briefFlags.brief).toBe(true);
+    expect(briefArgs).toEqual(['server']);
+
+    const signatureArgs = ['--signatures', 'server'];
+    const signatureFlags = extractListFlags(signatureArgs);
+    expect(signatureFlags.brief).toBe(true);
+    expect(signatureArgs).toEqual(['server']);
+  });
+
+  it('rejects --brief with incompatible display flags', async () => {
+    const { extractListFlags } = await cliModulePromise;
+    expect(() => extractListFlags(['--brief', '--json', 'server'])).toThrow('--brief cannot be used with --json');
+    expect(() => extractListFlags(['--brief', '--schema', 'server'])).toThrow('--brief cannot be used with --schema');
+    expect(() => extractListFlags(['--brief', '--verbose', 'server'])).toThrow('--brief cannot be used with --verbose');
+    expect(() => extractListFlags(['--brief', '--all-parameters', 'server'])).toThrow(
+      '--brief cannot be used with --all-parameters'
+    );
   });
 
   it('treats --sse as a hidden alias for --http-url in ad-hoc mode', async () => {

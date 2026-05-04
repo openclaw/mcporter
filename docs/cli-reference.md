@@ -18,9 +18,15 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
   MCP initialization.
 - With `server.tool`, prints just that tool; combine with `--schema` for a single
   tool schema.
+- Add `--brief` or `--signatures` with a server or `server.tool` target to keep
+  the server header/instructions and print compact signatures without doc
+  comments, examples, or schemas.
 - Hidden alias: `list-tools` (kept for muscle memory; not advertised in help output).
 - Hidden ad-hoc flag aliases: `--sse` for `--http-url`, `--insecure` for `--allow-http` (for plain HTTP testing).
 - Flags:
+  - `--brief` – compact single-server output; cannot be combined with `--json`,
+    `--schema`, `--verbose`, or `--all-parameters`.
+  - `--signatures` – alias for `--brief`.
   - `--all-parameters` – include every optional parameter in the signature.
   - `--schema` – pretty-print the JSON schema for each tool.
   - `--timeout <ms>` – per-server timeout when enumerating all servers.

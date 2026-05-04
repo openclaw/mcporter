@@ -18,6 +18,7 @@
 - Fail OAuth flows immediately when the server never creates an authorization URL, instead of waiting for a browser callback that cannot arrive. (Issue #115)
 - Support `mcporter list server.tool --schema` to print a single tool's schema instead of the whole server. (Issue #116)
 - Surface MCP server `instructions` from the initialize response in single-server `mcporter list` text and JSON output. (Issue #76)
+- Add compact `mcporter list <server> --brief` / `--signatures` output for scanning signatures without doc blocks, examples, or schemas. (PR #144, thanks @yuhp)
 
 ### Config
 

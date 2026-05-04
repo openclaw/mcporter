@@ -17,6 +17,7 @@ import {
   createEmptyStatusCounts,
   createUnknownResult,
   type ListJsonServerEntry,
+  printBriefTool,
   printSingleServerHeader,
   printToolDetail,
   summarizeStatusCounts,
@@ -35,12 +36,14 @@ export function extractListFlags(args: string[]): {
   format: ListOutputFormat;
   verbose: boolean;
   includeSources: boolean;
+  brief: boolean;
 } {
   let schema = false;
   let timeoutMs: number | undefined;
   let requiredOnly = true;
   let verbose = false;
   let includeSources = false;
+  let brief = false;
   const format = consumeOutputFormat(args, {
     defaultFormat: 'text',
     allowed: ['text', 'json'],
@@ -75,13 +78,36 @@ export function extractListFlags(args: string[]): {
       args.splice(index, 1);
       continue;
     }
+    if (token === '--brief' || token === '--signatures') {
+      brief = true;
+      args.splice(index, 1);
+      continue;
+    }
     if (token === '--timeout') {
       timeoutMs = consumeTimeoutFlag(args, index, { flagName: '--timeout' });
       continue;
     }
     index += 1;
   }
-  return { schema, timeoutMs, requiredOnly, ephemeral, format, verbose, includeSources };
+  if (brief) {
+    const conflicts: string[] = [];
+    if (format === 'json') {
+      conflicts.push('--json');
+    }
+    if (schema) {
+      conflicts.push('--schema');
+    }
+    if (verbose) {
+      conflicts.push('--verbose');
+    }
+    if (!requiredOnly) {
+      conflicts.push('--all-parameters');
+    }
+    if (conflicts.length > 0) {
+      throw new Error(`--brief cannot be used with ${conflicts.join(', ')}`);
+    }
+  }
+  return { schema, timeoutMs, requiredOnly, ephemeral, format, verbose, includeSources, brief };
 }
 
 type ListOutputFormat = 'text' | 'json';
@@ -110,6 +136,9 @@ export async function handleList(
   target = prepared.target;
 
   if (!target) {
+    if (flags.brief) {
+      throw new Error('--brief requires a server target.');
+    }
     const previousStdioLogMode = setStdioLogMode('silent');
     try {
       const servers = runtime.getDefinitions();
@@ -347,6 +376,20 @@ export async function handleList(
       console.log('');
       return;
     }
+    if (flags.brief) {
+      let optionalOmitted = false;
+      for (const entry of metadataEntries) {
+        const detail = printBriefTool(definition, entry, flags.requiredOnly);
+        optionalOmitted ||= detail.optionalOmitted;
+      }
+      if (flags.requiredOnly && optionalOmitted) {
+        console.log(`  ${extraDimText('Optional parameters hidden; run with --all-parameters to view all fields.')}`);
+        console.log('');
+      }
+      console.log(summaryLine);
+      console.log('');
+      return;
+    }
     const examples: string[] = [];
     let optionalOmitted = false;
     for (const entry of metadataEntries) {
@@ -406,6 +449,8 @@ export function printListHelp(): void {
     '  --yes                  Skip confirmation prompts when persisting.',
     '',
     'Display flags:',
+    '  --brief                Show compact signatures only for a single server.',
+    '  --signatures           Alias for --brief.',
     '  --schema               Show tool schemas when listing servers.',
     '  --all-parameters       Include optional parameters in tool docs.',
     '  --json                 Emit a JSON summary instead of text.',
@@ -416,6 +461,8 @@ export function printListHelp(): void {
     'Examples:',
     '  mcporter list',
     '  mcporter list linear --schema',
+    '  mcporter list linear --brief',
+    '  mcporter list linear.list_issues --signatures',
     '  mcporter list https://mcp.example.com/mcp',
     '  mcporter list --http-url https://localhost:3333/mcp --schema',
   ];
@@ -537,19 +584,8 @@ async function loadServerInstructions(
   runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
   serverName: string
 ): Promise<string | undefined> {
-  if (typeof runtime.connect !== 'function') {
+  if (typeof runtime.getInstructions !== 'function') {
     return undefined;
   }
-  try {
-    const context = await runtime.connect(serverName);
-    const instructions =
-      typeof context.client.getInstructions === 'function' ? context.client.getInstructions() : undefined;
-    if (typeof instructions !== 'string') {
-      return undefined;
-    }
-    const trimmed = instructions.trim();
-    return trimmed.length > 0 ? trimmed : undefined;
-  } catch {
-    return undefined;
-  }
+  return runtime.getInstructions(serverName);
 }
