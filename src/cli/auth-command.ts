@@ -125,6 +125,7 @@ export function printAuthHelp(): void {
     'Ad-hoc targets:',
     '  --http-url <url>        Register an HTTP server for this run.',
     '  --allow-http            Permit plain http:// URLs with --http-url.',
+    '  --header KEY=value      Attach HTTP headers (repeatable).',
     '  --stdio <command>       Run a stdio MCP server (repeat --stdio-arg for args).',
     '  --stdio-arg <value>     Append args to the stdio command (repeatable).',
     '  --env KEY=value         Inject env vars for stdio servers (repeatable).',

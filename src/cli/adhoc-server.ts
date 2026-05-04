@@ -13,6 +13,7 @@ export interface EphemeralServerSpec {
   stdioArgs?: string[];
   cwd?: string;
   env?: Record<string, string>;
+  headers?: Record<string, string>;
   description?: string;
   persistPath?: string;
 }
@@ -44,7 +45,7 @@ export function resolveEphemeralServer(spec: EphemeralServerSpec): EphemeralServ
     const command: CommandSpec = {
       kind: 'http',
       url,
-      headers: __configInternals.ensureHttpAcceptHeader(undefined),
+      headers: __configInternals.ensureHttpAcceptHeader(spec.headers),
     };
     const canonical = spec.name ? undefined : canonicalKeepAliveName(command);
     const name = slugify(spec.name ?? canonical ?? inferNameFromUrl(url));
@@ -61,6 +62,7 @@ export function resolveEphemeralServer(spec: EphemeralServerSpec): EphemeralServ
       baseUrl: url.href,
       ...(spec.description ? { description: spec.description } : {}),
       ...(spec.env && Object.keys(spec.env).length > 0 ? { env: spec.env } : {}),
+      ...(spec.headers && Object.keys(spec.headers).length > 0 ? { headers: spec.headers } : {}),
       ...(lifecycle ? { lifecycle: serializeLifecycle(lifecycle) } : {}),
     };
     return { definition, name, persistedEntry };

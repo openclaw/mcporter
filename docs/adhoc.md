@@ -33,7 +33,7 @@ Notice that the second command repeats the URL. Ad-hoc definitions are ephemeral
 
 ## Transport Detection
 
-- **HTTP(S)**: Providing a URL defaults to the streamable HTTP transport. `https://` works out of the box; `http://` requires `--allow-http` (or the hidden alias `--insecure`) to acknowledge cleartext traffic. The `--sse` flag is a hidden alias for `--http-url` to match older examples.
+- **HTTP(S)**: Providing a URL defaults to the streamable HTTP transport. `https://` works out of the box; `http://` requires `--allow-http` (or the hidden alias `--insecure`) to acknowledge cleartext traffic. The `--sse` flag is a hidden alias for `--http-url` to match older examples. Use repeatable `--header KEY=value` flags for private servers that require headers such as `Authorization`, `X-API-Key`, or tenant selectors.
 - **STDIO**: Supplying `--stdio` (with a command string) or `--stdio-bin` (binary + args) selects the stdio transport. Your current shell environment is inherited automatically; use `--env KEY=value` only when you need to inject/override specific variables (and `--cwd` to change directories).
 - **Conflict guard**: Passing both URL and stdio flags errors out so we don’t guess.
 
@@ -62,7 +62,7 @@ The CLI still avoids surprise prompts during `mcporter list`; the upgrade happen
 
 - OAuth flows are allowed; successful tokens store under the inferred name just like regular definitions.
 - `mcporter auth` accepts the same `--http-url/--stdio` flags (and even bare URLs), so you can immediately re-run `mcporter auth https://…` after a 401 without touching a config file.
-- Nothing is written to disk unless you pass `--persist /path/to/config.json`. When set, we merge the generated definition into that file (creating it if necessary) so future runs can rely on the standard config pipeline.
+- Nothing is written to disk unless you pass `--persist /path/to/config.json`. When set, we merge the generated definition into that file (creating it if necessary) so future runs can rely on the standard config pipeline. Ad-hoc HTTP headers are persisted with the entry, so placeholders such as `--header 'Authorization=$env:MY_TOKEN'` keep working through the normal config header resolver.
 
 ## Safety Nets
 

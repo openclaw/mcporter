@@ -145,11 +145,12 @@ Use `--scope home|project` with `mcporter config add` to pick the write target e
 
 ## Ad-hoc & Persistence
 
-- `--http-url` and `--stdio` flags live on `mcporter list|call|auth`, keeping `mcporter config` focused on persistent config files.
+- `--http-url` and `--stdio` flags live on `mcporter list|call|auth`, keeping `mcporter config` focused on persistent config files. Ad-hoc HTTP targets also accept repeatable `--header KEY=value` flags for private endpoints.
 - Names default to slugified hostnames or executable/script combos. Supply `--name` to improve reuse; mcporter uses that slug for OAuth caches even before persistence.
 - `--allow-http` is mandatory for cleartext endpoints so we never downgrade transport silently.
 - Add `--persist <path>` (defaulting to `config/mcporter.json` when omitted) to copy the ad-hoc definition into config. We reuse the same serializer as the import pipeline, so copying from Cursor → local config produces identical structure and preserves custom env/header fields.
 - `--env KEY=VAL` entries merge with existing `env` dictionaries if you later persist the same server; nothing is lost when you alternate between CLI flags and JSON edits.
+- `--header KEY=VAL` entries merge into the persisted HTTP `headers` object when used with `--persist`; values support the same `$env:VAR`, `${VAR}`, and `${VAR:-fallback}` placeholders as config-file headers.
 
 ## JSON Schema for IDE Support
 

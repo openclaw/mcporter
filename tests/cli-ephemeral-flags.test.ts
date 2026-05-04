@@ -3,11 +3,31 @@ import { describe, expect, it } from 'vitest';
 import { extractEphemeralServerFlags } from '../src/cli/ephemeral-flags.js';
 
 describe('extractEphemeralServerFlags', () => {
-  it('parses HTTP URLs and env overrides', () => {
-    const args = ['--http-url', 'https://mcp.example.com/mcp', '--env', 'TOKEN=abc', 'list'];
+  it('parses HTTP URLs, headers, and env overrides', () => {
+    const args = [
+      '--http-url',
+      'https://mcp.example.com/mcp',
+      '--env',
+      'TOKEN=abc',
+      '--header',
+      'Authorization=$env:API_TOKEN',
+      '--header',
+      'X-Tenant=biz=unit',
+      'list',
+    ];
     const spec = extractEphemeralServerFlags(args);
-    expect(spec).toEqual({ httpUrl: 'https://mcp.example.com/mcp', env: { TOKEN: 'abc' } });
+    expect(spec).toEqual({
+      httpUrl: 'https://mcp.example.com/mcp',
+      env: { TOKEN: 'abc' },
+      headers: { Authorization: '$env:API_TOKEN', 'X-Tenant': 'biz=unit' },
+    });
     expect(args).toEqual(['list']);
+  });
+
+  it('rejects malformed ad-hoc headers', () => {
+    expect(() =>
+      extractEphemeralServerFlags(['--http-url', 'https://mcp.example.com/mcp', '--header', 'oops'])
+    ).toThrow("Flag '--header' requires KEY=value.");
   });
 
   it('captures stdio commands and additional args', () => {

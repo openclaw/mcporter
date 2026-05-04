@@ -66,17 +66,20 @@ export function extractEphemeralServerFlags(
 
     if (token === '--env') {
       const value = args[index + 1];
-      if (!value?.includes('=')) {
-        throw new Error("Flag '--env' requires KEY=value.");
-      }
-      const [key, ...rest] = value.split('=');
-      if (!key) {
-        throw new Error("Flag '--env' requires KEY=value.");
-      }
       const current = ensureSpec();
       const envMap = current.env ? { ...current.env } : {};
-      envMap[key] = rest.join('=');
+      parseKeyValue(value, envMap, '--env');
       current.env = envMap;
+      args.splice(index, 2);
+      continue;
+    }
+
+    if (token === '--header') {
+      const value = args[index + 1];
+      const current = ensureSpec();
+      const headerMap = current.headers ? { ...current.headers } : {};
+      parseKeyValue(value, headerMap, '--header');
+      current.headers = headerMap;
       args.splice(index, 2);
       continue;
     }
@@ -125,4 +128,15 @@ export function extractEphemeralServerFlags(
   }
 
   return spec;
+}
+
+function parseKeyValue(value: string | undefined, target: Record<string, string>, flagName: string): void {
+  if (!value?.includes('=')) {
+    throw new Error(`Flag '${flagName}' requires KEY=value.`);
+  }
+  const [key, ...rest] = value.split('=');
+  if (!key) {
+    throw new Error(`Flag '${flagName}' requires KEY=value.`);
+  }
+  target[key] = rest.join('=');
 }

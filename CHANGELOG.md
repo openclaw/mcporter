@@ -11,6 +11,7 @@
 - Quote generated `emit-ts` members for tool names that are not valid TypeScript identifiers. (PR #149 / issue #30, thanks @solomonneas)
 - Resolve relative stdio args in generated CLI bundles against the generated script location instead of the caller's current directory. (PR #148 / issue #56, thanks @solomonneas)
 - Print OAuth manual-completion URLs at the default warning log level so headless users can copy them. (PR #143 / issue #139, thanks @stainlu)
+- Support repeatable `--header KEY=value` flags for ad-hoc HTTP servers and persisted ad-hoc entries. (Issue #117)
 
 ### Config
 

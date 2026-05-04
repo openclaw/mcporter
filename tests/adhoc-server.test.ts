@@ -10,6 +10,28 @@ describe('resolveEphemeralServer', () => {
     expect(headers?.accept?.toLowerCase()).toContain('text/event-stream');
   });
 
+  it('preserves ad-hoc HTTP headers in runtime and persisted definitions', () => {
+    const { definition, persistedEntry } = resolveEphemeralServer({
+      httpUrl: 'https://example.com/mcp',
+      headers: {
+        Authorization: '$env:API_TOKEN',
+        'X-Tenant': 'biz-unit-01',
+      },
+    });
+    expect(definition.command.kind).toBe('http');
+    const headers = definition.command.kind === 'http' ? definition.command.headers : undefined;
+    expect(headers).toMatchObject({
+      Authorization: '$env:API_TOKEN',
+      'X-Tenant': 'biz-unit-01',
+    });
+    expect(headers?.accept?.toLowerCase()).toContain('application/json');
+    expect(headers?.accept?.toLowerCase()).toContain('text/event-stream');
+    expect(persistedEntry.headers).toEqual({
+      Authorization: '$env:API_TOKEN',
+      'X-Tenant': 'biz-unit-01',
+    });
+  });
+
   it('auto-enables keep-alive for STDIO commands that match known signatures', () => {
     const { definition, persistedEntry } = resolveEphemeralServer({
       stdioCommand: 'npx -y chrome-devtools-mcp@latest',
