@@ -153,7 +153,7 @@ async function applyCachedOAuthHeaderIfAvailable(
   logger: Logger,
   allowCachedAuth: boolean | undefined
 ): Promise<ServerDefinition> {
-  if (!allowCachedAuth || definition.auth !== 'oauth' || definition.command.kind !== 'http') {
+  if (!allowCachedAuth || definition.command.kind !== 'http') {
     return definition;
   }
   try {

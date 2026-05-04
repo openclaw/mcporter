@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   connectWithAuth: vi.fn(),
   createOAuthSession: vi.fn(),
+  readCachedAccessToken: vi.fn(),
 }));
 
 vi.mock('../src/runtime/oauth.js', async () => {
@@ -21,6 +22,14 @@ vi.mock('../src/oauth.js', async () => {
   return {
     ...actual,
     createOAuthSession: mocks.createOAuthSession,
+  };
+});
+
+vi.mock('../src/oauth-persistence.js', async () => {
+  const actual = await vi.importActual('../src/oauth-persistence.js');
+  return {
+    ...actual,
+    readCachedAccessToken: mocks.readCachedAccessToken,
   };
 });
 
@@ -49,6 +58,8 @@ beforeEach(() => {
   });
   mocks.createOAuthSession.mockReset();
   mocks.createOAuthSession.mockResolvedValue(createMockOAuthSession());
+  mocks.readCachedAccessToken.mockReset();
+  mocks.readCachedAccessToken.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -177,6 +188,27 @@ describe('createClientContext (HTTP)', () => {
 
     expect(context.transport).toBeInstanceOf(SSEClientTransport);
     expect(mocks.connectWithAuth).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses cached OAuth tokens for non-interactive HTTP connects even when auth is missing from config', async () => {
+    const definition = stubHttpDefinition('https://example.com/secure');
+    mocks.readCachedAccessToken.mockResolvedValue('cached-token');
+
+    vi.spyOn(Client.prototype, 'connect').mockImplementationOnce(async (transport) => {
+      expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
+      const requestInit = (transport as { _requestInit?: RequestInit })._requestInit;
+      expect(requestInit?.headers).toEqual({
+        Authorization: 'Bearer cached-token',
+      });
+    });
+
+    await createClientContext(definition, logger, clientInfo, {
+      maxOAuthAttempts: 0,
+      allowCachedAuth: true,
+    });
+
+    expect(mocks.createOAuthSession).not.toHaveBeenCalled();
+    expect(mocks.readCachedAccessToken).toHaveBeenCalledWith(definition, logger);
   });
 
   it('promotes ad-hoc HTTP servers after generic 401 errors from Streamable HTTP', async () => {

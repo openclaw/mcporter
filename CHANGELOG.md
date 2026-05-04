@@ -14,6 +14,7 @@
 - Support repeatable `--header KEY=value` flags for ad-hoc HTTP servers and persisted ad-hoc entries. (Issue #117)
 - Let generated CLIs use `--raw` without also passing required flags, and parse array flags containing JSON object items. (Issues #102 and #103)
 - Preserve `auth: "oauth"` when an ad-hoc HTTP server is OAuth-promoted and saved with `--persist`. (Issue #82)
+- Let non-interactive `mcporter list` use existing OAuth token caches for HTTP servers even when older configs are missing `auth: "oauth"`. (Issue #137)
 
 ### Config
 
