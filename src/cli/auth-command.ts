@@ -3,6 +3,7 @@ import type { ServerDefinition } from '../config-schema.js';
 import { analyzeConnectionError } from '../error-classifier.js';
 import { clearOAuthCaches } from '../oauth-persistence.js';
 import type { createRuntime } from '../runtime.js';
+import { isOAuthFlowError } from '../runtime/oauth.js';
 import type { EphemeralServerSpec } from './adhoc-server.js';
 import { extractEphemeralServerFlags } from './ephemeral-flags.js';
 import { persistPreparedEphemeralServer, prepareEphemeralServerTarget } from './ephemeral-target.js';
@@ -114,6 +115,9 @@ async function runStdioAuth(definition: ServerDefinition): Promise<void> {
 }
 
 function shouldRetryAuthError(error: unknown): boolean {
+  if (isOAuthFlowError(error)) {
+    return false;
+  }
   return analyzeConnectionError(error).kind === 'auth';
 }
 

@@ -39,6 +39,19 @@ export class OAuthTimeoutError extends Error {
   }
 }
 
+export class OAuthAuthorizationNotStartedError extends Error {
+  public readonly serverName: string;
+
+  constructor(serverName: string, cause?: unknown) {
+    const detail = cause instanceof Error && cause.message ? ` Last error: ${cause.message}` : '';
+    super(
+      `OAuth authorization for '${serverName}' did not produce an authorization URL; aborting instead of waiting for a browser callback.${detail}`
+    );
+    this.name = 'OAuthAuthorizationNotStartedError';
+    this.serverName = serverName;
+  }
+}
+
 export function markOAuthFlowError(error: unknown): unknown {
   return markError(error, OAUTH_FLOW_ERROR);
 }
@@ -104,7 +117,9 @@ export async function connectWithAuth(
         await closeReplacementTransport(transport, state.activeTransport);
         throw state.hasCompletedAuthFlow ? markPostAuthConnectError(error) : error;
       }
-      logger.warn(`OAuth authorization required for '${serverName ?? 'unknown'}'. Waiting for browser approval...`);
+      if (session.hasAuthorizationRedirectStarted?.() !== false) {
+        logger.warn(`OAuth authorization required for '${serverName ?? 'unknown'}'. Waiting for browser approval...`);
+      }
       try {
         state.activeTransport = await completeAuthorizationChallenge(state.activeTransport, session, logger, error, {
           serverName,
@@ -114,7 +129,11 @@ export async function connectWithAuth(
         state.hasCompletedAuthFlow = true;
         logger.info('Authorization code accepted. Retrying connection...');
       } catch (authError) {
-        logger.error('OAuth authorization failed while waiting for callback.', authError);
+        const message =
+          authError instanceof OAuthAuthorizationNotStartedError
+            ? 'OAuth authorization could not start.'
+            : 'OAuth authorization failed while waiting for callback.';
+        logger.error(message, authError);
         await closeReplacementTransport(transport, state.activeTransport);
         throw markOAuthFlowError(authError);
       }
@@ -155,6 +174,9 @@ async function completeAuthorizationChallenge(
   connectError: unknown,
   options: Pick<ConnectWithAuthOptions, 'serverName' | 'oauthTimeoutMs' | 'recreateTransport'>
 ): Promise<OAuthCapableTransport> {
+  if (session.hasAuthorizationRedirectStarted?.() === false) {
+    throw new OAuthAuthorizationNotStartedError(options.serverName ?? 'unknown', connectError);
+  }
   const code = await waitForAuthorizationCodeWithTimeout(
     session,
     logger,

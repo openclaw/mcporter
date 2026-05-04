@@ -1,7 +1,13 @@
 import type { Client } from '@modelcontextprotocol/sdk/client';
 import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 import { describe, expect, it, vi } from 'vitest';
-import { connectWithAuth, isOAuthFlowError, isPostAuthConnectError } from '../src/runtime/oauth.js';
+import type { OAuthSession } from '../src/oauth.js';
+import {
+  connectWithAuth,
+  isOAuthFlowError,
+  isPostAuthConnectError,
+  OAuthAuthorizationNotStartedError,
+} from '../src/runtime/oauth.js';
 import {
   createLogger,
   createPendingAuthorizationSession,
@@ -186,5 +192,40 @@ describe('connectWithAuth', () => {
     resolveNextCode('oauth-code-123');
 
     await expect(promise).rejects.toSatisfy((error: unknown) => error === finishAuthError && isOAuthFlowError(error));
+  });
+
+  it('fails immediately when OAuth never produced an authorization URL', async () => {
+    const connectError = new UnauthorizedError('dynamic client registration rejected');
+    const connect = vi.fn().mockRejectedValueOnce(connectError);
+    const client = { connect } as unknown as Client;
+    const waitForAuthorizationCode = vi.fn(() => new Promise<string>(() => {}));
+    const session = {
+      provider: {
+        waitForAuthorizationCode,
+        hasAuthorizationRedirectStarted: () => false,
+      },
+      waitForAuthorizationCode,
+      hasAuthorizationRedirectStarted: () => false,
+      close: vi.fn(async () => {}),
+    } as unknown as OAuthSession;
+    const transport = new MockTransport();
+    const logger = createLogger();
+
+    await expect(
+      connectWithAuth(client, transport, session, logger, {
+        serverName: 'figma',
+        maxAttempts: 1,
+        oauthTimeoutMs: 5000,
+      })
+    ).rejects.toSatisfy(
+      (error: unknown) => error instanceof OAuthAuthorizationNotStartedError && isOAuthFlowError(error)
+    );
+
+    expect(waitForAuthorizationCode).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalledWith(expect.stringContaining('Waiting for browser approval'));
+    expect(logger.error).toHaveBeenCalledWith(
+      'OAuth authorization could not start.',
+      expect.any(OAuthAuthorizationNotStartedError)
+    );
   });
 });

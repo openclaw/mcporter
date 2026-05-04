@@ -67,6 +67,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   private readonly persistence: OAuthPersistence;
   private redirectUrlValue: URL;
   private authorizationDeferred: Deferred<string> | null = null;
+  private authorizationRedirectStarted = false;
   private server?: http.Server;
 
   private constructor(
@@ -254,9 +255,14 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
 
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {
     this.logger.info(`Authorization required for ${this.definition.name}. Opening browser...`);
+    this.authorizationRedirectStarted = true;
     this.ensureAuthorizationDeferred();
     __oauthInternals.openExternal(authorizationUrl.toString());
     this.logger.warn(`If the browser did not open, visit ${authorizationUrl.toString()} manually.`);
+  }
+
+  hasAuthorizationRedirectStarted(): boolean {
+    return this.authorizationRedirectStarted;
   }
 
   async saveCodeVerifier(codeVerifier: string): Promise<void> {
@@ -309,8 +315,10 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
 export interface OAuthSession {
   provider: OAuthClientProvider & {
     waitForAuthorizationCode: () => Promise<string>;
+    hasAuthorizationRedirectStarted?: () => boolean;
   };
   waitForAuthorizationCode: () => Promise<string>;
+  hasAuthorizationRedirectStarted?: () => boolean;
   close: () => Promise<void>;
 }
 
@@ -318,9 +326,11 @@ export interface OAuthSession {
 export async function createOAuthSession(definition: ServerDefinition, logger: OAuthLogger): Promise<OAuthSession> {
   const { provider, close } = await PersistentOAuthClientProvider.create(definition, logger);
   const waitForAuthorizationCode = () => provider.waitForAuthorizationCode();
+  const hasAuthorizationRedirectStarted = () => provider.hasAuthorizationRedirectStarted();
   return {
     provider,
     waitForAuthorizationCode,
+    hasAuthorizationRedirectStarted,
     close,
   };
 }

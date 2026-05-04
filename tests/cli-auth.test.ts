@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ServerDefinition } from '../src/config.js';
+import { markOAuthFlowError } from '../src/runtime/oauth.js';
 
 process.env.MCPORTER_DISABLE_AUTORUN = '1';
 const cliModulePromise = import('../src/cli.js');
@@ -91,6 +92,35 @@ describe('mcporter auth ad-hoc support', () => {
 
     logSpy.mockRestore();
     errorSpy.mockRestore();
+    process.exitCode = undefined;
+  });
+
+  it('does not retry OAuth flow errors that already reached the browser-flow path', async () => {
+    const { handleAuth } = await cliModulePromise;
+    const definition = {
+      name: 'figma',
+      command: { kind: 'http', url: new URL('https://mcp.figma.com/mcp') },
+    } as ServerDefinition;
+    const oauthError = markOAuthFlowError(
+      new Error('OAuth authorization for figma did not produce an authorization URL. Last error: HTTP 403')
+    );
+    const listTools = vi.fn().mockRejectedValue(oauthError);
+    const runtime = {
+      getDefinitions: () => [definition],
+      registerDefinition: vi.fn(),
+      listTools,
+      getDefinition: () => definition,
+    } as unknown as Awaited<ReturnType<(typeof import('../src/runtime.js'))['createRuntime']>>;
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await handleAuth(runtime, ['figma', '--json']);
+
+    expect(listTools).toHaveBeenCalledTimes(1);
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('Retrying with browser flow'));
+
+    logSpy.mockRestore();
+    warnSpy.mockRestore();
     process.exitCode = undefined;
   });
 });
