@@ -863,4 +863,77 @@ await new Promise((resolve) => { transport.onclose = resolve; });
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     await fs.rm(callerCwd, { recursive: true, force: true }).catch(() => {});
   }, 30_000);
+
+  it('compiles a generated CLI from the standalone Bun release binary in an empty directory', async () => {
+    if (process.env.MCPORTER_STANDALONE_BINARY_TEST !== '1') {
+      console.warn('set MCPORTER_STANDALONE_BINARY_TEST=1 to run standalone Bun release binary smoke');
+      return;
+    }
+    if (!(await ensureBunSupport('standalone Bun release binary smoke'))) {
+      return;
+    }
+    await new Promise<void>((resolve, reject) => {
+      execFile(PNPM_COMMAND, pnpmArgs(['build:bun']), { cwd: process.cwd(), env: process.env }, (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-standalone-bun-'));
+    const binaryPath = path.join(tempDir, 'context7-cli');
+    const mcporterBinary = path.join(process.cwd(), 'dist-bun', 'mcporter');
+    const packedTarball = await new Promise<string>((resolve, reject) => {
+      execFile(
+        'npm',
+        ['pack', '--ignore-scripts', '--pack-destination', tempDir],
+        { cwd: process.cwd(), env: process.env },
+        (error, stdout, stderr) => {
+          if (error) {
+            reject(new Error(`${error.message}\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`));
+            return;
+          }
+          resolve(path.join(tempDir, stdout.trim().split('\n').at(-1) ?? ''));
+        }
+      );
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      execFile(
+        mcporterBinary,
+        ['generate-cli', '--command', baseUrl.toString(), '--compile', binaryPath],
+        {
+          cwd: tempDir,
+          env: {
+            ...process.env,
+            MCPORTER_BUNDLER_DEP_PACKAGE: packedTarball,
+            MCPORTER_NO_FORCE_EXIT: '1',
+          },
+        },
+        (error, stdout, stderr) => {
+          if (error) {
+            reject(new Error(`${error.message}\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`));
+            return;
+          }
+          resolve();
+        }
+      );
+    });
+
+    const helpOutput = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      execFile(binaryPath, [], { env: process.env }, (error, stdout, stderr) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve({ stdout, stderr });
+      });
+    });
+    expect(helpOutput.stdout).toMatch(/Usage: .+ <command> \[options]/);
+    expect(helpOutput.stdout).toContain('ping - Simple health check');
+
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }, 90_000);
 });

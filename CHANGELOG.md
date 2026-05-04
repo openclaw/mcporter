@@ -4,6 +4,16 @@
 
 - Nothing yet.
 
+## [0.10.1] - 2026-05-04
+
+### CLI
+
+- Fix Bun-compiled standalone binaries so `generate-cli --compile` can compile generated CLIs from empty directories by staging the matching published `mcporter` package dependencies when no local package tree is available.
+
+### Tests
+
+- Add an opt-in standalone Bun release-binary smoke for the empty-directory generated CLI compile path.
+
 ## [0.10.0] - 2026-05-04
 
 ### CLI
