@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { parseCallArguments } from '../src/cli/call-arguments.js';
 
@@ -40,13 +41,60 @@ describe('parseCallArguments', () => {
     expect(parsed.args.orderBy).toBe('updatedAt');
   });
 
-  it.each([
-    ['--source', '--source'],
-    ['--source=import', '--source=import'],
-  ] as const)('throws on unknown long flags like %s', (flag, expectedToken) => {
-    expect(() => parseCallArguments(['server.tool', flag])).toThrow(
-      new RegExp(`Unknown flag '${expectedToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'`)
-    );
+  it('parses generic --key value flags as named tool arguments', () => {
+    const parsed = parseCallArguments([
+      'email.send_email',
+      '--to',
+      '["miguel@example.com"]',
+      '--subject',
+      'Test',
+      '--save-to-drafts',
+      'true',
+      '--limit=5',
+    ]);
+    expect(parsed.args).toEqual({
+      to: ['miguel@example.com'],
+      subject: 'Test',
+      saveToDrafts: true,
+      limit: 5,
+    });
+    expect(parsed.schemaStringCoercionCandidates).toEqual({ limit: '5' });
+  });
+
+  it('merges --json object payloads as an alias for --args', () => {
+    const parsed = parseCallArguments([
+      'email.send_email',
+      '--json',
+      '{"to":["miguel@example.com"],"subject":"Test","saveToDrafts":true}',
+      '--text',
+      'Hello',
+    ]);
+    expect(parsed.args).toEqual({
+      to: ['miguel@example.com'],
+      subject: 'Test',
+      saveToDrafts: true,
+      text: 'Hello',
+    });
+  });
+
+  it('reads JSON object payloads from stdin when --json - is used', () => {
+    const readFileSync = vi
+      .spyOn(fs, 'readFileSync')
+      .mockReturnValueOnce('{"to":["miguel@example.com"],"subject":"Test"}');
+    try {
+      const parsed = parseCallArguments(['email.send_email', '--json', '-']);
+      expect(parsed.args).toEqual({
+        to: ['miguel@example.com'],
+        subject: 'Test',
+      });
+      expect(readFileSync).toHaveBeenCalledWith(0, 'utf8');
+    } finally {
+      readFileSync.mockRestore();
+    }
+  });
+
+  it('throws when generic long flags are missing a value', () => {
+    expect(() => parseCallArguments(['server.tool', '--source'])).toThrow("Flag '--source' requires a value.");
   });
 
   it('treats values after -- as literal positional arguments', () => {

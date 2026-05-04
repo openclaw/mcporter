@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import type { EphemeralServerSpec } from './adhoc-server.js';
 import { parseLeadingCallExpression } from './call-argument-expression.js';
 import {
@@ -62,6 +63,7 @@ const FLAG_HANDLERS: Record<string, FlagHandler> = {
   '--raw-strings': handleRawStringsFlag,
   '--no-coerce': handleNoCoerceFlag,
   '--args': handleArgsFlag,
+  '--json': handleJsonArgsFlag,
 };
 
 export function parseCallArguments(args: string[]): CallArgsParseResult {
@@ -100,7 +102,8 @@ function scanCallTokens(args: string[], result: CallArgsParseResult, state: Flag
       continue;
     }
     if (token.startsWith('--')) {
-      throw new CliUsageError(buildUnknownCallFlagMessage(token));
+      index = handleNamedArgumentFlag({ args, index, result, state });
+      continue;
     }
     positional.push(token);
     index += 1;
@@ -279,18 +282,57 @@ function handleNoCoerceFlag(context: FlagHandlerContext): number {
 }
 
 function handleArgsFlag(context: FlagHandlerContext): number {
-  const raw = consumeFlagValue(context.args, context.index, '--args', '--args requires a JSON value.');
+  return consumeJsonArgsFlag(context, '--args', '--args requires a JSON value.');
+}
+
+function handleJsonArgsFlag(context: FlagHandlerContext): number {
+  return consumeJsonArgsFlag(context, '--json', '--json requires a JSON object value.');
+}
+
+function consumeJsonArgsFlag(context: FlagHandlerContext, flagName: string, missingValueMessage: string): number {
+  const rawFlagValue = consumeFlagValue(context.args, context.index, flagName, missingValueMessage);
+  const raw = rawFlagValue === '-' ? fs.readFileSync(0, 'utf8') : rawFlagValue;
   let decoded: unknown;
   try {
     decoded = JSON.parse(raw);
   } catch (error) {
-    throw new Error(`Unable to parse --args: ${(error as Error).message}`, { cause: error });
+    throw new Error(`Unable to parse ${flagName}: ${(error as Error).message}`, { cause: error });
   }
   if (decoded === null || typeof decoded !== 'object' || Array.isArray(decoded)) {
-    throw new Error('Unable to parse --args: --args must be a JSON object.');
+    throw new Error(`Unable to parse ${flagName}: ${flagName} must be a JSON object.`);
   }
   Object.assign(context.result.args, decoded);
   return context.index + 2;
+}
+
+function handleNamedArgumentFlag(context: FlagHandlerContext): number {
+  const token = context.args[context.index] ?? '';
+  const body = token.slice(2);
+  const eqIndex = body.indexOf('=');
+  const rawKey = eqIndex === -1 ? body : body.slice(0, eqIndex);
+  const key = normalizeLongFlagArgumentKey(rawKey);
+  if (!key) {
+    throw new CliUsageError(buildUnknownCallFlagMessage(token));
+  }
+
+  const rawValue =
+    eqIndex === -1
+      ? consumeFlagValue(context.args, context.index, token, `Flag '${token}' requires a value.`)
+      : body.slice(eqIndex + 1);
+  const value = coerceValue(rawValue, context.state.coercionMode);
+  if (context.state.coercionMode === 'default' && typeof value === 'number') {
+    context.result.schemaStringCoercionCandidates ??= {};
+    context.result.schemaStringCoercionCandidates[key] = rawValue;
+  }
+  context.result.args[key] = value;
+  return context.index + (eqIndex === -1 ? 2 : 1);
+}
+
+function normalizeLongFlagArgumentKey(rawKey: string): string {
+  if (!rawKey || rawKey.startsWith('-')) {
+    return '';
+  }
+  return rawKey.replace(/-([a-zA-Z0-9])/g, (_match, char: string) => char.toUpperCase());
 }
 
 function consumeFlagValue(args: string[], index: number, token: string, missingValueMessage?: string): string {
