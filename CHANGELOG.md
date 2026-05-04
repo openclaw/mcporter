@@ -16,6 +16,7 @@
 - Preserve `auth: "oauth"` when an ad-hoc HTTP server is OAuth-promoted and saved with `--persist`. (Issue #82)
 - Let non-interactive `mcporter list` use existing OAuth token caches for HTTP servers even when older configs are missing `auth: "oauth"`. (Issue #137)
 - Fail OAuth flows immediately when the server never creates an authorization URL, instead of waiting for a browser callback that cannot arrive. (Issue #115)
+- Support `mcporter list server.tool --schema` to print a single tool's schema instead of the whole server. (Issue #116)
 
 ### Config
 

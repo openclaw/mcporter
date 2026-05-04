@@ -10,6 +10,7 @@ import { chooseClosestIdentifier, renderIdentifierResolutionMessages } from './i
 import { formatExampleBlock } from './list-detail-helpers.js';
 import type { ListSummaryResult, StatusCategory } from './list-format.js';
 import { classifyListError, formatSourceSuffix, renderServerListRow } from './list-format.js';
+import type { ToolMetadata } from './generate/tools.js';
 import {
   buildAuthCommandHint,
   buildJsonListEntry,
@@ -91,11 +92,13 @@ export async function handleList(
 ): Promise<void> {
   const flags = extractListFlags(args);
   let target = args.shift();
+  let requestedTool: string | undefined;
 
   if (target) {
     const split = splitHttpToolSelector(target);
     if (split) {
       target = split.baseUrl;
+      requestedTool = split.tool;
     }
   }
 
@@ -237,6 +240,14 @@ export async function handleList(
     }
   }
 
+  if (!requestedTool) {
+    const selector = resolveConfiguredToolSelector(runtime, target);
+    if (selector) {
+      target = selector.server;
+      requestedTool = selector.tool;
+    }
+  }
+
   const resolved = resolveServerDefinition(runtime, target);
   if (!resolved) {
     return;
@@ -252,9 +263,16 @@ export async function handleList(
   const startedAt = Date.now();
   if (flags.format === 'json') {
     try {
-      const metadataEntries = await withTimeout(loadToolMetadata(runtime, target, { includeSchema: true }), timeoutMs);
+      const metadataEntries = filterToolMetadata(
+        await withTimeout(loadToolMetadata(runtime, target, { includeSchema: true }), timeoutMs),
+        requestedTool
+      );
       await persistPreparedEphemeralServer(runtime, prepared);
       const durationMs = Date.now() - startedAt;
+      if (requestedTool && metadataEntries.length === 0) {
+        printMissingToolJson(definition, requestedTool, durationMs, transportSummary, flags);
+        return;
+      }
       const payload = {
         mode: 'server',
         name: definition.name,
@@ -299,9 +317,16 @@ export async function handleList(
   }
   try {
     // Always request schemas so we can render CLI-style parameter hints without re-querying per tool.
-    const metadataEntries = await withTimeout(loadToolMetadata(runtime, target, { includeSchema: true }), timeoutMs);
+    const metadataEntries = filterToolMetadata(
+      await withTimeout(loadToolMetadata(runtime, target, { includeSchema: true }), timeoutMs),
+      requestedTool
+    );
     await persistPreparedEphemeralServer(runtime, prepared);
     const durationMs = Date.now() - startedAt;
+    if (requestedTool && metadataEntries.length === 0) {
+      printMissingToolText(definition, requestedTool, durationMs, transportSummary, sourcePath);
+      return;
+    }
     const summaryLine = printSingleServerHeader(
       definition,
       metadataEntries.length,
@@ -433,4 +458,73 @@ function suggestServerName(
   const definitions = runtime.getDefinitions();
   const names = definitions.map((entry) => entry.name);
   return chooseClosestIdentifier(attempted, names);
+}
+
+function resolveConfiguredToolSelector(
+  runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
+  target: string | undefined
+): { server: string; tool: string } | undefined {
+  if (!target || !target.includes('.')) {
+    return undefined;
+  }
+  const definitions = runtime.getDefinitions();
+  const match = definitions
+    .map((definition) => definition.name)
+    .filter((name) => target.startsWith(`${name}.`))
+    .toSorted((a, b) => b.length - a.length)[0];
+  if (!match) {
+    return undefined;
+  }
+  const tool = target.slice(match.length + 1);
+  if (!tool) {
+    return undefined;
+  }
+  return { server: match, tool };
+}
+
+function filterToolMetadata(entries: ToolMetadata[], requestedTool: string | undefined): ToolMetadata[] {
+  if (!requestedTool) {
+    return entries;
+  }
+  return entries.filter((entry) => entry.tool.name === requestedTool);
+}
+
+function printMissingToolText(
+  definition: ServerDefinition,
+  tool: string,
+  durationMs: number,
+  transportSummary: string,
+  sourcePath: string | undefined
+): void {
+  printSingleServerHeader(definition, 0, durationMs, transportSummary, sourcePath);
+  console.warn(`  Tool '${tool}' not found on '${definition.name}'.`);
+  process.exitCode = 1;
+}
+
+function printMissingToolJson(
+  definition: ServerDefinition,
+  tool: string,
+  durationMs: number,
+  transportSummary: string,
+  flags: { verbose: boolean; includeSources: boolean }
+): void {
+  console.log(
+    JSON.stringify(
+      {
+        mode: 'server',
+        name: definition.name,
+        status: 'error' as StatusCategory,
+        durationMs,
+        description: definition.description,
+        transport: transportSummary,
+        source: definition.source,
+        sources: flags.verbose || flags.includeSources ? definition.sources : undefined,
+        tools: [],
+        error: `Tool '${tool}' not found on '${definition.name}'.`,
+      },
+      null,
+      2
+    )
+  );
+  process.exitCode = 1;
 }

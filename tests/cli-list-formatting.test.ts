@@ -148,6 +148,51 @@ describe('CLI list formatting', () => {
     metadataSpy.mockRestore();
   });
 
+  it('prints only the selected tool when listing server.tool with schemas', async () => {
+    const { handleList } = await cliModulePromise;
+    const listToolsSpy = vi.fn((_name: string, options?: { includeSchema?: boolean }) =>
+      Promise.resolve([
+        {
+          name: 'add',
+          description: 'Add numbers',
+          inputSchema: options?.includeSchema
+            ? { type: 'object', properties: { a: { type: 'number' } }, required: ['a'] }
+            : undefined,
+          outputSchema: { type: 'number' },
+        },
+        {
+          name: 'subtract',
+          description: 'Subtract numbers',
+          inputSchema: options?.includeSchema
+            ? { type: 'object', properties: { a: { type: 'number' }, b: { type: 'number' } }, required: ['a', 'b'] }
+            : undefined,
+        },
+      ])
+    );
+    const definition: ServerDefinition = {
+      name: 'calculator',
+      description: 'Math tools',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+    };
+    const runtime = {
+      getDefinitions: () => [definition],
+      getDefinition: () => definition,
+      listTools: listToolsSpy,
+    } as unknown as Awaited<ReturnType<(typeof import('../src/runtime.js'))['createRuntime']>>;
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleList(runtime, ['calculator.add', '--schema']);
+
+    const lines = logSpy.mock.calls.map((call) => stripAnsi(call.join(' ')));
+    expect(lines.some((line) => line.includes('function add('))).toBe(true);
+    expect(lines.some((line) => line.includes('function subtract('))).toBe(false);
+    expect(lines.some((line) => line.includes('"properties"'))).toBe(true);
+    expect(lines.find((line) => line.includes('HTTP https://example.com/mcp'))).toMatch(/1 tool/);
+    expect(listToolsSpy).toHaveBeenCalledWith('calculator', expect.objectContaining({ includeSchema: true }));
+
+    logSpy.mockRestore();
+  });
+
   it('summarizes hidden optional parameters and hints include flag', async () => {
     const { handleList } = await cliModulePromise;
     const listToolsSpy = vi.fn((_name: string, options?: { includeSchema?: boolean }) =>

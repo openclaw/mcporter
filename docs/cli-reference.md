@@ -15,6 +15,8 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
   status).
 - With a server name, prints TypeScript-style signatures for each tool, doc
   comments, and optional summaries.
+- With `server.tool`, prints just that tool; combine with `--schema` for a single
+  tool schema.
 - Hidden alias: `list-tools` (kept for muscle memory; not advertised in help output).
 - Hidden ad-hoc flag aliases: `--sse` for `--http-url`, `--insecure` for `--allow-http` (for plain HTTP testing).
 - Flags:
