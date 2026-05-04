@@ -24,13 +24,13 @@ MCPorter helps you lean into the "code execution" workflows highlighted in Anthr
 - **OAuth and stdio ergonomics.** Built-in OAuth caching, log tailing, and stdio wrappers let you work with HTTP, SSE, and stdio transports from the same interface.
 - **Ad-hoc connections.** Point the CLI at _any_ MCP endpoint (HTTP or stdio) without touching config, then persist it later if you want. Hosted MCPs that expect a browser login (Supabase, Vercel, etc.) are auto-detected—just run `mcporter auth <url>` and the CLI promotes the definition to OAuth on the fly. See [docs/adhoc.md](docs/adhoc.md).
 
-## What's New in 0.9.0
+## What's New in 0.10.0
 
-- **Per-server tool filtering.** Limit exposed tools with `allowedTools`, or block risky exact-name tools with `blockedTools`; filtered tools disappear from `mcporter list` and are rejected by `mcporter call`.
-- **Sturdier stdio shutdown.** Stuck local MCP processes now escalate cleanly instead of hanging after a call finishes.
-- **OAuth polish.** Windows OAuth URLs are quoted correctly, OAuth config examples are documented, and `mcporter auth --json` returns structured connection envelopes.
-- **Safer call coercion.** Tool arguments declared as strings stay strings, even when the value looks numeric.
-- **Release confidence.** `0.9.0` is published on npm and Homebrew, and the live DeepWiki MCP suite is green.
+- **Resources.** `mcporter resource <server> [uri]` lists and reads MCP resources, including keep-alive daemon routing.
+- **Generated CLI polish.** Keep-alive generated CLIs preserve stdio server state across invocations, and Bun-compiled macOS daemon children launch reliably in the background.
+- **Config portability.** mcporter now honors XDG Base Directory env vars while preserving the legacy `~/.mcporter` fallback.
+- **OAuth compatibility.** Static OAuth clients are supported via `oauthClientId`, `oauthClientSecretEnv`, and token endpoint auth method overrides.
+- **Release confidence.** `0.10.0` is published on npm and Homebrew, and live/published install smokes are green.
 
 ## Quick Start
 

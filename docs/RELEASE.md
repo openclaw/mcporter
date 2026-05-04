@@ -67,35 +67,37 @@ Shipping a release means **all** of:
 17. Tag the release (git tag v<version> && git push --tags).
 18. Post-tag housekeeping: add a fresh "Unreleased" stub to CHANGELOG.md (set to "- Nothing yet.") and start a new version section for the just-released patch if it isn’t already recorded.
 
-After the release is live, always update the Homebrew tap and re-verify both installers. That flow should be:
+After the release is live, always update the Homebrew tap and re-verify both installers. The tap formula should install the npm `.tgz`, not the Bun-compiled macOS tarball, because `generate-cli --compile` needs the installed package tree so Bun can resolve `mcporter`, `commander`, and related dependencies when compiling from an empty directory. Keep the macOS tarball on the GitHub release as a direct binary asset, but point Homebrew at `mcporter-<version>.tgz`.
 
-1. Uninstall any existing `mcporter` binaries to avoid PATH conflicts:
+1. Update `steipete/homebrew-tap` -> `Formula/mcporter.rb` with:
+   - URL `https://github.com/steipete/mcporter/releases/download/v<version>/mcporter-<version>.tgz`
+   - SHA256 from `mcporter-<version>.tgz.sha256`
+   - `require "language/node"`, `depends_on "node"`, and `system "npm", "install", *std_npm_args, "--min-release-age=0"` so same-day releases with fresh npm dependencies can install immediately.
+     Refresh the tap README highlight so Homebrew users see the new version callout.
+2. Commit and push the tap update.
+3. Refresh and reinstall from the real tap:
    ```bash
-   brew uninstall mcporter || true
-   npm uninstall -g mcporter || true
+   brew update
+   brew reinstall steipete/tap/mcporter
+   brew test steipete/tap/mcporter
+   /opt/homebrew/bin/mcporter --version
    ```
-2. Install from Homebrew, run `brew test` equivalents (`mcporter list --help`), then uninstall so the npm install owns the global `mcporter` binary. If the install fails with a linking conflict (`bin/mcporter already exists`), run `brew link --overwrite mcporter` and rerun the smoke command before uninstalling:
+4. Run a Homebrew-installed empty-directory compile smoke:
    ```bash
-   brew install steipete/tap/mcporter
-   # If you still have /opt/homebrew/bin/mcporter from npm, fix conflicts with:
-   # brew link --overwrite mcporter
-   mcporter list --help | head -n 5
-   brew uninstall mcporter
+   rm -rf /tmp/mcporter-brew-smoke && mkdir -p /tmp/mcporter-brew-smoke
+   cd /tmp/mcporter-brew-smoke
+   /opt/homebrew/bin/mcporter generate-cli "npx -y chrome-devtools-mcp" --compile
+   ./chrome-devtools-mcp --help | head -n 5
    ```
-3. Install the npm package globally (or leave it to npx) and keep that version in place for day-to-day use:
+5. Install the npm package globally (or leave it to npx) and verify that path too:
    ```bash
    npm install -g mcporter@<version>
    mcporter --version
+   npx --yes mcporter@<version> --version
    ```
-4. Finally, run a fresh `npx mcporter@<version>` smoke test from an empty temp directory (no runner needed) to ensure the package is usable without global installs.
-
-5. Update `steipete/homebrew-tap` → `Formula/mcporter.rb` with the new version, tarball URL, and SHA256. Refresh the tap README highlights and changelog snippets so Homebrew users see the new version callouts. (That repo doesn’t include `runner`, so use regular git commands there.)
-6. Commit and push the tap update.
-7. Verify the Homebrew flow (after GitHub release assets propagate):
+6. If installing on another Mac, repeat the real tap reinstall and compile smoke there:
    ```bash
    brew update
-   brew install steipete/tap/mcporter
-   # If you previously installed mcporter via npm (or another tap) and see a link error,
-   # run `brew link --overwrite mcporter` to replace /opt/homebrew/bin/mcporter with the tap binary.
-   mcporter list --help
+   brew reinstall steipete/tap/mcporter
+   /opt/homebrew/bin/mcporter --version
    ```
