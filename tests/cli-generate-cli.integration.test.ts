@@ -56,6 +56,32 @@ async function ensureBunSupport(reason: string): Promise<boolean> {
   return true;
 }
 
+async function runGeneratedCli(
+  bundlePath: string,
+  args: string[],
+  env: NodeJS.ProcessEnv
+): Promise<{ stdout: string; stderr: string }> {
+  return await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    execFile(process.execPath, [bundlePath, ...args], { env }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(`${error.message}\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`));
+        return;
+      }
+      resolve({ stdout, stderr });
+    });
+  });
+}
+
+function parseGeneratedDaemonJson(result: { stdout: string }): { instanceId: string; count: number } {
+  const trimmed = result.stdout.trim();
+  const start = trimmed.indexOf('{');
+  const end = trimmed.lastIndexOf('}');
+  if (start === -1 || end === -1 || end < start) {
+    throw new Error(`Unable to find JSON payload in generated CLI output:\n${result.stdout}`);
+  }
+  return JSON.parse(trimmed.slice(start, end + 1)) as { instanceId: string; count: number };
+}
+
 describe('mcporter CLI integration', () => {
   let baseUrl: URL;
   let shutdown: (() => Promise<void>) | undefined;
@@ -168,6 +194,102 @@ describe('mcporter CLI integration', () => {
     expect(helpOutput.stdout).toContain('Context7 integration harness');
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   });
+
+  it('routes generated keep-alive stdio CLIs through the daemon', async () => {
+    if (process.platform === 'win32') {
+      console.warn('daemon sockets use Unix paths in this integration; skipping on Windows.');
+      return;
+    }
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-cli-daemon-'));
+    const stateDir = await fs.mkdtemp('/tmp/mcporter-generated-daemon-');
+    const serverPath = path.join(tempDir, 'daemon-server.mjs');
+    const bundlePath = path.join(tempDir, 'daemon-cli.js');
+    const daemonDir = path.join(stateDir, 'daemon-state');
+    const generatedConfigDir = path.join(stateDir, 'generated-configs');
+    const cliEnv = {
+      ...process.env,
+      MCPORTER_NO_FORCE_EXIT: '1',
+      MCPORTER_DAEMON_DIR: daemonDir,
+      MCPORTER_GENERATED_CONFIG_DIR: generatedConfigDir,
+    };
+    await fs.writeFile(
+      serverPath,
+      `import { randomUUID } from 'node:crypto';
+import { McpServer } from '${MCP_SERVER_MODULE}';
+import { StdioServerTransport } from '${STDIO_SERVER_MODULE}';
+import { z } from '${ZOD_MODULE}';
+
+const instanceId = randomUUID();
+let counter = 0;
+const server = new McpServer({ name: 'generated-daemon', version: '1.0.0' });
+server.registerTool('next_value', {
+  title: 'Next value',
+  description: 'Return process-local state',
+  inputSchema: {},
+  outputSchema: { instanceId: z.string(), count: z.number() },
+}, async () => {
+  counter += 1;
+  return {
+    content: [{ type: 'text', text: JSON.stringify({ instanceId, count: counter }) }],
+    structuredContent: { instanceId, count: counter },
+  };
+});
+const transport = new StdioServerTransport();
+await server.connect(transport);
+await new Promise((resolve) => { transport.onclose = resolve; });
+`,
+      'utf8'
+    );
+    const inlineServer = JSON.stringify({
+      name: 'generated-daemon',
+      description: 'Generated daemon test server',
+      command: 'node',
+      args: [serverPath],
+      lifecycle: 'keep-alive',
+    });
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        execFile(
+          process.execPath,
+          [CLI_ENTRY, 'generate-cli', '--server', inlineServer, '--bundle', bundlePath, '--runtime', 'node'],
+          { cwd: tempDir, env: cliEnv },
+          (error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve();
+          }
+        );
+      });
+
+      const first = parseGeneratedDaemonJson(
+        await runGeneratedCli(bundlePath, ['next-value', '--output', 'json'], cliEnv)
+      );
+      const second = parseGeneratedDaemonJson(
+        await runGeneratedCli(bundlePath, ['next-value', '--output', 'json'], cliEnv)
+      );
+      expect(first.count).toBe(1);
+      expect(second.count).toBe(2);
+      expect(second.instanceId).toBe(first.instanceId);
+    } finally {
+      const configFiles = await fs.readdir(generatedConfigDir).catch(() => []);
+      await Promise.all(
+        configFiles
+          .filter((entry) => entry.endsWith('.json'))
+          .map((entry) =>
+            runGeneratedCli(
+              bundlePath,
+              ['--config', path.join(generatedConfigDir, entry), 'daemon', 'stop'],
+              cliEnv
+            ).catch(() => '')
+          )
+      );
+      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      await fs.rm(stateDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }, 40_000);
 
   it('filters generated CLI tools via --include-tools/--exclude-tools', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-cli-filter-'));

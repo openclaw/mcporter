@@ -26,6 +26,7 @@ export type {
   LoadConfigOptions,
   RawConfig,
   RawEntry,
+  RawLifecycle,
   ServerDefinition,
   ServerLifecycle,
   ServerLoggingOptions,

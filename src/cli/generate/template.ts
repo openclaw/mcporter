@@ -72,7 +72,7 @@ export function renderTemplate({
     "import path from 'node:path';",
     "import { fileURLToPath } from 'node:url';",
     "import { Command } from 'commander';",
-    "import { createRuntime, createServerProxy } from 'mcporter';",
+    "import { createGeneratedKeepAliveRuntime, createRuntime, createServerProxy, handleDaemonCli } from 'mcporter';",
     "import { createCallResult } from 'mcporter';",
   ].join('\n');
   const embedded = JSON.stringify(definition, (_key, value) => (value instanceof URL ? value.toString() : value), 2);
@@ -308,10 +308,12 @@ function buildMetadataPayload() {
 \t};
 }
 
-async function ensureRuntime(): Promise<Awaited<ReturnType<typeof createRuntime>>> {
-	return await createRuntime({
-		servers: [normalizeEmbeddedServer(embeddedServer)],
+async function ensureRuntime() {
+	const server = normalizeEmbeddedServer(embeddedServer);
+	const baseRuntime = await createRuntime({
+		servers: [server as any],
 	});
+	return await createGeneratedKeepAliveRuntime(baseRuntime, server as any);
 }
 
 async function invokeWithTimeout<T>(call: Promise<T>, timeout: number): Promise<T> {
@@ -335,8 +337,54 @@ async function invokeWithTimeout<T>(call: Promise<T>, timeout: number): Promise<
 \t}
 }
 
+function parseGeneratedDaemonInvocation(rawArgs: string[]): { args: string[]; configPath: string; rootDir?: string } | null {
+\tconst args = [...rawArgs];
+\tlet configPath: string | undefined;
+\tlet rootDir: string | undefined;
+\twhile (args.length > 0) {
+\t\tconst token = args[0];
+\t\tif (token === '--config') {
+\t\t\targs.shift();
+\t\t\tconfigPath = args.shift();
+\t\t\tcontinue;
+\t\t}
+\t\tif (token?.startsWith('--config=')) {
+\t\t\targs.shift();
+\t\t\tconfigPath = token.slice('--config='.length);
+\t\t\tcontinue;
+\t\t}
+\t\tif (token === '--root') {
+\t\t\targs.shift();
+\t\t\trootDir = args.shift();
+\t\t\tcontinue;
+\t\t}
+\t\tif (token?.startsWith('--root=')) {
+\t\t\targs.shift();
+\t\t\trootDir = token.slice('--root='.length);
+\t\t\tcontinue;
+\t\t}
+\t\tbreak;
+\t}
+\tif (args[0] !== 'daemon') {
+\t\treturn null;
+\t}
+\tif (!configPath) {
+\t\tthrow new Error('Generated daemon invocation is missing --config.');
+\t}
+\treturn { args: args.slice(1), configPath, rootDir };
+}
+
 async function runCli(): Promise<void> {
 \tconst args = process.argv.slice(2);
+\tconst daemonInvocation = parseGeneratedDaemonInvocation(args);
+\tif (daemonInvocation) {
+\t\tawait handleDaemonCli([...daemonInvocation.args], {
+\t\t\tconfigPath: daemonInvocation.configPath,
+\t\t\tconfigExplicit: true,
+\t\t\trootDir: daemonInvocation.rootDir,
+\t\t});
+\t\treturn;
+\t}
 \tif (args.length === 0) {
 \t\tprogram.outputHelp();
 \t\treturn;
@@ -430,7 +478,8 @@ ${usageSnippet ? `\t${usageSnippet}` : ''}\t.option('--raw <json>', 'Provide raw
 ${optionLines ? `\n${optionLines}` : ''}
 ${aliasSnippet ? `\t${aliasSnippet}` : ''}\t.action(async (cmdOpts) => {
 \t\tconst globalOptions = program.opts();
-\t\tconst runtime = await ensureRuntime();
+\t\tconst runtimeContext = await ensureRuntime();
+\t\tconst runtime = runtimeContext.runtime;
 \t\tconst serverName = embeddedName;
 \t\tconst proxy = createServerProxy(runtime, serverName, {
 \t\t\tinitialSchemas: embeddedSchemas,
@@ -445,7 +494,7 @@ ${aliasSnippet ? `\t${aliasSnippet}` : ''}\t.action(async (cmdOpts) => {
 \t\t\tconst result = await invokeWithTimeout(call, globalOptions.timeout || ${defaultTimeout});
 \t\t\tprintResult(result, globalOptions.output ?? 'text');
 \t\t} finally {
-\t\t\tawait runtime.close(serverName).catch(() => {});
+\t\t\tawait runtimeContext.close(serverName).catch(() => {});
 \t\t}
 \t})${exampleSnippet}${optionalSnippet};`;
   return { block, commandName, signature, tsSignature };

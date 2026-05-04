@@ -92,6 +92,7 @@ npx mcporter generate-cli --command "npx -y chrome-devtools-mcp@latest"
 - When targeting an existing config entry, you can skip `--server` and pass the name as a positional argument:
   `npx mcporter generate-cli linear --bundle dist/linear.js`.
 - When the MCP server is a stdio command, you can also skip `--command` by quoting the inline command as the first positional argument (e.g., `npx mcporter generate-cli "npx -y chrome-devtools-mcp@latest"`).
+- Generated CLIs preserve `lifecycle: "keep-alive"` for embedded stdio servers. At runtime they create a stable generated config under `~/.mcporter/generated/`, auto-start the daemon as needed, and keep the server process alive across separate generated-CLI invocations.
 - Narrow the CLI to a specific subset of tools with `--include-tools`:
   `npx mcporter generate-cli linear --include-tools issues_list,issues_create`.
 - Hide debug or admin tools with `--exclude-tools`:

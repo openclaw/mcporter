@@ -4,5 +4,8 @@ export type { CallResult, ConnectionIssue, ImageContent } from './result-utils.j
 export { createCallResult, describeConnectionIssue, wrapCallResult } from './result-utils.js';
 export type { CallOptions, ListToolsOptions, Runtime, RuntimeLogger, ServerToolInfo } from './runtime.js';
 export { callOnce, createRuntime } from './runtime.js';
+export type { GeneratedRuntimeContext } from './generated-daemon-runtime.js';
+export { createGeneratedKeepAliveRuntime } from './generated-daemon-runtime.js';
+export { handleDaemonCli } from './cli/daemon-command.js';
 export type { ServerProxyOptions } from './server-proxy.js';
 export { createServerProxy } from './server-proxy.js';

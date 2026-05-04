@@ -20,6 +20,7 @@
 - Surface MCP server `instructions` from the initialize response in single-server `mcporter list` text and JSON output. (Issue #76)
 - Add compact `mcporter list <server> --brief` / `--signatures` output for scanning signatures without doc blocks, examples, or schemas. (PR #144, thanks @yuhp)
 - Launch Bun-compiled macOS daemon children through `nohup` so Homebrew binaries can start keep-alive daemons in the background on macOS 26. (Issue #66)
+- Let generated CLIs use the keep-alive daemon for embedded servers with `lifecycle: "keep-alive"`, preserving stdio server state across separate generated-CLI invocations. (Issue #101)
 
 ### Config
 
