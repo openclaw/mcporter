@@ -36,6 +36,62 @@ describe('config normalization', () => {
     expect(headers?.accept?.toLowerCase()).toContain('text/event-stream');
   });
 
+  it('respects cwd on stdio servers', async () => {
+    await fs.mkdir(TEMP_DIR, { recursive: true });
+    const configPath = path.join(TEMP_DIR, 'mcporter-cwd.json');
+    const absoluteCwd = path.join(os.tmpdir(), 'mcporter-cwd-absolute');
+    await fs.mkdir(absoluteCwd, { recursive: true });
+    await fs.writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          mcpServers: {
+            absolute: {
+              command: 'node',
+              args: ['server.js'],
+              cwd: absoluteCwd,
+            },
+            relative: {
+              command: 'node',
+              args: ['server.js'],
+              cwd: 'packages/foo',
+            },
+            tilde: {
+              command: 'node',
+              args: ['server.js'],
+              cwd: '~/mcporter-cwd-home',
+            },
+            tildeBackslash: {
+              command: 'node',
+              args: ['server.js'],
+              cwd: '~\\mcporter-cwd-home',
+            },
+            defaulted: {
+              command: 'node',
+              args: ['server.js'],
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const servers = await loadServerDefinitions({ configPath });
+    const byName = new Map(servers.map((entry) => [entry.name, entry]));
+    const cwdFor = (name: string): string | undefined => {
+      const command = byName.get(name)?.command;
+      return command?.kind === 'stdio' ? command.cwd : undefined;
+    };
+
+    expect(cwdFor('absolute')).toBe(absoluteCwd);
+    expect(cwdFor('relative')).toBe(path.resolve(TEMP_DIR, 'packages/foo'));
+    expect(cwdFor('tilde')).toBe(path.join(os.homedir(), 'mcporter-cwd-home'));
+    expect(cwdFor('tildeBackslash')).toBe(path.join(os.homedir(), 'mcporter-cwd-home'));
+    expect(cwdFor('defaulted')).toBe(TEMP_DIR);
+  });
+
   it('normalizes oauthScope from camelCase and snake_case keys', async () => {
     await fs.mkdir(TEMP_DIR, { recursive: true });
     const configPath = path.join(TEMP_DIR, 'mcporter-oauth-scope.json');

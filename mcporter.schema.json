@@ -59,6 +59,10 @@
               "type": "string"
             }
           },
+          "cwd": {
+            "description": "Working directory for stdio servers. A leading ~ is expanded to $HOME; relative paths resolve against the config file directory",
+            "type": "string"
+          },
           "headers": {
             "description": "HTTP headers for requests. Supports $VAR and $env:VAR placeholders",
             "type": "object",

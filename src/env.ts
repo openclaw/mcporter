@@ -1,4 +1,5 @@
 import os from 'node:os';
+import path from 'node:path';
 
 const ENV_DEFAULT_PATTERN = /^\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-|:|-)?([^}]*)\}$/;
 const ENV_INTERPOLATION_PATTERN = /\\?\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
@@ -13,8 +14,8 @@ export function expandHome(input: string): string {
   if (input === '~') {
     return home;
   }
-  if (input.startsWith('~/')) {
-    return `${home}/${input.slice(2)}`;
+  if (input.startsWith('~/') || input.startsWith('~\\')) {
+    return path.join(home, input.slice(2));
   }
   return input;
 }
