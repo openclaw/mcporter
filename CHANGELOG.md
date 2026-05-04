@@ -10,6 +10,7 @@
 - Restore `mcporter call --key value` / `--key=value` tool arguments, including JSON array/object coercion, `--json -` stdin payloads, schema-aware bare string-to-array wrapping, and kebab-case to camelCase field mapping. (Issues #119 and #126)
 - Quote generated `emit-ts` members for tool names that are not valid TypeScript identifiers. (PR #149 / issue #30, thanks @solomonneas)
 - Resolve relative stdio args in generated CLI bundles against the generated script location instead of the caller's current directory. (PR #148 / issue #56, thanks @solomonneas)
+- Print OAuth manual-completion URLs at the default warning log level so headless users can copy them. (PR #143 / issue #139, thanks @stainlu)
 
 ### Config
 

@@ -256,7 +256,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     this.logger.info(`Authorization required for ${this.definition.name}. Opening browser...`);
     this.ensureAuthorizationDeferred();
     __oauthInternals.openExternal(authorizationUrl.toString());
-    this.logger.info(`If the browser did not open, visit ${authorizationUrl.toString()} manually.`);
+    this.logger.warn(`If the browser did not open, visit ${authorizationUrl.toString()} manually.`);
   }
 
   async saveCodeVerifier(codeVerifier: string): Promise<void> {

@@ -213,4 +213,34 @@ describe('FileOAuthClientProvider session lifecycle', () => {
     await expect(waitPromise).resolves.toBe('stable-deferred-code');
     await session.close();
   });
+
+  it('logs the manual OAuth URL at warn level for headless terminals (#139)', async () => {
+    const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+    tempDirs.push(tokenCacheDir);
+    const definition: ServerDefinition = {
+      name: 'test-oauth-headless-url',
+      description: 'Test OAuth server',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'oauth',
+      tokenCacheDir,
+    };
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+
+    const session = await createOAuthSession(definition, logger);
+    const provider = session.provider as StatefulProvider;
+    vi.spyOn(__oauthInternals, 'openExternal').mockImplementation(() => {});
+    const authorizationUrl = new URL('https://example.com/auth?code=xyz');
+    const waitPromise = session.waitForAuthorizationCode().catch(() => undefined);
+
+    await provider.redirectToAuthorization(authorizationUrl);
+
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining(`visit ${authorizationUrl.toString()} manually`));
+
+    await session.close();
+    await waitPromise;
+  });
 });
