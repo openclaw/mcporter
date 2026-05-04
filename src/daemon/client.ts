@@ -13,6 +13,7 @@ import type {
   DaemonResponse,
   ListResourcesParams,
   ListToolsParams,
+  ReadResourceParams,
   StatusResult,
 } from './protocol.js';
 
@@ -70,6 +71,10 @@ export class DaemonClient {
 
   async listResources(params: ListResourcesParams): Promise<unknown> {
     return this.invoke('listResources', params);
+  }
+
+  async readResource(params: ReadResourceParams): Promise<unknown> {
+    return this.invoke('readResource', params);
   }
 
   async closeServer(params: CloseServerParams): Promise<void> {

@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module';
 
-import type { CallToolRequest, ListResourcesRequest } from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolRequest, ListResourcesRequest, ReadResourceRequest } from '@modelcontextprotocol/sdk/types.js';
 import { loadServerDefinitions, type ServerDefinition } from './config.js';
 import { createPrefixedConsoleLogger, type Logger, type LogLevel, resolveLogLevelFromEnv } from './logging.js';
 import { closeTransportAndWait } from './runtime-process-utils.js';
@@ -63,6 +63,7 @@ export interface Runtime {
   listTools(server: string, options?: ListToolsOptions): Promise<ServerToolInfo[]>;
   callTool(server: string, toolName: string, options?: CallOptions): Promise<unknown>;
   listResources(server: string, options?: Partial<ListResourcesRequest['params']>): Promise<unknown>;
+  readResource(server: string, uri: string): Promise<unknown>;
   connect(server: string): Promise<ClientContext>;
   close(server?: string): Promise<void>;
 }
@@ -254,6 +255,16 @@ class McpRuntime implements Runtime {
       return await client.listResources(options as ListResourcesRequest['params']);
     } catch (error) {
       // Fatal listResources errors usually mean the underlying transport has gone away.
+      await this.resetConnectionOnError(server, error);
+      throw error;
+    }
+  }
+
+  async readResource(server: string, uri: string): Promise<unknown> {
+    try {
+      const { client } = await this.connect(server);
+      return await client.readResource({ uri } satisfies ReadResourceRequest['params']);
+    } catch (error) {
       await this.resetConnectionOnError(server, error);
       throw error;
     }

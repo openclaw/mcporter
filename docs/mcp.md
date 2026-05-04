@@ -18,6 +18,8 @@ mcporter is the Sweetistics CLI + runtime for the Model Context Protocol (MCP). 
   Lists tool metadata, renders TypeScript-style signatures, and surfaces copy/pasteable examples (including ad-hoc HTTP selectors).
 - `npx mcporter call server.tool key=value …`  
   Invokes a tool via either flag syntax or the function-call expression form; add `--output json` to capture structured responses.
+- `npx mcporter resource server [uri]`  
+  Lists MCP resources for a server, or reads a specific resource URI and renders text/markdown/JSON/raw output.
 - `npx mcporter generate-cli --server name [--bundle|--compile]`  
   Emits a standalone CLI for a single MCP server. Bundling defaults to Rolldown unless the runtime resolves to Bun; compiled binaries require Bun.
 - `npx mcporter emit-ts <server> --mode types|client`  

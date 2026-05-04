@@ -76,6 +76,15 @@ function collectCallContent(raw: unknown): CollectedCallContent {
   const markdownEntries: string[] = [];
   const jsonCandidates: unknown[] = [];
   const images: ImageContent[] = [];
+  const rawContents =
+    raw && typeof raw === 'object' && Array.isArray((raw as { contents?: unknown }).contents)
+      ? ((raw as { contents: unknown[] }).contents ?? [])
+      : undefined;
+  if (rawContents) {
+    for (const resource of rawContents) {
+      collectResourcePayload(resource, textEntries, markdownEntries, jsonCandidates);
+    }
+  }
 
   if (!envelope.content) {
     return {
@@ -118,22 +127,7 @@ function collectCallContent(raw: unknown): CollectedCallContent {
     }
     if (typedEntry.type === 'resource') {
       const resource = typedEntry.resource as Record<string, unknown> | undefined;
-      if (resource && typeof resource === 'object') {
-        const uri = typeof resource.uri === 'string' ? resource.uri : '';
-        const mimeType = typeof resource.mimeType === 'string' ? resource.mimeType : '';
-        if (typeof resource.text === 'string') {
-          textEntries.push(resource.text);
-          if (mimeType.toLowerCase().includes('markdown')) {
-            markdownEntries.push(resource.text);
-          }
-          const parsed = tryParseJson(resource.text);
-          if (parsed !== null) {
-            jsonCandidates.push(parsed);
-          }
-        } else if (typeof resource.blob === 'string') {
-          textEntries.push(`[Binary resource: ${uri}]`);
-        }
-      }
+      collectResourcePayload(resource, textEntries, markdownEntries, jsonCandidates);
       continue;
     }
     if (typedEntry.type !== 'text' && typedEntry.type !== 'markdown') {
@@ -162,6 +156,32 @@ function collectCallContent(raw: unknown): CollectedCallContent {
     jsonCandidates,
     images,
   };
+}
+
+function collectResourcePayload(
+  resource: unknown,
+  textEntries: string[],
+  markdownEntries: string[],
+  jsonCandidates: unknown[]
+): void {
+  if (!resource || typeof resource !== 'object') {
+    return;
+  }
+  const record = resource as Record<string, unknown>;
+  const uri = typeof record.uri === 'string' ? record.uri : '';
+  const mimeType = typeof record.mimeType === 'string' ? record.mimeType : '';
+  if (typeof record.text === 'string') {
+    textEntries.push(record.text);
+    if (mimeType.toLowerCase().includes('markdown')) {
+      markdownEntries.push(record.text);
+    }
+    const parsed = tryParseJson(record.text);
+    if (parsed !== null) {
+      jsonCandidates.push(parsed);
+    }
+  } else if (typeof record.blob === 'string') {
+    textEntries.push(`[Binary resource: ${uri}]`);
+  }
 }
 
 function collectText(entries: string[], joiner: string): string | null {

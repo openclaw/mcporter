@@ -1,4 +1,11 @@
-export type DaemonRequestMethod = 'callTool' | 'listTools' | 'listResources' | 'closeServer' | 'status' | 'stop';
+export type DaemonRequestMethod =
+  | 'callTool'
+  | 'listTools'
+  | 'listResources'
+  | 'readResource'
+  | 'closeServer'
+  | 'status'
+  | 'stop';
 
 export interface DaemonRequest<T extends DaemonRequestMethod = DaemonRequestMethod, P = unknown> {
   readonly id: string;
@@ -32,6 +39,11 @@ export interface ListToolsParams {
 export interface ListResourcesParams {
   readonly server: string;
   readonly params?: Record<string, unknown>;
+}
+
+export interface ReadResourceParams {
+  readonly server: string;
+  readonly uri: string;
 }
 
 export interface CloseServerParams {

@@ -87,6 +87,13 @@ class KeepAliveRuntime implements Runtime {
     return this.base.listResources(server, options);
   }
 
+  async readResource(server: string, uri: string): Promise<unknown> {
+    if (this.shouldUseDaemon(server)) {
+      return this.invokeWithRestart(server, 'readResource', () => this.daemon.readResource({ server, uri }));
+    }
+    return this.base.readResource(server, uri);
+  }
+
   async connect(server: string): Promise<Awaited<ReturnType<Runtime['connect']>>> {
     return this.base.connect(server);
   }

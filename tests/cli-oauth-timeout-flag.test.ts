@@ -24,6 +24,7 @@ describe('mcporter --oauth-timeout flag', () => {
       listTools: listToolsSpy,
       callTool: vi.fn(),
       listResources: vi.fn(),
+      readResource: vi.fn(),
       connect: vi.fn(),
       close: vi.fn(async () => {}),
     };
@@ -71,6 +72,7 @@ describe('mcporter --oauth-timeout flag', () => {
       listTools: failingListTools,
       callTool: vi.fn(),
       listResources: vi.fn(),
+      readResource: vi.fn(),
       connect: vi.fn(),
       close: closeSpy,
     };

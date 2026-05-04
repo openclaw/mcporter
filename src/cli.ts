@@ -12,6 +12,7 @@ import { consumeHelpTokens, isHelpToken, isVersionToken, printHelp, printVersion
 import { handleInspectCli } from './cli/inspect-cli-command.js';
 import { handleList, printListHelp } from './cli/list-command.js';
 import { logError, logInfo } from './cli/logger-context.js';
+import { handleResource, printResourceHelp } from './cli/resource-command.js';
 import { DEBUG_HANG, dumpActiveHandles, terminateChildProcesses } from './cli/runtime-debug.js';
 import { resolveConfigPath } from './config.js';
 import { DaemonClient } from './daemon/client.js';
@@ -25,6 +26,7 @@ export { handleCall } from './cli/call-command.js';
 export { handleGenerateCli } from './cli/generate-cli-runner.js';
 export { handleInspectCli } from './cli/inspect-cli-command.js';
 export { extractListFlags, handleList } from './cli/list-command.js';
+export { handleResource } from './cli/resource-command.js';
 export { resolveCallTimeout } from './cli/timeouts.js';
 
 const FORCE_EXIT_GRACE_MS = 50;
@@ -165,6 +167,16 @@ export async function runCli(argv: string[]): Promise<void> {
         return;
       }
       await handleAuth(runtime, resolvedArgs);
+      return;
+    }
+
+    if (resolvedCommand === 'resource' || resolvedCommand === 'resources') {
+      if (consumeHelpTokens(resolvedArgs)) {
+        printResourceHelp();
+        process.exitCode = 0;
+        return;
+      }
+      await handleResource(runtime, resolvedArgs);
       return;
     }
   } finally {

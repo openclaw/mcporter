@@ -38,6 +38,7 @@ function createRuntime(definitions: ServerDefinition[]) {
     listTools,
     callTool: vi.fn(async () => undefined),
     listResources: vi.fn(async () => undefined),
+    readResource: vi.fn(async () => undefined),
     connect: vi.fn(async () => {
       throw new Error('connect not implemented');
     }),

@@ -21,6 +21,7 @@
 - Add compact `mcporter list <server> --brief` / `--signatures` output for scanning signatures without doc blocks, examples, or schemas. (PR #144, thanks @yuhp)
 - Launch Bun-compiled macOS daemon children through `nohup` so Homebrew binaries can start keep-alive daemons in the background on macOS 26. (Issue #66)
 - Let generated CLIs use the keep-alive daemon for embedded servers with `lifecycle: "keep-alive"`, preserving stdio server state across separate generated-CLI invocations. (Issue #101)
+- Add `mcporter resource <server> [uri]` for listing and reading MCP resources, including keep-alive daemon routing. (Issue #134)
 
 ### Config
 

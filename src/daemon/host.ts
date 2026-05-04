@@ -20,6 +20,7 @@ import type {
   DaemonResponse,
   ListResourcesParams,
   ListToolsParams,
+  ReadResourceParams,
   StatusResult,
 } from './protocol.js';
 import {
@@ -365,6 +366,28 @@ async function processRequest(
           if (loggable) {
             const detail = formatError(error);
             logEvent(logContext, `listResources error server=${params.server} err=${detail}`);
+          }
+          throw error;
+        }
+      }
+      case 'readResource': {
+        const params = request.params as ReadResourceParams;
+        ensureManaged(params.server, managedServers);
+        const loggable = shouldLogServer(logContext, params.server);
+        if (loggable) {
+          logEvent(logContext, `readResource start server=${params.server} uri=${params.uri}`);
+        }
+        try {
+          const result = await runtime.readResource(params.server, params.uri);
+          markActivity(params.server, activity);
+          if (loggable) {
+            logEvent(logContext, `readResource success server=${params.server}`);
+          }
+          return { response: { id, ok: true, result }, shouldShutdown: false };
+        } catch (error) {
+          if (loggable) {
+            const detail = formatError(error);
+            logEvent(logContext, `readResource error server=${params.server} err=${detail}`);
           }
           throw error;
         }

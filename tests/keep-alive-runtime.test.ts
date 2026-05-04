@@ -9,6 +9,7 @@ class FakeRuntime implements Runtime {
   public readonly callToolMock = vi.fn().mockResolvedValue('local-call');
   public readonly listToolsMock = vi.fn().mockResolvedValue([{ name: 'local-tool' }]);
   public readonly listResourcesMock = vi.fn().mockResolvedValue([]);
+  public readonly readResourceMock = vi.fn().mockResolvedValue({ contents: [] });
   public readonly closeMock = vi.fn().mockResolvedValue(undefined);
 
   constructor(definitions: ServerDefinition[]) {
@@ -51,6 +52,10 @@ class FakeRuntime implements Runtime {
     return await this.listResourcesMock(server, options);
   }
 
+  async readResource(server: string, uri: string): Promise<unknown> {
+    return await this.readResourceMock(server, uri);
+  }
+
   async connect(): Promise<never> {
     throw new Error('not implemented');
   }
@@ -83,6 +88,7 @@ describe('createKeepAliveRuntime', () => {
       callTool: vi.fn().mockResolvedValue('daemon-call'),
       listTools: vi.fn().mockResolvedValue([{ name: 'remote-tool' }]),
       listResources: vi.fn().mockResolvedValue(['resource']),
+      readResource: vi.fn().mockResolvedValue({ contents: [{ uri: 'memo://1', text: 'daemon-resource' }] }),
       closeServer: vi.fn().mockResolvedValue(undefined),
     };
     const keepAliveRuntime = createKeepAliveRuntime(runtime as unknown as Runtime, {
@@ -104,6 +110,11 @@ describe('createKeepAliveRuntime', () => {
     await keepAliveRuntime.listResources('alpha', { cursor: '1' });
     expect(daemon.listResources).toHaveBeenCalledWith({ server: 'alpha', params: { cursor: '1' } });
 
+    await expect(keepAliveRuntime.readResource('alpha', 'memo://1')).resolves.toEqual({
+      contents: [{ uri: 'memo://1', text: 'daemon-resource' }],
+    });
+    expect(daemon.readResource).toHaveBeenCalledWith({ server: 'alpha', uri: 'memo://1' });
+
     await keepAliveRuntime.close('alpha');
     expect(daemon.closeServer).toHaveBeenCalledWith({ server: 'alpha' });
 
@@ -121,6 +132,7 @@ describe('createKeepAliveRuntime', () => {
       closeServer: vi.fn().mockResolvedValue(undefined),
       listTools: vi.fn(),
       listResources: vi.fn(),
+      readResource: vi.fn(),
     };
     const keepAliveRuntime = createKeepAliveRuntime(runtime as unknown as Runtime, {
       daemonClient: daemon as never,
@@ -152,6 +164,7 @@ describe('createKeepAliveRuntime', () => {
       }),
       listTools: vi.fn(),
       listResources: vi.fn(),
+      readResource: vi.fn(),
     };
     const keepAliveRuntime = createKeepAliveRuntime(runtime as unknown as Runtime, {
       daemonClient: daemon as never,
@@ -176,6 +189,7 @@ describe('createKeepAliveRuntime', () => {
       closeServer: vi.fn().mockResolvedValue(undefined),
       listTools: vi.fn(),
       listResources: vi.fn(),
+      readResource: vi.fn(),
     };
     const keepAliveRuntime = createKeepAliveRuntime(runtime as unknown as Runtime, {
       daemonClient: daemon as never,

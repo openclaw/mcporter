@@ -58,6 +58,11 @@ function buildCommandSections(colorize: boolean): string[] {
           usage: 'mcporter call <selector> [key=value ...]',
         },
         {
+          name: 'resource',
+          summary: 'List or read MCP resources exposed by a server',
+          usage: 'mcporter resource <server> [uri]',
+        },
+        {
           name: 'auth',
           summary: 'Complete OAuth for a server without listing tools',
           usage: 'mcporter auth <server | url> [--reset]',

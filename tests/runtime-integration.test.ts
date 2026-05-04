@@ -110,4 +110,27 @@ describe('runtime integration', () => {
 
     await runtime.close('integration');
   });
+
+  it('lists and reads resources over HTTP', async () => {
+    const runtime = await createRuntime({
+      servers: [
+        {
+          name: 'integration',
+          description: 'Integration test server',
+          command: { kind: 'http', url: baseUrl },
+        },
+      ],
+    });
+
+    const listed = (await runtime.listResources('integration')) as { resources?: Array<{ uri: string }> };
+    expect(Array.isArray(listed.resources)).toBe(true);
+
+    const result = (await runtime.readResource('integration', 'greeting://Ada')) as {
+      contents?: Array<{ uri: string; text?: string }>;
+    };
+    expect(result.contents?.[0]?.uri).toBe('greeting://Ada');
+    expect(result.contents?.[0]?.text).toBe('Hello, Ada!');
+
+    await runtime.close('integration');
+  });
 });

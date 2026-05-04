@@ -45,6 +45,17 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
   - `--no-coerce` – disable all flag-style/positional value coercion.
   - `--tail-log` – stream tail output when the tool returns log handles.
 
+## `mcporter resource <server> [uri]`
+
+- Lists resources exposed by a server when no URI is provided.
+- Reads an MCP resource when `uri` is provided and renders text, markdown, JSON,
+  or raw output using the same output formatter as `mcporter call`.
+- Hidden alias: `resources`.
+- Useful flags:
+  - `--output auto|text|markdown|json|raw` – choose how to render the response.
+  - `--json` – shortcut for `--output json`.
+  - `--raw` – shortcut for `--output raw`.
+
 ## `mcporter generate-cli`
 
 - Produces a standalone CLI for a single MCP server (optionally bundling or
