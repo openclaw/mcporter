@@ -12,7 +12,7 @@
   "author": "Sweetistics",
   "repository": {
     "type": "git",
-    "url": "https://github.com/steipete/mcporter"
+    "url": "git+https://github.com/steipete/mcporter.git"
   },
   "bin": {
     "mcporter": "dist/cli.js"
