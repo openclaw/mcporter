@@ -339,6 +339,10 @@ npx mcporter inspect-cli dist/context7.js     # human-readable summary
 npx mcporter generate-cli --from dist/context7.js  # replay with latest mcporter
 ```
 
+Agents should usually get one small skill per MCP server or workflow instead of
+a generic "all of mcporter" skill. See [docs/agent-skills.md](docs/agent-skills.md)
+for the pattern and a copyable template.
+
 ## Generate Typed Clients
 
 Use `mcporter emit-ts` when you want strongly typed tooling without shipping a full CLI. It reuses the same signatures/doc blocks as `mcporter list`, so the generated headers stay in sync with what the CLI shows.
