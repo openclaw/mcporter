@@ -167,10 +167,17 @@ async function invokePreparedCall(
 
 function renderCallResult(result: unknown, parsed: CallArgsParseResult): void {
   const { callResult: wrapped } = wrapCallResult(result);
+  if (isErrorCallResult(result)) {
+    process.exitCode = 1;
+  }
   printCallOutput(wrapped, result, parsed.output);
   saveCallImagesIfRequested(wrapped, parsed.saveImagesDir);
   tailLogIfRequested(result, parsed.tailLog);
   dumpActiveHandles('after call (formatted result)');
+}
+
+function isErrorCallResult(result: unknown): boolean {
+  return !!result && typeof result === 'object' && (result as { isError?: unknown }).isError === true;
 }
 
 export function printCallHelp(): void {

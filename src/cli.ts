@@ -27,6 +27,8 @@ export { handleInspectCli } from './cli/inspect-cli-command.js';
 export { extractListFlags, handleList } from './cli/list-command.js';
 export { resolveCallTimeout } from './cli/timeouts.js';
 
+const FORCE_EXIT_GRACE_MS = 50;
+
 export async function runCli(argv: string[]): Promise<void> {
   const args = [...argv];
   if (args.length === 0) {
@@ -187,18 +189,19 @@ export async function runCli(argv: string[]): Promise<void> {
       // By default we force an exit after cleanup so Node doesn't hang on lingering stdio handles
       // (see typescript-sdk#579/#780/#1049). Opt out by exporting MCPORTER_NO_FORCE_EXIT=1.
       const disableForceExit = process.env.MCPORTER_NO_FORCE_EXIT === '1';
+      const shouldForceExit = !disableForceExit || process.env.MCPORTER_FORCE_EXIT === '1';
+      const scheduleForcedExit = () => {
+        if (shouldForceExit) {
+          setTimeout(() => {
+            process.exit(process.exitCode ?? 0);
+          }, FORCE_EXIT_GRACE_MS);
+        }
+      };
       if (DEBUG_HANG) {
         dumpActiveHandles('after terminateChildProcesses');
-        if (!disableForceExit || process.env.MCPORTER_FORCE_EXIT === '1') {
-          process.exit(0);
-        }
+        scheduleForcedExit();
       } else {
-        const scheduleExit = () => {
-          if (!disableForceExit || process.env.MCPORTER_FORCE_EXIT === '1') {
-            process.exit(0);
-          }
-        };
-        setImmediate(scheduleExit);
+        setImmediate(scheduleForcedExit);
       }
     }
   }

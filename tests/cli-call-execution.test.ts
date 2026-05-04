@@ -110,6 +110,26 @@ describe('CLI call execution behavior', () => {
     logSpy.mockRestore();
   });
 
+  it('marks MCP isError tool results as process failures', async () => {
+    const previousExitCode = process.exitCode;
+    process.exitCode = undefined;
+    try {
+      const { handleCall } = await cliModulePromise;
+      const { runtime, callTool } = createRuntimeStub({
+        linear: [{ name: 'explode', inputSchema: { type: 'object', properties: {} } }],
+      });
+      callTool.mockResolvedValueOnce({ content: [{ type: 'text', text: 'Unknown resource' }], isError: true });
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      await handleCall(runtime, ['linear.explode']);
+
+      expect(process.exitCode).toBe(1);
+      logSpy.mockRestore();
+    } finally {
+      process.exitCode = previousExitCode;
+    }
+  });
+
   it('still requires an explicit tool when multiple are available', async () => {
     const { handleCall } = await cliModulePromise;
     const { runtime, callTool } = createRuntimeStub(

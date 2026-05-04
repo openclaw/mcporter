@@ -54,7 +54,10 @@ describe.skipIf(Boolean(skipReason()))('deepwiki live', () => {
       'repoName:facebook/react',
       '--output',
       'json',
-    ]);
+    ]).catch((error: unknown) => {
+      const failure = error as { stdout?: string; stderr?: string };
+      return { stdout: failure.stdout ?? '', stderr: failure.stderr ?? '' };
+    });
     const normalized = stdout.trim() || stderr.trim();
     expect(normalized).toContain('"statusCode": 410');
     expect(normalized).toContain('"kind": "http"');
