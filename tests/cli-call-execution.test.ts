@@ -86,6 +86,41 @@ describe('CLI call execution behavior', () => {
     logSpy.mockRestore();
   });
 
+  it('wraps bare long-flag strings when the schema declares an array', async () => {
+    const { handleCall } = await cliModulePromise;
+    const { runtime, callTool, listTools } = createRuntimeStub({
+      email: [
+        {
+          name: 'send_email',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              to: { type: 'array', items: { type: 'string' } },
+              subject: { type: 'string' },
+            },
+            required: ['to', 'subject'],
+          },
+        },
+      ],
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleCall(runtime, ['email.send_email', '--to', 'miguel@example.com', '--subject', 'Test']);
+
+    expect(callTool).toHaveBeenCalledWith(
+      'email',
+      'send_email',
+      expect.objectContaining({
+        args: {
+          to: ['miguel@example.com'],
+          subject: 'Test',
+        },
+      })
+    );
+    expect(listTools).toHaveBeenCalledWith('email', { autoAuthorize: true, includeSchema: true });
+    logSpy.mockRestore();
+  });
+
   it('does not load schemas for numeric values supplied via --args JSON', async () => {
     const { handleCall } = await cliModulePromise;
     const { runtime, callTool, listTools } = createRuntimeStub({

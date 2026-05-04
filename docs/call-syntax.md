@@ -70,6 +70,7 @@ Key details:
 - `--key value`, `--key=value`, `key=value`, `key:value`, `key: value`, and `key:=value` all map to the same named-argument handling, so you can type whichever feels most natural for your shell. Long flag keys convert kebab-case to camelCase (`--save-to-drafts true` becomes `saveToDrafts: true`). The `:=` form is accepted as a compatibility alias for `=`.
 - By default, arguments keep the same validation pipeline as the function-call syntax—enums, numbers, and booleans are coerced automatically, and missing required fields raise errors.
 - `--args -` and `--json -` read a JSON object from stdin.
+- Bare string values supplied via long flags wrap into one-item arrays when the tool schema declares that field as an array.
 - Numeric-looking `key=value` arguments are restored to their original string spelling when the tool schema declares that parameter as a string, which keeps timestamp-like IDs such as Slack `thread_ts=1234567890.123456` intact.
 - `--raw-strings` disables numeric coercion for flag-style and positional values so IDs/codes stay literal strings (`code=12345` stays `"12345"`).
 - `--no-coerce` disables all coercion for flag-style and positional values (`true`, `null`, and JSON-like values remain strings).

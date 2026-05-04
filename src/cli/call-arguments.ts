@@ -20,6 +20,7 @@ export interface CallArgsParseResult {
   tool?: string;
   args: Record<string, unknown>;
   schemaStringCoercionCandidates?: Record<string, string>;
+  schemaArrayCoercionCandidates?: Record<string, string>;
   positionalArgs?: unknown[];
   tailLog: boolean;
   output: OutputFormat;
@@ -323,6 +324,9 @@ function handleNamedArgumentFlag(context: FlagHandlerContext): number {
   if (context.state.coercionMode === 'default' && typeof value === 'number') {
     context.result.schemaStringCoercionCandidates ??= {};
     context.result.schemaStringCoercionCandidates[key] = rawValue;
+  } else if (context.state.coercionMode === 'default' && typeof value === 'string') {
+    context.result.schemaArrayCoercionCandidates ??= {};
+    context.result.schemaArrayCoercionCandidates[key] = rawValue;
   }
   context.result.args[key] = value;
   return context.index + (eqIndex === -1 ? 2 : 1);

@@ -63,12 +63,13 @@ async function prepareCallRequest(runtime: Runtime, args: string[]): Promise<Pre
 
   const timeoutMs = resolveCallTimeout(parsed.timeoutMs);
   const hydratedArgs = await hydratePositionalArguments(runtime, server, tool, parsed.args, parsed.positionalArgs);
-  const schemaAwareArgs = await enforceSchemaStringTypes(
+  const schemaAwareArgs = await enforceSchemaAwareArgumentTypes(
     runtime,
     server,
     tool,
     hydratedArgs,
     parsed.schemaStringCoercionCandidates,
+    parsed.schemaArrayCoercionCandidates,
     timeoutMs
   );
   return { parsed, server, tool, hydratedArgs: schemaAwareArgs, timeoutMs };
@@ -272,15 +273,19 @@ function resolveCallTarget(
   return { server, tool };
 }
 
-async function enforceSchemaStringTypes(
+async function enforceSchemaAwareArgumentTypes(
   runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
   server: string,
   tool: string,
   args: Record<string, unknown>,
-  rawCandidates: Record<string, string> | undefined,
+  stringCandidates: Record<string, string> | undefined,
+  arrayCandidates: Record<string, string> | undefined,
   timeoutMs: number
 ): Promise<Record<string, unknown>> {
-  if (!rawCandidates || Object.keys(rawCandidates).length === 0) {
+  if (
+    (!stringCandidates || Object.keys(stringCandidates).length === 0) &&
+    (!arrayCandidates || Object.keys(arrayCandidates).length === 0)
+  ) {
     return args;
   }
 
@@ -297,7 +302,7 @@ async function enforceSchemaStringTypes(
   }
 
   let corrected: Record<string, unknown> | undefined;
-  for (const [key, rawValue] of Object.entries(rawCandidates)) {
+  for (const [key, rawValue] of Object.entries(stringCandidates ?? {})) {
     if (typeof args[key] !== 'number') {
       continue;
     }
@@ -306,6 +311,17 @@ async function enforceSchemaStringTypes(
     }
     corrected ??= { ...args };
     corrected[key] = rawValue;
+  }
+  for (const [key, rawValue] of Object.entries(arrayCandidates ?? {})) {
+    if (typeof args[key] !== 'string') {
+      continue;
+    }
+    const descriptor = schema.properties[key];
+    if (!schemaAllowsArray(descriptor) || schemaAllowsString(descriptor)) {
+      continue;
+    }
+    corrected ??= { ...args };
+    corrected[key] = [rawValue];
   }
   return corrected ?? args;
 }
@@ -325,6 +341,27 @@ function schemaAllowsString(descriptor: unknown): boolean {
   for (const key of ['anyOf', 'oneOf', 'allOf'] as const) {
     const variants = record[key];
     if (Array.isArray(variants) && variants.some(schemaAllowsString)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function schemaAllowsArray(descriptor: unknown): boolean {
+  if (!descriptor || typeof descriptor !== 'object') {
+    return false;
+  }
+  const record = descriptor as Record<string, unknown>;
+  const type = record.type;
+  if (type === 'array') {
+    return true;
+  }
+  if (Array.isArray(type) && type.includes('array')) {
+    return true;
+  }
+  for (const key of ['anyOf', 'oneOf', 'allOf'] as const) {
+    const variants = record[key];
+    if (Array.isArray(variants) && variants.some(schemaAllowsArray)) {
       return true;
     }
   }
