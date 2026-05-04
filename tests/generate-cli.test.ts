@@ -113,6 +113,37 @@ if (process.platform !== 'win32') {
         structuredContent: { fields },
       })
     );
+    server.registerTool(
+      'set_cells_batch',
+      {
+        title: 'Set Cells Batch',
+        description: 'Set multiple cells in a single operation',
+        inputSchema: {
+          cells: z.array(
+            z.object({
+              x: z.number().int(),
+              y: z.number().int(),
+              char: z.string().min(1).max(1).optional(),
+              color: z.string().optional(),
+              bgColor: z.string().optional(),
+            })
+          ),
+        },
+        outputSchema: {
+          cells: z.array(
+            z.object({
+              x: z.number(),
+              y: z.number(),
+              char: z.string().optional(),
+            })
+          ),
+        },
+      },
+      async ({ cells }) => ({
+        content: [{ type: 'text', text: JSON.stringify({ cells }) }],
+        structuredContent: { cells },
+      })
+    );
     server.registerResource(
       'greeting',
       new ResourceTemplate('greeting://{name}', { list: undefined }),
@@ -516,6 +547,108 @@ describeGenerateCli('generateCli', () => {
         done: true,
         summary: 'Ship it',
       },
+    });
+  }, 30_000);
+
+  it('lets --raw bypass required generated flags', async () => {
+    const inline = JSON.stringify({
+      name: 'raw-required-test',
+      description: 'Raw required test',
+      command: baseUrl.toString(),
+    });
+    const outputPath = path.join(tmpDir, 'raw-required-test.ts');
+    await fs.rm(outputPath, { force: true });
+
+    const { outputPath: renderedPath } = await generateCli({
+      serverRef: inline,
+      outputPath,
+      runtime: 'node',
+      timeoutMs: 5_000,
+      includeTools: ['set_cells_batch'],
+    });
+    const content = await fs.readFile(renderedPath, 'utf8');
+    expect(content).toContain('.option("--cells <cells:value1,value2>"');
+    expect(content).not.toContain('.requiredOption("--cells');
+
+    const { execFile } = await import('node:child_process');
+    const { stdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      execFile(
+        'pnpm',
+        [
+          'exec',
+          'tsx',
+          renderedPath,
+          'set-cells-batch',
+          '--raw',
+          '{"cells":[{"x":50,"y":15,"char":"A"}]}',
+          '--output',
+          'json',
+        ],
+        execOptions(),
+        (error: import('node:child_process').ExecFileException | null, out: string, err: string) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve({ stdout: out, stderr: err });
+        }
+      );
+    });
+
+    expect(JSON.parse(stdout)).toEqual({
+      cells: [{ char: 'A', x: 50, y: 15 }],
+    });
+  }, 30_000);
+
+  it('parses generated array flags with JSON object items', async () => {
+    const inline = JSON.stringify({
+      name: 'array-object-test',
+      description: 'Array object test',
+      command: baseUrl.toString(),
+    });
+    const outputPath = path.join(tmpDir, 'array-object-test.ts');
+    await fs.rm(outputPath, { force: true });
+
+    const { outputPath: renderedPath } = await generateCli({
+      serverRef: inline,
+      outputPath,
+      runtime: 'node',
+      timeoutMs: 5_000,
+      includeTools: ['set_cells_batch'],
+    });
+    const content = await fs.readFile(renderedPath, 'utf8');
+    expect(content).toContain("parseArrayOption(value, 'json')");
+
+    const { execFile } = await import('node:child_process');
+    const { stdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      execFile(
+        'pnpm',
+        [
+          'exec',
+          'tsx',
+          renderedPath,
+          'set-cells-batch',
+          '--cells',
+          '{"x":50,"y":15,"char":"A"},{"x":51,"y":15,"char":"B"}',
+          '--output',
+          'json',
+        ],
+        execOptions(),
+        (error: import('node:child_process').ExecFileException | null, out: string, err: string) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve({ stdout: out, stderr: err });
+        }
+      );
+    });
+
+    expect(JSON.parse(stdout)).toEqual({
+      cells: [
+        { char: 'A', x: 50, y: 15 },
+        { char: 'B', x: 51, y: 15 },
+      ],
     });
   }, 30_000);
 

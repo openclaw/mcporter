@@ -100,7 +100,7 @@ describe('generate helpers', () => {
 
     expect(inferArrayItemType({ type: 'array', items: { type: 'integer' } })).toBe('number');
     expect(inferArrayItemType({ type: 'array', items: { type: ['null', 'boolean'] } })).toBe('boolean');
-    expect(inferArrayItemType({ type: 'array', items: { type: 'object' } })).toBe('unknown');
+    expect(inferArrayItemType({ type: 'array', items: { type: 'object' } })).toBe('object');
 
     expect(getDescriptorDescription({ description: 'hi' })).toBe('hi');
     expect(getDescriptorDescription({})).toBeUndefined();

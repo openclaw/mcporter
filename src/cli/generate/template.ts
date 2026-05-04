@@ -208,6 +208,32 @@ function printResult(result: unknown, format: string) {
 \t}
 }
 
+function parseArrayOption(value: string, itemType: 'string' | 'number' | 'boolean' | 'json') {
+\tconst trimmed = value.trim();
+\tif (trimmed.startsWith('[')) {
+\t\tconst parsed = JSON.parse(trimmed);
+\t\tif (!Array.isArray(parsed)) {
+\t\t\tthrow new Error('Expected a JSON array.');
+\t\t}
+\t\treturn parsed;
+\t}
+\tif (itemType === 'json') {
+\t\tconst parsed = JSON.parse('[' + value + ']');
+\t\tif (!Array.isArray(parsed)) {
+\t\t\tthrow new Error('Expected JSON array items.');
+\t\t}
+\t\treturn parsed;
+\t}
+\tconst values = value.split(',').map((entry) => entry.trim());
+\tif (itemType === 'number') {
+\t\treturn values.map((entry) => parseFloat(entry));
+\t}
+\tif (itemType === 'boolean') {
+\t\treturn values.map((entry) => entry !== 'false');
+\t}
+\treturn values;
+}
+
 function normalizeEmbeddedServer(server: typeof embeddedServer) {
 \tconst base = { ...server } as Record<string, unknown>;
 \tif ((server.command as any).kind === 'http') {
@@ -360,6 +386,28 @@ export function renderToolCommand(
       return `if (${source} !== undefined) args.${option.property} = ${source};`;
     })
     .join('\n\t\t');
+  const requiredChecks = tool.options
+    .filter((option) => option.required)
+    .map((option) => {
+      const camelCaseProp = option.cliName
+        .split('-')
+        .filter(Boolean)
+        .map((segment, index) => (index === 0 ? segment : `${segment.charAt(0).toUpperCase()}${segment.slice(1)}`))
+        .join('');
+      return { option, camelCaseProp };
+    });
+  const requiredValidation =
+    requiredChecks.length > 0
+      ? `const missingRequired = [${requiredChecks
+          .map(
+            ({ option, camelCaseProp }) =>
+              `{ value: cmdOpts.${camelCaseProp}, flag: ${JSON.stringify(`--${option.cliName}`)} }`
+          )
+          .join(', ')}].filter((entry) => entry.value === undefined).map((entry) => entry.flag);
+\t\t\tif (missingRequired.length > 0) {
+\t\t\t\tthrow new Error('Missing required option' + (missingRequired.length === 1 ? '' : 's') + ': ' + missingRequired.join(', '));
+\t\t\t}`
+      : '';
   const flagUsage = doc.flagUsage;
   const optionLines = doc.optionDocs.map((entry) => renderOption(entry)).join('\n');
   const summary = flagUsage ? `${commandName} ${flagUsage}` : commandName;
@@ -389,7 +437,10 @@ ${aliasSnippet ? `\t${aliasSnippet}` : ''}\t.action(async (cmdOpts) => {
 \t\t});
 \t\ttry {
 \t\t\tconst args = cmdOpts.raw ? JSON.parse(cmdOpts.raw) : ({} as Record<string, unknown>);
-\t\t\t${buildArgs}
+\t\t\tif (!cmdOpts.raw) {
+\t\t\t\t${requiredValidation}
+\t\t\t\t${buildArgs}
+\t\t\t}
 \t\t\tconst call = (proxy.${tool.methodName} as any)(args);
 \t\t\tconst result = await invokeWithTimeout(call, globalOptions.timeout || ${defaultTimeout});
 \t\t\tprintResult(result, globalOptions.output ?? 'text');
@@ -402,8 +453,7 @@ ${aliasSnippet ? `\t${aliasSnippet}` : ''}\t.action(async (cmdOpts) => {
 
 function renderOption(optionDoc: ToolOptionDoc): string {
   const parser = optionParser(optionDoc.option);
-  const method = optionDoc.option.required ? '.requiredOption' : '.option';
-  return `\t${method}(${JSON.stringify(optionDoc.flagLabel)}, ${JSON.stringify(optionDoc.description)}${
+  return `\t.option(${JSON.stringify(optionDoc.flagLabel)}, ${JSON.stringify(optionDoc.description)}${
     parser ? `, ${parser}` : ''
   })`;
 }
@@ -448,11 +498,13 @@ function optionParser(option: GeneratedOption): string | undefined {
       // Coerce array elements to their proper types based on schema
       switch (option.arrayItemType) {
         case 'number':
-          return "(value) => value.split(',').map((v) => parseFloat(v.trim()))";
+          return "(value) => parseArrayOption(value, 'number')";
         case 'boolean':
-          return "(value) => value.split(',').map((v) => v.trim() !== 'false')";
+          return "(value) => parseArrayOption(value, 'boolean')";
+        case 'object':
+          return "(value) => parseArrayOption(value, 'json')";
         default:
-          return "(value) => value.split(',').map((v) => v.trim())";
+          return "(value) => parseArrayOption(value, 'string')";
       }
     default:
       return undefined;

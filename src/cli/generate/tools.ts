@@ -12,7 +12,7 @@ export interface GeneratedOption {
   description?: string;
   required: boolean;
   type: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'unknown';
-  arrayItemType?: 'string' | 'number' | 'boolean' | 'unknown';
+  arrayItemType?: 'string' | 'number' | 'boolean' | 'object' | 'unknown';
   placeholder: string;
   exampleValue?: string;
   enumValues?: string[];
@@ -34,7 +34,7 @@ function resolveArrayItemType(value: unknown): GeneratedOption['arrayItemType'] 
   if (value === 'integer') {
     return 'number';
   }
-  if (value === 'string' || value === 'number' || value === 'boolean') {
+  if (value === 'string' || value === 'number' || value === 'boolean' || value === 'object') {
     return value;
   }
   return undefined;

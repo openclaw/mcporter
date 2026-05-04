@@ -12,6 +12,7 @@
 - Resolve relative stdio args in generated CLI bundles against the generated script location instead of the caller's current directory. (PR #148 / issue #56, thanks @solomonneas)
 - Print OAuth manual-completion URLs at the default warning log level so headless users can copy them. (PR #143 / issue #139, thanks @stainlu)
 - Support repeatable `--header KEY=value` flags for ad-hoc HTTP servers and persisted ad-hoc entries. (Issue #117)
+- Let generated CLIs use `--raw` without also passing required flags, and parse array flags containing JSON object items. (Issues #102 and #103)
 
 ### Config
 
