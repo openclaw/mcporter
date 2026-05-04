@@ -20,11 +20,12 @@ describe('mcporter path helpers', () => {
     delete process.env.XDG_STATE_HOME;
     delete process.env.XDG_CACHE_HOME;
 
-    expect(legacyMcporterDir()).toBe('/home/tester/.mcporter');
-    expect(mcporterDir('config')).toBe('/home/tester/.mcporter');
-    expect(mcporterDir('data')).toBe('/home/tester/.mcporter');
-    expect(mcporterDir('state')).toBe('/home/tester/.mcporter');
-    expect(mcporterDir('cache')).toBe('/home/tester/.mcporter');
+    const legacy = path.join('/home/tester', '.mcporter');
+    expect(legacyMcporterDir()).toBe(legacy);
+    expect(mcporterDir('config')).toBe(legacy);
+    expect(mcporterDir('data')).toBe(legacy);
+    expect(mcporterDir('state')).toBe(legacy);
+    expect(mcporterDir('cache')).toBe(legacy);
   });
 
   it('honors absolute XDG homes by kind', () => {
@@ -33,13 +34,13 @@ describe('mcporter path helpers', () => {
     process.env.XDG_STATE_HOME = '/xdg/state';
     process.env.XDG_CACHE_HOME = '/xdg/cache';
 
-    expect(mcporterDir('config')).toBe('/xdg/config/mcporter');
-    expect(mcporterDir('data')).toBe('/xdg/data/mcporter');
-    expect(mcporterDir('state')).toBe('/xdg/state/mcporter');
-    expect(mcporterDir('cache')).toBe('/xdg/cache/mcporter');
+    expect(mcporterDir('config')).toBe(path.join('/xdg/config', 'mcporter'));
+    expect(mcporterDir('data')).toBe(path.join('/xdg/data', 'mcporter'));
+    expect(mcporterDir('state')).toBe(path.join('/xdg/state', 'mcporter'));
+    expect(mcporterDir('cache')).toBe(path.join('/xdg/cache', 'mcporter'));
     expect(mcporterConfigCandidates()).toEqual([
-      path.join('/xdg/config/mcporter', 'mcporter.json'),
-      path.join('/xdg/config/mcporter', 'mcporter.jsonc'),
+      path.join('/xdg/config', 'mcporter', 'mcporter.json'),
+      path.join('/xdg/config', 'mcporter', 'mcporter.jsonc'),
     ]);
   });
 
@@ -47,6 +48,6 @@ describe('mcporter path helpers', () => {
     homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue('/home/tester');
     process.env.XDG_CONFIG_HOME = 'relative/config';
 
-    expect(mcporterDir('config')).toBe('/home/tester/.mcporter');
+    expect(mcporterDir('config')).toBe(path.join('/home/tester', '.mcporter'));
   });
 });

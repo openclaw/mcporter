@@ -23,7 +23,7 @@ describe('schema cache paths', () => {
   it('uses XDG_CACHE_HOME by default', () => {
     process.env.XDG_CACHE_HOME = '/tmp/xdg-cache';
 
-    expect(resolveSchemaCacheDir(mkDef('server'))).toBe('/tmp/xdg-cache/mcporter/server');
+    expect(resolveSchemaCacheDir(mkDef('server'))).toBe(path.join('/tmp/xdg-cache', 'mcporter', 'server'));
   });
 
   it('keeps tokenCacheDir as the explicit override', () => {
