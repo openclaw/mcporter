@@ -273,12 +273,14 @@ export async function handleList(
         printMissingToolJson(definition, requestedTool, durationMs, transportSummary, flags);
         return;
       }
+      const instructions = await loadServerInstructions(runtime, target);
       const payload = {
         mode: 'server',
         name: definition.name,
         status: 'ok' as StatusCategory,
         durationMs,
         description: definition.description,
+        instructions,
         transport: transportSummary,
         source: definition.source,
         sources: flags.verbose || flags.includeSources ? definition.sources : undefined,
@@ -327,6 +329,7 @@ export async function handleList(
       printMissingToolText(definition, requestedTool, durationMs, transportSummary, sourcePath);
       return;
     }
+    const instructions = await loadServerInstructions(runtime, target);
     const summaryLine = printSingleServerHeader(
       definition,
       metadataEntries.length,
@@ -335,6 +338,7 @@ export async function handleList(
       sourcePath,
       {
         printSummaryNow: false,
+        instructions,
       }
     );
     if (metadataEntries.length === 0) {
@@ -527,4 +531,25 @@ function printMissingToolJson(
     )
   );
   process.exitCode = 1;
+}
+
+async function loadServerInstructions(
+  runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
+  serverName: string
+): Promise<string | undefined> {
+  if (typeof runtime.connect !== 'function') {
+    return undefined;
+  }
+  try {
+    const context = await runtime.connect(serverName);
+    const instructions =
+      typeof context.client.getInstructions === 'function' ? context.client.getInstructions() : undefined;
+    if (typeof instructions !== 'string') {
+      return undefined;
+    }
+    const trimmed = instructions.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  } catch {
+    return undefined;
+  }
 }

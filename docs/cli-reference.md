@@ -14,7 +14,8 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
 - Without arguments, lists every configured server (with live discovery + brief
   status).
 - With a server name, prints TypeScript-style signatures for each tool, doc
-  comments, and optional summaries.
+  comments, optional summaries, and any server `instructions` returned during
+  MCP initialization.
 - With `server.tool`, prints just that tool; combine with `--schema` for a single
   tool schema.
 - Hidden alias: `list-tools` (kept for muscle memory; not advertised in help output).

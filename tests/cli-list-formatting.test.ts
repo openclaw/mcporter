@@ -148,6 +148,37 @@ describe('CLI list formatting', () => {
     metadataSpy.mockRestore();
   });
 
+  it('surfaces initialize instructions in single server text and JSON output', async () => {
+    const { handleList } = await cliModulePromise;
+    const definition: ServerDefinition = {
+      name: 'immich',
+      description: 'Immich MCP',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+    };
+    const runtime = {
+      getDefinitions: () => [definition],
+      getDefinition: () => definition,
+      listTools: vi.fn().mockResolvedValue([{ name: 'search_assets' }]),
+      connect: vi.fn().mockResolvedValue({
+        client: {
+          getInstructions: () => 'Use asset IDs from search results when calling mutation tools.',
+        },
+      }),
+    } as unknown as Awaited<ReturnType<(typeof import('../src/runtime.js'))['createRuntime']>>;
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleList(runtime, ['immich']);
+    let lines = logSpy.mock.calls.map((call) => stripAnsi(call.join(' ')));
+    expect(lines.some((line) => line.includes('Instructions: Use asset IDs from search results'))).toBe(true);
+
+    logSpy.mockClear();
+    await handleList(runtime, ['--json', 'immich']);
+    const payload = JSON.parse(logSpy.mock.calls.at(-1)?.[0] ?? '{}');
+    expect(payload.instructions).toBe('Use asset IDs from search results when calling mutation tools.');
+
+    logSpy.mockRestore();
+  });
+
   it('prints only the selected tool when listing server.tool with schemas', async () => {
     const { handleList } = await cliModulePromise;
     const listToolsSpy = vi.fn((_name: string, options?: { includeSchema?: boolean }) =>

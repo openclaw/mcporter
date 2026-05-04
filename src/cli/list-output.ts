@@ -18,6 +18,7 @@ export interface ListJsonServerEntry {
   status: StatusCategory;
   durationMs: number;
   description?: string;
+  instructions?: string;
   transport?: string;
   source?: ServerDefinition['source'];
   sources?: ServerDefinition['sources'];
@@ -38,13 +39,18 @@ export function printSingleServerHeader(
   durationMs: number | undefined,
   transportSummary: string,
   sourcePath: string | undefined,
-  options?: { printSummaryNow?: boolean }
+  options?: { printSummaryNow?: boolean; instructions?: string }
 ): string {
   const prefix = boldText(definition.name);
   if (definition.description) {
     console.log(`${prefix} - ${extraDimText(definition.description)}`);
   } else {
     console.log(prefix);
+  }
+  if (options?.instructions) {
+    for (const line of formatInstructionLines(options.instructions)) {
+      console.log(`  ${extraDimText(line)}`);
+    }
   }
   const summaryParts: string[] = [];
   summaryParts.push(
@@ -67,6 +73,16 @@ export function printSingleServerHeader(
     console.log('');
   }
   return summaryLine;
+}
+
+function formatInstructionLines(instructions: string): string[] {
+  const normalized = instructions.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return [];
+  }
+  const maxLength = 500;
+  const clipped = normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
+  return [`Instructions: ${clipped}`];
 }
 
 export function printToolDetail(

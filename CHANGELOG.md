@@ -17,6 +17,7 @@
 - Let non-interactive `mcporter list` use existing OAuth token caches for HTTP servers even when older configs are missing `auth: "oauth"`. (Issue #137)
 - Fail OAuth flows immediately when the server never creates an authorization URL, instead of waiting for a browser callback that cannot arrive. (Issue #115)
 - Support `mcporter list server.tool --schema` to print a single tool's schema instead of the whole server. (Issue #116)
+- Surface MCP server `instructions` from the initialize response in single-server `mcporter list` text and JSON output. (Issue #76)
 
 ### Config
 
