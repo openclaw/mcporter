@@ -10,7 +10,7 @@ read_when:
 
 - **Invisible keep-alive:** `mcporter call` should transparently start (and reuse) a per-login daemon whenever a configured server requires persistence (e.g., `chrome-devtools`). No extra flags for agents.
 - **Shared state:** Multiple CLI invocations/agents within the same user session must reuse the same warm transport so STDIO servers can hold tabs, cookies, and other stateful context.
-- **Per-login scope:** The daemon lives under the current user account (`~/.mcporter/daemon.sock`) and never crosses user boundaries.
+- **Per-config scope:** The daemon lives under the current user account, keyed by config path (`~/.mcporter/daemon/daemon-<config-hash>.sock` on Unix-like systems), and never crosses user boundaries.
 - **Resilience:** If the daemon or a keep-alive server crashes, the next CLI call restarts it automatically.
 - **Explicit shutdown:** Provide `mcporter daemon stop` to tear everything down (plus `status` for debugging).
 - **Configurable participation:** Only servers marked keep-alive participate; others keep current ephemeral behavior. Support opt-in/out via config/env plus a default allowlist.
@@ -51,6 +51,17 @@ read_when:
 - **Auto restart:** The client shim treats `ECONNREFUSED`/broken pipe as a signal that the daemon died. It retries once by re-launching the daemon before surfacing the error.
 - **Idle timeout:** Each keep-alive server can specify `idleTimeoutMs` (default `null` = never). The daemon tracks last activity timestamps and auto-closes transports (and associated external processes) after the idle window. A global `daemonIdleTimeoutMs` can shut down the entire daemon after long inactivity.
 - **Logging:** Daemon writes structured logs under `~/.mcporter/logs/daemon.log` plus per-server logs for STDIO stderr so users can debug crashing servers.
+
+## Agent Isolation
+
+By default, multiple agents using the same config path share the same keep-alive daemon. That is deliberate: stateful servers such as browser or device MCPs can keep tabs, sessions, and subprocesses warm across repeated CLI calls.
+
+If each agent needs independent MCP state, give each agent either:
+
+- a distinct `--config <path>` / `MCPORTER_CONFIG` value, which produces a distinct daemon socket and metadata file; or
+- a distinct `MCPORTER_DAEMON_DIR`, which isolates the whole daemon runtime directory even when the config path is shared.
+
+Non-keep-alive servers remain process-local and do not use the daemon.
 
 ## Testing Plan
 
