@@ -99,8 +99,27 @@ export async function generateCli(
     templateOutputPath = path.join(templateTmpDir, `${name}.ts`);
   }
 
+  const shouldBundle = Boolean(options.bundle ?? options.compile);
+  const templateSourcePath = path.resolve(templateOutputPath ?? path.resolve(process.cwd(), `${name}.ts`));
+  let resolvedBundleTarget: string | undefined;
+  let resolvedCompileTarget: string | undefined;
+  if (shouldBundle) {
+    resolvedBundleTarget = path.resolve(
+      resolveBundleTarget({
+        bundle: options.bundle,
+        compile: options.compile,
+        outputPath: templateSourcePath,
+      })
+    );
+    if (options.compile) {
+      resolvedCompileTarget = path.resolve(computeCompileTarget(options.compile, resolvedBundleTarget, name));
+    }
+  }
+  const runtimeScriptPath = resolvedCompileTarget ?? resolvedBundleTarget ?? templateSourcePath;
+
   const outputPath = await writeTemplate({
     outputPath: templateOutputPath,
+    runtimeScriptPath,
     runtimeKind,
     timeoutMs,
     definition,
@@ -114,17 +133,11 @@ export async function generateCli(
   let compilePath: string | undefined;
 
   try {
-    const shouldBundle = Boolean(options.bundle ?? options.compile);
-    if (shouldBundle) {
-      const targetPath = resolveBundleTarget({
-        bundle: options.bundle,
-        compile: options.compile,
-        outputPath,
-      });
+    if (shouldBundle && resolvedBundleTarget) {
       bundlePath = await bundleOutput({
         sourcePath: outputPath,
         runtimeKind,
-        targetPath,
+        targetPath: resolvedBundleTarget,
         minify: options.minify ?? false,
         bundler: bundlerKind,
       });
@@ -133,7 +146,7 @@ export async function generateCli(
         if (runtimeKind !== 'bun') {
           throw new Error('--compile is only supported when --runtime bun');
         }
-        const compileTarget = computeCompileTarget(options.compile, bundlePath, name);
+        const compileTarget = resolvedCompileTarget ?? computeCompileTarget(options.compile, bundlePath, name);
         await compileBundleWithBun(bundlePath, compileTarget);
         compilePath = compileTarget;
         if (!options.bundle) {

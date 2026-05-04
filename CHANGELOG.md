@@ -9,6 +9,7 @@
 - Treat `key:=value` as a compatibility alias for `key=value`, avoiding malformed keys such as `price:`. (PR #150 / issue #100, thanks @solomonneas)
 - Restore `mcporter call --key value` / `--key=value` tool arguments, including JSON array/object coercion, `--json -` stdin payloads, schema-aware bare string-to-array wrapping, and kebab-case to camelCase field mapping. (Issues #119 and #126)
 - Quote generated `emit-ts` members for tool names that are not valid TypeScript identifiers. (PR #149 / issue #30, thanks @solomonneas)
+- Resolve relative stdio args in generated CLI bundles against the generated script location instead of the caller's current directory. (PR #148 / issue #56, thanks @solomonneas)
 
 ### Config
 

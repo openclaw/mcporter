@@ -672,4 +672,73 @@ await new Promise((resolve) => {
 
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }, 40_000);
+
+  it('resolves relative stdio args from the bundle directory when invoked from any cwd (#56)', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-cli-reloc-'));
+    const distDir = path.join(tempDir, 'dist');
+    await fs.mkdir(distDir, { recursive: true });
+    await fs.writeFile(
+      path.join(tempDir, 'package.json'),
+      JSON.stringify({ name: 'mcporter-reloc-e2e', version: '0.0.0' }, null, 2),
+      'utf8'
+    );
+
+    const serverPath = path.join(distDir, 'server.mjs');
+    const serverSource = `import { McpServer } from '${MCP_SERVER_MODULE}';
+import { StdioServerTransport } from '${STDIO_SERVER_MODULE}';
+import { z } from '${ZOD_MODULE}';
+
+const server = new McpServer({ name: 'reloc', version: '1.0.0' });
+server.registerTool('echo', {
+  title: 'Echo',
+  description: 'Return the provided text',
+  inputSchema: z.object({ text: z.string() }),
+  outputSchema: z.object({ text: z.string() }),
+}, async ({ text }) => ({
+  content: [{ type: 'text', text }],
+  structuredContent: { text },
+}));
+
+const transport = new StdioServerTransport();
+await server.connect(transport);
+await new Promise((resolve) => { transport.onclose = resolve; });
+`;
+    await fs.writeFile(serverPath, serverSource, 'utf8');
+
+    const bundlePath = path.join(distDir, 'reloc-cli.cjs');
+    await new Promise<void>((resolve, reject) => {
+      execFile(
+        process.execPath,
+        [CLI_ENTRY, 'generate-cli', '--command', 'node dist/server.mjs', '--bundle', bundlePath, '--runtime', 'node'],
+        { cwd: tempDir, env: { ...process.env, MCPORTER_NO_FORCE_EXIT: '1' } },
+        (error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        }
+      );
+    });
+
+    const callerCwd = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-cli-reloc-caller-'));
+    const result = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      execFile(
+        process.execPath,
+        [bundlePath, 'echo', '--text', 'relocated'],
+        { cwd: callerCwd, env: process.env },
+        (error, stdout, stderr) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve({ stdout, stderr });
+        }
+      );
+    });
+    expect(result.stdout).toContain('relocated');
+
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    await fs.rm(callerCwd, { recursive: true, force: true }).catch(() => {});
+  }, 30_000);
 });
