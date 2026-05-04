@@ -2,7 +2,16 @@
 
 ## [0.10.0] - Unreleased
 
-- Nothing yet.
+### CLI
+
+- Return a non-zero exit code when MCP tool results are marked `isError`, and preserve that status through the forced-exit cleanup path. (PR #154 / issue #153, thanks @jlapenna)
+- Give forced-exit cleanup a short stdout/stderr flush window so large JSON output is not truncated when `mcporter` is run from `child_process`. (PR #151 / issue #145, thanks @yuhp)
+- Treat `key:=value` as a compatibility alias for `key=value`, avoiding malformed keys such as `price:`. (PR #150 / issue #100, thanks @solomonneas)
+- Quote generated `emit-ts` members for tool names that are not valid TypeScript identifiers. (PR #149 / issue #30, thanks @solomonneas)
+
+### Config
+
+- Respect configured stdio `cwd` values, including relative paths resolved from the config file and `~` home expansion. (PR #147 / issue #146, thanks @solomonneas)
 
 ## [0.9.0] - 2026-04-18
 
