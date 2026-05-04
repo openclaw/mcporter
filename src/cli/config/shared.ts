@@ -1,9 +1,9 @@
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import type { LoadConfigOptions, RawConfig } from '../../config.js';
 import { loadRawConfig, resolveConfigPath } from '../../config.js';
 import type { ServerDefinition } from '../../config-schema.js';
+import { mcporterConfigCandidates } from '../../paths.js';
 import { CliUsageError } from '../errors.js';
 import { chooseClosestIdentifier, renderIdentifierResolutionMessages } from '../identifier-helpers.js';
 import { dimText, supportsAnsiColor } from '../terminal.js';
@@ -127,9 +127,7 @@ export function resolveServerDefinition(
 }
 
 function buildSystemConfigCandidates(): string[] {
-  const homeDir = os.homedir();
-  const base = path.join(homeDir, '.mcporter');
-  return [path.join(base, 'mcporter.json'), path.join(base, 'mcporter.jsonc')];
+  return mcporterConfigCandidates();
 }
 
 async function resolveFirstExisting(pathsToCheck: string[]): Promise<{ path: string; exists: boolean }> {

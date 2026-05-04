@@ -1,9 +1,9 @@
 import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import type { LoadConfigOptions } from '../config-schema.js';
 import { expandHome } from '../env.js';
+import { mcporterConfigCandidates } from '../paths.js';
 
 export interface ResolvedConfigPath {
   path: string;
@@ -55,9 +55,7 @@ export function resolveConfigPath(configPath: string | undefined, rootDir: strin
 }
 
 export function homeConfigCandidates(): string[] {
-  const homeDir = os.homedir();
-  const base = path.join(homeDir, '.mcporter');
-  return [path.join(base, 'mcporter.json'), path.join(base, 'mcporter.jsonc')];
+  return mcporterConfigCandidates();
 }
 
 export function pathExists(filePath: string): boolean {

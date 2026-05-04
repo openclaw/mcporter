@@ -1,11 +1,42 @@
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import net from 'node:net';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DaemonClient, resolveDaemonPaths } from '../src/daemon/client.js';
 import { makeShortTempDir } from './fixtures/test-helpers.js';
 
 describe('daemon client', () => {
+  it('uses XDG_STATE_HOME for daemon paths unless MCPORTER_DAEMON_DIR is set', async () => {
+    const tmpDir = await makeShortTempDir('mcpd-xdg');
+    const originalDaemonDir = process.env.MCPORTER_DAEMON_DIR;
+    const originalXdgStateHome = process.env.XDG_STATE_HOME;
+    const homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmpDir, 'home'));
+    try {
+      delete process.env.MCPORTER_DAEMON_DIR;
+      process.env.XDG_STATE_HOME = path.join(tmpDir, 'state');
+      const xdgPaths = resolveDaemonPaths(path.join(tmpDir, 'config.json'));
+      expect(xdgPaths.metadataPath).toContain(path.join(tmpDir, 'state', 'mcporter', 'daemon'));
+
+      process.env.MCPORTER_DAEMON_DIR = path.join(tmpDir, 'override');
+      const overridePaths = resolveDaemonPaths(path.join(tmpDir, 'config.json'));
+      expect(overridePaths.metadataPath).toContain(path.join(tmpDir, 'override', 'daemon'));
+    } finally {
+      homedirSpy.mockRestore();
+      if (originalDaemonDir === undefined) {
+        delete process.env.MCPORTER_DAEMON_DIR;
+      } else {
+        process.env.MCPORTER_DAEMON_DIR = originalDaemonDir;
+      }
+      if (originalXdgStateHome === undefined) {
+        delete process.env.XDG_STATE_HOME;
+      } else {
+        process.env.XDG_STATE_HOME = originalXdgStateHome;
+      }
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it('keeps stdio sockets open until the daemon responds', async () => {
     const tmpDir = await makeShortTempDir('mcpd');
     const originalDir = process.env.MCPORTER_DAEMON_DIR;

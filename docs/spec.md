@@ -31,7 +31,7 @@ summary: 'Plan for the mcporter package replacing the Sweetistics pnpm MCP helpe
 - Automatically detect OAuth requirements for ad-hoc HTTP servers by retrying failed handshakes and promoting the definition to `auth: "oauth"` when a 401/403 is encountered, then launching the browser flow immediately.
 - Mirror Python helper behavior:
   - `${VAR}`, `${VAR:-default}`, `$env:VAR` interpolation.
-- Optional OAuth token cache directory handling (defaulting to `~/.mcporter/<server>` when none is provided).
+- Optional OAuth token cache directory handling (defaulting to `~/.mcporter/<server>` when none is provided, or XDG paths when configured).
   - Tool signature + schema fetching for `list`.
 - Provide lazy connection pooling per server to minimize startup cost.
 - Expose a lightweight server proxy (`createServerProxy`) that maps camelCase method accesses to tool names, fills JSON-schema defaults, validates required arguments, and returns a helper (`CallResult`) for extracting text/markdown/JSON without re-parsing the content envelope.
@@ -39,7 +39,7 @@ summary: 'Plan for the mcporter package replacing the Sweetistics pnpm MCP helpe
 
 ## Schema-Aware Proxy Strategy
 
-- Cache tool schemas on first access, persist them under `~/.mcporter/<server>/schema.json` for reuse across processes, and tolerate failures by falling back to raw `callTool`.
+- Cache tool schemas on first access, persist them under `~/.mcporter/<server>/schema.json` or `$XDG_CACHE_HOME/mcporter/<server>/schema.json` for reuse across processes, and tolerate failures by falling back to raw `callTool`.
 - Allow direct method-style invocations such as `context7.getLibraryDocs("react")` by:
   - Mapping camelCase properties to kebab-case tool names.
   - Detecting positional arguments and assigning them to required schema fields in order.

@@ -12,7 +12,7 @@ The keep-alive daemon can tee its stdout/stderr (and per-server call traces) int
 
 ### CLI flags
 
-- `mcporter daemon start --log` — enable logging at the default path `~/.mcporter/daemon/daemon-<config-hash>.log`.
+- `mcporter daemon start --log` — enable logging at the default path `~/.mcporter/daemon/daemon-<config-hash>.log`, or `$XDG_STATE_HOME/mcporter/daemon/daemon-<config-hash>.log` when `XDG_STATE_HOME` is set.
 - `mcporter daemon start --log-file /tmp/mcporter-daemon.log` — write logs to a specific file (path is created if needed).
 - `mcporter daemon start --log-servers chrome-devtools,mobile-mcp` — only emit per-call entries for the listed servers. Without this flag, `--log` records every keep-alive server’s calls.
 
@@ -60,7 +60,7 @@ When combined with `--log`/`MCPORTER_DAEMON_LOG=1`, any server that has `logging
 
 ### Defaults & cleanup
 
-Log files live under `~/.mcporter/daemon/` next to the socket/metadata. They’re not rotated automatically yet; delete/rotate them manually if they grow large. Running `mcporter daemon stop` leaves the log intact so you can inspect it after a crash.
+Log files live under `~/.mcporter/daemon/` next to the socket/metadata, or under `$XDG_STATE_HOME/mcporter/daemon/` when `XDG_STATE_HOME` is set. They’re not rotated automatically yet; delete/rotate them manually if they grow large. Running `mcporter daemon stop` leaves the log intact so you can inspect it after a crash.
 
 ## Foreground debugging
 

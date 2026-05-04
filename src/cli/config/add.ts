@@ -1,9 +1,9 @@
-import os from 'node:os';
 import path from 'node:path';
 import type { LoadConfigOptions, RawEntry } from '../../config.js';
 import { writeRawConfig } from '../../config.js';
 import { pathsForImport, readExternalEntries } from '../../config-imports.js';
 import { expandHome } from '../../env.js';
+import { mcporterDir } from '../../paths.js';
 import { CliUsageError } from '../errors.js';
 import { cloneConfig, loadOrCreateConfig } from './shared.js';
 import type { ConfigCliOptions } from './types.js';
@@ -92,7 +92,7 @@ export function resolveWriteTarget(flags: AddFlags, loadOptions: LoadConfigOptio
     return path.resolve(expandHome(flags.persistPath));
   }
   if (flags.scope === 'home') {
-    return path.join(os.homedir(), '.mcporter', 'mcporter.json');
+    return path.join(mcporterDir('config'), 'mcporter.json');
   }
   if (flags.scope === 'project') {
     return path.resolve(rootDir, 'config', 'mcporter.json');

@@ -17,7 +17,7 @@ MCPorter helps you lean into the "code execution" workflows highlighted in Anthr
 
 ## Key Capabilities
 
-- **Zero-config discovery.** `createRuntime()` merges your home config (`~/.mcporter/mcporter.json[c]`) first, then `config/mcporter.json`, plus Cursor/Claude/Codex/Windsurf/OpenCode/VS Code imports, expands `${ENV}` placeholders, and pools connections so you can reuse transports across multiple calls.
+- **Zero-config discovery.** `createRuntime()` merges your home config (`~/.mcporter/mcporter.json[c]`, or `$XDG_CONFIG_HOME/mcporter/mcporter.json[c]` when set) first, then `config/mcporter.json`, plus Cursor/Claude/Codex/Windsurf/OpenCode/VS Code imports, expands `${ENV}` placeholders, and pools connections so you can reuse transports across multiple calls.
 - **One-command CLI generation.** `mcporter generate-cli` turns any MCP server definition into a ready-to-run CLI, with optional bundling/compilation and metadata for easy regeneration.
 - **Typed tool clients.** `mcporter emit-ts` emits `.d.ts` interfaces or ready-to-run client wrappers so agents/tests can call MCP servers with strong TypeScript types without hand-writing plumbing.
 - **Friendly composable API.** `createServerProxy()` exposes tools as ergonomic camelCase methods, automatically applies JSON-schema defaults, validates required arguments, and hands back a `CallResult` with `.text()`, `.markdown()`, `.json()`, `.images()`, and `.content()` helpers.
@@ -402,7 +402,7 @@ Run `mcporter config …` via your package manager (pnpm, npm, npx, etc.) when y
 What MCPorter handles for you:
 
 - `${VAR}`, `${VAR:-fallback}`, and `$env:VAR` interpolation for headers and env entries.
-- Automatic OAuth token caching under `~/.mcporter/<server>/` unless you override `tokenCacheDir`.
+- Automatic OAuth token caching in the shared vault (`~/.mcporter/credentials.json`, or `$XDG_DATA_HOME/mcporter/credentials.json` when set) unless you override `tokenCacheDir`.
 - Stdio commands inherit the directory of the file that defined them (imports or local config).
 - Import precedence matches the array order; omit `imports` to use the default `["cursor", "claude-code", "claude-desktop", "codex", "windsurf", "opencode", "vscode"]`.
 
@@ -444,7 +444,7 @@ mcporter reads exactly one primary config per run. The lookup order is:
 1. The path you pass via `--config` (or programmatic `configPath`).
 2. The `MCPORTER_CONFIG` environment variable (set it in your shell to apply everywhere).
 3. `<root>/config/mcporter.json` inside the current project.
-4. `~/.mcporter/mcporter.json` or `~/.mcporter/mcporter.jsonc` if the project file is missing.
+4. `$XDG_CONFIG_HOME/mcporter/mcporter.json[c]` when `XDG_CONFIG_HOME` is set, otherwise `~/.mcporter/mcporter.json[c]`, if the project file is missing.
 
 All `mcporter config …` mutations write back to whichever file was selected by that order. To manage a system-wide config explicitly, point the CLI at it:
 
@@ -453,6 +453,8 @@ mcporter config --config ~/.mcporter/mcporter.json add global-server https://api
 ```
 
 Set `MCPORTER_CONFIG=~/.mcporter/mcporter.json` in your shell profile when you want that file to be the default everywhere (handy for `npx mcporter …` runs).
+
+mcporter honors XDG Base Directory env vars for its own files when those vars are explicitly set: `XDG_CONFIG_HOME` for home configs, `XDG_DATA_HOME` for the OAuth vault, `XDG_CACHE_HOME` for schema caches, and `XDG_STATE_HOME` for daemon/runtime state. If the matching XDG var is unset or relative, mcporter keeps the legacy `~/.mcporter` path. Existing explicit overrides still win.
 
 ### Tool Filtering
 

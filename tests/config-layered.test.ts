@@ -62,7 +62,7 @@ describe('loadServerDefinitions with layered configs', () => {
         throw new Error('tempProjectDir missing');
       })();
 
-    const homeConfigDir = path.join(homeDir, '.mcporter');
+    const homeConfigDir = path.join(homeDir, '.config', 'mcporter');
     await fs.mkdir(homeConfigDir, { recursive: true });
     await fs.writeFile(
       path.join(homeConfigDir, 'mcporter.json'),
@@ -134,7 +134,7 @@ describe('loadServerDefinitions with layered configs', () => {
         throw new Error('tempProjectDir missing');
       })();
 
-    const homeConfigDir = path.join(homeDir, '.mcporter');
+    const homeConfigDir = path.join(homeDir, '.config', 'mcporter');
     await fs.mkdir(homeConfigDir, { recursive: true });
     await fs.writeFile(
       path.join(homeConfigDir, 'mcporter.json'),
@@ -157,7 +157,7 @@ describe('loadServerDefinitions with layered configs', () => {
         throw new Error('tempProjectDir missing');
       })();
 
-    const homeConfigDir = path.join(homeDir, '.mcporter');
+    const homeConfigDir = path.join(homeDir, '.config', 'mcporter');
     await fs.mkdir(homeConfigDir, { recursive: true });
     await fs.writeFile(
       path.join(homeConfigDir, 'mcporter.json'),

@@ -6,6 +6,7 @@ import { handleAddCommand } from '../src/cli/config/add.js';
 import type { LoadConfigOptions } from '../src/config.js';
 
 describe('config add scope behavior', () => {
+  const originalEnv = { ...process.env };
   let projectDir: string;
   let homeDir: string;
   let loadOptions: LoadConfigOptions;
@@ -17,13 +18,26 @@ describe('config add scope behavior', () => {
     loadOptions = { rootDir: projectDir };
     const spy = vi.spyOn(os, 'homedir').mockReturnValue(homeDir);
     restoreHomedir = () => spy.mockRestore();
+    delete process.env.XDG_CONFIG_HOME;
   });
 
   afterEach(async () => {
+    process.env = { ...originalEnv };
     restoreHomedir?.();
     restoreHomedir = undefined;
     await fs.rm(projectDir, { recursive: true, force: true });
     await fs.rm(homeDir, { recursive: true, force: true });
+  });
+
+  it('writes to XDG config home when scope=home and XDG_CONFIG_HOME is set', async () => {
+    const xdgConfigHome = path.join(homeDir, '.config');
+    process.env.XDG_CONFIG_HOME = xdgConfigHome;
+    await handleAddCommand({ loadOptions } as never, ['xdghome', 'https://xdg.example/mcp', '--scope', 'home']);
+    const homeConfigPath = path.join(xdgConfigHome, 'mcporter', 'mcporter.json');
+    const buffer = await fs.readFile(homeConfigPath, 'utf8');
+    const parsed = JSON.parse(buffer) as { mcpServers: Record<string, { baseUrl: string }> };
+    expect(parsed.mcpServers.xdghome).toBeDefined();
+    expect(parsed.mcpServers.xdghome?.baseUrl).toBe('https://xdg.example/mcp');
   });
 
   it('writes to home config when scope=home', async () => {

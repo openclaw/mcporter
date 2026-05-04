@@ -25,6 +25,7 @@
 
 ### Config
 
+- Honor XDG Base Directory env vars for mcporter-owned config, data, cache, and state paths while preserving the legacy `~/.mcporter` fallback when XDG vars are unset. `MCPORTER_DAEMON_DIR`, `MCPORTER_CONFIG`, `--config`, and per-server `tokenCacheDir` remain explicit overrides. (Issue #155)
 - Support pre-registered OAuth clients via `oauthClientId`/`oauthClientSecretEnv` and token endpoint auth method overrides for providers without dynamic client registration. (Issue #132)
 - Respect configured stdio `cwd` values, including relative paths resolved from the config file and `~` home expansion. (PR #147 / issue #146, thanks @solomonneas)
 

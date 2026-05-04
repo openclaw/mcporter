@@ -68,7 +68,8 @@ Commands:
 
 Flags:
   --foreground        Run the daemon in the current process (debug only).
-  --log               Enable daemon logging (defaults to ~/.mcporter/daemon/daemon-<hash>.log).
+  --log               Enable daemon logging (defaults to ~/.mcporter/daemon/daemon-<hash>.log,
+                      or $XDG_STATE_HOME/mcporter/daemon/... when set).
   --log-file <path>   Write daemon stdout/stderr to a specific log file.
   --log-servers <csv> Only log call activity for the listed servers (implies --log).`);
 }

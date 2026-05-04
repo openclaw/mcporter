@@ -16,11 +16,13 @@ const mkDef = (name: string, tokenCacheDir?: string): ServerDefinition => ({
 });
 
 describe('oauth persistence', () => {
+  const originalEnv = { ...process.env };
   const tempRoots: string[] = [];
   let homedirSpy!: ReturnType<typeof vi.spyOn>;
   let hasSpy = false;
 
   afterEach(async () => {
+    process.env = { ...originalEnv };
     if (hasSpy) {
       homedirSpy.mockRestore();
       hasSpy = false;
@@ -94,6 +96,25 @@ describe('oauth persistence', () => {
     const entry = await loadVaultEntry(definition);
     expect(entry?.tokens?.access_token).toBe('legacy-token');
     expect(logger.info).toHaveBeenCalledWith("Migrated legacy OAuth cache for 'legacy-service' into vault.");
+  });
+
+  it('writes the shared vault under XDG_DATA_HOME when configured', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-xdg-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const definition = mkDef('xdg-service');
+    const persistence = await buildOAuthPersistence(definition);
+    await persistence.saveTokens({ access_token: 'xdg-token', token_type: 'Bearer' });
+
+    const vaultPath = path.join(tmp, 'data', 'mcporter', 'credentials.json');
+    const key = vaultKeyForDefinition(definition);
+    const vault = (await readJsonFile(vaultPath)) as
+      | { entries: Record<string, { tokens?: { access_token?: string } }> }
+      | undefined;
+    expect(vault?.entries[key]?.tokens?.access_token).toBe('xdg-token');
   });
 
   it('clears vault, legacy, tokenCacheDir, and provider-specific caches', async () => {

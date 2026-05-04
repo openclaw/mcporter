@@ -10,7 +10,7 @@ read_when:
 
 - **Invisible keep-alive:** `mcporter call` should transparently start (and reuse) a per-login daemon whenever a configured server requires persistence (e.g., `chrome-devtools`). No extra flags for agents.
 - **Shared state:** Multiple CLI invocations/agents within the same user session must reuse the same warm transport so STDIO servers can hold tabs, cookies, and other stateful context.
-- **Per-config scope:** The daemon lives under the current user account, keyed by config path (`~/.mcporter/daemon/daemon-<config-hash>.sock` on Unix-like systems), and never crosses user boundaries.
+- **Per-config scope:** The daemon lives under the current user account, keyed by config path (`~/.mcporter/daemon/daemon-<config-hash>.sock` on Unix-like systems, or `$XDG_STATE_HOME/mcporter/daemon/...` when set), and never crosses user boundaries.
 - **Resilience:** If the daemon or a keep-alive server crashes, the next CLI call restarts it automatically.
 - **Explicit shutdown:** Provide `mcporter daemon stop` to tear everything down (plus `status` for debugging).
 - **Configurable participation:** Only servers marked keep-alive participate; others keep current ephemeral behavior. Support opt-in/out via config/env plus a default allowlist.
@@ -38,7 +38,7 @@ read_when:
 
 ## CLI Surface
 
-- `mcporter daemon start [--foreground]`: boot the daemon; default behavior is background (detached) launch that writes its metadata file (`~/.mcporter/daemon.json` with PID/socket).
+- `mcporter daemon start [--foreground]`: boot the daemon; default behavior is background (detached) launch that writes its metadata file under the daemon runtime directory.
 - `mcporter daemon status`: show whether the daemon is running, the socket path, uptime, and which servers are currently connected/idle.
 - `mcporter daemon stop`: instruct the daemon to close all transports and remove its socket/metadata; if the daemon is missing, exit 0 with a hint.
 - `mcporter daemon restart`: convenience wrapper that stops the daemon (if it exists), waits for the socket to disappear, and launches a fresh instance while reusing the same logging flags/env overrides.
@@ -50,7 +50,7 @@ read_when:
 - **macOS Bun binaries:** Homebrew/Bun-compiled binaries wrap the detached child launch with `nohup` so the background daemon survives the parent CLI exit on macOS 26.
 - **Auto restart:** The client shim treats `ECONNREFUSED`/broken pipe as a signal that the daemon died. It retries once by re-launching the daemon before surfacing the error.
 - **Idle timeout:** Each keep-alive server can specify `idleTimeoutMs` (default `null` = never). The daemon tracks last activity timestamps and auto-closes transports (and associated external processes) after the idle window. A global `daemonIdleTimeoutMs` can shut down the entire daemon after long inactivity.
-- **Logging:** Daemon writes structured logs under `~/.mcporter/logs/daemon.log` plus per-server logs for STDIO stderr so users can debug crashing servers.
+- **Logging:** Daemon writes structured logs under the daemon runtime directory plus per-server logs for STDIO stderr so users can debug crashing servers.
 
 ## Agent Isolation
 
@@ -59,7 +59,7 @@ By default, multiple agents using the same config path share the same keep-alive
 If each agent needs independent MCP state, give each agent either:
 
 - a distinct `--config <path>` / `MCPORTER_CONFIG` value, which produces a distinct daemon socket and metadata file; or
-- a distinct `MCPORTER_DAEMON_DIR`, which isolates the whole daemon runtime directory even when the config path is shared.
+- a distinct `MCPORTER_DAEMON_DIR`, which isolates the whole daemon runtime directory even when the config path is shared. This explicit override wins over `XDG_STATE_HOME`.
 
 Non-keep-alive servers remain process-local and do not use the daemon.
 
@@ -86,7 +86,7 @@ Non-keep-alive servers remain process-local and do not use the daemon.
 
 You can capture the daemon’s stdout/stderr (and per-server call traces) when debugging long-lived STDIO servers:
 
-- `mcporter daemon start --log` enables logging with the default path `~/.mcporter/daemon/daemon-<config-hash>.log`. Use `--log-file <path>` to override it.
+- `mcporter daemon start --log` enables logging with the default path `~/.mcporter/daemon/daemon-<config-hash>.log`, or `$XDG_STATE_HOME/mcporter/daemon/daemon-<config-hash>.log` when `XDG_STATE_HOME` is set. Use `--log-file <path>` to override it.
 - `--log-servers chrome-devtools,mobile-mcp` restricts per-call logging to the listed servers. Without it, `--log` records every keep-alive server’s activity.
 - Environment equivalents:
   - `MCPORTER_DAEMON_LOG=1` – enable logging.
@@ -102,6 +102,6 @@ Logs include timestamped entries such as:
 [daemon] 2025-11-10T15:08:22.004Z callTool success server=chrome-devtools tool=take_snapshot
 ```
 
-Tailing the file (`tail -f ~/.mcporter/daemon/daemon-*.log`) surfaces crashes or repeated failures without needing to re-run the daemon in the foreground.
+Tailing the file (`tail -f ~/.mcporter/daemon/daemon-*.log`, or the matching XDG state path) surfaces crashes or repeated failures without needing to re-run the daemon in the foreground.
 
 Once these steps land, agents can freely use persistent MCP servers without juggling multiple Chrome launches, while still retaining an explicit shutdown path.

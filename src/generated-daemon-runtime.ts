@@ -1,11 +1,11 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { type RawEntry, type ServerDefinition, writeRawConfig } from './config.js';
 import { DaemonClient } from './daemon/client.js';
 import { createKeepAliveRuntime } from './daemon/runtime-wrapper.js';
 import { isKeepAliveServer } from './lifecycle.js';
+import { mcporterDir } from './paths.js';
 import type { Runtime } from './runtime.js';
 
 export interface GeneratedRuntimeContext {
@@ -50,7 +50,7 @@ async function ensureGeneratedDaemonConfig(server: ServerDefinition): Promise<st
   const key = crypto.createHash('sha1').update(payload).digest('hex').slice(0, 12);
   const dir = process.env.MCPORTER_GENERATED_CONFIG_DIR
     ? path.resolve(process.env.MCPORTER_GENERATED_CONFIG_DIR)
-    : path.join(os.homedir(), '.mcporter', 'generated');
+    : path.join(mcporterDir('state'), 'generated');
   const configPath = path.join(dir, `generated-${key}.json`);
   await fs.mkdir(dir, { recursive: true });
   try {

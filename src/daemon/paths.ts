@@ -1,13 +1,13 @@
-import os from 'node:os';
 import path from 'node:path';
 import { expandHome } from '../env.js';
+import { mcporterDir } from '../paths.js';
 
 function resolveBaseDir(): string {
   const override = process.env.MCPORTER_DAEMON_DIR;
   if (override && override.trim().length > 0) {
     return path.resolve(expandHome(override.trim()));
   }
-  return path.join(os.homedir(), '.mcporter');
+  return mcporterDir('state');
 }
 
 function ensureRunDir(): string {

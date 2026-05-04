@@ -67,7 +67,7 @@ describe('config add --scope targeting', () => {
       {},
       projectDir
     );
-    expect(target).toBe(path.join(homeDir, '.mcporter', 'mcporter.json'));
+    expect(target).toBe(path.join(homeDir, '.config', 'mcporter', 'mcporter.json'));
   });
 
   it('writes to project when scope=project', () => {

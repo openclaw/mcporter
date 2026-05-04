@@ -1,10 +1,10 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { ServerDefinition } from './config.js';
 import { readJsonFile, writeJsonFile } from './fs-json.js';
+import { mcporterDir } from './paths.js';
 
 type VaultKey = string;
 
@@ -23,14 +23,14 @@ interface VaultFile {
   entries: Record<VaultKey, VaultEntry>;
 }
 
-function vaultPath(): string {
-  return path.join(os.homedir(), '.mcporter', 'credentials.json');
+export function getOAuthVaultPath(): string {
+  return path.join(mcporterDir('data'), 'credentials.json');
 }
 
 async function readVault(): Promise<VaultFile> {
   let shouldRewrite = false;
   try {
-    const existing = await readJsonFile<VaultFile>(vaultPath());
+    const existing = await readJsonFile<VaultFile>(getOAuthVaultPath());
     if (existing && existing.version === 1 && existing.entries && typeof existing.entries === 'object') {
       return existing;
     }
@@ -48,7 +48,7 @@ async function readVault(): Promise<VaultFile> {
 }
 
 async function writeVault(contents: VaultFile): Promise<void> {
-  const filePath = vaultPath();
+  const filePath = getOAuthVaultPath();
   const dir = path.dirname(filePath);
   await fs.mkdir(dir, { recursive: true });
   await writeJsonFile(filePath, contents);

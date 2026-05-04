@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import type { ServerDefinition } from './config.js';
+import { mcporterDir } from './paths.js';
 
 const SCHEMA_FILENAME = 'schema.json';
 
@@ -12,7 +12,7 @@ export interface SchemaCacheSnapshot {
 
 // resolveSchemaCacheDir determines where schemas should be cached for a server.
 export function resolveSchemaCacheDir(definition: ServerDefinition): string {
-  return definition.tokenCacheDir ?? path.join(os.homedir(), '.mcporter', definition.name);
+  return definition.tokenCacheDir ?? path.join(mcporterDir('cache'), definition.name);
 }
 
 // resolveSchemaCachePath builds the schema cache file path for a server definition.

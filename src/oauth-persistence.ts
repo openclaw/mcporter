@@ -5,7 +5,8 @@ import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprot
 import type { ServerDefinition } from './config.js';
 import { readJsonFile, writeJsonFile } from './fs-json.js';
 import type { Logger } from './logging.js';
-import { clearVaultEntry, loadVaultEntry, saveVaultEntry } from './oauth-vault.js';
+import { clearVaultEntry, getOAuthVaultPath, loadVaultEntry, saveVaultEntry } from './oauth-vault.js';
+import { legacyMcporterDir } from './paths.js';
 
 export type OAuthClearScope = 'all' | 'client' | 'tokens' | 'verifier' | 'state';
 
@@ -122,7 +123,7 @@ class VaultPersistence implements OAuthPersistence {
   constructor(private readonly definition: ServerDefinition) {}
 
   describe(): string {
-    return '~/.mcporter/credentials.json (vault)';
+    return `${getOAuthVaultPath()} (vault)`;
   }
 
   async readTokens(): Promise<OAuthTokens | undefined> {
@@ -239,7 +240,7 @@ export async function buildOAuthPersistence(definition: ServerDefinition, logger
   }
 
   // Migrate legacy default per-server cache (~/.mcporter/<name>) into the vault if present.
-  const legacyDir = path.join(os.homedir(), '.mcporter', definition.name);
+  const legacyDir = path.join(legacyMcporterDir(), definition.name);
   if (!definition.tokenCacheDir && legacyDir) {
     const legacy = new DirectoryPersistence(legacyDir, logger);
     const legacyTokens = await legacy.readTokens();
@@ -274,7 +275,7 @@ export async function clearOAuthCaches(
   const persistence = await buildOAuthPersistence(definition, logger);
   await persistence.clear(scope);
 
-  const legacyDir = path.join(os.homedir(), '.mcporter', definition.name);
+  const legacyDir = path.join(legacyMcporterDir(), definition.name);
   if (legacyDir && (!definition.tokenCacheDir || legacyDir !== definition.tokenCacheDir)) {
     const legacy = new DirectoryPersistence(legacyDir, logger);
     await legacy.clear(scope);
