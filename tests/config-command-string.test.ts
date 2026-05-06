@@ -93,4 +93,44 @@ describe('command string parsing', () => {
       path: configPath,
     });
   });
+
+  it('preserves existing executable paths that contain spaces', async () => {
+    tmpDir = await fs.mkdtemp(TMP_PREFIX);
+    const binDir = path.join(tmpDir, 'Application Bundle.app', 'Contents', 'MacOS');
+    await fs.mkdir(binDir, { recursive: true });
+    const executable = path.join(binDir, 'HopperMCPServer');
+    await fs.writeFile(executable, '#!/bin/sh\nexit 0\n');
+    await fs.chmod(executable, 0o755);
+
+    const configDir = path.join(tmpDir, 'config');
+    await fs.mkdir(configDir, { recursive: true });
+    const configPath = path.join(configDir, 'mcporter.json');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          hopper: {
+            command: executable,
+          },
+        },
+        imports: [],
+      })
+    );
+
+    const servers = await loadServerDefinitions({
+      configPath,
+      rootDir: tmpDir,
+    });
+
+    const server = servers[0];
+    if (!server) {
+      throw new Error('expected server definition');
+    }
+    expect(server.command.kind).toBe('stdio');
+    if (server.command.kind !== 'stdio') {
+      throw new Error('expected stdio command');
+    }
+    expect(server.command.command).toBe(executable);
+    expect(server.command.args).toEqual([]);
+  });
 });

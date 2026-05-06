@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import type { CommandSpec, RawEntry, ServerDefinition, ServerLoggingOptions, ServerSource } from './config-schema.js';
 import { expandHome } from './env.js';
@@ -27,7 +28,7 @@ export function normalizeServerEntry(
   const headers = buildHeaders(raw);
 
   const httpUrl = getUrl(raw);
-  const stdio = getCommand(raw);
+  const stdio = getCommand(raw, baseDir);
 
   let command: CommandSpec;
 
@@ -114,7 +115,7 @@ function getUrl(raw: RawEntry): string | undefined {
   return raw.baseUrl ?? raw.base_url ?? raw.url ?? raw.serverUrl ?? raw.server_url ?? undefined;
 }
 
-function getCommand(raw: RawEntry): { command: string; args: string[] } | undefined {
+function getCommand(raw: RawEntry, baseDir: string): { command: string; args: string[] } | undefined {
   const commandValue = raw.command ?? raw.executable;
   if (Array.isArray(commandValue)) {
     if (commandValue.length === 0 || typeof commandValue[0] !== 'string') {
@@ -127,6 +128,9 @@ function getCommand(raw: RawEntry): { command: string; args: string[] } | undefi
     if (args.length > 0) {
       return { command: commandValue, args };
     }
+    if (isExistingCommandPath(commandValue, baseDir)) {
+      return { command: commandValue, args: [] };
+    }
     const tokens = parseCommandString(commandValue);
     if (tokens.length === 0) {
       return undefined;
@@ -138,6 +142,27 @@ function getCommand(raw: RawEntry): { command: string; args: string[] } | undefi
     return { command: commandToken, args: rest };
   }
   return undefined;
+}
+
+function isExistingCommandPath(value: string, baseDir: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed.includes(' ')) {
+    return false;
+  }
+  if (!looksLikePath(trimmed)) {
+    return false;
+  }
+  const expanded = expandHome(trimmed);
+  const resolved = path.isAbsolute(expanded) ? expanded : path.resolve(baseDir, expanded);
+  try {
+    return fs.statSync(resolved).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function looksLikePath(value: string): boolean {
+  return value.startsWith('/') || value.startsWith('./') || value.startsWith('../') || value.startsWith('~/');
 }
 
 function buildHeaders(raw: RawEntry): Record<string, string> | undefined {

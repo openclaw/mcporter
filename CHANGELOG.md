@@ -2,7 +2,11 @@
 
 ## [Unreleased]
 
-- Nothing yet.
+### Config
+
+- Preserve existing stdio executable paths that contain spaces instead of
+  splitting them as inline command strings, so app bundle helpers like Hopper's
+  MCP server can be configured directly.
 
 ## [0.10.1] - 2026-05-04
 
