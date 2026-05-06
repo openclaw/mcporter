@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">mcporter social card</title>
+  <desc id="desc">mcporter: MCP, made portable. TypeScript runtime, CLI, and code-generation toolkit for the Model Context Protocol.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0c12"/>
+      <stop offset="0.55" stop-color="#10131c"/>
+      <stop offset="1" stop-color="#0c0f17"/>
+    </linearGradient>
+    <linearGradient id="brandSweep" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7c3aed"/>
+      <stop offset="0.45" stop-color="#06b6d4"/>
+      <stop offset="0.85" stop-color="#10b981"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <linearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#06b6d4"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0e121b"/>
+      <stop offset="1" stop-color="#070a10"/>
+    </linearGradient>
+    <linearGradient id="panelBar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a1f2c"/>
+      <stop offset="1" stop-color="#0f131c"/>
+    </linearGradient>
+    <radialGradient id="haze" cx="0.18" cy="0.22" r="0.6">
+      <stop offset="0" stop-color="#7c3aed" stop-opacity="0.28"/>
+      <stop offset="0.6" stop-color="#06b6d4" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#06b6d4" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="22" stdDeviation="34" flood-color="#000000" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#haze)"/>
+
+  <!-- Top accent line -->
+  <rect x="0" y="0" width="1200" height="6" fill="url(#brandSweep)"/>
+
+  <!-- Brand mark: stylized suitcase icon -->
+  <g transform="translate(76 76)">
+    <rect x="0" y="0" width="118" height="118" rx="24" fill="url(#logoGrad)"/>
+    <rect x="22" y="42" width="74" height="56" rx="8" fill="#0a0c12"/>
+    <rect x="40" y="28" width="38" height="16" rx="4" fill="#0a0c12"/>
+    <rect x="22" y="58" width="74" height="3" fill="rgba(255,255,255,0.18)"/>
+    <circle cx="59" cy="74" r="6" fill="#a78bfa"/>
+  </g>
+
+  <!-- Title -->
+  <text x="76" y="276" fill="#f5f7fb" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="100" font-weight="800" letter-spacing="-1">mcporter</text>
+
+  <!-- Tagline -->
+  <text x="80" y="338" fill="#cbd5e1" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="34" font-weight="700" letter-spacing="0">MCP, made portable.</text>
+
+  <!-- Description -->
+  <text x="80" y="386" fill="#94a3b8" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="500">TypeScript runtime + CLI for the Model Context Protocol.</text>
+  <text x="80" y="414" fill="#94a3b8" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="500">Discover, call, and generate clients for any MCP server.</text>
+
+  <!-- Multi-color accent bar -->
+  <rect x="80" y="440" width="280" height="4" rx="2" fill="url(#brandSweep)"/>
+
+  <!-- Bottom row: install pill + URL pill -->
+  <g transform="translate(80 478)">
+    <rect x="0" y="0" width="320" height="48" rx="11" fill="#0e121b" stroke="#1f2937"/>
+    <text x="20" y="32" fill="#64748b" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="500">$</text>
+    <text x="42" y="32" fill="#e6edf3" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600">npx mcporter list</text>
+
+    <rect x="340" y="0" width="180" height="48" rx="11" fill="#0e121b" stroke="#1f2937"/>
+    <text x="362" y="32" fill="#a78bfa" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600">mcporter.sh</text>
+  </g>
+
+  <!-- Right-side terminal mockup -->
+  <g transform="translate(670 142)" filter="url(#shadow)">
+    <rect x="0" y="0" width="464" height="346" rx="20" fill="url(#panel)" stroke="#1b2030"/>
+    <rect x="0" y="0" width="464" height="42" rx="20" fill="url(#panelBar)"/>
+    <rect x="0" y="22" width="464" height="20" fill="url(#panelBar)"/>
+    <circle cx="24" cy="21" r="6" fill="#ec4899"/>
+    <circle cx="46" cy="21" r="6" fill="#f59e0b"/>
+    <circle cx="68" cy="21" r="6" fill="#10b981"/>
+    <text x="232" y="27" fill="#94a3b8" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="13" font-weight="500" text-anchor="middle">mcporter — agent ready</text>
+
+    <!-- Terminal content -->
+    <text x="22" y="80" fill="#a78bfa" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="600">$ npx mcporter list linear</text>
+    <text x="22" y="108" fill="#64748b" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="13">/**</text>
+    <text x="22" y="126" fill="#64748b" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="13"> * Create a comment on a Linear issue</text>
+    <text x="22" y="144" fill="#64748b" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="13"> * @param issueId The issue ID</text>
+    <text x="22" y="162" fill="#64748b" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="13"> * @param body Markdown comment body</text>
+    <text x="22" y="180" fill="#64748b" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="13"> */</text>
+    <text x="22" y="200" fill="#7dd3fc" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="13" font-weight="600">function</text>
+    <text x="100" y="200" fill="#fde68a" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="13" font-weight="600">create_comment</text>
+    <text x="226" y="200" fill="#cbd5e1" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="13">(issueId, body);</text>
+
+    <text x="22" y="234" fill="#a78bfa" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="600">$ mcporter call linear.create_comment \\</text>
+    <text x="36" y="252" fill="#cbd5e1" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="13">issueId:ENG-123 body:'lgtm'</text>
+
+    <rect x="22" y="266" width="420" height="60" rx="10" fill="#06090f" stroke="#1f2937"/>
+    <text x="38" y="290" fill="#fbbf24" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="13">{</text>
+    <text x="54" y="308" fill="#a7f3d0" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="13">"ok": true, "comment": { "id": "abc123" }</text>
+    <text x="38" y="326" fill="#fbbf24" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="13">}</text>
+  </g>
+
+  <!-- Capability pills below terminal -->
+  <g transform="translate(670 514)" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="600">
+    <g>
+      <rect x="0" y="0" width="92" height="30" rx="15" fill="#0e121b" stroke="#262a36"/>
+      <text x="46" y="20" fill="#a78bfa" text-anchor="middle">Runtime</text>
+    </g>
+    <g transform="translate(104 0)">
+      <rect x="0" y="0" width="56" height="30" rx="15" fill="#0e121b" stroke="#262a36"/>
+      <text x="28" y="20" fill="#06b6d4" text-anchor="middle">CLI</text>
+    </g>
+    <g transform="translate(174 0)">
+      <rect x="0" y="0" width="78" height="30" rx="15" fill="#0e121b" stroke="#262a36"/>
+      <text x="39" y="20" fill="#10b981" text-anchor="middle">OAuth</text>
+    </g>
+    <g transform="translate(266 0)">
+      <rect x="0" y="0" width="68" height="30" rx="15" fill="#0e121b" stroke="#262a36"/>
+      <text x="34" y="20" fill="#ec4899" text-anchor="middle">stdio</text>
+    </g>
+    <g transform="translate(348 0)">
+      <rect x="0" y="0" width="64" height="30" rx="15" fill="#0e121b" stroke="#262a36"/>
+      <text x="32" y="20" fill="#f59e0b" text-anchor="middle">HTTP</text>
+    </g>
+  </g>
+</svg>
