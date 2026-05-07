@@ -1,3 +1,4 @@
+import { auth as sdkAuth } from '@modelcontextprotocol/sdk/client/auth.js';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { Logger } from '../logging.js';
@@ -18,6 +19,10 @@ export interface ConnectWithAuthOptions {
   maxAttempts?: number;
   oauthTimeoutMs?: number;
   recreateTransport?: (transport: OAuthCapableTransport) => Promise<OAuthCapableTransport>;
+  /** Server URL used for proactive OAuth discovery when no 401 challenge is received. */
+  serverUrl?: string | URL;
+  /** Optional fetch function override for OAuth metadata discovery. */
+  fetchFn?: typeof fetch;
 }
 
 interface OAuthConnectState {
@@ -96,7 +101,7 @@ export async function connectWithAuth(
   logger: Logger,
   options: ConnectWithAuthOptions = {}
 ): Promise<OAuthCapableTransport> {
-  const { serverName, maxAttempts = 3, oauthTimeoutMs = DEFAULT_OAUTH_CODE_TIMEOUT_MS, recreateTransport } = options;
+  const { serverName, maxAttempts = 3, oauthTimeoutMs = DEFAULT_OAUTH_CODE_TIMEOUT_MS, recreateTransport, serverUrl } = options;
   const state: OAuthConnectState = {
     activeTransport: transport,
     attempt: 0,
@@ -105,7 +110,15 @@ export async function connectWithAuth(
 
   while (true) {
     try {
-      return await attemptTransportConnect(client, state);
+      await attemptTransportConnect(client, state);
+      // Connection succeeded without an auth challenge. If OAuth is configured but
+      // the auth flow never ran (server allows unauthenticated listTools), proactively
+      // obtain tokens so subsequent calls (callTool, etc.) are authenticated.
+      if (session && !state.hasCompletedAuthFlow && serverUrl) {
+        await completeProactiveOAuth(state.activeTransport, session, logger, serverName, oauthTimeoutMs, serverUrl, options.fetchFn);
+        state.hasCompletedAuthFlow = true;
+      }
+      return state.activeTransport;
     } catch (error) {
       const unauthorized = isUnauthorizedError(error);
       if (!shouldRetryAuthorization(state, unauthorized, session)) {
@@ -188,6 +201,9 @@ async function completeAuthorizationChallenge(
     throw connectError;
   }
   await transport.finishAuth(code);
+  // The OAuth handshake is complete; close the callback server so the event loop
+  // doesn't keep the process alive.
+  await session.close().catch(() => {});
   if (!options.recreateTransport) {
     return transport;
   }
@@ -224,6 +240,60 @@ export function waitForAuthorizationCodeWithTimeout(
       }
     );
   });
+}
+
+/**
+ * Proactively completes OAuth for servers configured with `auth: 'oauth'`,
+ * even when the initial connection succeeds without a 401 challenge.
+ *
+ * This handles the case where a server allows unauthenticated `initialize`
+ * and `listTools` but requires auth for `callTool`. By proactively obtaining
+ * tokens during connect, subsequent calls are already authenticated.
+ */
+async function completeProactiveOAuth(
+  transport: OAuthCapableTransport,
+  session: OAuthSession,
+  logger: Logger,
+  serverName: string | undefined,
+  oauthTimeoutMs: number,
+  serverUrl: string | URL,
+  fetchFn?: typeof fetch
+): Promise<void> {
+  const displayName = serverName ?? 'unknown';
+
+  try {
+    if (typeof transport.finishAuth !== 'function') {
+      logger.warn('Transport does not support finishAuth; cannot complete OAuth flow.');
+      return;
+    }
+
+    logger.info(`Initiating OAuth flow for '${displayName}'...`);
+
+    const result = await sdkAuth(session.provider, {
+      serverUrl,
+      fetchFn: fetchFn ?? globalThis.fetch,
+    });
+
+    if (result === 'REDIRECT') {
+      logger.warn(`OAuth authorization required for '${displayName}'. Waiting for browser approval...`);
+      const code = await waitForAuthorizationCodeWithTimeout(session, logger, serverName, oauthTimeoutMs);
+      await transport.finishAuth(code);
+      logger.info(`Authorization complete for '${displayName}'.`);
+    } else if (result === 'AUTHORIZED') {
+      logger.info(`Existing OAuth tokens found for '${displayName}'.`);
+    }
+  } catch (error) {
+    if (error instanceof OAuthTimeoutError || error instanceof OAuthAuthorizationNotStartedError) {
+      throw error;
+    }
+    // Proactive OAuth is best-effort: the connection is already established, so
+    // server may not require auth. Log a warning and continue.
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(`Proactive OAuth flow for '${displayName}' did not complete: ${message}`);
+  } finally {
+    // Close the callback HTTP server so the event loop doesn't keep the process alive.
+    await session.close().catch(() => {});
+  }
 }
 
 export function parseOAuthTimeout(raw: string | undefined): number {

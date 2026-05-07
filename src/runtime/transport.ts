@@ -308,6 +308,7 @@ async function connectPrimaryHttpTransport(
   const createStreamableTransport = () => new StreamableHTTPClientTransport(command.url, transportOptions);
   const transport = await connectHttpTransport(client, createStreamableTransport(), oauthSession, logger, {
     serverName: definition.name,
+    serverUrl: command.url,
     maxAttempts: options.maxOAuthAttempts,
     oauthTimeoutMs: options.oauthTimeoutMs,
     recreateTransport: async () => createStreamableTransport(),
@@ -337,6 +338,7 @@ async function connectSseFallbackTransport(
       logger,
       {
         serverName: definition.name,
+        serverUrl: command.url,
         maxAttempts: options.maxOAuthAttempts,
         oauthTimeoutMs: options.oauthTimeoutMs,
       }

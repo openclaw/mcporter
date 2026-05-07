@@ -302,10 +302,14 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     if (!this.server) {
       return;
     }
-    await new Promise<void>((resolve) => {
-      this.server?.close(() => resolve());
-    });
+    // Forcefully close all keep-alive connections from the browser redirect so the
+    // close callback fires immediately instead of hanging on idle HTTP connections.
+    this.server.closeAllConnections?.();
+    const server = this.server;
     this.server = undefined;
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+    });
   }
 
   private ensureAuthorizationDeferred(): Deferred<string> {
