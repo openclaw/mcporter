@@ -165,4 +165,115 @@ describe('config normalization', () => {
     expect(snake?.oauthClientSecret).toBe('secret-inline');
     expect(snake?.oauthTokenEndpointAuthMethod).toBe('client_secret_basic');
   });
+
+  it('resolves environment placeholders across string-valued config fields', async () => {
+    const previousClientId = process.env.MCPORTER_TEST_CLIENT_ID;
+    const previousSecret = process.env.MCPORTER_TEST_SECRET;
+    const previousCwd = process.env.MCPORTER_TEST_CWD;
+    try {
+      process.env.MCPORTER_TEST_CLIENT_ID = 'client-from-env';
+      delete process.env.MCPORTER_TEST_SECRET;
+      process.env.MCPORTER_TEST_CWD = 'workspace';
+
+      await fs.mkdir(TEMP_DIR, { recursive: true });
+      const configPath = path.join(TEMP_DIR, 'mcporter-env-placeholders.json');
+      await fs.writeFile(
+        configPath,
+        JSON.stringify(
+          {
+            mcpServers: {
+              http: {
+                baseUrl: 'https://${MCPORTER_TEST_HOST:-example.com}/mcp',
+                auth: 'oauth',
+                oauthClientId: '${MCPORTER_TEST_CLIENT_ID}',
+                oauthClientSecret: '${MCPORTER_TEST_SECRET:-fallback-secret}',
+                oauthCommand: {
+                  args: ['login', '${MCPORTER_TEST_CLIENT_ID}'],
+                },
+              },
+              stdio: {
+                command: 'node',
+                args: ['server.js', '--client=${MCPORTER_TEST_CLIENT_ID}'],
+                cwd: '${MCPORTER_TEST_CWD}',
+                env: {
+                  CLIENT_ID: '${MCPORTER_TEST_CLIENT_ID}',
+                },
+              },
+            },
+          },
+          null,
+          2
+        ),
+        'utf8'
+      );
+
+      const servers = await loadServerDefinitions({ configPath });
+      const http = servers.find((entry) => entry.name === 'http');
+      const stdio = servers.find((entry) => entry.name === 'stdio');
+
+      expect(http?.command.kind).toBe('http');
+      expect(http?.command.kind === 'http' ? http.command.url.href : undefined).toBe('https://example.com/mcp');
+      expect(http?.oauthClientId).toBe('client-from-env');
+      expect(http?.oauthClientSecret).toBe('fallback-secret');
+      expect(http?.oauthCommand?.args).toEqual(['login', 'client-from-env']);
+
+      expect(stdio?.command.kind).toBe('stdio');
+      expect(stdio?.command.kind === 'stdio' ? stdio.command.args : undefined).toEqual([
+        'server.js',
+        '--client=client-from-env',
+      ]);
+      expect(stdio?.command.kind === 'stdio' ? stdio.command.cwd : undefined).toBe(path.resolve(TEMP_DIR, 'workspace'));
+      expect(stdio?.env).toEqual({ CLIENT_ID: 'client-from-env' });
+    } finally {
+      if (previousClientId === undefined) {
+        delete process.env.MCPORTER_TEST_CLIENT_ID;
+      } else {
+        process.env.MCPORTER_TEST_CLIENT_ID = previousClientId;
+      }
+      if (previousSecret === undefined) {
+        delete process.env.MCPORTER_TEST_SECRET;
+      } else {
+        process.env.MCPORTER_TEST_SECRET = previousSecret;
+      }
+      if (previousCwd === undefined) {
+        delete process.env.MCPORTER_TEST_CWD;
+      } else {
+        process.env.MCPORTER_TEST_CWD = previousCwd;
+      }
+    }
+  });
+
+  it('reports the config field when a required placeholder is missing', async () => {
+    const previousClientId = process.env.MCPORTER_TEST_MISSING_CLIENT_ID;
+    try {
+      delete process.env.MCPORTER_TEST_MISSING_CLIENT_ID;
+
+      await fs.mkdir(TEMP_DIR, { recursive: true });
+      const configPath = path.join(TEMP_DIR, 'mcporter-env-missing.json');
+      await fs.writeFile(
+        configPath,
+        JSON.stringify(
+          {
+            mcpServers: {
+              oauth: {
+                baseUrl: 'https://example.com/mcp',
+                oauthClientId: '${MCPORTER_TEST_MISSING_CLIENT_ID}',
+              },
+            },
+          },
+          null,
+          2
+        ),
+        'utf8'
+      );
+
+      await expect(loadServerDefinitions({ configPath })).rejects.toThrow(/oauthClientId/);
+    } finally {
+      if (previousClientId === undefined) {
+        delete process.env.MCPORTER_TEST_MISSING_CLIENT_ID;
+      } else {
+        process.env.MCPORTER_TEST_MISSING_CLIENT_ID = previousClientId;
+      }
+    }
+  });
 });
