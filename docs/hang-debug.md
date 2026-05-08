@@ -27,7 +27,7 @@ culprit is a child MCP server process that keeps the stdio transport alive.
    gathering diagnostics.
 6. **Clamp OAuth waits** – when the browser-based sign-in never completes,
    run with `--oauth-timeout <ms>` (or `MCPORTER_OAUTH_TIMEOUT_MS`) so the CLI
-   tears down the pending flow instead of waiting the full minute.
+   tears down the pending flow instead of waiting the full 5 minutes.
 
 ## Example Session
 

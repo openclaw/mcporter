@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### CLI
+
+- Increase the default OAuth browser wait from 60 seconds to 5 minutes so hosted MCP sign-ins have enough time for account and permission review.
+
 ### Config
 
 - Preserve existing stdio executable paths that contain spaces instead of

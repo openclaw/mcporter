@@ -4,7 +4,7 @@ import type { Logger } from '../logging.js';
 import type { OAuthSession } from '../oauth.js';
 import { isUnauthorizedError } from '../runtime-oauth-support.js';
 
-export const DEFAULT_OAUTH_CODE_TIMEOUT_MS = 60_000;
+export const DEFAULT_OAUTH_CODE_TIMEOUT_MS = 300_000;
 const OAUTH_FLOW_ERROR = Symbol('oauth-flow-error');
 const POST_AUTH_CONNECT_ERROR = Symbol('post-auth-connect-error');
 

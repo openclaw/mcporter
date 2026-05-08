@@ -144,7 +144,7 @@ function formatGlobalFlags(colorize: boolean): string {
     },
     {
       flag: '--oauth-timeout <ms>',
-      summary: 'Time to wait for browser-based OAuth before giving up (default 60000)',
+      summary: 'Time to wait for browser-based OAuth before giving up (default 300000)',
     },
   ];
   const formatted = entries.map((entry) => `  ${entry.flag.padEnd(34)}${entry.summary}`);
