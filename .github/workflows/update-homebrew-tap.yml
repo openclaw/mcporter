@@ -1,0 +1,63 @@
+name: Update Homebrew Tap
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish to the tap (for example, v0.10.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  update-homebrew-tap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag || github.event.release.tag_name }}"
+          if [[ -z "$tag" ]]; then
+            echo "Missing release tag." >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "request_id=mcporter-${tag}-${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch tap update
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$GH_TOKEN"
+          gh workflow run update-formula.yml \
+            --repo steipete/homebrew-tap \
+            -f formula=mcporter \
+            -f tag="${{ steps.release.outputs.tag }}" \
+            -f repository=steipete/mcporter \
+            -f artifact_url='https://github.com/steipete/mcporter/releases/download/{tag}/mcporter-{version}.tgz' \
+            -f request_id="${{ steps.release.outputs.request_id }}"
+
+      - name: Wait for tap update
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for _ in {1..20}; do
+            run_id="$(gh run list --repo steipete/homebrew-tap --workflow update-formula.yml --json databaseId,displayTitle --jq '.[] | select(.displayTitle | contains("${{ steps.release.outputs.request_id }}")) | .databaseId' | head -n1)"
+            if [[ -n "$run_id" ]]; then
+              gh run watch "$run_id" --repo steipete/homebrew-tap --exit-status
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Timed out waiting for tap workflow to appear." >&2
+          exit 1
