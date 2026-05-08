@@ -41,8 +41,8 @@ jobs:
             --repo steipete/homebrew-tap \
             -f formula=mcporter \
             -f tag="${{ steps.release.outputs.tag }}" \
-            -f repository=steipete/mcporter \
-            -f artifact_url='https://github.com/steipete/mcporter/releases/download/{tag}/mcporter-{version}.tgz' \
+            -f repository=openclaw/mcporter \
+            -f artifact_url='https://github.com/openclaw/mcporter/releases/download/{tag}/mcporter-{version}.tgz' \
             -f request_id="${{ steps.release.outputs.request_id }}"
 
       - name: Wait for tap update
