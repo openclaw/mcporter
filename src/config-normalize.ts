@@ -162,7 +162,13 @@ function isExistingCommandPath(value: string, baseDir: string): boolean {
 }
 
 function looksLikePath(value: string): boolean {
-  return value.startsWith('/') || value.startsWith('./') || value.startsWith('../') || value.startsWith('~/');
+  return (
+    /^[A-Za-z]:[\\/]/.test(value) ||
+    value.startsWith('/') ||
+    value.startsWith('./') ||
+    value.startsWith('../') ||
+    value.startsWith('~/')
+  );
 }
 
 function buildHeaders(raw: RawEntry): Record<string, string> | undefined {
