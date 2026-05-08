@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { CommandSpec, RawEntry, ServerDefinition, ServerLoggingOptions, ServerSource } from './config-schema.js';
-import { expandHome } from './env.js';
+import { expandHome, resolveEnvPlaceholders } from './env.js';
 import { resolveLifecycle } from './lifecycle.js';
 
 export function normalizeServerEntry(
@@ -11,24 +11,25 @@ export function normalizeServerEntry(
   source: ServerSource,
   sources: readonly ServerSource[]
 ): ServerDefinition {
-  const description = raw.description;
-  const env = raw.env ? { ...raw.env } : undefined;
-  const auth = normalizeAuth(raw.auth);
-  const tokenCacheDir = normalizePath(raw.tokenCacheDir ?? raw.token_cache_dir);
-  const clientName = raw.clientName ?? raw.client_name;
-  const oauthClientId = raw.oauthClientId ?? raw.oauth_client_id ?? undefined;
-  const oauthClientSecret = raw.oauthClientSecret ?? raw.oauth_client_secret ?? undefined;
-  const oauthClientSecretEnv = raw.oauthClientSecretEnv ?? raw.oauth_client_secret_env ?? undefined;
+  const entry = resolveEntryEnv(raw, name);
+  const description = entry.description;
+  const env = entry.env ? { ...entry.env } : undefined;
+  const auth = normalizeAuth(entry.auth);
+  const tokenCacheDir = normalizePath(entry.tokenCacheDir ?? entry.token_cache_dir);
+  const clientName = entry.clientName ?? entry.client_name;
+  const oauthClientId = entry.oauthClientId ?? entry.oauth_client_id ?? undefined;
+  const oauthClientSecret = entry.oauthClientSecret ?? entry.oauth_client_secret ?? undefined;
+  const oauthClientSecretEnv = entry.oauthClientSecretEnv ?? entry.oauth_client_secret_env ?? undefined;
   const oauthTokenEndpointAuthMethod =
-    raw.oauthTokenEndpointAuthMethod ?? raw.oauth_token_endpoint_auth_method ?? undefined;
-  const oauthRedirectUrl = raw.oauthRedirectUrl ?? raw.oauth_redirect_url ?? undefined;
-  const oauthScope = raw.oauthScope ?? raw.oauth_scope ?? undefined;
-  const oauthCommandRaw = raw.oauthCommand ?? raw.oauth_command;
+    entry.oauthTokenEndpointAuthMethod ?? entry.oauth_token_endpoint_auth_method ?? undefined;
+  const oauthRedirectUrl = entry.oauthRedirectUrl ?? entry.oauth_redirect_url ?? undefined;
+  const oauthScope = entry.oauthScope ?? entry.oauth_scope ?? undefined;
+  const oauthCommandRaw = entry.oauthCommand ?? entry.oauth_command;
   const oauthCommand = oauthCommandRaw ? { args: [...oauthCommandRaw.args] } : undefined;
-  const headers = buildHeaders(raw);
+  const headers = buildHeaders(entry);
 
-  const httpUrl = getUrl(raw);
-  const stdio = getCommand(raw, baseDir);
+  const httpUrl = getUrl(entry);
+  const stdio = getCommand(entry, baseDir);
 
   let command: CommandSpec;
 
@@ -43,16 +44,16 @@ export function normalizeServerEntry(
       kind: 'stdio',
       command: stdio.command,
       args: stdio.args,
-      cwd: resolveCwd(raw.cwd, baseDir),
+      cwd: resolveCwd(entry.cwd, baseDir),
     };
   } else {
     throw new Error(`Server '${name}' is missing a baseUrl/url or command definition in mcporter.json`);
   }
 
-  const lifecycle = resolveLifecycle(name, raw.lifecycle, command);
-  const logging = normalizeLogging(raw.logging);
-  const allowedTools = raw.allowedTools ?? raw.allowed_tools;
-  const blockedTools = raw.blockedTools ?? raw.blocked_tools;
+  const lifecycle = resolveLifecycle(name, entry.lifecycle, command);
+  const logging = normalizeLogging(entry.logging);
+  const allowedTools = entry.allowedTools ?? entry.allowed_tools;
+  const blockedTools = entry.blockedTools ?? entry.blocked_tools;
 
   const defaultedOauthCommand =
     !oauthCommand && name.toLowerCase() === 'gmail' && command.kind === 'stdio'
@@ -86,6 +87,36 @@ export function normalizeServerEntry(
 export const __configInternals = {
   ensureHttpAcceptHeader,
 };
+
+function resolveEntryEnv(raw: RawEntry, serverName: string): RawEntry {
+  return resolveConfigValue(raw, serverName, []) as RawEntry;
+}
+
+function resolveConfigValue(value: unknown, serverName: string, pathSegments: string[]): unknown {
+  if (typeof value === 'string') {
+    try {
+      return resolveEnvPlaceholders(value);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const field = pathSegments.length > 0 ? pathSegments.join('.') : '<root>';
+      throw new Error(`Failed to resolve config field '${field}' for server '${serverName}': ${message}`, {
+        cause: error,
+      });
+    }
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item, index) => resolveConfigValue(item, serverName, [...pathSegments, String(index)]));
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, resolveConfigValue(item, serverName, [...pathSegments, key])])
+    );
+  }
+
+  return value;
+}
 
 function normalizeAuth(auth: string | undefined): string | undefined {
   if (!auth) {
