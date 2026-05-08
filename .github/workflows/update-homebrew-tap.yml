@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to publish to the tap (for example, v0.10.1)"
+        description: 'Release tag to publish to the tap (for example, v0.10.1)'
         required: true
         type: string
 
