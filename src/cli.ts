@@ -243,6 +243,18 @@ export async function runCli(argv: string[]): Promise<void> {
       return;
     }
 
+    if (resolvedCommand === 'vault') {
+      if (consumeHelpTokens(resolvedArgs)) {
+        const { printVaultHelp } = await import('./cli/vault-command.js');
+        printVaultHelp();
+        process.exitCode = 0;
+        return;
+      }
+      const { handleVault } = await import('./cli/vault-command.js');
+      await handleVault(runtime, resolvedArgs);
+      return;
+    }
+
     if (resolvedCommand === 'resource' || resolvedCommand === 'resources') {
       if (consumeHelpTokens(resolvedArgs)) {
         const { printResourceHelp } = await import('./cli/resource-command.js');

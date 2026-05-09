@@ -231,6 +231,7 @@ String-valued config fields support `${VAR}` and `${VAR:-fallback}` placeholders
 
 - Keep `config/mcporter.json` under version control. Encourage contributors to add sensitive data via env vars (`${LINEAR_API_KEY}`) rather than inline secrets.
 - For pre-registered OAuth apps, store the public `oauthClientId` in config and point `oauthClientSecretEnv` at a local environment variable. `oauthClientSecret` is supported for private machine-local configs but should not be committed.
+- For headless deployments that already have OAuth credentials, run `mcporter vault set <server> --tokens-file <path>` or `mcporter vault set <server> --stdin` with a JSON payload shaped like `{ "tokens": { ... }, "clientInfo": { ... } }`. This lets mcporter compute the vault key from the resolved server definition instead of duplicating that internal format in scripts.
 - Machine-specific additions can live in `~/.mcporter/local.json` or `$XDG_CONFIG_HOME/mcporter/local.json`; point `mcporter config --config ~/.mcporter/local.json add ...` there when you prefer not to touch the repo. Since the runtime only watches one config at a time, CI jobs should always pass `--config config/mcporter.json` (or run from the repo root) for deterministic behavior.
 - OAuth tokens, cached server metadata, and generated CLIs should remain outside the repo (`~/.mcporter/...` or the matching `XDG_*_HOME/mcporter/...`, plus `dist/`).
 

@@ -435,6 +435,18 @@ Providers that do not support dynamic client registration can use a pre-register
 Keep client secrets in environment variables or private machine-local configs,
 and register the exact `oauthRedirectUrl` with the provider.
 
+Headless deployments that already have OAuth tokens can seed the vault without
+reproducing mcporter's internal vault key:
+
+```bash
+npx mcporter vault set hubspot --tokens-file ./tokens.json
+npx mcporter vault set hubspot --stdin < tokens.json
+npx mcporter vault clear hubspot
+```
+
+The JSON payload is `{ "tokens": { ... }, "clientInfo": { ... } }`; `tokens`
+is required and `clientInfo` is optional.
+
 Provide `configPath` or `rootDir` to CLI/runtime calls when you juggle multiple config files side by side.
 
 #### Config resolution order & system-level configs

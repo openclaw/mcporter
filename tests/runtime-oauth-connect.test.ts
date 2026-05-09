@@ -1,6 +1,6 @@
 import type { Client } from '@modelcontextprotocol/sdk/client';
 import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OAuthSession } from '../src/oauth.js';
 import {
   connectWithAuth,
@@ -15,7 +15,24 @@ import {
   MockTransport,
 } from './helpers/runtime-test-helpers.js';
 
+const mocks = vi.hoisted(() => ({
+  sdkAuth: vi.fn(),
+}));
+
+vi.mock('@modelcontextprotocol/sdk/client/auth.js', async () => {
+  const actual = await vi.importActual('@modelcontextprotocol/sdk/client/auth.js');
+  return {
+    ...actual,
+    auth: mocks.sdkAuth,
+  };
+});
+
 describe('connectWithAuth', () => {
+  beforeEach(() => {
+    mocks.sdkAuth.mockReset();
+    mocks.sdkAuth.mockResolvedValue('AUTHORIZED');
+  });
+
   it('waits for authorization code and retries connection', async () => {
     const connect = vi
       .fn()
@@ -168,6 +185,80 @@ describe('connectWithAuth', () => {
     expect(transport.calls).toEqual(['oauth-code-1', 'oauth-code-2']);
     expect(connect).toHaveBeenCalledTimes(3);
     expect(connectedTransport).toBe(transport);
+  });
+
+  it('runs proactive OAuth after unauthenticated connect succeeds', async () => {
+    const connect = vi.fn().mockResolvedValueOnce(undefined);
+    const client = { connect } as unknown as Client;
+    const { session, waitForAuthorizationCode, resolveNextCode } = createPendingAuthorizationSession();
+    mocks.sdkAuth.mockResolvedValueOnce('REDIRECT');
+
+    const transport = new MockTransport();
+    const logger = createLogger();
+
+    const promise = connectWithAuth(client, transport, session, logger, {
+      serverName: 'calendar',
+      maxAttempts: 1,
+      oauthTimeoutMs: 5000,
+      serverUrl: new URL('https://calendar.example/mcp'),
+    });
+
+    await flushAuthLoop();
+    resolveNextCode('proactive-code');
+
+    const connectedTransport = await promise;
+
+    expect(mocks.sdkAuth).toHaveBeenCalledWith(session.provider, {
+      serverUrl: new URL('https://calendar.example/mcp'),
+      fetchFn: undefined,
+    });
+    expect(waitForAuthorizationCode).toHaveBeenCalledTimes(1);
+    expect(transport.calls).toEqual(['proactive-code']);
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(session.close).toHaveBeenCalled();
+    expect(connectedTransport).toBe(transport);
+  });
+
+  it('closes proactive OAuth sessions when cached tokens already authorize', async () => {
+    const connect = vi.fn().mockResolvedValueOnce(undefined);
+    const client = { connect } as unknown as Client;
+    const { session, waitForAuthorizationCode } = createPendingAuthorizationSession();
+    mocks.sdkAuth.mockResolvedValueOnce('AUTHORIZED');
+
+    const transport = new MockTransport();
+    const logger = createLogger();
+
+    const connectedTransport = await connectWithAuth(client, transport, session, logger, {
+      serverName: 'calendar',
+      maxAttempts: 1,
+      oauthTimeoutMs: 5000,
+      serverUrl: 'https://calendar.example/mcp',
+    });
+
+    expect(waitForAuthorizationCode).not.toHaveBeenCalled();
+    expect(transport.calls).toEqual([]);
+    expect(session.close).toHaveBeenCalled();
+    expect(connectedTransport).toBe(transport);
+  });
+
+  it('marks proactive OAuth failures as OAuth flow errors', async () => {
+    const connect = vi.fn().mockResolvedValueOnce(undefined);
+    const client = { connect } as unknown as Client;
+    const { session } = createPendingAuthorizationSession();
+    const authError = new Error('dynamic client registration rejected');
+    mocks.sdkAuth.mockRejectedValueOnce(authError);
+
+    const transport = new MockTransport();
+    const logger = createLogger();
+
+    await expect(
+      connectWithAuth(client, transport, session, logger, {
+        serverName: 'calendar',
+        maxAttempts: 1,
+        oauthTimeoutMs: 5000,
+        serverUrl: 'https://calendar.example/mcp',
+      })
+    ).rejects.toSatisfy((error: unknown) => error === authError && isOAuthFlowError(error));
   });
 
   it('marks finishAuth failures as oauth flow errors', async () => {

@@ -1,3 +1,4 @@
+import { auth as sdkAuth } from '@modelcontextprotocol/sdk/client/auth.js';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { Logger } from '../logging.js';
@@ -19,6 +20,8 @@ export interface ConnectWithAuthOptions {
   maxAttempts?: number;
   oauthTimeoutMs?: number;
   recreateTransport?: (transport: OAuthCapableTransport) => Promise<OAuthCapableTransport>;
+  serverUrl?: string | URL;
+  fetchFn?: typeof fetch;
 }
 
 interface OAuthConnectState {
@@ -122,7 +125,20 @@ export async function connectWithAuth(
 
   while (true) {
     try {
-      return await attemptTransportConnect(client, state);
+      await attemptTransportConnect(client, state);
+      if (session && !state.hasCompletedAuthFlow && options.serverUrl) {
+        await completeProactiveAuthorization(state.activeTransport, session, logger, {
+          serverName,
+          oauthTimeoutMs,
+          serverUrl: options.serverUrl,
+          fetchFn: options.fetchFn,
+        });
+        state.hasCompletedAuthFlow = true;
+      }
+      if (session && state.hasCompletedAuthFlow) {
+        await session.close().catch(() => {});
+      }
+      return state.activeTransport;
     } catch (error) {
       const unauthorized = isUnauthorizedError(error);
       if (!shouldRetryAuthorization(state, unauthorized, session)) {
@@ -211,6 +227,46 @@ async function completeAuthorizationChallenge(
   const nextTransport = await options.recreateTransport(transport);
   await transport.close().catch(() => {});
   return nextTransport;
+}
+
+async function completeProactiveAuthorization(
+  transport: OAuthCapableTransport,
+  session: OAuthSession,
+  logger: Logger,
+  options: Pick<ConnectWithAuthOptions, 'serverName' | 'oauthTimeoutMs' | 'serverUrl' | 'fetchFn'>
+): Promise<void> {
+  if (!options.serverUrl) {
+    return;
+  }
+  try {
+    const result = await sdkAuth(session.provider, {
+      serverUrl: options.serverUrl,
+      fetchFn: options.fetchFn,
+    });
+    if (result !== 'REDIRECT') {
+      await session.close().catch(() => {});
+      return;
+    }
+    if (session.hasAuthorizationRedirectStarted?.() === false) {
+      throw new OAuthAuthorizationNotStartedError(options.serverName ?? 'unknown');
+    }
+    logger.warn(
+      `OAuth authorization required for '${options.serverName ?? 'unknown'}'. Waiting for browser approval...`
+    );
+    if (typeof transport.finishAuth !== 'function') {
+      throw new Error('Transport does not support finishAuth; cannot complete OAuth flow automatically.');
+    }
+    const code = await waitForAuthorizationCodeWithTimeout(
+      session,
+      logger,
+      options.serverName,
+      options.oauthTimeoutMs ?? DEFAULT_OAUTH_CODE_TIMEOUT_MS
+    );
+    await transport.finishAuth(code);
+    await session.close().catch(() => {});
+  } catch (error) {
+    throw markOAuthFlowError(error);
+  }
 }
 
 // Race the pending OAuth browser handshake so the runtime can't sit on an unresolved promise forever.

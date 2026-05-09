@@ -84,7 +84,14 @@ function isCallLikeToken(token: string): boolean {
 }
 
 function isExplicitCommand(token: string): boolean {
-  return token === 'list' || token === 'call' || token === 'auth' || token === 'resource' || token === 'resources';
+  return (
+    token === 'list' ||
+    token === 'call' ||
+    token === 'auth' ||
+    token === 'vault' ||
+    token === 'resource' ||
+    token === 'resources'
+  );
 }
 
 function isUrlToken(token: string): boolean {

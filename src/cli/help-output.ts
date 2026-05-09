@@ -67,6 +67,11 @@ function buildCommandSections(colorize: boolean): string[] {
           summary: 'Complete OAuth for a server without listing tools',
           usage: 'mcporter auth <server | url> [--reset]',
         },
+        {
+          name: 'vault',
+          summary: 'Seed or clear OAuth credentials non-interactively',
+          usage: 'mcporter vault set <server> --tokens-file <path>',
+        },
       ],
     },
     {
