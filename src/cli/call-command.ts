@@ -21,7 +21,6 @@ import {
 } from './identifier-helpers.js';
 import { saveCallImagesIfRequested } from './image-output.js';
 import { buildConnectionIssueEnvelope } from './json-output.js';
-import { handleList } from './list-command.js';
 import type { OutputFormat } from './output-utils.js';
 import { printCallOutput, tailLogIfRequested } from './output-utils.js';
 import { dumpActiveHandles } from './runtime-debug.js';
@@ -232,6 +231,7 @@ async function maybeDescribeServer(
     if (outputFormat === 'json') {
       listArgs.push('--json');
     }
+    const { handleList } = await import('./list-command.js');
     await handleList(runtime, listArgs);
     return true;
   }
@@ -251,6 +251,7 @@ async function maybeDescribeServer(
   if (outputFormat === 'json') {
     listArgs.push('--json');
   }
+  const { handleList } = await import('./list-command.js');
   await handleList(runtime, listArgs);
   return true;
 }

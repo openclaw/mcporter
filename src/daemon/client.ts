@@ -2,7 +2,7 @@ import crypto, { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
-import { listConfigLayerPaths } from '../config.js';
+import { listConfigLayerPaths } from '../config/path-discovery.js';
 import { launchDaemonDetached } from './launch.js';
 import { getDaemonMetadataPath, getDaemonSocketPath } from './paths.js';
 import type {
