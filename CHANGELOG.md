@@ -28,6 +28,10 @@
   splitting them as inline command strings, so app bundle helpers like Hopper's
   MCP server can be configured directly.
 
+### Tooling
+
+- Build `dist/` once before the Vitest suite instead of letting parallel integration tests rebuild it mid-run.
+
 ## [0.10.1] - 2026-05-04
 
 ### CLI

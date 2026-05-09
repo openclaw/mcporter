@@ -25,15 +25,11 @@ function pnpmArgs(args: string[]): string[] {
 }
 
 async function ensureDistBuilt(): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    execFile(PNPM_COMMAND, pnpmArgs(['build']), { cwd: process.cwd(), env: process.env }, (error) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve();
-    });
-  });
+  try {
+    await fs.access(CLI_ENTRY);
+  } catch {
+    throw new Error('dist/cli.js is missing; run `pnpm build` before invoking this integration test directly.');
+  }
 }
 
 async function hasBun(): Promise<boolean> {

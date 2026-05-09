@@ -14,6 +14,15 @@ const describeGenerateCli = process.platform === 'win32' ? describe.skip : descr
 
 let baseUrl: URL;
 const tmpDir = path.join(process.cwd(), 'tmp', 'mcporter-cli-tests');
+const CLI_ENTRY = path.join(process.cwd(), 'dist', 'cli.js');
+
+async function ensureDistBuilt(): Promise<void> {
+  try {
+    await fs.access(CLI_ENTRY);
+  } catch {
+    throw new Error('dist/cli.js is missing; run `pnpm build` before invoking this integration test directly.');
+  }
+}
 
 if (process.platform !== 'win32') {
   beforeAll(async () => {
@@ -199,15 +208,7 @@ describeGenerateCli('generateCli', () => {
       console.warn('bun is not available on this runner; skipping compilation checks.');
       return;
     }
-    await new Promise<void>((resolve, reject) => {
-      exec.exec('pnpm build', execOptions(), (error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
-      });
-    });
+    await ensureDistBuilt();
 
     const expectedBinaryPath = path.join(tmpDir, 'integration');
     const {

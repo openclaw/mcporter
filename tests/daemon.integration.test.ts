@@ -12,12 +12,6 @@ const MCP_SERVER_MODULE = pathToFileURL(testRequire.resolve('@modelcontextprotoc
 const STDIO_SERVER_MODULE = pathToFileURL(testRequire.resolve('@modelcontextprotocol/sdk/server/stdio.js')).href;
 const ZOD_MODULE = pathToFileURL(testRequire.resolve('zod')).href;
 const describeDaemon = process.platform === 'win32' ? describe.skip : describe;
-const PNPM_COMMAND = process.platform === 'win32' ? 'cmd.exe' : 'pnpm';
-const PNPM_ARGS_PREFIX = process.platform === 'win32' ? ['/d', '/s', '/c', 'pnpm'] : [];
-
-function pnpmArgs(args: string[]): string[] {
-  return [...PNPM_ARGS_PREFIX, ...args];
-}
 
 async function readFileWithRetries(filePath: string, retries = 20, delayMs = 100): Promise<string> {
   let lastError: unknown;
@@ -39,15 +33,7 @@ async function ensureDistBuilt(): Promise<void> {
   try {
     await fs.access(CLI_ENTRY);
   } catch {
-    await new Promise<void>((resolve, reject) => {
-      execFile(PNPM_COMMAND, pnpmArgs(['build']), { cwd: process.cwd(), env: process.env }, (error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
-      });
-    });
+    throw new Error('dist/cli.js is missing; run `pnpm build` before invoking this integration test directly.');
   }
 }
 
