@@ -415,6 +415,14 @@ npx mcporter config add notion https://mcp.notion.com/mcp --auth oauth
 npx mcporter auth notion
 ```
 
+For unattended deployments where another provisioner already holds valid OAuth credentials, seed the same persistence layer without a browser:
+
+```bash
+npx mcporter vault set notion --tokens-file ./notion-oauth.json
+cat ./notion-oauth.json | npx mcporter vault set notion --stdin
+npx mcporter vault clear notion
+```
+
 Providers that do not support dynamic client registration can use a pre-registered app:
 
 ```jsonc

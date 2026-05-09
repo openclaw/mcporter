@@ -151,11 +151,11 @@ Use `--scope home|project` with `mcporter config add` to pick the write target e
 - `--browser none` suppresses automatic browser launch (useful for copying the URL into a remote browser).
 - `logout` wipes the shared vault entry, legacy `~/.mcporter/<name>/` caches, and the custom `tokenCacheDir` when present. Pass `--all` to clear everything.
 
-### Planned: `mcporter vault`
+### `mcporter vault`
 
-Issue #156 tracks a scriptable `mcporter vault` command for unattended OAuth credential provisioning. The intended use case is CI, containers, and multitenant deployment systems where an external provisioner already has valid OAuth credentials and needs to seed mcporter without launching a browser.
+`mcporter vault` provides scriptable unattended OAuth credential provisioning. The intended use case is CI, containers, and multitenant deployment systems where an external provisioner already has valid OAuth credentials and needs to seed mcporter without launching a browser.
 
-`vault` is planned as a top-level command, not a `config` subcommand, because config and vault data are different mcporter entities with different storage classes. The command should act as a thin CLI surface over existing config resolution and OAuth persistence:
+`vault` is a top-level command, not a `config` subcommand, because config and vault data are different mcporter entities with different storage classes. The command acts as a thin CLI surface over existing config resolution and OAuth persistence:
 
 ```bash
 mcporter vault set <server> --tokens-file <path>

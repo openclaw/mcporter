@@ -2,9 +2,9 @@
 
 ## [Unreleased]
 
-### Docs
+### CLI
 
-- Document the planned `mcporter vault` CLI surface for unattended OAuth credential seeding in CI, containers, and multitenant deployments. (Issue #156)
+- Add `mcporter vault set/clear` for unattended OAuth credential seeding in CI, containers, and multitenant deployments. (Issue #156)
 
 ### Config
 

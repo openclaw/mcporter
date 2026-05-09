@@ -151,6 +151,17 @@ export async function runCli(argv: string[]): Promise<void> {
     return;
   }
 
+  if (command === 'vault') {
+    const { handleVaultCommand, printVaultHelp } = await import('./cli/vault-command.js');
+    if (consumeHelpTokens(args)) {
+      printVaultHelp();
+      process.exitCode = 0;
+      return;
+    }
+    await handleVaultCommand({ loadOptions: { configPath, rootDir: rootOverride } }, args);
+    return;
+  }
+
   if (command === 'emit-ts') {
     if (consumeHelpTokens(args)) {
       const { printEmitTsHelp } = await import('./cli/emit-ts-command.js');
@@ -427,6 +438,7 @@ function isExplicitNonCallCommand(command: string): boolean {
     command === 'resources' ||
     command === 'daemon' ||
     command === 'config' ||
+    command === 'vault' ||
     command === 'emit-ts' ||
     command === 'generate-cli' ||
     command === 'inspect-cli' ||
