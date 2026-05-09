@@ -64,6 +64,7 @@ A _porter_ carries luggage between trains. mcporter does the same for MCP server
 - [Install](install.md) — npm, npx, Homebrew, or the standalone Bun-compiled binary.
 - [Quickstart](quickstart.md) — your first list/call/resource in five minutes.
 - [Configuration](config.md) — `mcporter.json`, imports, env interpolation, OAuth.
+- [Unattended vault seeding](vault.md) — planned CLI surface for provisioning OAuth credentials in headless deployments.
 - [CLI reference](cli-reference.md) — every subcommand and flag.
 - [Ad-hoc connections](adhoc.md) — point at any MCP endpoint without editing config.
 - [Agent skills](agent-skills.md) — exposing servers to agents the right way.

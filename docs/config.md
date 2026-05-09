@@ -151,6 +151,29 @@ Use `--scope home|project` with `mcporter config add` to pick the write target e
 - `--browser none` suppresses automatic browser launch (useful for copying the URL into a remote browser).
 - `logout` wipes the shared vault entry, legacy `~/.mcporter/<name>/` caches, and the custom `tokenCacheDir` when present. Pass `--all` to clear everything.
 
+### Planned: `mcporter vault`
+
+Issue #156 tracks a scriptable `mcporter vault` command for unattended OAuth credential provisioning. The intended use case is CI, containers, and multitenant deployment systems where an external provisioner already has valid OAuth credentials and needs to seed mcporter without launching a browser.
+
+`vault` is planned as a top-level command, not a `config` subcommand, because config and vault data are different mcporter entities with different storage classes. The command should act as a thin CLI surface over existing config resolution and OAuth persistence:
+
+```bash
+mcporter vault set <server> --tokens-file <path>
+mcporter vault set <server> --stdin
+mcporter vault clear <server>
+```
+
+The payload is a single vault-entry-compatible credential object, not the full `credentials.json` file with internal map keys:
+
+```json
+{
+  "tokens": { "access_token": "...", "refresh_token": "...", "token_type": "Bearer" },
+  "clientInfo": { "client_id": "..." }
+}
+```
+
+See [Unattended OAuth Vault Seeding](./vault.md) for the implementation requirements, validation contract, and upstream PR checklist.
+
 ### `mcporter config doctor`
 
 - Early validator that checks for simple issues (e.g., OAuth entries missing cache paths). Future iterations will add fixes for Accept headers, duplicate imports, and more.

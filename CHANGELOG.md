@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Docs
+
+- Document the planned `mcporter vault` CLI surface for unattended OAuth credential seeding in CI, containers, and multitenant deployments. (Issue #156)
+
 ### Config
 
 - Resolve `${VAR}` and `${VAR:-fallback}` placeholders across string-valued server config fields such as `baseUrl`, `command`/`args`, `tokenCacheDir`, and pre-registered OAuth fields while keeping headers/env/bearer-token placeholders lazy until runtime. (PR #161 / issue #157, thanks @zxyasfas)

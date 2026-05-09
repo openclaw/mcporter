@@ -56,6 +56,22 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
   - `--json` – shortcut for `--output json`.
   - `--raw` – shortcut for `--output raw`.
 
+## `mcporter vault` (planned)
+
+- Planned scriptable surface for unattended OAuth credential provisioning in CI,
+  containers, and multitenant deployments.
+- Planned as a top-level command because config and vault data are separate
+  mcporter entities with separate storage classes.
+- Intended commands:
+  - `mcporter vault set <server> --tokens-file <path>`
+  - `mcporter vault set <server> --stdin`
+  - `mcporter vault clear <server>`
+- The implementation should resolve `<server>` through the same config/import
+  stack as other commands and write through the existing OAuth persistence layer,
+  not by editing `credentials.json` directly.
+- See [Unattended OAuth Vault Seeding](vault.md) for the implementation
+  specification and payload contract.
+
 ## `mcporter generate-cli`
 
 - Produces a standalone CLI for a single MCP server (optionally bundling or
