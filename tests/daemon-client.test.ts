@@ -101,6 +101,7 @@ describe('daemon client', () => {
     );
     const { socketPath, metadataPath } = resolveDaemonPaths(configPath);
     await fs.mkdir(path.dirname(socketPath), { recursive: true });
+    await fs.mkdir(path.dirname(metadataPath), { recursive: true });
     const configStats = await fs.stat(configPath);
     await fs.writeFile(
       metadataPath,
