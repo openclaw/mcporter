@@ -88,6 +88,17 @@ describe('printCallOutput format selection', () => {
       },
     ],
     [
+      'json emits valid JSON for MCP error envelopes instead of inspect output',
+      'json',
+      { content: [{ type: 'text', text: 'MCP error -32602: Tool search not found' }], isError: true },
+      (logged: unknown) => {
+        expect(JSON.parse(String(logged))).toEqual({
+          content: [{ type: 'text', text: 'MCP error -32602: Tool search not found' }],
+          isError: true,
+        });
+      },
+    ],
+    [
       'json emits null for undefined raw fallback',
       'json',
       undefined,

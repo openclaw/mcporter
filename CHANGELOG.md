@@ -4,6 +4,7 @@
 
 ### CLI
 
+- Keep keep-alive daemon retry diagnostics on stderr so `mcporter call --output json` stdout stays parseable after a daemon recovery.
 - Increase the default OAuth browser wait from 60 seconds to 5 minutes so hosted MCP sign-ins have enough time for account and permission review.
 
 ### Config

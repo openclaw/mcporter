@@ -139,12 +139,15 @@ describe('createKeepAliveRuntime', () => {
       keepAliveServers: new Set(['alpha']),
     });
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     await expect(keepAliveRuntime.callTool('alpha', 'ping', {})).resolves.toBe('daemon-call');
     expect(daemon.callTool).toHaveBeenCalledTimes(2);
     expect(daemon.closeServer).toHaveBeenCalledWith({ server: 'alpha' });
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Restarting 'alpha'"));
+    expect(logSpy).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Restarting 'alpha'"));
     logSpy.mockRestore();
+    errorSpy.mockRestore();
   });
 
   it('deduplicates concurrent restarts for the same server', async () => {
