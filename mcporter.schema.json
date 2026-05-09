@@ -64,7 +64,7 @@
             "type": "string"
           },
           "headers": {
-            "description": "HTTP headers for requests. Supports $VAR and $env:VAR placeholders",
+            "description": "HTTP headers for requests. Supports ${VAR}, ${VAR:-fallback}, and $env:VAR placeholders",
             "type": "object",
             "propertyNames": {
               "type": "string"
@@ -74,7 +74,7 @@
             }
           },
           "env": {
-            "description": "Environment variables for stdio commands. Supports $VAR and fallback syntax",
+            "description": "Environment variables for stdio commands. Supports ${VAR} and ${VAR:-fallback} placeholders",
             "type": "object",
             "propertyNames": {
               "type": "string"

@@ -401,7 +401,7 @@ Run `mcporter config …` via your package manager (pnpm, npm, npx, etc.) when y
 
 What MCPorter handles for you:
 
-- `${VAR}`, `${VAR:-fallback}`, and `$env:VAR` interpolation for headers and env entries.
+- `${VAR}`, `${VAR:-fallback}`, and `$env:VAR` interpolation for config strings. Secret-bearing `headers`, `env`, and bearer-token placeholders stay lazy and resolve at runtime.
 - Automatic OAuth token caching in the shared vault (`~/.mcporter/credentials.json`, or `$XDG_DATA_HOME/mcporter/credentials.json` when set) unless you override `tokenCacheDir`.
 - Stdio commands inherit the directory of the file that defined them (imports or local config).
 - Import precedence matches the array order; omit `imports` to use the default `["cursor", "claude-code", "claude-desktop", "codex", "windsurf", "opencode", "vscode"]`.

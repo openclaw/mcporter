@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { CommandSpec, RawEntry, ServerDefinition, ServerLoggingOptions, ServerSource } from './config-schema.js';
-import { expandHome } from './env.js';
+import { expandHome, resolveEnvPlaceholders } from './env.js';
 import { resolveLifecycle } from './lifecycle.js';
 
 export function normalizeServerEntry(
@@ -11,6 +11,8 @@ export function normalizeServerEntry(
   source: ServerSource,
   sources: readonly ServerSource[]
 ): ServerDefinition {
+  const resolvedRaw = resolveConfigEnvPlaceholders(name, raw);
+  raw = resolvedRaw;
   const description = raw.description;
   const env = raw.env ? { ...raw.env } : undefined;
   const auth = normalizeAuth(raw.auth);
@@ -85,7 +87,54 @@ export function normalizeServerEntry(
 
 export const __configInternals = {
   ensureHttpAcceptHeader,
+  resolveConfigEnvPlaceholders,
 };
+
+function resolveConfigEnvPlaceholders(name: string, raw: RawEntry): RawEntry {
+  return resolveConfigEnvValue(name, raw, []) as RawEntry;
+}
+
+function resolveConfigEnvValue(name: string, value: unknown, pathSegments: readonly string[]): unknown {
+  if (typeof value === 'string') {
+    if (!value.includes('$') || shouldDeferEnvResolution(pathSegments)) {
+      return value;
+    }
+    try {
+      return resolveEnvPlaceholders(value);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const field = pathSegments.join('.') || '<root>';
+      throw new Error(`Server '${name}' field '${field}' has unresolved env placeholder: ${message}`, { cause: error });
+    }
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry, index) => resolveConfigEnvValue(name, entry, [...pathSegments, String(index)]));
+  }
+
+  if (value && typeof value === 'object') {
+    const resolved: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      resolved[key] = resolveConfigEnvValue(name, entry, [...pathSegments, key]);
+    }
+    return resolved;
+  }
+
+  return value;
+}
+
+function shouldDeferEnvResolution(pathSegments: readonly string[]): boolean {
+  const [root] = pathSegments;
+  const field = pathSegments.at(-1) ?? '';
+  return (
+    root === 'headers' ||
+    root === 'env' ||
+    field === 'bearerToken' ||
+    field === 'bearer_token' ||
+    field.endsWith('Env') ||
+    field.endsWith('_env')
+  );
+}
 
 function normalizeAuth(auth: string | undefined): string | undefined {
   if (!auth) {

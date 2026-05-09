@@ -219,6 +219,7 @@ Server definition fields (subset of what `RawEntrySchema` accepts):
 | `blockedTools` / `blocked_tools` | Optional exact-name blocklist. Listed tools are hidden from `mcporter list` and rejected by `mcporter call`. Cannot be combined with `allowedTools`.                                                                                                                   |
 
 mcporter normalizes headers to include `Accept: application/json, text/event-stream` automatically, matching the runtime’s streaming expectations.
+String-valued config fields support `${VAR}` and `${VAR:-fallback}` placeholders. Secret-bearing `headers`, `env`, and bearer-token placeholders are preserved in `config get`/`config list` output and resolved only when the transport runs; `*Env` fields name environment variables and are not expanded.
 
 ## Imports & Conflict Resolution
 

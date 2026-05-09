@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-- Nothing yet.
+### Config
+
+- Resolve `${VAR}` and `${VAR:-fallback}` placeholders across string-valued server config fields such as `baseUrl`, `command`/`args`, `tokenCacheDir`, and pre-registered OAuth fields while keeping headers/env/bearer-token placeholders lazy until runtime. (PR #161 / issue #157, thanks @zxyasfas)
 
 ## [0.10.2] - 2026-05-09
 

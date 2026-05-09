@@ -1,6 +1,6 @@
 import { resolveEnvPlaceholders } from '../env.js';
 
-const ENV_PLACEHOLDER_PATTERN = /\$\{[A-Za-z_][A-Za-z0-9_]*\}/;
+const ENV_PLACEHOLDER_PATTERN = /\$\{[A-Za-z_][A-Za-z0-9_]*(?::-[^}]*)?\}/;
 
 export function resolveCommandArgument(value: string): string {
   if (!value) {

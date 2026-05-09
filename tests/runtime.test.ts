@@ -59,6 +59,15 @@ describe('environment utilities', () => {
     expect(() => resolveEnvPlaceholders(`Bearer \${NOT_SET}`)).toThrow();
   });
 
+  it('resolveEnvPlaceholders supports embedded defaults', () => {
+    delete process.env.MCPORTER_TEST_HOST;
+    expect(resolveEnvPlaceholders(`https://\${MCPORTER_TEST_HOST:-example.com}/mcp`)).toBe('https://example.com/mcp');
+    process.env.MCPORTER_TEST_HOST = 'api.example.test';
+    expect(resolveEnvPlaceholders(`https://\${MCPORTER_TEST_HOST:-example.com}/mcp`)).toBe(
+      'https://api.example.test/mcp'
+    );
+  });
+
   it('withEnvOverrides applies temporary overrides', async () => {
     delete process.env.SIGNOZ_URL;
     await withEnvOverrides({ SIGNOZ_URL: `\${SIGNOZ_URL:-http://localhost:3301}` }, async () => {
@@ -84,6 +93,12 @@ describe('command argument interpolation', () => {
     const placeholder = String.raw`\${CHROME_DEVTOOLS_URL}`;
     const result = resolveCommandArgument(`--browserUrl ${placeholder}`);
     expect(result).toBe('--browserUrl http://127.0.0.1:5555');
+  });
+
+  it('resolves placeholder fallback tokens', () => {
+    delete process.env.CHROME_DEVTOOLS_URL;
+    const result = resolveCommandArgument(`--browserUrl \${CHROME_DEVTOOLS_URL:-http://127.0.0.1:9222}`);
+    expect(result).toBe('--browserUrl http://127.0.0.1:9222');
   });
 
   it('passes through tokens without placeholders', () => {

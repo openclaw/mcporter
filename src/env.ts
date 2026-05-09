@@ -2,7 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const ENV_DEFAULT_PATTERN = /^\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-|:|-)?([^}]*)\}$/;
-const ENV_INTERPOLATION_PATTERN = /\\?\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
+const ENV_INTERPOLATION_PATTERN = /\\?\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*?))?\}/g;
 const ENV_DIRECT_PREFIX = '$env:';
 
 // expandHome replaces a leading '~' with the current user's home directory.
@@ -59,8 +59,14 @@ export function resolveEnvPlaceholders(value: string): string {
   }
 
   const missing = new Set<string>();
-  const replaced = value.replace(ENV_INTERPOLATION_PATTERN, (placeholder, envName: string) => {
+  const replaced = value.replace(ENV_INTERPOLATION_PATTERN, (placeholder, envName: string, fallback?: string) => {
     const envValue = process.env[envName];
+    if (envValue !== undefined && envValue !== '') {
+      return envValue;
+    }
+    if (fallback !== undefined) {
+      return fallback;
+    }
     if (envValue === undefined) {
       missing.add(envName);
       return placeholder;
