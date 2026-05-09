@@ -207,7 +207,14 @@ export async function handleList(
   if (flags.format === 'json') {
     try {
       const metadataEntries = filterToolMetadata(
-        await withTimeout(loadToolMetadata(runtime, target, { includeSchema: true }), timeoutMs),
+        await withTimeout(
+          loadToolMetadata(runtime, target, {
+            includeSchema: true,
+            autoAuthorize: false,
+            allowCachedAuth: true,
+          }),
+          timeoutMs
+        ),
         requestedTool
       );
       await persistPreparedEphemeralServer(runtime, prepared);
@@ -263,7 +270,14 @@ export async function handleList(
   try {
     // Always request schemas so we can render CLI-style parameter hints without re-querying per tool.
     const metadataEntries = filterToolMetadata(
-      await withTimeout(loadToolMetadata(runtime, target, { includeSchema: true }), timeoutMs),
+      await withTimeout(
+        loadToolMetadata(runtime, target, {
+          includeSchema: true,
+          autoAuthorize: false,
+          allowCachedAuth: true,
+        }),
+        timeoutMs
+      ),
       requestedTool
     );
     await persistPreparedEphemeralServer(runtime, prepared);
@@ -333,7 +347,8 @@ export async function handleList(
     const message = error instanceof Error ? error.message : 'Failed to load tool list.';
     const authCommand = buildAuthCommandHint(definition);
     const advice = classifyListError(error, definition.name, timeoutMs, { authCommand });
-    console.warn(`  Tools: <timed out after ${timeoutMs}ms>`);
+    const timedOut = message === 'Timeout' || /\btimed out\b/i.test(message);
+    console.warn(`  Tools: ${timedOut ? `<timed out after ${timeoutMs}ms>` : '<unavailable>'}`);
     console.warn(`  Reason: ${message}`);
     if (advice.category === 'auth' && advice.authCommand) {
       console.warn(`  Next: run '${advice.authCommand}' to finish authentication.`);

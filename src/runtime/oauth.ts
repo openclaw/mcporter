@@ -7,6 +7,7 @@ import { isUnauthorizedError } from '../runtime-oauth-support.js';
 export const DEFAULT_OAUTH_CODE_TIMEOUT_MS = 300_000;
 const OAUTH_FLOW_ERROR = Symbol('oauth-flow-error');
 const POST_AUTH_CONNECT_ERROR = Symbol('post-auth-connect-error');
+const MAX_OAUTH_ERROR_DETAIL_LENGTH = 1_200;
 
 export interface OAuthCapableTransport extends Transport {
   close(): Promise<void>;
@@ -43,13 +44,29 @@ export class OAuthAuthorizationNotStartedError extends Error {
   public readonly serverName: string;
 
   constructor(serverName: string, cause?: unknown) {
-    const detail = cause instanceof Error && cause.message ? ` Last error: ${cause.message}` : '';
+    const causeMessage = formatOAuthErrorDetail(cause);
+    const detail = causeMessage ? ` Last error: ${causeMessage}` : '';
     super(
       `OAuth authorization for '${serverName}' did not produce an authorization URL; aborting instead of waiting for a browser callback.${detail}`
     );
     this.name = 'OAuthAuthorizationNotStartedError';
     this.serverName = serverName;
   }
+}
+
+function formatOAuthErrorDetail(cause: unknown): string {
+  if (!(cause instanceof Error) || !cause.message) {
+    return '';
+  }
+  return truncateOAuthErrorDetail(cause.message);
+}
+
+function truncateOAuthErrorDetail(message: string): string {
+  if (message.length <= MAX_OAUTH_ERROR_DETAIL_LENGTH) {
+    return message;
+  }
+  const truncated = message.length - MAX_OAUTH_ERROR_DETAIL_LENGTH;
+  return `${message.slice(0, MAX_OAUTH_ERROR_DETAIL_LENGTH)}... [truncated ${truncated} chars]`;
 }
 
 export function markOAuthFlowError(error: unknown): unknown {

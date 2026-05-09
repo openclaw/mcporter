@@ -228,4 +228,13 @@ describe('connectWithAuth', () => {
       expect.any(OAuthAuthorizationNotStartedError)
     );
   });
+
+  it('truncates oversized OAuth startup error details', () => {
+    const hugeHtml = `<html>${'x'.repeat(5000)}</html>`;
+    const error = new OAuthAuthorizationNotStartedError('shadcn', new Error(`HTTP 404 raw body: ${hugeHtml}`));
+
+    expect(error.message.length).toBeLessThan(1800);
+    expect(error.message).toContain('[truncated ');
+    expect(error.message).not.toContain(hugeHtml);
+  });
 });

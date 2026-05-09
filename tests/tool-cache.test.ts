@@ -39,4 +39,19 @@ describe('loadToolMetadata', () => {
     await loadToolMetadata(runtime, 'integration', { includeSchema: false });
     expect(listTools).toHaveBeenCalledTimes(2);
   });
+
+  it('passes cached OAuth preference to the runtime', async () => {
+    const listTools = vi.fn(async () => [demoTool]);
+    const runtime = createRuntimeStub(listTools);
+    await loadToolMetadata(runtime, 'integration', {
+      includeSchema: true,
+      autoAuthorize: false,
+      allowCachedAuth: true,
+    });
+    expect(listTools).toHaveBeenCalledWith('integration', {
+      includeSchema: true,
+      autoAuthorize: false,
+      allowCachedAuth: true,
+    });
+  });
 });

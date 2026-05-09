@@ -9,6 +9,8 @@
 - Skip the redundant daemon `status` preflight for warm keep-alive access, cutting one socket round-trip from each routed list/call/resource request while preserving stale-config and dead-daemon recovery.
 - Route explicit default keep-alive calls like `chrome-devtools.list_pages` through a daemon-only fast path, avoiding full runtime startup on warm calls.
 - Further reduce warm keep-alive call startup by avoiding runtime/config schema imports on CLI boot and using a narrower daemon call path for simple explicit calls.
+- Keep single-server `mcporter list` non-interactive by reusing cached OAuth without launching new auth flows, and clamp oversized OAuth startup errors so HTML responses do not flood stdout/stderr.
+- Label non-timeout `mcporter list <server>` failures as unavailable instead of timed out.
 
 ### Config
 

@@ -113,6 +113,7 @@ describe('CLI list classification and routing', () => {
       (call[0]?.toString() ?? '').includes("Next: run 'mcporter auth https://mcp.supabase.com/mcp'")
     );
     expect(hinted).toBe(true);
+    expect(warnSpy.mock.calls.map((call) => call.join(' '))).toContain('  Tools: <unavailable>');
 
     warnSpy.mockRestore();
     logSpy.mockRestore();
@@ -182,7 +183,10 @@ describe('CLI list classification and routing', () => {
 
     await handleList(runtime, ['https://mcp.vercel.com']);
 
-    expect(listTools).toHaveBeenCalledWith('vercel', expect.anything());
+    expect(listTools).toHaveBeenCalledWith(
+      'vercel',
+      expect.objectContaining({ includeSchema: true, autoAuthorize: false, allowCachedAuth: true })
+    );
     expect(registerDefinition).not.toHaveBeenCalled();
   });
 
@@ -205,7 +209,10 @@ describe('CLI list classification and routing', () => {
 
     await handleList(runtime, ['https://www.shadcn.io/api/mcp.getComponents']);
 
-    expect(listTools).toHaveBeenCalledWith('shadcn', expect.anything());
+    expect(listTools).toHaveBeenCalledWith(
+      'shadcn',
+      expect.objectContaining({ includeSchema: true, autoAuthorize: false, allowCachedAuth: true })
+    );
     expect(registerDefinition).not.toHaveBeenCalled();
   });
 
@@ -227,7 +234,10 @@ describe('CLI list classification and routing', () => {
 
     await handleList(runtime, ['shadcn.io/api/mcp.getComponents']);
 
-    expect(listTools).toHaveBeenCalledWith('shadcn', expect.anything());
+    expect(listTools).toHaveBeenCalledWith(
+      'shadcn',
+      expect.objectContaining({ includeSchema: true, autoAuthorize: false, allowCachedAuth: true })
+    );
   });
 
   it('enables cached OAuth when listing all servers', async () => {
@@ -279,7 +289,10 @@ describe('CLI list classification and routing', () => {
 
     expect(registerDefinition).toHaveBeenCalled();
     expect(definitions.get('mcp-example-com-mcp')).toBeDefined();
-    expect(listTools).toHaveBeenCalledWith('mcp-example-com-mcp', expect.objectContaining({ includeSchema: true }));
+    expect(listTools).toHaveBeenCalledWith(
+      'mcp-example-com-mcp',
+      expect.objectContaining({ includeSchema: true, autoAuthorize: false, allowCachedAuth: true })
+    );
 
     logSpy.mockRestore();
   });
@@ -305,7 +318,10 @@ describe('CLI list classification and routing', () => {
     await handleList(runtime, ['linera']);
 
     expect(getDefinition).toHaveBeenCalledTimes(2);
-    expect(listTools).toHaveBeenCalledWith('linear', expect.objectContaining({ includeSchema: true }));
+    expect(listTools).toHaveBeenCalledWith(
+      'linear',
+      expect.objectContaining({ includeSchema: true, autoAuthorize: false, allowCachedAuth: true })
+    );
     const messages = logSpy.mock.calls.map((call) => call.join(' '));
     expect(messages.some((line) => line.includes('Auto-corrected server name to linear'))).toBe(true);
 
