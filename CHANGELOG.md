@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Nothing yet.
+
+## [0.10.2] - 2026-05-09
+
 ### CLI
 
 - Keep keep-alive daemon retry diagnostics on stderr so `mcporter call --output json` stdout stays parseable after a daemon recovery. (PR #163 / issue #160, thanks @clawSean)
