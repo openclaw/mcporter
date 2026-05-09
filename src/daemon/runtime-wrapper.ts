@@ -160,5 +160,5 @@ function shouldRestartDaemonServer(error: unknown): boolean {
 
 function logDaemonRetry(server: string, operation: string, error: unknown): void {
   const reason = error instanceof Error ? error.message : String(error);
-  console.log(`[mcporter] Restarting '${server}' before retrying ${operation}: ${reason}`);
+  console.error(`[mcporter] Restarting '${server}' before retrying ${operation}: ${reason}`);
 }
