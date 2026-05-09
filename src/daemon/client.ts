@@ -41,6 +41,8 @@ interface DaemonMetadata {
   readonly logPath?: string | null;
 }
 
+type DaemonConfigState = 'missing' | 'fresh' | 'stale';
+
 export function resolveDaemonPaths(configPath: string): DaemonPaths {
   const key = deriveConfigKey(configPath);
   return {
@@ -117,13 +119,13 @@ export class DaemonClient {
   }
 
   private async ensureDaemon(): Promise<void> {
-    if (await this.isConfigStale()) {
+    const configState = await this.checkConfigState();
+    if (configState === 'stale') {
       await this.stop().catch(() => {});
       await this.restartDaemon();
       return;
     }
-    const available = await this.isResponsive();
-    if (available) {
+    if (configState === 'fresh') {
       return;
     }
     await this.startDaemon();
@@ -179,26 +181,26 @@ export class DaemonClient {
     }
   }
 
-  private async isConfigStale(): Promise<boolean> {
+  private async checkConfigState(): Promise<DaemonConfigState> {
     const metadata = await readDaemonMetadata(this.metadataPath);
     if (!metadata) {
-      return false;
+      return 'missing';
     }
     const currentLayers = normalizeLayers(await collectConfigLayers(this.options));
     const metadataLayers = normalizeLayers(
       metadata.configLayers ?? [{ path: metadata.configPath, mtimeMs: metadata.configMtimeMs ?? null }]
     );
     if (currentLayers.length !== metadataLayers.length) {
-      return true;
+      return 'stale';
     }
     for (let i = 0; i < currentLayers.length; i += 1) {
       const current = currentLayers[i];
       const previous = metadataLayers[i];
       if (!current || !previous || current.path !== previous.path || current.mtimeMs !== previous.mtimeMs) {
-        return true;
+        return 'stale';
       }
     }
-    return false;
+    return 'fresh';
   }
 
   private async sendRequest<T>(method: DaemonRequestMethod, params: unknown, timeoutOverrideMs?: number): Promise<T> {

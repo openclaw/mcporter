@@ -89,4 +89,59 @@ describe('daemon client', () => {
       }
     }
   });
+
+  it('skips status preflight when daemon metadata is fresh', async () => {
+    const tmpDir = await makeShortTempDir('mcpd-fresh');
+    const originalDir = process.env.MCPORTER_DAEMON_DIR;
+    process.env.MCPORTER_DAEMON_DIR = tmpDir;
+    const configPath = path.join(tmpDir, 'config.json');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({ mcpServers: { warm: { command: 'node', args: ['server.js'], lifecycle: 'keep-alive' } } })
+    );
+    const { socketPath, metadataPath } = resolveDaemonPaths(configPath);
+    await fs.mkdir(path.dirname(socketPath), { recursive: true });
+    const configStats = await fs.stat(configPath);
+    await fs.writeFile(
+      metadataPath,
+      JSON.stringify({
+        pid: process.pid,
+        socketPath,
+        configPath,
+        configLayers: [{ path: configPath, mtimeMs: configStats.mtimeMs }],
+        startedAt: Date.now(),
+      })
+    );
+    const methods: string[] = [];
+    const server = net.createServer((socket) => {
+      let buffer = '';
+      socket.setEncoding('utf8');
+      socket.on('data', (chunk) => {
+        buffer += chunk;
+        const request = JSON.parse(buffer) as { id: string; method: string };
+        methods.push(request.method);
+        socket.end(JSON.stringify({ id: request.id, ok: true, result: { tools: [] } }));
+      });
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(socketPath, () => {
+        server.off('error', reject);
+        resolve();
+      });
+    });
+    try {
+      const client = new DaemonClient({ configPath, configExplicit: true });
+      await client.listTools({ server: 'warm' });
+      expect(methods).toEqual(['listTools']);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await fs.unlink(socketPath).catch(() => {});
+      if (originalDir) {
+        process.env.MCPORTER_DAEMON_DIR = originalDir;
+      } else {
+        delete process.env.MCPORTER_DAEMON_DIR;
+      }
+    }
+  });
 });

@@ -214,8 +214,7 @@ describe('DaemonClient config freshness', () => {
     const client = new DaemonClient({ configPath, configExplicit: true, rootDir: tmpDir });
     await client.listTools({ server: 'playwright' });
 
-    expect(sentMethods[0]).toBe('status');
-    expect(sentMethods).toContain('listTools');
+    expect(sentMethods).toEqual(['listTools']);
     expect(sentMethods).not.toContain('stop');
     expect(launchDaemonDetached).not.toHaveBeenCalled();
   });

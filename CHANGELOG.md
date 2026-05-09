@@ -5,6 +5,7 @@
 ### CLI
 
 - Increase the default OAuth browser wait from 60 seconds to 5 minutes so hosted MCP sign-ins have enough time for account and permission review.
+- Skip the redundant daemon `status` preflight for warm keep-alive access, cutting one socket round-trip from each routed list/call/resource request while preserving stale-config and dead-daemon recovery.
 
 ### Config
 
