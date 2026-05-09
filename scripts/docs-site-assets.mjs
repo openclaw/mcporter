@@ -129,6 +129,12 @@ body:not(.home) .doc>h1:first-child{display:none}
 .doc pre::-webkit-scrollbar{height:8px;width:8px}
 .doc pre::-webkit-scrollbar-thumb{background:#334155;border-radius:8px}
 .doc pre code{display:block;background:transparent;border:0;color:inherit;padding:0;font-size:1em;white-space:pre}
+.doc pre code .tok-comment{color:#6b7280;font-style:italic}
+.doc pre code .tok-cmd{color:#67e8f9;font-weight:600}
+.doc pre code .tok-flag{color:#c4b5fd}
+.doc pre code .tok-string{color:#fde68a}
+.doc pre code .tok-key{color:#93c5fd}
+.doc pre code .tok-value{color:#86efac}
 .doc pre .copy{position:absolute;top:8px;right:8px;background:rgba(255,255,255,.06);color:var(--code-fg);border:1px solid rgba(255,255,255,.16);border-radius:6px;padding:3px 9px;font:500 .7rem/1 "Inter",sans-serif;cursor:pointer;opacity:0;transition:opacity .15s,background .15s,border-color .15s}
 .doc pre:hover .copy,.doc pre .copy:focus{opacity:1}
 .doc pre .copy:hover{background:rgba(255,255,255,.12)}
@@ -238,7 +244,13 @@ if(mobileNav.addEventListener)mobileNav.addEventListener('change',syncSidebarFor
 else mobileNav.addListener?.(syncSidebarForViewport);
 const input=document.getElementById('doc-search');
 input?.addEventListener('input',()=>{const q=input.value.trim().toLowerCase();document.querySelectorAll('nav section').forEach(sec=>{let any=false;sec.querySelectorAll('.nav-link').forEach(a=>{const m=!q||a.textContent.toLowerCase().includes(q);a.style.display=m?'block':'none';if(m)any=true});sec.style.display=any?'block':'none'})});
+function escapeHtmlText(value){return value.replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))}
+const shellCommands=new Set(['bun','mcporter','node','npm','npx','pnpm','list','call','resource','generate-cli','emit-ts','auth','config','daemon','inspect-cli']);
+function span(cls,text){return '<span class="'+cls+'">'+escapeHtmlText(text)+'</span>'}
+function highlightShellLine(line){if(/^\\s*#/.test(line))return span('tok-comment',line);let html='';let i=0;while(i<line.length){const ch=line[i];if(/\\s/.test(ch)){html+=ch;i++;continue}if(ch==='#'){html+=span('tok-comment',line.slice(i));break}if(ch==="'"||ch==='"'){const quote=ch;let j=i+1;while(j<line.length){if(line[j]==='\\\\'){j+=2;continue}if(line[j]===quote){j++;break}j++}html+=span('tok-string',line.slice(i,j));i=j;continue}let j=i;while(j<line.length&&!/\\s/.test(line[j])&&line[j]!=="'"&&line[j]!=='"'&&line[j]!=='#')j++;const token=line.slice(i,j);if(token.startsWith('--')||/^-[A-Za-z]/.test(token))html+=span('tok-flag',token);else if(shellCommands.has(token))html+=span('tok-cmd',token);else if(/^[A-Za-z][A-Za-z0-9_-]*:/.test(token)){const idx=token.indexOf(':')+1;html+=span('tok-key',token.slice(0,idx))+span('tok-value',token.slice(idx))}else html+=escapeHtmlText(token);i=j}return html}
+function highlightCodeBlocks(){document.querySelectorAll('.doc pre code.language-bash,.doc pre code.language-sh,.doc pre code.language-shell').forEach(code=>{if(code.dataset.highlighted)return;code.dataset.highlighted='true';code.innerHTML=code.textContent.split('\\n').map(highlightShellLine).join('\\n')})}
 function attachCopy(target,getText){const btn=document.createElement('button');btn.type='button';btn.className='copy';btn.textContent='Copy';btn.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(getText());btn.textContent='Copied';btn.classList.add('copied');setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied')},1400)}catch{btn.textContent='Failed';setTimeout(()=>{btn.textContent='Copy'},1400)}});target.appendChild(btn)}
+highlightCodeBlocks();
 document.querySelectorAll('.doc pre').forEach(pre=>attachCopy(pre,()=>pre.querySelector('code')?.textContent??''));
 document.querySelectorAll('.home-install').forEach(el=>attachCopy(el,()=>el.querySelector('code')?.textContent??''));
 const tocLinks=document.querySelectorAll('.toc a');
