@@ -1,7 +1,7 @@
 import ora from 'ora';
 import type { ServerDefinition } from '../config.js';
-import { MCPORTER_VERSION } from '../runtime.js';
 import { setStdioLogMode } from '../sdk-patches.js';
+import { MCPORTER_VERSION } from '../version.js';
 import { persistPreparedEphemeralServer, prepareEphemeralServerTarget } from './ephemeral-target.js';
 import { splitHttpToolSelector } from './http-utils.js';
 import { chooseClosestIdentifier, renderIdentifierResolutionMessages } from './identifier-helpers.js';

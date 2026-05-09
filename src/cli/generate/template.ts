@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { CliArtifactMetadata } from '../../cli-metadata.js';
 import type { ServerDefinition } from '../../config.js';
-import { MCPORTER_VERSION } from '../../runtime.js';
+import { MCPORTER_VERSION } from '../../version.js';
 import { buildToolDoc, type ToolOptionDoc } from '../list-detail-helpers.js';
 import { markExecutable } from './fs-helpers.js';
 import { renderEmbeddedHelpSource } from './template-help.js';

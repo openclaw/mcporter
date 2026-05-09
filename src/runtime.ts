@@ -1,5 +1,3 @@
-import { createRequire } from 'node:module';
-
 import type { CallToolRequest, ListResourcesRequest, ReadResourceRequest } from '@modelcontextprotocol/sdk/types.js';
 import { loadServerDefinitions, type ServerDefinition } from './config.js';
 import { createPrefixedConsoleLogger, type Logger, type LogLevel, resolveLogLevelFromEnv } from './logging.js';
@@ -10,17 +8,11 @@ import { resolveOAuthTimeoutFromEnv } from './runtime/oauth.js';
 import { type ClientContext, createClientContext } from './runtime/transport.js';
 import { normalizeTimeout, raceWithTimeout } from './runtime/utils.js';
 import { filterTools, isToolAllowed, validateToolFilters } from './tool-filters.js';
+import { MCPORTER_VERSION } from './version.js';
+
+export { MCPORTER_VERSION } from './version.js';
 
 const PACKAGE_NAME = 'mcporter';
-// Keep version in one place by reading package.json; fall back gracefully when bundled without it (e.g., bun bundle).
-const CLIENT_VERSION = (() => {
-  try {
-    return createRequire(import.meta.url)('../package.json').version as string;
-  } catch {
-    return process.env.MCPORTER_VERSION ?? '0.0.0-dev';
-  }
-})();
-export const MCPORTER_VERSION = CLIENT_VERSION;
 const OAUTH_CODE_TIMEOUT_MS = resolveOAuthTimeoutFromEnv();
 
 export interface RuntimeOptions {
@@ -121,7 +113,7 @@ class McpRuntime implements Runtime {
     this.logger = options.logger ?? createConsoleLogger();
     this.clientInfo = options.clientInfo ?? {
       name: PACKAGE_NAME,
-      version: CLIENT_VERSION,
+      version: MCPORTER_VERSION,
     };
     this.oauthTimeoutMs = options.oauthTimeoutMs;
   }

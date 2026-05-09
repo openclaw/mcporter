@@ -1,5 +1,5 @@
 import fsPromises from 'node:fs/promises';
-import { MCPORTER_VERSION } from '../runtime.js';
+import { MCPORTER_VERSION } from '../version.js';
 import { boldText, dimText, extraDimText, supportsAnsiColor } from './terminal.js';
 
 type HelpEntry = {

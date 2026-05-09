@@ -5,7 +5,7 @@ import { CliUsageError } from './cli/errors.js';
 import { consumeHelpTokens, isHelpToken, isVersionToken, printHelp, printVersion } from './cli/help-output.js';
 import { logError, logInfo } from './cli/logger-context.js';
 import { DEBUG_HANG, dumpActiveHandles, terminateChildProcesses } from './cli/runtime-debug.js';
-import { resolveConfigPath } from './config.js';
+import { resolveConfigPath } from './config/path-discovery.js';
 import type { Runtime, RuntimeOptions } from './runtime.js';
 
 export { parseCallArguments } from './cli/call-arguments.js';
@@ -323,6 +323,9 @@ async function maybeHandleDaemonFastCall(
   if (!server || !DAEMON_FAST_PATH_SERVERS.has(server) || isFastPathKeepAliveDisabled(server)) {
     return false;
   }
+  if (await maybeHandleSimpleDaemonFastCall(callArgs, configResolution, rootDir)) {
+    return true;
+  }
   const [{ DaemonClient }, { handleCall: importedHandleCall }] = await Promise.all([
     import('./daemon/client.js'),
     import('./cli/call-command.js'),
@@ -333,6 +336,55 @@ async function maybeHandleDaemonFastCall(
     rootDir,
   });
   await importedHandleCall(createDaemonOnlyRuntime(daemonClient), callArgs);
+  return true;
+}
+
+async function maybeHandleSimpleDaemonFastCall(
+  callArgs: string[],
+  configResolution: { path: string; explicit: boolean },
+  rootDir: string | undefined
+): Promise<boolean> {
+  const [{ parseCallArguments }, { resolveCallTimeout }] = await Promise.all([
+    import('./cli/call-arguments.js'),
+    import('./cli/timeouts.js'),
+  ]);
+  let parsed: ReturnType<typeof parseCallArguments>;
+  try {
+    parsed = parseCallArguments([...callArgs]);
+  } catch {
+    return false;
+  }
+  if (
+    !parsed.server ||
+    !parsed.tool ||
+    parsed.ephemeral ||
+    parsed.tailLog ||
+    parsed.saveImagesDir ||
+    (parsed.positionalArgs?.length ?? 0) > 0 ||
+    parsed.schemaStringCoercionCandidates ||
+    parsed.schemaArrayCoercionCandidates
+  ) {
+    return false;
+  }
+
+  const [{ DaemonClient }, { wrapCallResult }, { printCallOutput }] = await Promise.all([
+    import('./daemon/client.js'),
+    import('./result-utils.js'),
+    import('./cli/output-utils.js'),
+  ]);
+  const daemonClient = new DaemonClient({
+    configPath: configResolution.path,
+    configExplicit: configResolution.explicit,
+    rootDir,
+  });
+  const result = await daemonClient.callTool({
+    server: parsed.server,
+    tool: parsed.tool,
+    args: Object.keys(parsed.args).length > 0 ? parsed.args : undefined,
+    timeoutMs: resolveCallTimeout(parsed.timeoutMs),
+  });
+  const { callResult } = wrapCallResult(result);
+  printCallOutput(callResult, result, parsed.output);
   return true;
 }
 

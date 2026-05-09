@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { RolldownPlugin } from 'rolldown';
-import { MCPORTER_VERSION } from '../../runtime.js';
+import { MCPORTER_VERSION } from '../../version.js';
 import { markExecutable, safeCopyFile } from './fs-helpers.js';
 import { verifyBunAvailable } from './runtime.js';
 
@@ -76,6 +76,7 @@ async function bundleWithRolldown({
   await bundle.write({
     file: absTarget,
     format: runtimeKind === 'bun' ? 'esm' : 'cjs',
+    codeSplitting: false,
     sourcemap: false,
     minify,
   });

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeShortTempDir } from './fixtures/test-helpers.js';
 
 const sentMethods: string[] = [];
-let launchDaemonDetached: ReturnType<typeof vi.fn>;
+const launchDaemonDetached = vi.hoisted(() => vi.fn());
 let createConnection: ReturnType<typeof vi.fn>;
 
 class MockSocket extends EventEmitter {
@@ -73,7 +73,6 @@ vi.mock('node:net', () => {
 });
 
 vi.mock('../src/daemon/launch.js', () => {
-  launchDaemonDetached = vi.fn();
   return { launchDaemonDetached };
 });
 

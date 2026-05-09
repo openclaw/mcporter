@@ -1,4 +1,4 @@
-import { resolveConfigPath } from '../config.js';
+import { resolveConfigPath } from '../config/path-discovery.js';
 import { parseLogLevel } from '../logging.js';
 import { extractFlags } from './flag-utils.js';
 import { getActiveLogger, getActiveLogLevel, logError, setLogLevel } from './logger-context.js';

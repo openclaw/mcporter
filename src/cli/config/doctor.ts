@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { loadServerDefinitions } from '../../config.js';
-import { MCPORTER_VERSION } from '../../runtime.js';
+import { MCPORTER_VERSION } from '../../version.js';
 import { logConfigLocations, resolveConfigLocations } from './shared.js';
 import type { ConfigCliOptions } from './types.js';
 

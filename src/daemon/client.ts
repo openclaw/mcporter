@@ -3,7 +3,6 @@ import fs from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import { listConfigLayerPaths } from '../config/path-discovery.js';
-import { launchDaemonDetached } from './launch.js';
 import { getDaemonMetadataPath, getDaemonSocketPath } from './paths.js';
 import type {
   CallToolParams,
@@ -143,7 +142,8 @@ export class DaemonClient {
       return;
     }
     this.startingPromise = Promise.resolve()
-      .then(() => {
+      .then(async () => {
+        const { launchDaemonDetached } = await import('./launch.js');
         launchDaemonDetached({
           configPath: this.options.configPath,
           configExplicit: this.options.configExplicit,
@@ -351,7 +351,12 @@ function delay(ms: number): Promise<void> {
 function normalizeLayers(
   layers: Array<{ path: string; mtimeMs: number | null }>
 ): Array<{ path: string; mtimeMs: number | null }> {
-  return layers
-    .map((entry) => ({ path: path.resolve(entry.path), mtimeMs: entry.mtimeMs ?? null }))
-    .toSorted((a, b) => a.path.localeCompare(b.path));
+  const normalized = layers.map((entry) => ({
+    path: path.isAbsolute(entry.path) ? entry.path : path.resolve(entry.path),
+    mtimeMs: entry.mtimeMs ?? null,
+  }));
+  if (normalized.length < 2) {
+    return normalized;
+  }
+  return normalized.toSorted((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
