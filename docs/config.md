@@ -163,6 +163,8 @@ mcporter vault set <server> --stdin
 mcporter vault clear <server>
 ```
 
+`--config` and `--root` select which server definition is resolved; they do not isolate credential storage. For tenant-specific credentials, isolate `$XDG_DATA_HOME` or configure a distinct `tokenCacheDir`.
+
 The payload is a single vault-entry-compatible credential object, not the full `credentials.json` file with internal map keys:
 
 ```json

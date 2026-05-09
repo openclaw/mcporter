@@ -18,7 +18,7 @@ The command exposes existing mcporter credential persistence through a scriptabl
 - Let CI, containers, deployment controllers, and fleet provisioners seed OAuth credentials without a browser flow.
 - Keep server identity resolution inside mcporter so callers never reproduce the vault key format.
 - Preserve the same credential read/write behavior used by runtime OAuth flows.
-- Support tenant/deployment isolation through the existing `--config <path>` and `--root <dir>` global flags.
+- Let automation select tenant/deployment-specific server definitions through the existing `--config <path>` and `--root <dir>` global flags.
 - Keep stdout/stderr script-safe: never print token material, return non-zero on invalid input, and keep validation messages concise.
 
 ## CLI
@@ -29,7 +29,9 @@ mcporter vault set <server> --stdin
 mcporter vault clear <server>
 ```
 
-`<server>` resolves through the same config/import discovery stack as `mcporter list`, `mcporter call`, `mcporter auth`, and `mcporter config logout`. The command honors explicit `--config <path>` and `--root <dir>` overrides so automated deployments can target an isolated config file and project root.
+`<server>` resolves through the same config/import discovery stack as `mcporter list`, `mcporter call`, `mcporter auth`, and `mcporter config logout`. The command honors explicit `--config <path>` and `--root <dir>` overrides so automated deployments can target a specific config file and project root.
+
+`--config` and `--root` only control server-definition resolution; they do not isolate the credential vault. Deployments that use the same resolved server name and transport descriptor share the same vault key unless they also isolate credential storage with `XDG_DATA_HOME` or a per-server `tokenCacheDir`.
 
 `--tokens-file` and `--stdin` are mutually exclusive. Missing input, duplicate input sources, malformed JSON, missing `tokens`, or unknown servers fail before writing anything.
 

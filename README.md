@@ -423,6 +423,8 @@ cat ./notion-oauth.json | npx mcporter vault set notion --stdin
 npx mcporter vault clear notion
 ```
 
+`--config` selects the server definition; it does not isolate the credential vault. Use a tenant-specific `XDG_DATA_HOME` or `tokenCacheDir` when different deployments share the same server name and URL.
+
 Providers that do not support dynamic client registration can use a pre-registered app:
 
 ```jsonc
