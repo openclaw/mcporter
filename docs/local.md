@@ -20,10 +20,10 @@ pnpm exec tsx src/cli.ts list
 pnpm exec tsx src/cli.ts list --json
 
 # call a tool (auto formatted)
-pnpm exec tsx src/cli.ts call context7.resolve-library-id libraryName=react
+pnpm exec tsx src/cli.ts call context7.resolve-library-id query="React hooks docs" libraryName=react
 
 # call a tool but emit structured JSON on success/failure
-pnpm exec tsx src/cli.ts call context7.resolve-library-id libraryName=react --output json
+pnpm exec tsx src/cli.ts call context7.resolve-library-id query="React hooks docs" libraryName=react --output json
 
 # auth flow
 pnpm exec tsx src/cli.ts auth vercel
@@ -60,7 +60,7 @@ After `pnpm add mcporter` in your project (or inside this repo), the shim binari
 
 ```bash
 pnpm mcporter:list
-pnpm mcporter:call context7.get-library-docs topic=hooks
+pnpm mcporter:call context7.query-docs libraryId=/reactjs/react.dev query=hooks
 ```
 
 ## Debug flags recap

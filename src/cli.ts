@@ -97,11 +97,23 @@ export async function runCli(argv: string[]): Promise<void> {
 
   // Early-exit command handlers that don't require runtime inference.
   if (command === 'generate-cli') {
+    if (consumeHelpTokens(args)) {
+      const { printGenerateCliHelp } = await import('./cli/generate-cli-runner.js');
+      printGenerateCliHelp();
+      process.exitCode = 0;
+      return;
+    }
     const { handleGenerateCli: importedHandleGenerateCli } = await import('./cli/generate-cli-runner.js');
     await importedHandleGenerateCli(args, globalFlags);
     return;
   }
   if (command === 'inspect-cli') {
+    if (consumeHelpTokens(args)) {
+      const { printInspectCliHelp } = await import('./cli/inspect-cli-command.js');
+      printInspectCliHelp();
+      process.exitCode = 0;
+      return;
+    }
     const { handleInspectCli: importedHandleInspectCli } = await import('./cli/inspect-cli-command.js');
     await importedHandleInspectCli(args);
     return;
@@ -140,6 +152,12 @@ export async function runCli(argv: string[]): Promise<void> {
   }
 
   if (command === 'emit-ts') {
+    if (consumeHelpTokens(args)) {
+      const { printEmitTsHelp } = await import('./cli/emit-ts-command.js');
+      printEmitTsHelp();
+      process.exitCode = 0;
+      return;
+    }
     const [{ createRuntime }, { handleEmitTs }] = await Promise.all([
       import('./runtime.js'),
       import('./cli/emit-ts-command.js'),

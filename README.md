@@ -126,8 +126,8 @@ Required parameters always show; optional parameters stay hidden unless (a) ther
 ### Context7: fetch docs (no auth required)
 
 ```bash
-npx mcporter call context7.resolve-library-id libraryName=react
-npx mcporter call context7.get-library-docs context7CompatibleLibraryID=/websites/react_dev topic=hooks
+npx mcporter call context7.resolve-library-id query="React hooks docs" libraryName=react
+npx mcporter call context7.query-docs libraryId=/reactjs/react.dev query="useEffect cleanup"
 ```
 
 ### Linear: search documentation (requires `LINEAR_API_KEY`)
@@ -199,7 +199,7 @@ npx mcporter call --stdio "bun run ./local-server.ts" --name local-tools
 
 ## Friendlier Tool Calls
 
-- **Function-call syntax.** Instead of juggling `--flag value`, you can call tools as `mcporter call 'linear.create_issue(title: "Bug", team: "ENG")'`. The parser supports nested objects/arrays, lets you omit labels when you want to rely on schema order (e.g. `mcporter 'context7.resolve-library-id("react")'`), and surfaces schema validation errors clearly. Deep dive in [docs/call-syntax.md](docs/call-syntax.md).
+- **Function-call syntax.** Instead of juggling `--flag value`, you can call tools as `mcporter call 'linear.create_issue(title: "Bug", team: "ENG")'`. The parser supports nested objects/arrays, lets you omit labels when you want to rely on schema order (e.g. `mcporter 'context7.resolve-library-id("React hooks docs", "react")'`), and surfaces schema validation errors clearly. Deep dive in [docs/call-syntax.md](docs/call-syntax.md).
 - **Flag shorthand still works.** Prefer CLI-style arguments? Stick with `mcporter linear.create_issue title=value team=value`, `title=value`, `title:value`, or even `title: value`—the CLI now normalizes all three forms.
 - **Unknown long flags fail fast.** `mcporter call server.tool --source import` now errors instead of silently turning `--source` into a positional tool argument. Use `source=import`, `--args '{"source":"import"}'`, or insert `--` before literal positional values that begin with `--`.
 - **Cheatsheet.** See [docs/tool-calling.md](docs/tool-calling.md) for a quick comparison of every supported call style (auto-inferred verbs, flags, function-calls, and ad-hoc URLs).
@@ -260,7 +260,7 @@ const runtime = await createRuntime();
 
 const tools = await runtime.listTools('context7');
 const result = await runtime.callTool('context7', 'resolve-library-id', {
-  args: { libraryName: 'react' },
+  args: { query: 'React hooks docs', libraryName: 'react' },
 });
 
 console.log(result); // prints JSON/text automatically because the CLI pretty-prints by default

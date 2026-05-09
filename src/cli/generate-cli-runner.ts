@@ -80,3 +80,28 @@ export async function handleGenerateCli(args: string[], globalFlags: FlagMap): P
     excludeTools: parsed.excludeTools,
   });
 }
+
+export function printGenerateCliHelp(): void {
+  console.error(
+    [
+      'Usage: mcporter generate-cli [server | command | url] [flags]',
+      '',
+      'Targets:',
+      '  <server>                Use a configured server.',
+      '  <command|url>           Infer an inline stdio or HTTP server.',
+      '  --server <name|json>    Server name, HTTP URL, or JSON definition.',
+      '  --command <value>       Inline stdio command or HTTP URL.',
+      '  --from <artifact>       Regenerate from an existing generated CLI.',
+      '',
+      'Flags:',
+      '  --output <path>         Write the TypeScript template to a path.',
+      '  --bundle [path]         Emit a bundled JavaScript artifact.',
+      '  --compile [path]        Emit a Bun-compiled binary.',
+      '  --runtime node|bun      Runtime for generated code.',
+      '  --bundler rolldown|bun  Bundler for JavaScript output.',
+      '  --include-tools a,b     Generate only these tools.',
+      '  --exclude-tools a,b     Omit these tools.',
+      '  --dry-run               Print regeneration command for --from.',
+    ].join('\n')
+  );
+}

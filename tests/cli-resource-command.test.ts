@@ -52,4 +52,50 @@ describe('handleResource', () => {
       logSpy.mockRestore();
     }
   });
+
+  it('prints structured JSON for resource listing failures', async () => {
+    const runtime = createRuntime();
+    runtime.listResources.mockRejectedValue(new Error('MCP error -32601: Method not found'));
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    process.exitCode = undefined;
+    try {
+      await handleResource(runtime, ['docs', '--output', 'json']);
+      const payload = JSON.parse(logSpy.mock.calls.at(-1)?.[0] ?? '{}');
+      expect(payload).toMatchObject({
+        server: 'docs',
+        error: 'MCP error -32601: Method not found',
+        issue: {
+          kind: 'other',
+          rawMessage: 'MCP error -32601: Method not found',
+        },
+      });
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = previousExitCode;
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('prints a concise error for text resource listing failures', async () => {
+    const runtime = createRuntime();
+    runtime.listResources.mockRejectedValue(new Error('MCP error -32601: Method not found'));
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    process.exitCode = undefined;
+    try {
+      await handleResource(runtime, ['docs']);
+      expect(errorSpy).toHaveBeenCalledWith('[mcporter] MCP error -32601: Method not found');
+      expect(logSpy).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = previousExitCode;
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+  });
 });

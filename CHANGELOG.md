@@ -11,6 +11,12 @@
 - Further reduce warm keep-alive call startup by avoiding runtime/config schema imports on CLI boot and using a narrower daemon call path for simple explicit calls.
 - Keep single-server `mcporter list` non-interactive by reusing cached OAuth without launching new auth flows, and clamp oversized OAuth startup errors so HTML responses do not flood stdout/stderr.
 - Label non-timeout `mcporter list <server>` failures as unavailable instead of timed out.
+- Return concise/structured `mcporter resource` errors for servers that do not implement MCP resources instead of dumping SDK stack traces.
+- Refresh Context7 examples for the live `resolve-library-id` and `query-docs` schemas.
+- Make `generate-cli --help`, `inspect-cli --help`, and `emit-ts --help` print command help before flag parsing.
+- Auto-correct near-miss tool names when a server reports an unknown tool as MCP `isError` content instead of throwing.
+- Keep auto-correct diagnostics on stderr for `mcporter call --output json/raw` so stdout stays parseable.
+- Make generated CLIs keep `--output json` parseable for plain text MCP results by falling back to the raw JSON envelope.
 
 ### Config
 

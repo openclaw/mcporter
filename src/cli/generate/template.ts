@@ -178,14 +178,16 @@ ${renderEmbeddedHelpSource()}
 
 function printResult(result: unknown, format: string) {
 \tconst wrapped = createCallResult(result);
+\tconst rawPayload = unwrapRawPayload(wrapped.raw);
 \tswitch (format) {
 \t\tcase 'json': {
 \t\t\tconst json = wrapped.json();
-\t\t\tif (json) {
+\t\t\tif (json !== null) {
 \t\t\t\tconsole.log(JSON.stringify(json, null, 2));
 \t\t\t\treturn;
 \t\t\t}
-\t\t\tbreak;
+\t\t\tconsole.log(JSON.stringify(rawPayload, null, 2));
+\t\t\treturn;
 \t\t}
 \t\tcase 'markdown': {
 \t\t\tconst markdown = wrapped.markdown();
@@ -196,7 +198,7 @@ function printResult(result: unknown, format: string) {
 \t\t\tbreak;
 \t\t}
 \t\tcase 'raw': {
-\t\t\tconsole.log(JSON.stringify(wrapped.raw, null, 2));
+\t\t\tconsole.log(JSON.stringify(rawPayload, null, 2));
 \t\t\treturn;
 \t\t}
 \t}
@@ -204,8 +206,15 @@ function printResult(result: unknown, format: string) {
 \tif (text) {
 \t\tconsole.log(text);
 \t} else {
-\t\tconsole.log(JSON.stringify(wrapped.raw, null, 2));
+\t\tconsole.log(JSON.stringify(rawPayload, null, 2));
 \t}
+}
+
+function unwrapRawPayload(value: unknown): unknown {
+\tif (value && typeof value === 'object' && 'raw' in value) {
+\t\treturn (value as { raw: unknown }).raw;
+\t}
+\treturn value;
 }
 
 function parseArrayOption(value: string, itemType: 'string' | 'number' | 'boolean' | 'json') {

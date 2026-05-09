@@ -51,9 +51,9 @@ function buildCallExpressionUsageError(error: unknown): CliUsageError {
     `Reason: ${reason}`,
     '',
     'Examples:',
-    '  mcporter \'context7.resolve-library-id(libraryName: "react")\'',
-    '  mcporter \'context7.resolve-library-id("react")\'',
-    '  mcporter context7.resolve-library-id libraryName=react',
+    '  mcporter \'context7.resolve-library-id(query: "React hooks docs", libraryName: "react")\'',
+    '  mcporter \'context7.resolve-library-id("React hooks docs", "react")\'',
+    '  mcporter context7.resolve-library-id query="React hooks docs" libraryName=react',
     '',
     'Tip: wrap the entire expression in single quotes so the shell preserves parentheses and commas.',
   ];

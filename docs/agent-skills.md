@@ -37,9 +37,9 @@ current task.
 
    # Docs MCP
 
-   Use `npx mcporter call docs.resolve-library-id libraryName=<name>` to resolve
-   a package, then call `npx mcporter call docs.get-library-docs ...` with the
-   resolved ID and optional topic.
+   Use `npx mcporter call docs.resolve-library-id query=<task> libraryName=<name>`
+   to resolve a package, then call `npx mcporter call docs.query-docs ...` with
+   the resolved ID and docs query.
    ```
 
 4. For repeated or shareable workflows, generate a dedicated CLI instead of

@@ -165,6 +165,70 @@ describe('CLI call execution behavior', () => {
     }
   });
 
+  it('auto-corrects near-miss tool names returned as MCP isError content', async () => {
+    const { handleCall } = await cliModulePromise;
+    const callTool = vi
+      .fn()
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'Unknown tool: read_wiki_structur' }], isError: true })
+      .mockResolvedValueOnce({ ok: true });
+    const listTools = vi.fn().mockResolvedValue([{ name: 'read_wiki_structure' }]);
+    const runtime = {
+      callTool,
+      listTools,
+      close: vi.fn().mockResolvedValue(undefined),
+    } as unknown as Awaited<ReturnType<(typeof import('../src/runtime.js'))['createRuntime']>>;
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleCall(runtime, ['deepwiki.read_wiki_structur']);
+
+    const notes = logSpy.mock.calls.map((call) => call.join(' '));
+    expect(notes.some((line) => line.includes('Auto-corrected tool call to deepwiki.read_wiki_structure'))).toBe(true);
+    expect(callTool).toHaveBeenCalledTimes(2);
+    expect(callTool).toHaveBeenNthCalledWith(
+      1,
+      'deepwiki',
+      'read_wiki_structur',
+      expect.objectContaining({ args: {} })
+    );
+    expect(callTool).toHaveBeenNthCalledWith(
+      2,
+      'deepwiki',
+      'read_wiki_structure',
+      expect.objectContaining({ args: {} })
+    );
+
+    logSpy.mockRestore();
+  });
+
+  it('keeps auto-correct diagnostics off stdout for JSON output', async () => {
+    const { handleCall } = await cliModulePromise;
+    const callTool = vi
+      .fn()
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'Unknown tool: read_wiki_structur' }], isError: true })
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: '{"ok":true}' }] });
+    const listTools = vi.fn().mockResolvedValue([{ name: 'read_wiki_structure' }]);
+    const runtime = {
+      callTool,
+      listTools,
+      close: vi.fn().mockResolvedValue(undefined),
+    } as unknown as Awaited<ReturnType<(typeof import('../src/runtime.js'))['createRuntime']>>;
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await handleCall(runtime, ['deepwiki.read_wiki_structur', '--output', 'json']);
+
+    expect(errorSpy.mock.calls.map((call) => call.join(' ')).join('\n')).toContain(
+      'Auto-corrected tool call to deepwiki.read_wiki_structure'
+    );
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(logSpy.mock.calls[0]?.[0]?.toString() ?? '{}')).toEqual({ ok: true });
+
+    logSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
   it('still requires an explicit tool when multiple are available', async () => {
     const { handleCall } = await cliModulePromise;
     const { runtime, callTool } = createRuntimeStub(

@@ -164,7 +164,8 @@ async function invokePreparedCall(
       prepared.server,
       prepared.tool,
       prepared.hydratedArgs,
-      prepared.timeoutMs
+      prepared.timeoutMs,
+      prepared.parsed.output
     );
   } catch (error) {
     const issue = maybeReportConnectionIssue(prepared.server, prepared.tool, error);
@@ -454,10 +455,11 @@ async function invokeWithAutoCorrection(
   server: string,
   tool: string,
   args: Record<string, unknown>,
-  timeoutMs: number
+  timeoutMs: number,
+  outputFormat: OutputFormat
 ): Promise<{ result: unknown; resolvedTool: string }> {
   // Attempt the original request first; if it fails with a "tool not found" we opportunistically retry once with a better match.
-  return attemptCall(runtime, server, tool, args, timeoutMs, true);
+  return attemptCall(runtime, server, tool, args, timeoutMs, outputFormat, true);
 }
 
 async function attemptCall(
@@ -466,10 +468,20 @@ async function attemptCall(
   tool: string,
   args: Record<string, unknown>,
   timeoutMs: number,
+  outputFormat: OutputFormat,
   allowCorrection: boolean
 ): Promise<{ result: unknown; resolvedTool: string }> {
   try {
     const result = await withTimeout(runtime.callTool(server, tool, { args, timeoutMs }), timeoutMs);
+    if (allowCorrection && isErrorCallResult(result)) {
+      const resolution = await maybeResolveToolName(runtime, server, tool, result);
+      if (resolution) {
+        const retry = await maybeRetryResolvedTool(runtime, server, tool, args, timeoutMs, outputFormat, resolution);
+        if (retry) {
+          return retry;
+        }
+      }
+    }
     return { result, resolvedTool: tool };
   } catch (error) {
     if (error instanceof Error && error.message === 'Timeout') {
@@ -491,23 +503,40 @@ async function attemptCall(
       throw error;
     }
 
-    const messages = renderIdentifierResolutionMessages({
-      entity: 'tool',
-      attempted: tool,
-      resolution,
-      scope: server,
-    });
-    if (resolution.kind === 'suggest') {
-      if (messages.suggest) {
-        console.error(dimText(messages.suggest));
-      }
+    const retry = await maybeRetryResolvedTool(runtime, server, tool, args, timeoutMs, outputFormat, resolution);
+    if (!retry) {
       throw error;
     }
-    if (messages.auto) {
-      console.log(dimText(messages.auto));
-    }
-    return attemptCall(runtime, server, resolution.value, args, timeoutMs, false);
+    return retry;
   }
+}
+
+async function maybeRetryResolvedTool(
+  runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
+  server: string,
+  tool: string,
+  args: Record<string, unknown>,
+  timeoutMs: number,
+  outputFormat: OutputFormat,
+  resolution: ToolResolution
+): Promise<{ result: unknown; resolvedTool: string } | undefined> {
+  const messages = renderIdentifierResolutionMessages({
+    entity: 'tool',
+    attempted: tool,
+    resolution,
+    scope: server,
+  });
+  if (resolution.kind === 'suggest') {
+    if (messages.suggest) {
+      console.error(dimText(messages.suggest));
+    }
+    return undefined;
+  }
+  if (messages.auto) {
+    const emitAutoMessage = outputFormat === 'json' || outputFormat === 'raw' ? console.error : console.log;
+    emitAutoMessage(dimText(messages.auto));
+  }
+  return attemptCall(runtime, server, resolution.value, args, timeoutMs, outputFormat, false);
 }
 
 async function maybeResolveToolName(
@@ -542,12 +571,37 @@ async function maybeResolveToolName(
 }
 
 function extractMissingToolFromError(error: unknown): string | undefined {
-  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : undefined;
+  const message = extractErrorMessageText(error);
   if (!message) {
     return undefined;
   }
-  const match = message.match(/Tool\s+([A-Za-z0-9._-]+)\s+not found/i);
+  const match =
+    message.match(/Tool\s+([A-Za-z0-9._-]+)\s+not found/i) ?? message.match(/Unknown tool:?\s+([A-Za-z0-9._-]+)/i);
   return match?.[1];
+}
+
+function extractErrorMessageText(value: unknown): string | undefined {
+  if (value instanceof Error) {
+    return value.message;
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+  const content = (value as { content?: unknown }).content;
+  if (!Array.isArray(content)) {
+    return undefined;
+  }
+  return content
+    .map((entry) =>
+      entry && typeof entry === 'object' && typeof (entry as { text?: unknown }).text === 'string'
+        ? (entry as { text: string }).text
+        : ''
+    )
+    .filter(Boolean)
+    .join('\n');
 }
 
 function maybeReportConnectionIssue(server: string, tool: string, error: unknown): ConnectionIssue | undefined {

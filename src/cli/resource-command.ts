@@ -1,4 +1,6 @@
+import { analyzeConnectionError } from '../error-classifier.js';
 import { wrapCallResult } from '../result-utils.js';
+import { buildConnectionIssueEnvelope, formatErrorMessage } from './json-output.js';
 import { consumeOutputFormat } from './output-format.js';
 import { printCallOutput } from './output-utils.js';
 
@@ -20,7 +22,19 @@ export async function handleResource(runtime: Runtime, args: string[]): Promise<
     throw new Error(`Unexpected resource arguments: ${args.join(' ')}`);
   }
 
-  const result = uri ? await runtime.readResource(server, uri) : await runtime.listResources(server);
+  let result: unknown;
+  try {
+    result = uri ? await runtime.readResource(server, uri) : await runtime.listResources(server);
+  } catch (error) {
+    const issue = analyzeConnectionError(error);
+    if (output === 'json' || output === 'raw') {
+      console.log(JSON.stringify(buildConnectionIssueEnvelope({ server, error, issue }), null, 2));
+    } else {
+      console.error(`[mcporter] ${formatErrorMessage(error)}`);
+    }
+    process.exitCode = 1;
+    return;
+  }
   const { callResult } = wrapCallResult(result);
   printCallOutput(callResult, result, output);
 }

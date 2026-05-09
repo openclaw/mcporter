@@ -37,12 +37,12 @@ mcporter call context7.resolve-library-id libraryName: value
 
 ```bash
 mcporter call 'linear.create_issue(title: "Bug", team: "ENG")'
-mcporter 'context7.resolve-library-id(libraryName: "react")'
-mcporter 'context7.resolve-library-id("react")'
+mcporter 'context7.resolve-library-id(query: "React hooks docs", libraryName: "react")'
+mcporter 'context7.resolve-library-id("React hooks docs", "react")'
 ```
 
 - Mirrors the pseudo-TypeScript signature printed by `mcporter list`.
-- You may omit labels and rely on the schema order—`mcporter 'context7.resolve-library-id("react")'` maps the first argument to `libraryName` automatically.
+- You may omit labels and rely on the schema order—`mcporter 'context7.resolve-library-id("React hooks docs", "react")'` maps arguments to the live schema order automatically.
 - Supports nested objects/arrays and gives detailed parser errors when the expression is malformed.
 - Wrap the whole expression in quotes so the shell leaves parentheses/commas intact.
 

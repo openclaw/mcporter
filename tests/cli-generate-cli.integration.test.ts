@@ -117,6 +117,17 @@ describe('mcporter CLI integration', () => {
         structuredContent: { ok: true },
       })
     );
+    server.registerTool(
+      'plain_text',
+      {
+        title: 'Plain Text',
+        description: 'Returns non-JSON text',
+        inputSchema: { value: z.string().optional() },
+      },
+      async ({ value }) => ({
+        content: [{ type: 'text', text: value ?? 'plain' }],
+      })
+    );
 
     app.post('/mcp', async (req, res) => {
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
@@ -192,6 +203,14 @@ describe('mcporter CLI integration', () => {
     });
     expect(helpOutput.stdout).toMatch(/Usage: .+ <command> \[options]/);
     expect(helpOutput.stdout).toContain('Context7 integration harness');
+
+    const plainOutput = await runGeneratedCli(bundlePath, ['plain-text', '--value', 'hello', '--output', 'json'], {
+      ...process.env,
+      MCPORTER_NO_FORCE_EXIT: '1',
+    });
+    const plainJson = JSON.parse(plainOutput.stdout) as { content?: Array<{ text?: string }> };
+    expect(plainJson.content?.[0]?.text).toBe('hello');
+
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   });
 

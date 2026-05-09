@@ -45,7 +45,7 @@ Key details:
 ## Function-Call Syntax Details
 
 - **Named arguments preferred**: `issueId: "123"` keeps calls self-documenting. When labels are omitted, mcporter falls back to positional order defined by the tool schema.
-- **Optional positional fallback**: omit labels when calling `mcporter 'context7.resolve-library-id("react")'`—arguments map to the schema order after any explicitly named parameters.
+- **Optional positional fallback**: omit labels when calling `mcporter 'context7.resolve-library-id("React hooks docs", "react")'`—arguments map to the schema order after any explicitly named parameters.
 - **Literals supported**: strings, numbers, booleans, `null`, arrays, and nested objects. For strings containing spaces or commas, wrap the entire call in single quotes to keep the shell happy.
 - **Error feedback**: invalid keys, unsupported expressions, or parser failures bubble up with actionable messages (`Unsupported argument expression: Identifier`, `Unable to parse call expression: …`).
 - **Server selection**: You can embed the server in the expression (`linear.create_comment(...)`) or pass it separately (`--server linear create_comment(...)`).

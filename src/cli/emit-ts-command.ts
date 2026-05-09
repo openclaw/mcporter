@@ -93,6 +93,21 @@ export async function handleEmitTs(runtime: Runtime, args: string[]): Promise<vo
   }
 }
 
+export function printEmitTsHelp(): void {
+  console.error(
+    [
+      'Usage: mcporter emit-ts <server> --out <file> [flags]',
+      '',
+      'Flags:',
+      '  --mode types|client     Emit declarations only or client + declarations.',
+      '  --out <path>            Output .ts/.d.ts file.',
+      '  --types-out <path>      Declaration output path for --mode client.',
+      '  --include-optional      Include optional schema fields in signatures.',
+      '  --json                  Print a JSON summary.',
+    ].join('\n')
+  );
+}
+
 function parseEmitTsArgs(args: string[]): ParsedEmitTsOptions {
   const flags: EmitTsFlags = {
     mode: 'types',
