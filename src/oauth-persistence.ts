@@ -1,10 +1,17 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
+import { discoverOAuthServerInfo, refreshAuthorization } from '@modelcontextprotocol/sdk/client/auth.js';
+import type {
+  OAuthClientInformationMixed,
+  OAuthProtectedResourceMetadata,
+  OAuthTokens,
+} from '@modelcontextprotocol/sdk/shared/auth.js';
+import { checkResourceAllowed, resourceUrlFromServerUrl } from '@modelcontextprotocol/sdk/shared/auth-utils.js';
 import type { ServerDefinition } from './config.js';
 import { readJsonFile, writeJsonFile } from './fs-json.js';
 import type { Logger } from './logging.js';
+import { buildStaticClientInformation } from './oauth-client-info.js';
 import { clearVaultEntry, getOAuthVaultPath, loadVaultEntry, saveVaultEntry } from './oauth-vault.js';
 import { legacyMcporterDir } from './paths.js';
 
@@ -21,6 +28,61 @@ export interface OAuthPersistence {
   readState(): Promise<string | undefined>;
   saveState(value: string): Promise<void>;
   clear(scope: OAuthClearScope): Promise<void>;
+}
+
+type StoredOAuthTokens = OAuthTokens & {
+  expires_at?: number;
+  expiresAt?: number;
+};
+
+const TOKEN_EXPIRY_SKEW_SECONDS = 60;
+
+function withStoredExpiry(tokens: OAuthTokens): OAuthTokens {
+  const stored = tokens as StoredOAuthTokens;
+  if (typeof stored.expires_at === 'number' || typeof stored.expiresAt === 'number') {
+    return tokens;
+  }
+  if (typeof tokens.expires_in === 'number' && Number.isFinite(tokens.expires_in)) {
+    return {
+      ...tokens,
+      expires_at: Math.floor(Date.now() / 1000) + tokens.expires_in,
+    } as OAuthTokens;
+  }
+  return tokens;
+}
+
+function tokenExpirySeconds(tokens: OAuthTokens): number | undefined {
+  const stored = tokens as StoredOAuthTokens;
+  for (const candidate of [stored.expires_at, stored.expiresAt]) {
+    if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+function shouldRefreshCachedToken(tokens: OAuthTokens): boolean {
+  const expiresAt = tokenExpirySeconds(tokens);
+  if (expiresAt !== undefined) {
+    return expiresAt <= Math.floor(Date.now() / 1000) + TOKEN_EXPIRY_SKEW_SECONDS;
+  }
+  return typeof tokens.expires_in === 'number' && typeof tokens.refresh_token === 'string';
+}
+
+function resourceForRefresh(
+  serverUrl: URL,
+  resourceMetadata: OAuthProtectedResourceMetadata | undefined
+): URL | undefined {
+  if (!resourceMetadata) {
+    return undefined;
+  }
+  const defaultResource = resourceUrlFromServerUrl(serverUrl);
+  if (!checkResourceAllowed({ requestedResource: defaultResource, configuredResource: resourceMetadata.resource })) {
+    throw new Error(
+      `Protected resource ${resourceMetadata.resource} does not match expected ${defaultResource} (or origin)`
+    );
+  }
+  return new URL(resourceMetadata.resource);
 }
 
 class DirectoryPersistence implements OAuthPersistence {
@@ -53,7 +115,7 @@ class DirectoryPersistence implements OAuthPersistence {
 
   async saveTokens(tokens: OAuthTokens): Promise<void> {
     await this.ensureDir();
-    await writeJsonFile(this.tokenPath, tokens);
+    await writeJsonFile(this.tokenPath, withStoredExpiry(tokens));
     this.logger?.debug?.(`Saved tokens to ${this.tokenPath}`);
   }
 
@@ -131,7 +193,7 @@ class VaultPersistence implements OAuthPersistence {
   }
 
   async saveTokens(tokens: OAuthTokens): Promise<void> {
-    await saveVaultEntry(this.definition, { tokens });
+    await saveVaultEntry(this.definition, { tokens: withStoredExpiry(tokens) });
   }
 
   async readClientInfo(): Promise<OAuthClientInformationMixed | undefined> {
@@ -310,8 +372,43 @@ export async function readCachedAccessToken(
 ): Promise<string | undefined> {
   const persistence = await buildOAuthPersistence(definition, logger);
   const tokens = await persistence.readTokens();
-  if (tokens && typeof tokens.access_token === 'string' && tokens.access_token.trim().length > 0) {
+  if (!tokens || typeof tokens.access_token !== 'string' || tokens.access_token.trim().length === 0) {
+    return undefined;
+  }
+  if (!shouldRefreshCachedToken(tokens)) {
     return tokens.access_token;
   }
-  return undefined;
+  if (typeof tokens.refresh_token !== 'string' || tokens.refresh_token.trim().length === 0) {
+    return tokens.access_token;
+  }
+  try {
+    const clientInformation = buildStaticClientInformation(definition) ?? (await persistence.readClientInfo());
+    if (!clientInformation) {
+      logger?.debug?.(
+        `Cached OAuth token for '${definition.name}' is expired, but no client information is available.`
+      );
+      return tokens.access_token;
+    }
+    if (definition.command.kind !== 'http') {
+      return tokens.access_token;
+    }
+    const serverInfo = await discoverOAuthServerInfo(definition.command.url);
+    const resource = resourceForRefresh(definition.command.url, serverInfo.resourceMetadata);
+    const refreshed = await refreshAuthorization(serverInfo.authorizationServerUrl, {
+      metadata: serverInfo.authorizationServerMetadata,
+      clientInformation,
+      refreshToken: tokens.refresh_token,
+      ...(resource ? { resource } : {}),
+    });
+    await persistence.saveTokens(refreshed);
+    logger?.debug?.(`Refreshed cached OAuth access token for '${definition.name}' (non-interactive).`);
+    return refreshed.access_token;
+  } catch (error) {
+    logger?.debug?.(
+      `Failed to refresh cached OAuth token for '${definition.name}' non-interactively: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+    return tokens.access_token;
+  }
 }

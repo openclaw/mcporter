@@ -4,8 +4,19 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ServerDefinition } from '../src/config.js';
 import { readJsonFile } from '../src/fs-json.js';
-import { buildOAuthPersistence, clearOAuthCaches } from '../src/oauth-persistence.js';
+import { buildOAuthPersistence, clearOAuthCaches, readCachedAccessToken } from '../src/oauth-persistence.js';
 import { loadVaultEntry, vaultKeyForDefinition } from '../src/oauth-vault.js';
+
+const authMocks = vi.hoisted(() => ({
+  discoverOAuthServerInfo: vi.fn(),
+  refreshAuthorization: vi.fn(),
+}));
+
+vi.mock('@modelcontextprotocol/sdk/client/auth.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@modelcontextprotocol/sdk/client/auth.js')>()),
+  discoverOAuthServerInfo: authMocks.discoverOAuthServerInfo,
+  refreshAuthorization: authMocks.refreshAuthorization,
+}));
 
 const mkDef = (name: string, tokenCacheDir?: string): ServerDefinition => ({
   name,
@@ -22,6 +33,7 @@ describe('oauth persistence', () => {
   let hasSpy = false;
 
   afterEach(async () => {
+    vi.clearAllMocks();
     process.env = { ...originalEnv };
     if (hasSpy) {
       homedirSpy.mockRestore();
@@ -163,5 +175,151 @@ describe('oauth persistence', () => {
     await expect(fs.access(gmailLegacyFile)).rejects.toThrow();
     const entry = await loadVaultEntry(definition);
     expect(entry).toBeUndefined();
+  });
+
+  it('refreshes expired cached OAuth access tokens without starting a browser flow', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-refresh-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+
+    const cacheDir = path.join(tmp, 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-123',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      })
+    );
+    await fs.writeFile(path.join(cacheDir, 'client.json'), JSON.stringify({ client_id: 'client-123' }));
+
+    authMocks.discoverOAuthServerInfo.mockResolvedValue({
+      authorizationServerUrl: 'https://auth.example.com',
+      authorizationServerMetadata: { token_endpoint: 'https://auth.example.com/token' },
+      resourceMetadata: { resource: 'https://example.com/mcp' },
+    });
+    authMocks.refreshAuthorization.mockResolvedValue({
+      access_token: 'fresh-token',
+      token_type: 'Bearer',
+      refresh_token: 'refresh-456',
+      expires_in: 3600,
+    });
+
+    const definition = mkDef('refresh-service', cacheDir);
+    await expect(readCachedAccessToken(definition)).resolves.toBe('fresh-token');
+
+    expect(authMocks.refreshAuthorization).toHaveBeenCalledWith(
+      'https://auth.example.com',
+      expect.objectContaining({
+        clientInformation: { client_id: 'client-123' },
+        refreshToken: 'refresh-123',
+        resource: new URL('https://example.com/mcp'),
+      })
+    );
+    const persisted = (await readJsonFile(path.join(cacheDir, 'tokens.json'))) as
+      | { access_token?: string; refresh_token?: string; expires_at?: number }
+      | undefined;
+    expect(persisted?.access_token).toBe('fresh-token');
+    expect(persisted?.refresh_token).toBe('refresh-456');
+    expect(persisted?.expires_at).toBeGreaterThan(Math.floor(Date.now() / 1000));
+  });
+
+  it('omits OAuth resource during silent refresh when protected-resource metadata is absent', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-refresh-no-resource-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+
+    const cacheDir = path.join(tmp, 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-123',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      })
+    );
+    await fs.writeFile(path.join(cacheDir, 'client.json'), JSON.stringify({ client_id: 'client-123' }));
+
+    authMocks.discoverOAuthServerInfo.mockResolvedValue({
+      authorizationServerUrl: 'https://auth.example.com',
+      authorizationServerMetadata: { token_endpoint: 'https://auth.example.com/token' },
+    });
+    authMocks.refreshAuthorization.mockResolvedValue({
+      access_token: 'fresh-token',
+      token_type: 'Bearer',
+      refresh_token: 'refresh-456',
+      expires_in: 3600,
+    });
+
+    const definition = mkDef('refresh-without-resource-service', cacheDir);
+    await expect(readCachedAccessToken(definition)).resolves.toBe('fresh-token');
+
+    const [, options] = authMocks.refreshAuthorization.mock.calls[0] ?? [];
+    expect(options).not.toHaveProperty('resource');
+  });
+
+  it('keeps the original cached OAuth token when silent refresh fails', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-refresh-fail-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+
+    const cacheDir = path.join(tmp, 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-123',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      })
+    );
+    await fs.writeFile(path.join(cacheDir, 'client.json'), JSON.stringify({ client_id: 'client-123' }));
+
+    authMocks.discoverOAuthServerInfo.mockResolvedValue({ authorizationServerUrl: 'https://auth.example.com' });
+    authMocks.refreshAuthorization.mockRejectedValue(new Error('invalid_grant'));
+
+    const definition = mkDef('refresh-fail-service', cacheDir);
+    await expect(readCachedAccessToken(definition)).resolves.toBe('expired-token');
+
+    const persisted = (await readJsonFile(path.join(cacheDir, 'tokens.json'))) as
+      | { access_token?: string; refresh_token?: string }
+      | undefined;
+    expect(persisted).toEqual(
+      expect.objectContaining({
+        access_token: 'expired-token',
+        refresh_token: 'refresh-123',
+      })
+    );
+  });
+
+  it('uses unexpired cached OAuth tokens without refresh', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-current-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+
+    const cacheDir = path.join(tmp, 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'current-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-123',
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+      })
+    );
+
+    const definition = mkDef('current-service', cacheDir);
+    await expect(readCachedAccessToken(definition)).resolves.toBe('current-token');
+    expect(authMocks.refreshAuthorization).not.toHaveBeenCalled();
   });
 });

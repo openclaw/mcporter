@@ -10,6 +10,7 @@
 ### OAuth
 
 - Proactively complete OAuth for configured HTTP servers that allow unauthenticated `initialize`/`listTools` but require credentials for tool calls, and close the local callback server promptly after browser authorization. (PR #159, thanks @Spacefish)
+- Refresh expired cached OAuth access tokens during non-interactive `mcporter list` without opening a browser or clearing cached credentials when refresh fails. (Issue #166, thanks @chrisabad)
 
 ## [0.10.2] - 2026-05-09
 
