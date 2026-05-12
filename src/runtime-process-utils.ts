@@ -269,7 +269,7 @@ async function listDescendantPidsWindows(rootPid: number): Promise<number[]> {
 
 function execFileAsync(command: string, args: readonly string[]): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    execFile(command, args, { encoding: 'utf8' }, (error, stdout, stderr) => {
+    execFile(command, args, { encoding: 'utf8', windowsHide: true }, (error, stdout, stderr) => {
       if (error) {
         reject(error);
         return;
