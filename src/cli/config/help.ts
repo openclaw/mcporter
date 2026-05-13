@@ -98,8 +98,21 @@ export const CONFIG_HELP_ENTRIES: Record<ConfigSubcommand, ConfigHelpEntry> = {
     name: 'login <name|url> [options]',
     summary: 'Run the OAuth/auth flow',
     usage: 'mcporter config login <name|url> [options]',
-    description: 'Delegates to `mcporter auth`, so you can pass ephemeral flags like --http-url/--stdio/--reset.',
-    examples: ['pnpm mcporter config login linear', 'pnpm mcporter config login https://example.com/mcp --reset'],
+    description:
+      'Delegates to `mcporter auth`, so you can pass ephemeral flags like --http-url/--stdio/--reset and browser-suppression flags for headless OAuth.',
+    flags: [
+      { flag: '--no-browser', description: 'Print the OAuth authorization URL without launching a browser.' },
+      { flag: '--browser none', description: 'Alias for --no-browser.' },
+      {
+        flag: 'MCPORTER_OAUTH_NO_BROWSER=1|true|yes',
+        description: 'Environment default for browser-suppressed OAuth.',
+      },
+    ],
+    examples: [
+      'pnpm mcporter config login linear',
+      'pnpm mcporter config login linear --no-browser',
+      'pnpm mcporter config login https://example.com/mcp --reset',
+    ],
   },
   logout: {
     name: 'logout <name>',
