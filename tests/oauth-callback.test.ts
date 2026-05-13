@@ -89,7 +89,7 @@ describe('oauth callback handling', () => {
     await expect(wait).resolves.toBe('xyz');
   });
 
-  it('accepts callbacks that omit state (compat servers)', async () => {
+  it('rejects callbacks that omit state when expected state exists', async () => {
     const session = await createOAuthSession(makeDefinition(), logger);
     cleanup = () => session.close();
     const provider = session.provider as StatefulProvider;
@@ -97,6 +97,24 @@ describe('oauth callback handling', () => {
     redirect.hostname = '127.0.0.1';
 
     await provider.state();
+    const wait = session.waitForAuthorizationCode();
+    wait.catch(() => {});
+
+    const badUrl = new URL(redirect);
+    badUrl.searchParams.set('code', 'nostate');
+    const status = await requestStatus(badUrl);
+    expect(status).toBeGreaterThanOrEqual(400);
+    await expect(wait).rejects.toThrow(/state/i);
+    await wait.catch(() => {});
+  });
+
+  it('accepts callbacks that omit state when no expected state exists', async () => {
+    const session = await createOAuthSession(makeDefinition({ name: `nostate-${randomUUID()}` }), logger);
+    cleanup = () => session.close();
+    const provider = session.provider as StatefulProvider;
+    const redirect = new URL(String(provider.redirectUrl));
+    redirect.hostname = '127.0.0.1';
+
     const wait = session.waitForAuthorizationCode();
 
     const okUrl = new URL(redirect);

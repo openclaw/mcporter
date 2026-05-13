@@ -16,6 +16,16 @@ import { buildOAuthPersistence } from './oauth-persistence.js';
 const CALLBACK_HOST = '127.0.0.1';
 const CALLBACK_PATH = '/callback';
 
+export interface OAuthAuthorizationRequest {
+  authorizationUrl: string;
+  redirectUrl: string;
+}
+
+export interface OAuthSessionOptions {
+  suppressBrowserLaunch?: boolean;
+  onAuthorizationUrl?: (request: OAuthAuthorizationRequest) => void | Promise<void>;
+}
+
 interface Deferred<T> {
   promise: Promise<T>;
   resolve: (value: T) => void;
@@ -75,7 +85,8 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     private readonly definition: ServerDefinition,
     persistence: OAuthPersistence,
     redirectUrl: URL,
-    logger: OAuthLogger
+    logger: OAuthLogger,
+    private readonly options: OAuthSessionOptions = {}
   ) {
     this.redirectUrlValue = redirectUrl;
     this.logger = logger;
@@ -97,7 +108,8 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
 
   static async create(
     definition: ServerDefinition,
-    logger: OAuthLogger
+    logger: OAuthLogger,
+    options: OAuthSessionOptions = {}
   ): Promise<{
     provider: PersistentOAuthClientProvider;
     close: () => Promise<void>;
@@ -158,7 +170,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       }
     }
 
-    const provider = new PersistentOAuthClientProvider(definition, persistence, redirectUrl, logger);
+    const provider = new PersistentOAuthClientProvider(definition, persistence, redirectUrl, logger, options);
     provider.attachServer(server);
     return {
       provider,
@@ -185,7 +197,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
         const error = parsed.searchParams.get('error');
         const receivedState = parsed.searchParams.get('state');
         const expectedState = await this.persistence.readState();
-        if (expectedState && receivedState && receivedState !== expectedState) {
+        if (expectedState && receivedState !== expectedState) {
           res.statusCode = 400;
           res.setHeader('Content-Type', 'text/html');
           res.end('<html><body><h1>Authorization failed</h1><p>Invalid OAuth state</p></body></html>');
@@ -259,11 +271,19 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   }
 
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {
-    this.logger.info(`Authorization required for ${this.definition.name}. Opening browser...`);
     this.authorizationRedirectStarted = true;
     this.ensureAuthorizationDeferred();
-    __oauthInternals.openExternal(authorizationUrl.toString());
-    this.logger.warn(`If the browser did not open, visit ${authorizationUrl.toString()} manually.`);
+    const request = {
+      authorizationUrl: authorizationUrl.toString(),
+      redirectUrl: this.redirectUrlValue.toString(),
+    } satisfies OAuthAuthorizationRequest;
+    if (this.options.suppressBrowserLaunch) {
+      await this.options.onAuthorizationUrl?.(request);
+      return;
+    }
+    this.logger.info(`Authorization required for ${this.definition.name}. Opening browser...`);
+    __oauthInternals.openExternal(request.authorizationUrl);
+    this.logger.warn(`If the browser did not open, visit ${request.authorizationUrl} manually.`);
   }
 
   hasAuthorizationRedirectStarted(): boolean {
@@ -330,8 +350,12 @@ export interface OAuthSession {
 }
 
 // createOAuthSession spins up a file-backed OAuth provider and callback server for the target definition.
-export async function createOAuthSession(definition: ServerDefinition, logger: OAuthLogger): Promise<OAuthSession> {
-  const { provider, close } = await PersistentOAuthClientProvider.create(definition, logger);
+export async function createOAuthSession(
+  definition: ServerDefinition,
+  logger: OAuthLogger,
+  options: OAuthSessionOptions = {}
+): Promise<OAuthSession> {
+  const { provider, close } = await PersistentOAuthClientProvider.create(definition, logger, options);
   const waitForAuthorizationCode = () => provider.waitForAuthorizationCode();
   const hasAuthorizationRedirectStarted = () => provider.hasAuthorizationRedirectStarted();
   return {
