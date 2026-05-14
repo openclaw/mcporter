@@ -125,6 +125,40 @@ describe('config normalization', () => {
     expect(snake?.oauthScope).toBe('email');
   });
 
+  it('normalizes HTTP fetch compatibility options', async () => {
+    await fs.mkdir(TEMP_DIR, { recursive: true });
+    const configPath = path.join(TEMP_DIR, 'mcporter-http-fetch.json');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          mcpServers: {
+            camel: {
+              baseUrl: 'https://api.sunsama.com/mcp',
+              httpFetch: 'node-http1',
+            },
+            snake: {
+              baseUrl: 'https://example.com/mcp',
+              http_fetch: 'node-http1',
+            },
+            defaulted: {
+              baseUrl: 'https://example.com/mcp',
+              httpFetch: 'default',
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const servers = await loadServerDefinitions({ configPath });
+    expect(servers.find((entry) => entry.name === 'camel')?.httpFetch).toBe('node-http1');
+    expect(servers.find((entry) => entry.name === 'snake')?.httpFetch).toBe('node-http1');
+    expect(servers.find((entry) => entry.name === 'defaulted')?.httpFetch).toBe('default');
+  });
+
   it('normalizes pre-registered OAuth client fields', async () => {
     await fs.mkdir(TEMP_DIR, { recursive: true });
     const configPath = path.join(TEMP_DIR, 'mcporter-oauth-client.json');

@@ -48,6 +48,10 @@ const RawLoggingSchema = z
   .optional()
   .describe('Logging configuration for the server');
 
+const RawHttpFetchSchema = z
+  .enum(['default', 'node-http1'])
+  .describe('HTTP fetch implementation for Streamable HTTP/SSE requests');
+
 export const RawEntrySchema = z
   .object({
     description: z.string().optional().describe('Human-readable description of the server'),
@@ -118,6 +122,8 @@ export const RawEntrySchema = z
       .string()
       .optional()
       .describe('Environment variable name containing the bearer token (snake_case)'),
+    httpFetch: RawHttpFetchSchema.optional().describe('HTTP fetch implementation for Streamable HTTP/SSE requests'),
+    http_fetch: RawHttpFetchSchema.optional().describe('HTTP fetch implementation for Streamable HTTP/SSE requests'),
     lifecycle: RawLifecycleSchema.optional(),
     logging: RawLoggingSchema,
     allowedTools: ToolNamesSchema.optional().describe('Only these exact tool names are exposed (camelCase)'),
@@ -204,6 +210,7 @@ export interface ServerDefinition {
   readonly oauthCommand?: {
     readonly args: string[];
   };
+  readonly httpFetch?: 'default' | 'node-http1';
   readonly source?: ServerSource;
   readonly sources?: readonly ServerSource[];
   readonly lifecycle?: ServerLifecycle;

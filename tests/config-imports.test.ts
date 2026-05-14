@@ -101,6 +101,7 @@ describe('config imports', () => {
     expect(shared?.command.kind === 'http' ? shared.command.url.toString() : undefined).toBe(
       'https://cursor.local/mcp'
     );
+    expect(shared?.httpFetch).toBe('node-http1');
     expect(shared?.source).toEqual({
       kind: 'import',
       path: path.join(FIXTURE_ROOT, '.cursor', 'mcp.json'),

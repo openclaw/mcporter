@@ -205,6 +205,7 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
   );
   const oauthRedirectUrl = typeof def.oauthRedirectUrl === 'string' ? def.oauthRedirectUrl : undefined;
   const oauthScope = typeof def.oauthScope === 'string' ? def.oauthScope : undefined;
+  const httpFetch = normalizeHttpFetch(stringFromAliases(record, 'httpFetch', 'http_fetch'));
   const headers = toStringRecord((def as Record<string, unknown>).headers);
   const oauthCommand = getOauthCommand(record.oauthCommand ?? record.oauth_command);
   const rawLifecycle = getRawLifecycle(record.lifecycle);
@@ -228,6 +229,7 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
     oauthRedirectUrl,
     oauthScope,
     oauthCommand,
+    httpFetch,
     lifecycle: resolveLifecycle(name, rawLifecycle, command),
     logging,
     ...(allowedTools !== undefined ? { allowedTools } : {}),
@@ -380,6 +382,10 @@ function getOauthCommand(value: unknown): ServerDefinition['oauthCommand'] | und
   }
   const args = getStringArray((value as { args?: unknown }).args);
   return args ? { args } : undefined;
+}
+
+function normalizeHttpFetch(value: string | undefined): ServerDefinition['httpFetch'] | undefined {
+  return value === 'default' || value === 'node-http1' ? value : undefined;
 }
 
 function stringFromAliases(record: Record<string, unknown>, ...keys: string[]): string | undefined {

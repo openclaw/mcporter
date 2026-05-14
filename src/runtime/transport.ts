@@ -13,6 +13,7 @@ import { readCachedAccessToken } from '../oauth-persistence.js';
 import { materializeHeaders } from '../runtime-header-utils.js';
 import { isUnauthorizedError, maybeEnableOAuth } from '../runtime-oauth-support.js';
 import { closeTransportAndWait } from '../runtime-process-utils.js';
+import { nodeHttp1Fetch } from './node-http-fetch.js';
 import {
   connectWithAuth,
   isOAuthFlowError,
@@ -58,6 +59,7 @@ function isLegacySseTransportMismatch(error: unknown): boolean {
 interface ResolvedHttpTransportOptions {
   requestInit?: RequestInit;
   authProvider?: OAuthSession['provider'];
+  fetch?: typeof nodeHttp1Fetch;
 }
 
 type HttpClientContextAttempt =
@@ -110,7 +112,24 @@ function createHttpTransportOptions(
   return {
     requestInit: effectiveHeaders ? { headers: effectiveHeaders as HeadersInit } : undefined,
     authProvider: oauthSession?.provider,
+    fetch: resolveHttpFetchOverride(definition),
   };
+}
+
+function resolveHttpFetchOverride(definition: ServerDefinition): typeof nodeHttp1Fetch | undefined {
+  if (definition.command.kind !== 'http') {
+    return undefined;
+  }
+  if (definition.httpFetch === 'default') {
+    return undefined;
+  }
+  if (definition.httpFetch === 'node-http1') {
+    return nodeHttp1Fetch;
+  }
+  if (definition.command.url.hostname.toLowerCase() === 'api.sunsama.com') {
+    return nodeHttp1Fetch;
+  }
+  return undefined;
 }
 
 async function closeOAuthSession(oauthSession?: OAuthSession): Promise<void> {

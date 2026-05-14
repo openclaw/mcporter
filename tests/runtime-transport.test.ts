@@ -211,6 +211,48 @@ describe('createClientContext (HTTP)', () => {
     expect(mocks.readCachedAccessToken).toHaveBeenCalledWith(definition, logger);
   });
 
+  it('uses the HTTP/1.1 fetch compatibility path when configured', async () => {
+    const definition: ServerDefinition = {
+      ...stubHttpDefinition('https://example.com/mcp'),
+      httpFetch: 'node-http1',
+    };
+
+    vi.spyOn(Client.prototype, 'connect').mockImplementationOnce(async (transport) => {
+      expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
+      const fetchOverride = (transport as { _fetch?: unknown })._fetch;
+      expect(fetchOverride).toEqual(expect.any(Function));
+    });
+
+    await createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 });
+  });
+
+  it('uses the HTTP/1.1 fetch compatibility path for Sunsama by default', async () => {
+    const definition = stubHttpDefinition('https://api.sunsama.com/mcp');
+
+    vi.spyOn(Client.prototype, 'connect').mockImplementationOnce(async (transport) => {
+      expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
+      const fetchOverride = (transport as { _fetch?: unknown })._fetch;
+      expect(fetchOverride).toEqual(expect.any(Function));
+    });
+
+    await createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 });
+  });
+
+  it('honors explicit default fetch mode for Sunsama', async () => {
+    const definition: ServerDefinition = {
+      ...stubHttpDefinition('https://api.sunsama.com/mcp'),
+      httpFetch: 'default',
+    };
+
+    vi.spyOn(Client.prototype, 'connect').mockImplementationOnce(async (transport) => {
+      expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
+      const fetchOverride = (transport as { _fetch?: unknown })._fetch;
+      expect(fetchOverride).toBeUndefined();
+    });
+
+    await createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 });
+  });
+
   it('promotes ad-hoc HTTP servers after generic 401 errors from Streamable HTTP', async () => {
     const definition = stubHttpDefinition('https://example.com/secure');
 

@@ -28,6 +28,7 @@ export interface SerializedServerDefinition {
   readonly oauthTokenEndpointAuthMethod?: string;
   readonly oauthRedirectUrl?: string;
   readonly oauthScope?: string;
+  readonly httpFetch?: ServerDefinition['httpFetch'];
   readonly allowedTools?: readonly string[];
   readonly blockedTools?: readonly string[];
 }
@@ -151,6 +152,7 @@ export function serializeDefinition(definition: ServerDefinition): SerializedSer
       oauthTokenEndpointAuthMethod: definition.oauthTokenEndpointAuthMethod,
       oauthRedirectUrl: definition.oauthRedirectUrl,
       oauthScope: definition.oauthScope,
+      httpFetch: definition.httpFetch,
       allowedTools: definition.allowedTools,
       blockedTools: definition.blockedTools,
     };
@@ -173,6 +175,7 @@ export function serializeDefinition(definition: ServerDefinition): SerializedSer
     oauthTokenEndpointAuthMethod: definition.oauthTokenEndpointAuthMethod,
     oauthRedirectUrl: definition.oauthRedirectUrl,
     oauthScope: definition.oauthScope,
+    httpFetch: definition.httpFetch,
     allowedTools: definition.allowedTools,
     blockedTools: definition.blockedTools,
   };

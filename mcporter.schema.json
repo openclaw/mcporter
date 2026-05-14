@@ -197,6 +197,16 @@
             "description": "Environment variable name containing the bearer token (snake_case)",
             "type": "string"
           },
+          "httpFetch": {
+            "description": "HTTP fetch implementation for Streamable HTTP/SSE requests",
+            "type": "string",
+            "enum": ["default", "node-http1"]
+          },
+          "http_fetch": {
+            "description": "HTTP fetch implementation for Streamable HTTP/SSE requests",
+            "type": "string",
+            "enum": ["default", "node-http1"]
+          },
           "lifecycle": {
             "anyOf": [
               {

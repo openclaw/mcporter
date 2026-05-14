@@ -166,6 +166,24 @@ Use `--scope home|project` with `mcporter config add` to pick the write target e
 - `--env KEY=VAL` entries merge with existing `env` dictionaries if you later persist the same server; nothing is lost when you alternate between CLI flags and JSON edits.
 - `--header KEY=VAL` entries merge into the persisted HTTP `headers` object when used with `--persist`; values support the same `$env:VAR`, `${VAR}`, and `${VAR:-fallback}` placeholders as config-file headers.
 
+## HTTP Compatibility
+
+HTTP MCP servers normally use Node's built-in `fetch` through the upstream MCP SDK. If a provider rejects that stack but accepts plain Node `https.request` traffic, set `httpFetch: "node-http1"` on the server entry to force an HTTP/1.1 fetch implementation for Streamable HTTP and SSE POST requests:
+
+```jsonc
+{
+  "mcpServers": {
+    "sunsama": {
+      "baseUrl": "https://api.sunsama.com/mcp",
+      "headers": { "Authorization": "Bearer ${SUNSAMA_TOKEN}" },
+      "httpFetch": "node-http1",
+    },
+  },
+}
+```
+
+The Sunsama endpoint is auto-detected and uses this compatibility path by default.
+
 ## JSON Schema for IDE Support
 
 mcporter provides a JSON Schema for config file validation and autocompletion. Add the `$schema` property to your config file:

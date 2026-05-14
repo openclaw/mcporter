@@ -25,6 +25,7 @@ export function normalizeServerEntry(
     raw.oauthTokenEndpointAuthMethod ?? raw.oauth_token_endpoint_auth_method ?? undefined;
   const oauthRedirectUrl = raw.oauthRedirectUrl ?? raw.oauth_redirect_url ?? undefined;
   const oauthScope = raw.oauthScope ?? raw.oauth_scope ?? undefined;
+  const httpFetch = normalizeHttpFetch(raw.httpFetch ?? raw.http_fetch);
   const oauthCommandRaw = raw.oauthCommand ?? raw.oauth_command;
   const oauthCommand = oauthCommandRaw ? { args: [...oauthCommandRaw.args] } : undefined;
   const headers = buildHeaders(raw);
@@ -76,6 +77,7 @@ export function normalizeServerEntry(
     oauthRedirectUrl,
     oauthScope,
     oauthCommand: defaultedOauthCommand,
+    httpFetch,
     source,
     sources,
     lifecycle,
@@ -144,6 +146,10 @@ function normalizeAuth(auth: string | undefined): string | undefined {
     return 'oauth';
   }
   return undefined;
+}
+
+function normalizeHttpFetch(value: 'default' | 'node-http1' | undefined): 'default' | 'node-http1' | undefined {
+  return value;
 }
 
 function normalizePath(input: string | undefined): string | undefined {

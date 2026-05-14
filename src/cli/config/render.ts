@@ -14,6 +14,7 @@ export type SerializedServerDefinition = {
   oauthTokenEndpointAuthMethod?: string;
   oauthRedirectUrl?: string;
   oauthScope?: string;
+  httpFetch?: ServerDefinition['httpFetch'];
   allowedTools?: readonly string[];
   blockedTools?: readonly string[];
   env?: Record<string, string>;
@@ -40,6 +41,7 @@ export function serializeDefinition(definition: ServerDefinition): SerializedSer
       oauthTokenEndpointAuthMethod: definition.oauthTokenEndpointAuthMethod,
       oauthRedirectUrl: definition.oauthRedirectUrl,
       oauthScope: definition.oauthScope,
+      httpFetch: definition.httpFetch,
       allowedTools: definition.allowedTools,
       blockedTools: definition.blockedTools,
       env: definition.env,
@@ -60,6 +62,7 @@ export function serializeDefinition(definition: ServerDefinition): SerializedSer
     oauthTokenEndpointAuthMethod: definition.oauthTokenEndpointAuthMethod,
     oauthRedirectUrl: definition.oauthRedirectUrl,
     oauthScope: definition.oauthScope,
+    httpFetch: definition.httpFetch,
     allowedTools: definition.allowedTools,
     blockedTools: definition.blockedTools,
     env: definition.env,

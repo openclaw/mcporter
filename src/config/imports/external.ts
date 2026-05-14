@@ -153,6 +153,11 @@ function convertExternalEntry(value: Record<string, unknown>): RawEntry | null {
     result.oauthTokenEndpointAuthMethod = oauthTokenEndpointAuthMethod;
   }
 
+  const httpFetch = asString(value.httpFetch ?? value.http_fetch);
+  if (httpFetch) {
+    result.httpFetch = httpFetch;
+  }
+
   const url = asString(value.baseUrl ?? value.base_url ?? value.url ?? value.serverUrl ?? value.server_url);
   if (url) {
     result.baseUrl = url;

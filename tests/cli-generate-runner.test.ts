@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { parseGenerateFlags } from '../src/cli/generate/flags.js';
 import { inferNameFromCommand } from '../src/cli/generate/name-utils.js';
+import { normalizeDefinition } from '../src/cli/generate/definition.js';
 import { buildGenerateCliCommand } from '../src/cli/generate/template-data.js';
+import { serializeDefinition } from '../src/cli-metadata.js';
 import type { SerializedServerDefinition } from '../src/cli-metadata.js';
 
 describe('generate-cli runner internals', () => {
@@ -78,6 +80,17 @@ describe('generate-cli runner internals', () => {
     expect((parsed.command as string).startsWith('https://')).toBe(true);
     const inferred = parsed.command !== undefined ? inferNameFromCommand(parsed.command) : undefined;
     expect(inferred).toBe('shadcn');
+  });
+
+  it('preserves HTTP fetch compatibility metadata in generated CLI definitions', () => {
+    const definition = normalizeDefinition({
+      name: 'sunsama',
+      command: 'https://api.sunsama.com/mcp',
+      httpFetch: 'node-http1',
+    });
+
+    expect(definition.httpFetch).toBe('node-http1');
+    expect(serializeDefinition(definition).httpFetch).toBe('node-http1');
   });
 
   it('wraps single-token stdio commands when passed via --command', () => {

@@ -80,6 +80,7 @@ function serializeRawEntry(server: ServerDefinition): RawEntry {
     ...(server.oauthRedirectUrl ? { oauthRedirectUrl: server.oauthRedirectUrl } : {}),
     ...(server.oauthScope ? { oauthScope: server.oauthScope } : {}),
     ...(server.oauthCommand ? { oauthCommand: server.oauthCommand } : {}),
+    ...(server.httpFetch ? { httpFetch: server.httpFetch } : {}),
     ...(server.lifecycle ? { lifecycle: serializeLifecycle(server.lifecycle) } : {}),
     ...(server.logging ? { logging: server.logging } : {}),
     ...(server.allowedTools ? { allowedTools: [...server.allowedTools] } : {}),

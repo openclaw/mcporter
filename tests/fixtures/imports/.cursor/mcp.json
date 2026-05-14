@@ -1,7 +1,8 @@
 {
   "mcpServers": {
     "shared": {
-      "baseUrl": "https://cursor.local/mcp"
+      "baseUrl": "https://cursor.local/mcp",
+      "httpFetch": "node-http1"
     },
     "cursor-only": {
       "command": "cursor-cli",
