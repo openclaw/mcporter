@@ -10,7 +10,7 @@ import { extractEphemeralServerFlags } from './ephemeral-flags.js';
 import { persistPreparedEphemeralServer, prepareEphemeralServerTarget } from './ephemeral-target.js';
 import { looksLikeHttpUrl } from './http-utils.js';
 import { buildConnectionIssueEnvelope } from './json-output.js';
-import { logInfo, logWarn } from './logger-context.js';
+import { getActiveLogger, logInfo, logWarn } from './logger-context.js';
 import { consumeOutputFormat } from './output-format.js';
 
 type Runtime = Awaited<ReturnType<typeof createRuntime>>;
@@ -61,7 +61,9 @@ export async function handleAuth(runtime: Runtime, args: string[]): Promise<void
   const definition = runtime.getDefinition(target);
   if (shouldReset) {
     await clearOAuthCaches(definition);
-    logInfo(`Cleared cached credentials for '${target}'.`);
+    if (!noBrowser) {
+      logInfo(`Cleared cached credentials for '${target}'.`);
+    }
   }
 
   if (definition.command.kind === 'stdio' && definition.oauthCommand) {
@@ -80,16 +82,20 @@ export async function handleAuth(runtime: Runtime, args: string[]): Promise<void
       if (!noBrowser) {
         logInfo(`Initiating OAuth flow for '${target}'...`);
       }
-      const tools = await runtime.listTools(target, {
-        autoAuthorize: true,
-        ...(noBrowser
-          ? {
-              oauthSessionOptions: buildNoBrowserOAuthOptions(format, markAuthorizationOutputEmitted),
-            }
-          : {}),
-      });
+      const tools = await withInfoLogsSuppressed(noBrowser, () =>
+        runtime.listTools(target, {
+          autoAuthorize: true,
+          ...(noBrowser
+            ? {
+                oauthSessionOptions: buildNoBrowserOAuthOptions(format, markAuthorizationOutputEmitted),
+              }
+            : {}),
+        })
+      );
       await persistPreparedEphemeralServer(runtime, prepared);
-      logInfo(`Authorization complete. ${tools.length} tool${tools.length === 1 ? '' : 's'} available.`);
+      if (!noBrowser) {
+        logInfo(`Authorization complete. ${tools.length} tool${tools.length === 1 ? '' : 's'} available.`);
+      }
       return;
     } catch (error) {
       await persistPreparedEphemeralServer(runtime, prepared);
@@ -114,6 +120,20 @@ export async function handleAuth(runtime: Runtime, args: string[]): Promise<void
       }
       throw new Error(`Failed to authorize '${target}': ${message}`, { cause: error });
     }
+  }
+}
+
+async function withInfoLogsSuppressed<T>(enabled: boolean, task: () => Promise<T>): Promise<T> {
+  if (!enabled) {
+    return task();
+  }
+  const logger = getActiveLogger();
+  const originalInfo = logger.info.bind(logger);
+  logger.info = () => {};
+  try {
+    return await task();
+  } finally {
+    logger.info = originalInfo;
   }
 }
 

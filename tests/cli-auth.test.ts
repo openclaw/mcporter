@@ -168,6 +168,45 @@ describe('mcporter auth ad-hoc support', () => {
     logSpy.mockRestore();
   });
 
+  it('keeps no-browser stdout parseable when info logging is enabled', async () => {
+    const [{ handleAuth }, { getActiveLogger, setLogLevel }] = await Promise.all([
+      cliModulePromise,
+      import('../src/cli/logger-context.js'),
+    ]);
+    const definition = {
+      name: 'linear',
+      command: { kind: 'http', url: new URL('https://mcp.linear.app/mcp') },
+      auth: 'oauth',
+    } as ServerDefinition;
+    const listTools = vi.fn(async (_target, options?: Record<string, unknown>) => {
+      const oauthSessionOptions = options?.oauthSessionOptions as
+        | { onAuthorizationUrl?: (request: { authorizationUrl: string; redirectUrl: string }) => void | Promise<void> }
+        | undefined;
+      await oauthSessionOptions?.onAuthorizationUrl?.({
+        authorizationUrl: 'https://auth.example.com/authorize?state=abc',
+        redirectUrl: 'http://127.0.0.1:54321/callback',
+      });
+      getActiveLogger().info('runtime OAuth status');
+      return [{ name: 'ok' }];
+    });
+    const runtime = {
+      getDefinitions: () => [definition],
+      registerDefinition: vi.fn(),
+      listTools,
+      getDefinition: () => definition,
+    } as unknown as Awaited<ReturnType<(typeof import('../src/runtime.js'))['createRuntime']>>;
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      setLogLevel('info');
+      await handleAuth(runtime, ['linear', '--no-browser']);
+      expect(logSpy.mock.calls.map(([message]) => message)).toEqual(['https://auth.example.com/authorize?state=abc']);
+    } finally {
+      setLogLevel('warn');
+      logSpy.mockRestore();
+    }
+  });
+
   it('prints auth-start JSON once and keeps later failures off stdout', async () => {
     const { handleAuth } = await cliModulePromise;
     const definition = {

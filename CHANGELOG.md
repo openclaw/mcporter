@@ -9,6 +9,7 @@
 
 ### OAuth
 
+- Add headless OAuth login support via `--no-browser`, `--browser none`, and `MCPORTER_OAUTH_NO_BROWSER`, emitting parseable authorization URLs for remote auth flows. (PR #171 / issue #169, thanks @feniix)
 - Proactively complete OAuth for configured HTTP servers that allow unauthenticated `initialize`/`listTools` but require credentials for tool calls, and close the local callback server promptly after browser authorization. (PR #159, thanks @Spacefish)
 - Refresh expired cached OAuth access tokens during non-interactive `mcporter list` without opening a browser or clearing cached credentials when refresh fails. (Issue #166, thanks @chrisabad)
 
