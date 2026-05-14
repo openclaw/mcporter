@@ -408,6 +408,66 @@ describeGenerateCli('generateCli', () => {
     expect(stdout).not.toContain('<tool> key=value');
   }, 30_000);
 
+  it('runs node .mjs bundles without leaving an implicit template in cwd', async () => {
+    const inline = JSON.stringify({
+      name: 'integration-mjs',
+      description: 'MJS bundle integration server',
+      command: baseUrl.toString(),
+    });
+    const bundlePath = path.join(tmpDir, 'integration-mjs.mjs');
+    await fs.rm(bundlePath, { force: true });
+    await ensureDistBuilt();
+
+    const { outputPath: generated, bundlePath: bundled } = await generateCli({
+      serverRef: inline,
+      runtime: 'node',
+      timeoutMs: 5_000,
+      bundle: bundlePath,
+    });
+
+    expect(bundled).toBe(bundlePath);
+    expect(await exists(bundlePath)).toBe(true);
+    expect(await exists(generated)).toBe(false);
+
+    const { execFile } = await import('node:child_process');
+    const { stdout: helpStdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      execFile(
+        process.execPath,
+        [bundlePath, '--help'],
+        execOptions(),
+        (error: import('node:child_process').ExecFileException | null, stdout: string, stderr: string) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve({ stdout, stderr });
+        }
+      );
+    });
+    expect(helpStdout.endsWith('\n')).toBe(true);
+    expect(helpStdout).toContain('https://github.com/openclaw/mcporter');
+
+    const metadata = await readCliMetadata(bundlePath);
+    expect(metadata.artifact.kind).toBe('bundle');
+    expect(metadata.invocation.bundle).toBe(bundlePath);
+
+    const { stdout: callStdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      execFile(
+        process.execPath,
+        [bundlePath, 'add', '--a', '20', '--b', '22', '--output', 'json'],
+        execOptions(),
+        (error: import('node:child_process').ExecFileException | null, stdout: string, stderr: string) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve({ stdout, stderr });
+        }
+      );
+    });
+    expect(JSON.parse(callStdout)).toEqual({ result: 42 });
+  }, 60_000);
+
   it('maps CLI options to Commander camelCase properties', async () => {
     const inline = JSON.stringify({
       name: 'case-options',

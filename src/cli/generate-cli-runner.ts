@@ -99,6 +99,8 @@ export function printGenerateCliHelp(): void {
       '  --compile [path]        Emit a Bun-compiled binary.',
       '  --runtime node|bun      Runtime for generated code.',
       '  --bundler rolldown|bun  Bundler for JavaScript output.',
+      '  --timeout <ms>          Discovery/call timeout in milliseconds.',
+      '  --minify / --no-minify  Toggle bundle minification.',
       '  --include-tools a,b     Generate only these tools.',
       '  --exclude-tools a,b     Omit these tools.',
       '  --dry-run               Print regeneration command for --from.',

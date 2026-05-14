@@ -1,6 +1,6 @@
 {
   "name": "mcporter",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "TypeScript runtime and CLI for connecting to configured Model Context Protocol servers.",
   "keywords": [
     "cli",
@@ -12,7 +12,7 @@
   "author": "Sweetistics",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/steipete/mcporter.git"
+    "url": "git+https://github.com/openclaw/mcporter.git"
   },
   "bin": {
     "mcporter": "dist/cli.js"

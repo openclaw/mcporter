@@ -1,8 +1,16 @@
 # mcporter Changelog
 
-## [0.11.1] - Unreleased
+## [0.11.1] - 2026-05-14
 
-- Nothing yet.
+### CLI
+
+- Make `generate-cli --runtime node --bundle <name>.mjs` emit an ES module bundle with a local `require` shim, fixing `.mjs` artifacts that previously crashed at startup.
+- Classify generated `.mjs` and `.cjs` outputs as bundle artifacts in embedded metadata instead of reporting them as binaries.
+- Avoid leaving implicit `<server>.ts` template files in the current directory when generating bundle-only artifacts without `--output`.
+- Print generated CLI help with a trailing newline so subsequent shell output no longer glues onto the help footer.
+- Point generated CLI metadata and npm package metadata at `openclaw/mcporter`.
+- Document the existing `generate-cli --timeout`, `--minify`, and `--no-minify` flags in `generate-cli --help`.
+- Suppress expected Rolldown unresolved-import warnings for Node built-ins during successful generated CLI bundling.
 
 ## [0.11.0] - 2026-05-14
 

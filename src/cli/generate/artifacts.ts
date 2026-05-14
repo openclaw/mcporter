@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
-import { createRequire } from 'node:module';
+import { builtinModules, createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { RolldownPlugin } from 'rolldown';
@@ -16,6 +16,7 @@ const packageRoot = fileURLToPath(new URL('../../..', import.meta.url));
 // even in empty temp dirs (fixes #1).
 const BUNDLED_DEPENDENCIES = ['commander', 'mcporter', 'jsonc-parser'] as const;
 const dependencyAliasPlugin = createLocalDependencyAliasPlugin([...BUNDLED_DEPENDENCIES]);
+const NODE_BUILTIN_SPECIFIERS = new Set(builtinModules.flatMap((specifier) => [specifier, `node:${specifier}`]));
 
 export async function bundleOutput({
   sourcePath,
@@ -70,18 +71,50 @@ async function bundleWithRolldown({
       if (typeof (log as { code?: string }).code === 'string' && (log as { code?: string }).code === 'EVAL') {
         return;
       }
+      if (isExpectedNodeBuiltinWarning(log)) {
+        return;
+      }
       handler(level, log);
     },
   });
+  const format = outputFormatForTarget(absTarget, runtimeKind);
   await bundle.write({
     file: absTarget,
-    format: runtimeKind === 'bun' ? 'esm' : 'cjs',
+    format,
     codeSplitting: false,
     sourcemap: false,
     minify,
+    ...(format === 'esm' ? { banner: buildEsmRequireBanner() } : {}),
   });
   await markExecutable(absTarget);
   return absTarget;
+}
+
+function isExpectedNodeBuiltinWarning(log: unknown): boolean {
+  const record = log as { code?: string; message?: string };
+  if (record.code !== 'UNRESOLVED_IMPORT' || typeof record.message !== 'string') {
+    return false;
+  }
+  const match = record.message.match(/Could not resolve ['"]([^'"]+)['"]/);
+  return Boolean(match?.[1] && NODE_BUILTIN_SPECIFIERS.has(match[1]));
+}
+
+function buildEsmRequireBanner(): string {
+  return [
+    'import { createRequire as __mcporterCreateRequire } from "node:module";',
+    'const require = __mcporterCreateRequire(import.meta.url);',
+  ].join('\n');
+}
+
+function outputFormatForTarget(targetPath: string, runtimeKind: 'node' | 'bun'): 'cjs' | 'esm' {
+  const extension = path.extname(targetPath).toLowerCase();
+  if (extension === '.mjs') {
+    return 'esm';
+  }
+  if (extension === '.cjs') {
+    return 'cjs';
+  }
+  return runtimeKind === 'bun' ? 'esm' : 'cjs';
 }
 
 async function bundleWithBun({

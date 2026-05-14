@@ -17,7 +17,9 @@ export async function performGenerateFromArtifact(
 
 export async function performGenerateFromRequest(request: GenerateCliOptions): Promise<void> {
   const { outputPath, bundlePath, compilePath } = await generateCli(request);
-  console.log(`Generated CLI at ${outputPath}`);
+  if (request.outputPath || (!bundlePath && !compilePath)) {
+    console.log(`Generated CLI at ${outputPath}`);
+  }
   if (bundlePath) {
     console.log(`Bundled executable created at ${bundlePath}`);
   }

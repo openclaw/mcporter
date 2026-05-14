@@ -37,7 +37,7 @@ function renderStandaloneHelp(): string {
 \tif (generatorInfo) {
 \t\tlines.push('', tint.extraDim(generatorInfo));
 \t}
-\treturn lines.join('\\n');
+\treturn lines.join('\\n') + '\\n';
 }
 
 program.helpInformation = () => renderStandaloneHelp();

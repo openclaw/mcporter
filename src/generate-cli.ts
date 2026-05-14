@@ -90,16 +90,15 @@ export async function generateCli(
     invocation: baseInvocation,
   };
 
+  const shouldBundle = Boolean(options.bundle ?? options.compile);
   let templateTmpDir: string | undefined;
   let templateOutputPath = options.outputPath;
-  if (!templateOutputPath && options.compile) {
+  if (!templateOutputPath && shouldBundle) {
     const tmpPrefix = path.join(process.cwd(), 'tmp', 'mcporter-cli-');
     await fs.mkdir(path.dirname(tmpPrefix), { recursive: true });
     templateTmpDir = await fs.mkdtemp(tmpPrefix);
     templateOutputPath = path.join(templateTmpDir, `${name}.ts`);
   }
-
-  const shouldBundle = Boolean(options.bundle ?? options.compile);
   const templateSourcePath = path.resolve(templateOutputPath ?? path.resolve(process.cwd(), `${name}.ts`));
   let resolvedBundleTarget: string | undefined;
   let resolvedCompileTarget: string | undefined;

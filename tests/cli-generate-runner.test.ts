@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseGenerateFlags } from '../src/cli/generate/flags.js';
 import { inferNameFromCommand } from '../src/cli/generate/name-utils.js';
 import { normalizeDefinition } from '../src/cli/generate/definition.js';
 import { buildGenerateCliCommand } from '../src/cli/generate/template-data.js';
+import { printGenerateCliHelp } from '../src/cli/generate-cli-runner.js';
 import { serializeDefinition } from '../src/cli-metadata.js';
 import type { SerializedServerDefinition } from '../src/cli-metadata.js';
 
@@ -23,6 +24,19 @@ describe('generate-cli runner internals', () => {
     expect(parsed.bundle).toBe(true);
     expect(parsed.compile).toBe(true);
     expect(parsed.minify).toBe(true);
+  });
+
+  it('documents timeout and minify flags in generate-cli help', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let output = '';
+    try {
+      printGenerateCliHelp();
+      output = String(spy.mock.calls[0]?.[0] ?? '');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(output).toContain('--timeout <ms>');
+    expect(output).toContain('--minify / --no-minify');
   });
 
   it('normalizes inferred names from URLs', () => {
