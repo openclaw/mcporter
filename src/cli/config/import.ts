@@ -1,8 +1,8 @@
 import path from 'node:path';
-import type { RawEntry } from '../../config.js';
-import { writeRawConfig } from '../../config.js';
+import { resolveConfigPath, writeRawConfig, type RawEntry } from '../../config.js';
 import { pathsForImport, readExternalEntries } from '../../config-imports.js';
 import { expandHome } from '../../env.js';
+import { withFileLock } from '../../fs-json.js';
 import { CliUsageError } from '../errors.js';
 import { cloneConfig, loadOrCreateConfig } from './shared.js';
 import type { ConfigCliOptions } from './types.js';
@@ -53,15 +53,20 @@ export async function handleImportCommand(options: ConfigCliOptions, args: strin
     }
   }
   if (flags.copy) {
-    const { config, path: configPath } = await loadOrCreateConfig(options.loadOptions);
-    const nextConfig = cloneConfig(config);
-    if (!nextConfig.mcpServers) {
-      nextConfig.mcpServers = {};
-    }
-    for (const item of entries) {
-      nextConfig.mcpServers[item.name] = structuredClone(item.entry);
-    }
-    await writeRawConfig(configPath, nextConfig);
+    const lockPath = resolveConfigPath(options.loadOptions.configPath, rootDir).path;
+    let configPath = lockPath;
+    await withFileLock(lockPath, async () => {
+      const loaded = await loadOrCreateConfig({ ...options.loadOptions, configPath: lockPath });
+      configPath = loaded.path;
+      const nextConfig = cloneConfig(loaded.config);
+      if (!nextConfig.mcpServers) {
+        nextConfig.mcpServers = {};
+      }
+      for (const item of entries) {
+        nextConfig.mcpServers[item.name] = structuredClone(item.entry);
+      }
+      await writeRawConfig(configPath, nextConfig);
+    });
     console.log(`Copied ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'} to ${configPath}`);
   }
 }

@@ -216,6 +216,29 @@ describe('createCallResult json extraction', () => {
     expect(result.json()).toEqual({ nested: true });
   });
 
+  it('prefers structuredContent nested inside a result wrapper over parsed text content', () => {
+    const response = {
+      result: {
+        content: [
+          {
+            type: 'text',
+            text: '{\n  "entities": [],\n  "relations": []\n}',
+          },
+        ],
+        structuredContent: {
+          entities: [],
+          relations: [],
+        },
+      },
+    };
+    const result = createCallResult(response);
+    expect(result.text()).toBe('{\n  "entities": [],\n  "relations": []\n}');
+    expect(result.json()).toEqual({
+      entities: [],
+      relations: [],
+    });
+  });
+
   it('returns plain structuredContent objects even when they are not wrapped', () => {
     const response = {
       structuredContent: {

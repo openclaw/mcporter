@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { CommandSpec, ServerDefinition } from '../config.js';
 import { __configInternals } from '../config.js';
 import { expandHome } from '../env.js';
+import { withFileLock, writeTextFileAtomic } from '../fs-json.js';
 import { canonicalKeepAliveName, resolveLifecycle } from '../lifecycle.js';
 
 export interface EphemeralServerSpec {
@@ -108,26 +109,27 @@ export function resolveEphemeralServer(spec: EphemeralServerSpec): EphemeralServ
 
 export async function persistEphemeralServer(resolution: EphemeralServerResolution, rawPath: string): Promise<void> {
   const resolvedPath = path.resolve(expandHome(rawPath));
-  let existing: Record<string, unknown>;
-  try {
-    const buffer = await fs.readFile(resolvedPath, 'utf8');
-    existing = JSON.parse(buffer) as Record<string, unknown>;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw error;
+  await withFileLock(resolvedPath, async () => {
+    let existing: Record<string, unknown>;
+    try {
+      const buffer = await fs.readFile(resolvedPath, 'utf8');
+      existing = JSON.parse(buffer) as Record<string, unknown>;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error;
+      }
+      existing = { mcpServers: {} };
     }
-    existing = { mcpServers: {} };
-  }
 
-  if (typeof existing.mcpServers !== 'object' || existing.mcpServers === null) {
-    existing.mcpServers = {};
-  }
-  const servers = existing.mcpServers as Record<string, unknown>;
-  servers[resolution.name] = resolution.persistedEntry;
+    if (typeof existing.mcpServers !== 'object' || existing.mcpServers === null) {
+      existing.mcpServers = {};
+    }
+    const servers = existing.mcpServers as Record<string, unknown>;
+    servers[resolution.name] = resolution.persistedEntry;
 
-  await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
-  const serialized = `${JSON.stringify(existing, null, 2)}\n`;
-  await fs.writeFile(resolvedPath, serialized, 'utf8');
+    const serialized = `${JSON.stringify(existing, null, 2)}\n`;
+    await writeTextFileAtomic(resolvedPath, serialized);
+  });
 }
 
 function inferNameFromUrl(url: URL): string {

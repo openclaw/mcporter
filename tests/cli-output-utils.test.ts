@@ -45,6 +45,30 @@ describe('printCallOutput format selection', () => {
       },
     ],
     [
+      'auto prints structuredContent nested inside a result wrapper',
+      'auto',
+      {
+        result: {
+          content: [
+            {
+              type: 'text',
+              text: '{\n  "entities": [],\n  "relations": []\n}',
+            },
+          ],
+          structuredContent: {
+            entities: [],
+            relations: [],
+          },
+        },
+      },
+      (logged: unknown) => {
+        expect(JSON.parse(String(logged))).toEqual({
+          entities: [],
+          relations: [],
+        });
+      },
+    ],
+    [
       'text prefers text over markdown/json',
       'text',
       {

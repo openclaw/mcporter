@@ -1,4 +1,3 @@
-import fs from 'node:fs/promises';
 import path from 'node:path';
 import {
   listConfigLayerPaths as discoverConfigLayerPaths,
@@ -17,6 +16,7 @@ import {
   type ServerSource,
 } from './config-schema.js';
 import { expandHome } from './env.js';
+import { writeTextFileAtomic } from './fs-json.js';
 
 export { toFileUrl } from './config-imports.js';
 export { __configInternals } from './config-normalize.js';
@@ -121,9 +121,8 @@ export async function listConfigLayerPaths(
 }
 
 export async function writeRawConfig(targetPath: string, config: RawConfig): Promise<void> {
-  await fs.mkdir(path.dirname(targetPath), { recursive: true });
   const serialized = `${JSON.stringify(config, null, 2)}\n`;
-  await fs.writeFile(targetPath, serialized, 'utf8');
+  await writeTextFileAtomic(targetPath, serialized);
 }
 
 export function resolveConfigPath(

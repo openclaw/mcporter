@@ -10,6 +10,8 @@
 ### CLI
 
 - Add `mcporter serve`, exposing daemon-managed keep-alive servers as one MCP bridge with readable `server__tool` names for stdio and Streamable HTTP clients. (PR #172, thanks @zm2231)
+- Prefer MCP `structuredContent` nested inside JSON-RPC result envelopes so `mcporter call --output json` stays parseable for dual text/structured tool responses. (Issue #168, thanks @mar-zh)
+- Serialize read-modify-write config and OAuth vault updates, and write JSON/cache metadata atomically to avoid lost entries under parallel invocations. (Issue #167, thanks @alexminza)
 - Patch `chrome-devtools-mcp --autoConnect` launches at runtime so `mcporter call chrome-devtools.list_pages` can keep using a logged-in Chrome profile while upstream DevTools-window detection can hang on busy profiles.
 
 ### OAuth

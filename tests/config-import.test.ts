@@ -9,13 +9,21 @@ import * as importModule from '../src/config-imports.js';
 
 let tempDir: string;
 let loadOptions: LoadConfigOptions;
+let originalXdgConfigHome: string | undefined;
 
 beforeEach(async () => {
   tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-import-'));
   loadOptions = { rootDir: tempDir };
+  originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
+  process.env.XDG_CONFIG_HOME = path.join(tempDir, 'xdg-config');
 });
 
 afterEach(async () => {
+  if (originalXdgConfigHome === undefined) {
+    delete process.env.XDG_CONFIG_HOME;
+  } else {
+    process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+  }
   await fs.rm(tempDir, { recursive: true, force: true });
   vi.restoreAllMocks();
 });
@@ -41,6 +49,42 @@ describe('config import', () => {
 
     expect(writtenConfig?.mcpServers?.keep).toBeDefined();
     expect(writtenConfig?.mcpServers?.skip).toBeUndefined();
+  });
+
+  it('copies into the locked config path if another default appears while waiting', async () => {
+    const xdgConfigHome = path.join(tempDir, 'xdg-config');
+    vi.spyOn(importModule, 'pathsForImport').mockReturnValue([path.join(tempDir, 'imports', 'cursor.json')]);
+    vi.spyOn(importModule, 'readExternalEntries').mockResolvedValue(
+      new Map([['keep', { baseUrl: 'https://example.com/mcp' }]]) as never
+    );
+
+    const projectConfigPath = path.join(tempDir, 'config', 'mcporter.json');
+    const homeConfigPath = path.join(xdgConfigHome, 'mcporter', 'mcporter.json');
+    const lockPath = `${projectConfigPath}.lock`;
+    await fs.mkdir(path.dirname(projectConfigPath), { recursive: true });
+    await fs.writeFile(lockPath, `${process.pid}\n2026-01-01T00:00:00.000Z\n`, 'utf8');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      const command = handleImportCommand({ loadOptions } as never, ['cursor', '--copy']);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      await fs.mkdir(path.dirname(homeConfigPath), { recursive: true });
+      await fs.writeFile(
+        homeConfigPath,
+        JSON.stringify({ mcpServers: { home: { baseUrl: 'https://home.example/mcp' } } }),
+        'utf8'
+      );
+      await fs.unlink(lockPath);
+      await command;
+    } finally {
+      logSpy.mockRestore();
+      await fs.unlink(lockPath).catch(() => {});
+    }
+
+    const projectConfig = JSON.parse(await fs.readFile(projectConfigPath, 'utf8')) as RawConfig;
+    const homeConfig = JSON.parse(await fs.readFile(homeConfigPath, 'utf8')) as RawConfig;
+    expect(projectConfig.mcpServers?.keep).toBeDefined();
+    expect(homeConfig.mcpServers?.keep).toBeUndefined();
   });
 
   it('emits JSON when --json is provided', async () => {

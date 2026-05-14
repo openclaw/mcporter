@@ -9,7 +9,7 @@ import type {
 } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { checkResourceAllowed, resourceUrlFromServerUrl } from '@modelcontextprotocol/sdk/shared/auth-utils.js';
 import type { ServerDefinition } from './config.js';
-import { readJsonFile, writeJsonFile } from './fs-json.js';
+import { readJsonFile, writeJsonFile, writeTextFileAtomic } from './fs-json.js';
 import type { Logger } from './logging.js';
 import { buildStaticClientInformation } from './oauth-client-info.js';
 import { clearVaultEntry, getOAuthVaultPath, loadVaultEntry, saveVaultEntry } from './oauth-vault.js';
@@ -141,7 +141,7 @@ class DirectoryPersistence implements OAuthPersistence {
 
   async saveCodeVerifier(value: string): Promise<void> {
     await this.ensureDir();
-    await fs.writeFile(this.codeVerifierPath, value, 'utf8');
+    await writeTextFileAtomic(this.codeVerifierPath, value);
   }
 
   async readState(): Promise<string | undefined> {

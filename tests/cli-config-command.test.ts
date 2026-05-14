@@ -10,16 +10,28 @@ describe('mcporter config CLI', () => {
   let tempDir: string;
   let configPath: string;
   let originalXdg: string | undefined;
+  let originalXdgData: string | undefined;
 
   beforeEach(async () => {
     originalXdg = process.env.XDG_CONFIG_HOME;
+    originalXdgData = process.env.XDG_DATA_HOME;
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-config-'));
     configPath = path.join(tempDir, 'config', 'mcporter.json');
+    process.env.XDG_DATA_HOME = path.join(tempDir, 'xdg-data');
   });
 
   afterEach(async () => {
     await fs.rm(tempDir, { recursive: true, force: true });
-    process.env.XDG_CONFIG_HOME = originalXdg;
+    if (originalXdg === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalXdg;
+    }
+    if (originalXdgData === undefined) {
+      delete process.env.XDG_DATA_HOME;
+    } else {
+      process.env.XDG_DATA_HOME = originalXdgData;
+    }
     vi.restoreAllMocks();
   });
 

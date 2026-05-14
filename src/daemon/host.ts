@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import type { ServerDefinition } from '../config.js';
+import { writeJsonFile } from '../fs-json.js';
 import { isKeepAliveServer } from '../lifecycle.js';
 import { createRuntime, type Runtime } from '../runtime.js';
 import { collectConfigLayers, statConfigMtime } from './config-layers.js';
@@ -156,23 +157,15 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
     });
   });
 
-  await fs.writeFile(
-    options.metadataPath,
-    JSON.stringify(
-      {
-        pid: process.pid,
-        socketPath: options.socketPath,
-        configPath: options.configPath,
-        configLayers,
-        startedAt: Date.now(),
-        logPath: options.logPath ?? null,
-        configMtimeMs,
-      },
-      null,
-      2
-    ),
-    'utf8'
-  );
+  await writeJsonFile(options.metadataPath, {
+    pid: process.pid,
+    socketPath: options.socketPath,
+    configPath: options.configPath,
+    configLayers,
+    startedAt: Date.now(),
+    logPath: options.logPath ?? null,
+    configMtimeMs,
+  });
 
   let shuttingDown = false;
   const shutdown = async (): Promise<void> => {

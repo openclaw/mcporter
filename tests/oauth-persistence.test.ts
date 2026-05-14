@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ServerDefinition } from '../src/config.js';
 import { readJsonFile } from '../src/fs-json.js';
 import { buildOAuthPersistence, clearOAuthCaches, readCachedAccessToken } from '../src/oauth-persistence.js';
-import { loadVaultEntry, vaultKeyForDefinition } from '../src/oauth-vault.js';
+import { clearVaultEntry, loadVaultEntry, saveVaultEntry, vaultKeyForDefinition } from '../src/oauth-vault.js';
 
 const authMocks = vi.hoisted(() => ({
   discoverOAuthServerInfo: vi.fn(),
@@ -127,6 +127,83 @@ describe('oauth persistence', () => {
       | { entries: Record<string, { tokens?: { access_token?: string } }> }
       | undefined;
     expect(vault?.entries[key]?.tokens?.access_token).toBe('xdg-token');
+  });
+
+  it('serializes concurrent shared vault writes for different servers', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-vault-race-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const definitions = Array.from({ length: 12 }, (_, index) => mkDef(`service-${index}`));
+    await Promise.all(
+      definitions.map((definition, index) =>
+        saveVaultEntry(definition, {
+          tokens: { access_token: `token-${index}`, token_type: 'Bearer' },
+        })
+      )
+    );
+
+    const vaultPath = path.join(tmp, 'data', 'mcporter', 'credentials.json');
+    const vault = (await readJsonFile(vaultPath)) as
+      | { entries: Record<string, { tokens?: { access_token?: string } }> }
+      | undefined;
+    expect(Object.keys(vault?.entries ?? {})).toHaveLength(definitions.length);
+    for (const [index, definition] of definitions.entries()) {
+      expect(vault?.entries[vaultKeyForDefinition(definition)]?.tokens?.access_token).toBe(`token-${index}`);
+    }
+  });
+
+  it('does not create a vault file when clearing a missing vault entry', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-vault-clear-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const vaultPath = path.join(tmp, 'data', 'mcporter', 'credentials.json');
+    await clearVaultEntry(mkDef('missing'), 'all');
+
+    await expect(fs.access(vaultPath)).rejects.toThrow();
+    await expect(fs.access(`${vaultPath}.lock`)).rejects.toThrow();
+  });
+
+  it('rewrites a corrupt vault file when clearing a missing vault entry', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-vault-corrupt-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const vaultPath = path.join(tmp, 'data', 'mcporter', 'credentials.json');
+    await fs.mkdir(path.dirname(vaultPath), { recursive: true });
+    await fs.writeFile(vaultPath, '{"version":1,"entries": { bad', 'utf8');
+
+    await clearVaultEntry(mkDef('missing'), 'all');
+
+    expect(await readJsonFile(vaultPath)).toEqual({ version: 1, entries: {} });
+    await expect(fs.access(`${vaultPath}.lock`)).rejects.toThrow();
+  });
+
+  it.runIf(process.platform !== 'win32')('surfaces unreadable vault files', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-vault-unreadable-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const definition = mkDef('unreadable');
+    const vaultPath = path.join(tmp, 'data', 'mcporter', 'credentials.json');
+    await fs.mkdir(path.dirname(vaultPath), { recursive: true });
+    await fs.writeFile(vaultPath, JSON.stringify({ version: 1, entries: {} }), 'utf8');
+
+    try {
+      await fs.chmod(vaultPath, 0o000);
+      await expect(loadVaultEntry(definition)).rejects.toThrow();
+    } finally {
+      await fs.chmod(vaultPath, 0o600).catch(() => {});
+    }
   });
 
   it('clears vault, legacy, tokenCacheDir, and provider-specific caches', async () => {

@@ -1,6 +1,6 @@
-import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ServerDefinition } from './config.js';
+import { readJsonFile, writeJsonFile } from './fs-json.js';
 import { mcporterDir } from './paths.js';
 
 const SCHEMA_FILENAME = 'schema.json';
@@ -24,8 +24,7 @@ export function resolveSchemaCachePath(definition: ServerDefinition): string {
 export async function readSchemaCache(definition: ServerDefinition): Promise<SchemaCacheSnapshot | undefined> {
   const filePath = resolveSchemaCachePath(definition);
   try {
-    const raw = await fs.readFile(filePath, 'utf8');
-    const parsed = JSON.parse(raw) as SchemaCacheSnapshot;
+    const parsed = await readJsonFile<SchemaCacheSnapshot>(filePath);
     if (!parsed || typeof parsed !== 'object') {
       return undefined;
     }
@@ -43,7 +42,5 @@ export async function readSchemaCache(definition: ServerDefinition): Promise<Sch
 
 // writeSchemaCache persists the latest tool schema snapshot for a server.
 export async function writeSchemaCache(definition: ServerDefinition, snapshot: SchemaCacheSnapshot): Promise<void> {
-  const filePath = resolveSchemaCachePath(definition);
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, JSON.stringify(snapshot, null, 2), 'utf8');
+  await writeJsonFile(resolveSchemaCachePath(definition), snapshot);
 }
