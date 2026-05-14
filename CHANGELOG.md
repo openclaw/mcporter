@@ -7,6 +7,10 @@
 - Resolve `${VAR}` and `${VAR:-fallback}` placeholders across string-valued server config fields such as `baseUrl`, `command`/`args`, `tokenCacheDir`, and pre-registered OAuth fields while keeping headers/env/bearer-token placeholders lazy until runtime. (PR #161 / issue #157, thanks @zxyasfas)
 - Add `mcporter vault set <server>` and `mcporter vault clear <server>` so headless deployments can seed or clear OAuth vault credentials without reproducing mcporter's internal vault-key format. (Issue #156)
 
+### CLI
+
+- Add `mcporter serve`, exposing daemon-managed keep-alive servers as one MCP bridge with readable `server__tool` names for stdio and Streamable HTTP clients. (PR #172, thanks @zm2231)
+
 ### OAuth
 
 - Proactively complete OAuth for configured HTTP servers that allow unauthenticated `initialize`/`listTools` but require credentials for tool calls, and close the local callback server promptly after browser authorization. (PR #159, thanks @Spacefish)

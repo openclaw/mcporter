@@ -39,12 +39,12 @@ describe('mcporter serve bridge', () => {
 
   it('encodes and decodes namespaced tool names with longest-prefix matching', () => {
     expect(encodeToolName('alpha', 'ping')).toBe('alpha__ping');
-    expect(
-      decodeToolName('alpha-long__tool%5F%5Fwith%5F%5Fseparator', [{ name: 'alpha' }, { name: 'alpha-long' }])
-    ).toEqual({
-      server: 'alpha-long',
-      tool: 'tool__with__separator',
-    });
+    expect(decodeToolName('alpha-long__tool%5F%5Fwith_separator', [{ name: 'alpha' }, { name: 'alpha-long' }])).toEqual(
+      {
+        server: 'alpha-long',
+        tool: 'tool__with_separator',
+      }
+    );
   });
 
   it('escapes namespaced tool parts to avoid server/tool collisions', () => {
@@ -60,6 +60,32 @@ describe('mcporter serve bridge', () => {
     });
     expect(decodeToolName(second, [{ name: 'alpha' }, { name: 'alpha__beta' }])).toEqual({
       server: 'alpha__beta',
+      tool: 'ping',
+    });
+  });
+
+  it('preserves ordinary underscores in server and tool names', () => {
+    expect(encodeToolName('memory', 'create_entities')).toBe('memory__create_entities');
+    expect(encodeToolName('alpha_', '_ping')).toBe('alpha%5F__%5Fping');
+    expect(decodeToolName('alpha%5F__%5Fping', [{ name: 'alpha' }, { name: 'alpha_' }])).toEqual({
+      server: 'alpha_',
+      tool: '_ping',
+    });
+  });
+
+  it('escapes boundary underscores so namespaced tools stay injective', () => {
+    const first = encodeToolName('alpha', '_ping');
+    const second = encodeToolName('alpha_', 'ping');
+
+    expect(first).toBe('alpha__%5Fping');
+    expect(second).toBe('alpha%5F__ping');
+    expect(first).not.toBe(second);
+    expect(decodeToolName(first, [{ name: 'alpha' }, { name: 'alpha_' }])).toEqual({
+      server: 'alpha',
+      tool: '_ping',
+    });
+    expect(decodeToolName(second, [{ name: 'alpha' }, { name: 'alpha_' }])).toEqual({
+      server: 'alpha_',
       tool: 'ping',
     });
   });

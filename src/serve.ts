@@ -163,30 +163,45 @@ export function selectServedServers(
 }
 
 export function encodeToolName(server: string, tool: string): string {
-  return `${encodeToolNamePart(server)}${TOOL_SEPARATOR}${encodeToolNamePart(tool)}`;
+  return `${encodeToolNamePart(server, { escapeTrailingUnderscore: true })}${TOOL_SEPARATOR}${encodeToolNamePart(tool, { escapeLeadingUnderscore: true })}`;
 }
 
 export function decodeToolName(
   name: string,
   servedServers: readonly Pick<ServedServer, 'name'>[]
 ): { server: string; tool: string } | undefined {
-  const separatorIndex = name.indexOf(TOOL_SEPARATOR);
-  if (separatorIndex === -1) {
-    return undefined;
-  }
-  const server = decodeToolNamePart(name.slice(0, separatorIndex));
-  const tool = decodeToolNamePart(name.slice(separatorIndex + TOOL_SEPARATOR.length));
-  if (tool.length === 0) {
-    return undefined;
-  }
-  if (servedServers.some((served) => served.name === server)) {
-    return { server, tool };
+  const candidates = servedServers
+    .map((served) => ({
+      name: served.name,
+      prefix: `${encodeToolNamePart(served.name, { escapeTrailingUnderscore: true })}${TOOL_SEPARATOR}`,
+    }))
+    .toSorted((first, second) => second.prefix.length - first.prefix.length);
+
+  for (const candidate of candidates) {
+    if (!name.startsWith(candidate.prefix)) {
+      continue;
+    }
+    const tool = decodeToolNamePart(name.slice(candidate.prefix.length));
+    if (tool.length === 0) {
+      return undefined;
+    }
+    return { server: candidate.name, tool };
   }
   return undefined;
 }
 
-function encodeToolNamePart(value: string): string {
-  return value.replaceAll('%', '%25').replaceAll('_', '%5F');
+function encodeToolNamePart(
+  value: string,
+  options: { escapeLeadingUnderscore?: boolean; escapeTrailingUnderscore?: boolean } = {}
+): string {
+  let encoded = value.replaceAll('%', '%25').replaceAll(TOOL_SEPARATOR, '%5F%5F');
+  if (options.escapeLeadingUnderscore && encoded.startsWith('_')) {
+    encoded = `%5F${encoded.slice(1)}`;
+  }
+  if (options.escapeTrailingUnderscore && encoded.endsWith('_')) {
+    encoded = `${encoded.slice(0, -1)}%5F`;
+  }
+  return encoded;
 }
 
 function decodeToolNamePart(value: string): string {
