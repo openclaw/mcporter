@@ -1,5 +1,9 @@
 # mcporter Changelog
 
+## [0.11.1] - Unreleased
+
+- Nothing yet.
+
 ## [0.11.0] - 2026-05-14
 
 ### Config
