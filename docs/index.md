@@ -42,6 +42,7 @@ mcporter leans into the **code-execution-with-MCP** pattern Anthropic recommends
 - **Typed clients.** [`mcporter emit-ts`](emit-ts.md) emits `.d.ts` interfaces or a ready-to-run client wrapping `createServerProxy()` so agents call MCP tools with full TypeScript types.
 - **Friendly composable API.** [`createServerProxy()`](tool-calling.md) maps tools to camelCase methods, applies JSON-schema defaults, validates required arguments, and returns a `CallResult` with `.text()`, `.markdown()`, `.json()`, `.images()`, `.content()` helpers.
 - **Ad-hoc connections + auto-OAuth.** Point the CLI at any MCP endpoint (HTTP, SSE, stdio) without touching config. Hosted MCPs that need a browser login (Supabase, Vercel, etc.) are auto-detected — `mcporter auth <url>` promotes the definition to OAuth on the fly. See [Ad-hoc connections](adhoc.md).
+- **MCP bridge for agents.** `mcporter serve --stdio` exposes daemon-managed keep-alive servers as one MCP server, with tools namespaced as `server__tool`, so clients can share the same warm daemon-backed transports.
 - **OAuth & stdio ergonomics.** Built-in OAuth caching, token refresh, log tailing, and stdio wrappers — same interface across HTTP, SSE, and stdio transports.
 
 ## Built for agents

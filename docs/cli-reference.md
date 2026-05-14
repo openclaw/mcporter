@@ -56,6 +56,25 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
   - `--json` – shortcut for `--output json`.
   - `--raw` – shortcut for `--output raw`.
 
+## `mcporter serve [--servers a,b,c] [--stdio | --http <port>]`
+
+- Exposes daemon-managed keep-alive servers as one MCP server for clients that
+  consume MCP over stdio or Streamable HTTP.
+- `tools/list` queries the daemon for each selected server and publishes tools
+  as `server__tool`; `tools/call` strips the prefix and routes the call through
+  the daemon.
+- Only configured keep-alive servers participate. Add
+  `"lifecycle": "keep-alive"` to a server definition when you want it managed
+  by the daemon.
+- Flags:
+  - `--stdio` – serve MCP over stdio; this is the default and is the mode to
+    register with Claude Code, Codex, and similar clients.
+  - `--http <port>` – serve MCP Streamable HTTP on `/mcp`, bound to
+    `127.0.0.1` by default.
+  - `--host <host>` – override the HTTP bind host when you intentionally need a
+    non-local listener.
+  - `--servers <csv>` – expose only the listed keep-alive server names.
+
 ## `mcporter generate-cli`
 
 - Produces a standalone CLI for a single MCP server (optionally bundling or

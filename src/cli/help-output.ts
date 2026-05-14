@@ -112,6 +112,11 @@ function buildCommandSections(colorize: boolean): string[] {
           summary: 'Manage the keep-alive daemon (start | status | stop | restart)',
           usage: 'mcporter daemon <subcommand>',
         },
+        {
+          name: 'serve',
+          summary: 'Expose daemon-managed keep-alive servers as one MCP server',
+          usage: 'mcporter serve [--servers a,b,c] [--stdio | --http <port>]',
+        },
       ],
     },
   ];

@@ -195,6 +195,7 @@ npx mcporter call --stdio "bun run ./local-server.ts" --name local-tools
 - Stop it anytime with `mcporter daemon stop`, pre-warm with `mcporter daemon start`, or bounce it via `mcporter daemon restart` after tweaking configs/env.
 - All other servers stay ephemeral; add `"lifecycle": "keep-alive"` to a server entry (or set `MCPORTER_KEEPALIVE=name`) when you want the daemon to manage it. You can also set `"lifecycle": "ephemeral"` (or `MCPORTER_DISABLE_KEEPALIVE=name`) to opt out.
 - The daemon only manages named servers that come from your config/imports. Ad-hoc STDIO/HTTP targets invoked via `--stdio …`, `--http-url …`, or inline function-call syntax remain per-process today; persist them into `config/mcporter.json` (or use `--persist`) if you need them to participate in the shared daemon.
+- `mcporter serve --stdio` exposes every daemon-managed keep-alive server as one MCP stdio bridge for clients such as Claude Code or Codex. Register it once, then call namespaced tools like `chrome-devtools__list_pages`; add `--servers a,b` to limit the bridge or `--http <port>` to serve Streamable HTTP on localhost at `/mcp`.
 - Troubleshooting? Run `mcporter daemon start --log` (or `--log-file /tmp/daemon.log`) to tee stdout/stderr into a file, and add `--log-servers chrome-devtools` when you only want call traces for a specific MCP. Per-server configs can also set `"logging": { "daemon": { "enabled": true } }` to force detailed logging for that entry.
 
 ## Friendlier Tool Calls

@@ -139,6 +139,21 @@ export async function runCli(argv: string[]): Promise<void> {
     return;
   }
 
+  if (command === 'serve') {
+    const { handleServeCli, printServeHelp } = await import('./cli/serve-command.js');
+    if (consumeHelpTokens(args)) {
+      printServeHelp();
+      process.exitCode = 0;
+      return;
+    }
+    await handleServeCli(args, {
+      configPath: configPathResolved,
+      configExplicit: configResolution.explicit,
+      rootDir: rootOverride,
+    });
+    return;
+  }
+
   if (command === 'config') {
     const { handleConfigCli } = await import('./cli/config-command.js');
     await handleConfigCli(
@@ -438,6 +453,7 @@ function isExplicitNonCallCommand(command: string): boolean {
     command === 'resource' ||
     command === 'resources' ||
     command === 'daemon' ||
+    command === 'serve' ||
     command === 'config' ||
     command === 'emit-ts' ||
     command === 'generate-cli' ||
