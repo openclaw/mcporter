@@ -3,7 +3,7 @@
     "chrome-devtools": {
       "description": "Chrome DevTools protocol bridge for driving local tabs during debugging or automation.",
       "command": "npx",
-      "args": ["-y", "chrome-devtools-mcp@latest"],
+      "args": ["-y", "chrome-devtools-mcp@latest", "--autoConnect"],
       "env": {
         "npm_config_loglevel": "error"
       }

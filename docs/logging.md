@@ -38,7 +38,7 @@ Add a logging block inside the server definition (alongside `lifecycle`) when yo
 "chrome-devtools": {
   "description": "Chrome DevTools protocol bridge",
   "command": "npx",
-  "args": ["-y", "chrome-devtools-mcp@latest"],
+  "args": ["-y", "chrome-devtools-mcp@latest", "--autoConnect"],
   "lifecycle": "keep-alive",
   "logging": {
     "daemon": { "enabled": true }

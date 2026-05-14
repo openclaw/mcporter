@@ -1,6 +1,6 @@
 # mcporter Changelog
 
-## [Unreleased]
+## [0.11.0] - Unreleased
 
 ### Config
 
@@ -10,6 +10,7 @@
 ### CLI
 
 - Add `mcporter serve`, exposing daemon-managed keep-alive servers as one MCP bridge with readable `server__tool` names for stdio and Streamable HTTP clients. (PR #172, thanks @zm2231)
+- Patch `chrome-devtools-mcp --autoConnect` launches at runtime so `mcporter call chrome-devtools.list_pages` can keep using a logged-in Chrome profile while upstream DevTools-window detection can hang on busy profiles.
 
 ### OAuth
 

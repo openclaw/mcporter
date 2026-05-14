@@ -3,6 +3,7 @@ import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import { applyChromeDevtoolsCompat } from '../chrome-devtools-compat.js';
 import type { ServerDefinition } from '../config.js';
 import { resolveEnvValue, withEnvOverrides } from '../env.js';
 import { analyzeConnectionError } from '../error-classifier.js';
@@ -203,11 +204,17 @@ async function createStdioClientContext(
     resolvedEnvOverrides && Object.keys(resolvedEnvOverrides).length > 0
       ? { ...process.env, ...resolvedEnvOverrides }
       : { ...process.env };
+  const command = resolveCommandArgument(definition.command.command);
+  const commandArgs = resolveCommandArguments(definition.command.args);
+  const compat = applyChromeDevtoolsCompat(mergedEnv as Record<string, string>, command, commandArgs);
+  if (compat.applied) {
+    logger.info(`Injecting chrome-devtools-mcp --autoConnect compatibility patch from ${compat.patchPath}.`);
+  }
   const transport = new StdioClientTransport({
-    command: resolveCommandArgument(definition.command.command),
-    args: resolveCommandArguments(definition.command.args),
+    command,
+    args: commandArgs,
     cwd: definition.command.cwd,
-    env: mergedEnv,
+    env: compat.env,
   });
   if (STDIO_TRACE_ENABLED) {
     attachStdioTraceLogging(transport, definition.name ?? definition.command.command);
