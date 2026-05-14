@@ -3,6 +3,8 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it, vi } from 'vitest';
 import type { ServerDefinition } from '../src/config.js';
+import { createKeepAliveRuntime } from '../src/daemon/runtime-wrapper.js';
+import type { Runtime } from '../src/runtime.js';
 import { createBridgeServer, decodeToolName, encodeToolName, selectServedServers, serveHttp } from '../src/serve.js';
 
 const definitions: ServerDefinition[] = [
@@ -91,6 +93,83 @@ describe('mcporter serve bridge', () => {
 
     await client.close();
     await bridge.close();
+  });
+
+  it('routes bridged keep-alive tool traffic through the daemon runtime wrapper', async () => {
+    const baseRuntime = {
+      listServers: () => definitions.map((definition) => definition.name),
+      getDefinitions: () => definitions,
+      getDefinition: (server: string) => {
+        const definition = definitions.find((entry) => entry.name === server);
+        if (!definition) {
+          throw new Error(`Unknown server ${server}`);
+        }
+        return definition;
+      },
+      registerDefinition: vi.fn(),
+      listTools: vi.fn().mockResolvedValue([{ name: 'local-tool' }]),
+      callTool: vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'local' }] }),
+      listResources: vi.fn(),
+      readResource: vi.fn(),
+      connect: vi.fn(),
+      close: vi.fn().mockResolvedValue(undefined),
+    } satisfies Runtime;
+    const daemon = {
+      listTools: vi.fn().mockResolvedValue([
+        {
+          name: 'ping',
+          description: 'daemon ping',
+          inputSchema: { type: 'object' },
+        },
+      ]),
+      callTool: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('daemon transport died'))
+        .mockResolvedValueOnce({
+          content: [{ type: 'text', text: 'daemon pong' }],
+        }),
+      listResources: vi.fn(),
+      readResource: vi.fn(),
+      closeServer: vi.fn().mockResolvedValue(undefined),
+    };
+    const runtime = createKeepAliveRuntime(baseRuntime, {
+      daemonClient: daemon as never,
+      keepAliveServers: new Set(['alpha']),
+    });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const bridge = createBridgeServer({
+      runtime,
+      definitions,
+      servers: ['alpha'],
+    });
+    const client = new Client({ name: 'daemon-wrapper-client', version: '1.0.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    try {
+      await Promise.all([bridge.connect(serverTransport), client.connect(clientTransport)]);
+
+      await expect(client.listTools()).resolves.toMatchObject({
+        tools: [{ name: 'alpha__ping', description: '[alpha] daemon ping' }],
+      });
+      expect(daemon.listTools).toHaveBeenCalledWith({
+        server: 'alpha',
+        includeSchema: true,
+        autoAuthorize: true,
+      });
+      expect(baseRuntime.listTools).not.toHaveBeenCalled();
+
+      await expect(client.callTool({ name: 'alpha__ping', arguments: {} })).resolves.toEqual({
+        content: [{ type: 'text', text: 'daemon pong' }],
+      });
+      expect(daemon.callTool).toHaveBeenCalledTimes(2);
+      expect(daemon.closeServer).toHaveBeenCalledWith({ server: 'alpha' });
+      expect(baseRuntime.callTool).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Restarting 'alpha'"));
+    } finally {
+      errorSpy.mockRestore();
+      await client.close().catch(() => {});
+      await bridge.close().catch(() => {});
+    }
   });
 
   it('serves the bridge over Streamable HTTP', async () => {

@@ -31,6 +31,7 @@ describe('serve command arguments', () => {
 
   it('rejects invalid ports', () => {
     expect(() => parseServeArgs(['--http', 'nope'])).toThrow("Invalid HTTP port 'nope'");
+    expect(() => parseServeArgs(['--http='])).toThrow("Flag '--http' requires a port.");
   });
 
   it('rejects conflicting stdio and HTTP modes', () => {

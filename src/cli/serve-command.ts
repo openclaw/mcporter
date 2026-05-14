@@ -175,6 +175,9 @@ export function parseServeArgs(args: string[]): ParsedServeArgs {
 }
 
 function parsePort(value: string): number {
+  if (value.trim().length === 0) {
+    throw new Error("Flag '--http' requires a port.");
+  }
   const port = Number(value);
   if (!Number.isInteger(port) || port < 0 || port > 65_535) {
     throw new Error(`Invalid HTTP port '${value}'.`);
