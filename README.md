@@ -391,7 +391,7 @@ Run `mcporter config …` via your package manager (pnpm, npm, npx, etc.) when y
     },
     "chrome-devtools": {
       "command": "npx",
-      "args": ["-y", "chrome-devtools-mcp@latest"],
+      "args": ["-y", "chrome-devtools-mcp@latest", "--autoConnect"],
       "env": { "npm_config_loglevel": "error" },
     },
   },
@@ -405,6 +405,7 @@ What MCPorter handles for you:
 - Automatic OAuth token caching in the shared vault (`~/.mcporter/credentials.json`, or `$XDG_DATA_HOME/mcporter/credentials.json` when set) unless you override `tokenCacheDir`.
 - Stdio commands inherit the directory of the file that defined them (imports or local config).
 - Import precedence matches the array order; omit `imports` to use the default `["cursor", "claude-code", "claude-desktop", "codex", "windsurf", "opencode", "vscode"]`.
+- `chrome-devtools-mcp --autoConnect` receives a small compatibility patch while upstream auto-connect can hang on busy Chrome profiles; set `MCPORTER_DISABLE_CHROME_DEVTOOLS_COMPAT=1` to opt out.
 
 #### OAuth-protected servers
 

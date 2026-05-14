@@ -1,11 +1,15 @@
 # mcporter Changelog
 
-## [Unreleased]
+## [0.11.0] - Unreleased
 
 ### Config
 
 - Resolve `${VAR}` and `${VAR:-fallback}` placeholders across string-valued server config fields such as `baseUrl`, `command`/`args`, `tokenCacheDir`, and pre-registered OAuth fields while keeping headers/env/bearer-token placeholders lazy until runtime. (PR #161 / issue #157, thanks @zxyasfas)
 - Add `mcporter vault set <server>` and `mcporter vault clear <server>` so headless deployments can seed or clear OAuth vault credentials without reproducing mcporter's internal vault-key format. (Issue #156)
+
+### CLI
+
+- Patch `chrome-devtools-mcp --autoConnect` launches at runtime so `mcporter call chrome-devtools.list_pages` can keep using a logged-in Chrome profile while upstream DevTools-window detection can hang on busy profiles.
 
 ### OAuth
 
