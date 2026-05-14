@@ -39,9 +39,28 @@ describe('mcporter serve bridge', () => {
 
   it('encodes and decodes namespaced tool names with longest-prefix matching', () => {
     expect(encodeToolName('alpha', 'ping')).toBe('alpha__ping');
-    expect(decodeToolName('alpha-long__tool__with__separator', [{ name: 'alpha' }, { name: 'alpha-long' }])).toEqual({
+    expect(
+      decodeToolName('alpha-long__tool%5F%5Fwith%5F%5Fseparator', [{ name: 'alpha' }, { name: 'alpha-long' }])
+    ).toEqual({
       server: 'alpha-long',
       tool: 'tool__with__separator',
+    });
+  });
+
+  it('escapes namespaced tool parts to avoid server/tool collisions', () => {
+    const first = encodeToolName('alpha', 'beta__ping');
+    const second = encodeToolName('alpha__beta', 'ping');
+
+    expect(first).toBe('alpha__beta%5F%5Fping');
+    expect(second).toBe('alpha%5F%5Fbeta__ping');
+    expect(first).not.toBe(second);
+    expect(decodeToolName(first, [{ name: 'alpha' }, { name: 'alpha__beta' }])).toEqual({
+      server: 'alpha',
+      tool: 'beta__ping',
+    });
+    expect(decodeToolName(second, [{ name: 'alpha' }, { name: 'alpha__beta' }])).toEqual({
+      server: 'alpha__beta',
+      tool: 'ping',
     });
   });
 

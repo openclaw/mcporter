@@ -163,24 +163,34 @@ export function selectServedServers(
 }
 
 export function encodeToolName(server: string, tool: string): string {
-  return `${server}${TOOL_SEPARATOR}${tool}`;
+  return `${encodeToolNamePart(server)}${TOOL_SEPARATOR}${encodeToolNamePart(tool)}`;
 }
 
 export function decodeToolName(
   name: string,
   servedServers: readonly Pick<ServedServer, 'name'>[]
 ): { server: string; tool: string } | undefined {
-  const sorted = [...servedServers].toSorted((a, b) => b.name.length - a.name.length);
-  for (const server of sorted) {
-    const prefix = `${server.name}${TOOL_SEPARATOR}`;
-    if (name.startsWith(prefix)) {
-      const tool = name.slice(prefix.length);
-      if (tool.length > 0) {
-        return { server: server.name, tool };
-      }
-    }
+  const separatorIndex = name.indexOf(TOOL_SEPARATOR);
+  if (separatorIndex === -1) {
+    return undefined;
+  }
+  const server = decodeToolNamePart(name.slice(0, separatorIndex));
+  const tool = decodeToolNamePart(name.slice(separatorIndex + TOOL_SEPARATOR.length));
+  if (tool.length === 0) {
+    return undefined;
+  }
+  if (servedServers.some((served) => served.name === server)) {
+    return { server, tool };
   }
   return undefined;
+}
+
+function encodeToolNamePart(value: string): string {
+  return value.replaceAll('%', '%25').replaceAll('_', '%5F');
+}
+
+function decodeToolNamePart(value: string): string {
+  return value.replaceAll('%5F', '_').replaceAll('%25', '%');
 }
 
 function describeTool(server: string, description: string | undefined): string | undefined {
