@@ -24,13 +24,13 @@ MCPorter helps you lean into the "code execution" workflows highlighted in Anthr
 - **OAuth and stdio ergonomics.** Built-in OAuth caching, log tailing, and stdio wrappers let you work with HTTP, SSE, and stdio transports from the same interface.
 - **Ad-hoc connections.** Point the CLI at _any_ MCP endpoint (HTTP or stdio) without touching config, then persist it later if you want. Hosted MCPs that expect a browser login (Supabase, Vercel, etc.) are auto-detected—just run `mcporter auth <url>` and the CLI promotes the definition to OAuth on the fly. See [docs/adhoc.md](docs/adhoc.md).
 
-## What's New in 0.10.0
+## What's New in 0.11.0
 
-- **Resources.** `mcporter resource <server> [uri]` lists and reads MCP resources, including keep-alive daemon routing.
-- **Generated CLI polish.** Keep-alive generated CLIs preserve stdio server state across invocations, and Bun-compiled macOS daemon children launch reliably in the background.
-- **Config portability.** mcporter now honors XDG Base Directory env vars while preserving the legacy `~/.mcporter` fallback.
-- **OAuth compatibility.** Static OAuth clients are supported via `oauthClientId`, `oauthClientSecretEnv`, and token endpoint auth method overrides.
-- **Release confidence.** `0.10.0` is published on npm and Homebrew, and live/published install smokes are green.
+- **Bridge mode.** `mcporter serve` exposes daemon-managed keep-alive servers as one MCP bridge with readable `server__tool` names.
+- **Headless OAuth.** `--no-browser`, vault seeding, cached-token refresh, and `auth: "refreshable_bearer"` cover non-interactive deployments.
+- **HTTP compatibility.** `httpFetch: "node-http1"` keeps providers that reject Node's built-in `fetch` working.
+- **Safer writes.** Config, OAuth vault, JSON output, and cache metadata writes are serialized/atomic so parallel agents stop stepping on each other.
+- **Release confidence.** `0.11.0` is published on npm and Homebrew, and live/published install smokes are green.
 
 ## Quick Start
 
@@ -439,6 +439,32 @@ Providers that do not support dynamic client registration can use a pre-register
 
 Keep client secrets in environment variables or private machine-local configs,
 and register the exact `oauthRedirectUrl` with the provider.
+
+#### Refreshable bearer tokens (non-interactive OAuth)
+
+For servers with pre-seeded OAuth tokens that need automatic refresh without browser prompts, use `auth: "refreshable_bearer"`. HTTP servers receive `Authorization: Bearer <token>` headers; STDIO servers require `refresh.accessTokenEnv` to inject the token as an environment variable:
+
+```jsonc
+{
+  "mcpServers": {
+    "example": {
+      "command": "uvx",
+      "args": ["example-mcp-server"],
+      "auth": "refreshable_bearer",
+      "refresh": {
+        "tokenEndpoint": "https://api.example.com/oauth/token",
+        "clientIdEnv": "EXAMPLE_CLIENT_ID",
+        "clientSecretEnv": "EXAMPLE_CLIENT_SECRET",
+        "clientAuthMethod": "client_secret_basic",
+        "refreshSkewSeconds": 300,
+        "accessTokenEnv": "EXAMPLE_ACCESS_TOKEN",
+      },
+    },
+  },
+}
+```
+
+mcporter refreshes tokens before they expire (default 5 minutes early) using the refresh token from the vault. For keep-alive stdio servers that can't reload credentials after startup, use `"lifecycle": "ephemeral"` or restart the daemon before tokens expire.
 
 Headless deployments that already have OAuth tokens can seed the vault without
 reproducing mcporter's internal vault key:
