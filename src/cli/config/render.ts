@@ -14,6 +14,7 @@ export type SerializedServerDefinition = {
   oauthTokenEndpointAuthMethod?: string;
   oauthRedirectUrl?: string;
   oauthScope?: string;
+  refresh?: ServerDefinition['refresh'];
   httpFetch?: ServerDefinition['httpFetch'];
   allowedTools?: readonly string[];
   blockedTools?: readonly string[];
@@ -41,6 +42,7 @@ export function serializeDefinition(definition: ServerDefinition): SerializedSer
       oauthTokenEndpointAuthMethod: definition.oauthTokenEndpointAuthMethod,
       oauthRedirectUrl: definition.oauthRedirectUrl,
       oauthScope: definition.oauthScope,
+      refresh: definition.refresh,
       httpFetch: definition.httpFetch,
       allowedTools: definition.allowedTools,
       blockedTools: definition.blockedTools,
@@ -62,6 +64,7 @@ export function serializeDefinition(definition: ServerDefinition): SerializedSer
     oauthTokenEndpointAuthMethod: definition.oauthTokenEndpointAuthMethod,
     oauthRedirectUrl: definition.oauthRedirectUrl,
     oauthScope: definition.oauthScope,
+    refresh: definition.refresh,
     httpFetch: definition.httpFetch,
     allowedTools: definition.allowedTools,
     blockedTools: definition.blockedTools,
@@ -94,8 +97,8 @@ export function printServerSummary(definition: ServerDefinition): void {
   if (definition.description) {
     console.log(`  ${label('Description')}: ${definition.description}`);
   }
-  if (definition.auth === 'oauth') {
-    console.log(`  ${label('Auth')}: oauth`);
+  if (definition.auth) {
+    console.log(`  ${label('Auth')}: ${definition.auth}`);
   }
   if (definition.allowedTools !== undefined) {
     const rendered = definition.allowedTools.length > 0 ? definition.allowedTools.join(', ') : '<none>';

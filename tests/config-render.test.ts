@@ -22,6 +22,10 @@ describe('config render helpers', () => {
       oauthTokenEndpointAuthMethod: 'client_secret_post',
       oauthRedirectUrl: 'https://example.com/callback',
       oauthScope: 'openid profile',
+      refresh: {
+        tokenEndpoint: 'https://auth.example.com/token',
+        accessTokenEnv: 'EXAMPLE_ACCESS_TOKEN',
+      },
       httpFetch: 'node-http1',
       allowedTools: ['read'],
       env: { FOO: 'bar' },
@@ -41,6 +45,10 @@ describe('config render helpers', () => {
       oauthTokenEndpointAuthMethod: 'client_secret_post',
       oauthRedirectUrl: 'https://example.com/callback',
       oauthScope: 'openid profile',
+      refresh: {
+        tokenEndpoint: 'https://auth.example.com/token',
+        accessTokenEnv: 'EXAMPLE_ACCESS_TOKEN',
+      },
       httpFetch: 'node-http1',
       allowedTools: ['read'],
       env: { FOO: 'bar' },

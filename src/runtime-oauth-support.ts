@@ -3,7 +3,7 @@ import { analyzeConnectionError } from './error-classifier.js';
 import type { Logger } from './logging.js';
 
 export function maybeEnableOAuth(definition: ServerDefinition, logger: Logger): ServerDefinition | undefined {
-  if (definition.auth === 'oauth') {
+  if (definition.auth === 'oauth' || definition.auth === 'refreshable_bearer') {
     return undefined;
   }
   if (definition.command.kind !== 'http') {

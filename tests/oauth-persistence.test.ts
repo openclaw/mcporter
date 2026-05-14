@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { Buffer } from 'node:buffer';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -34,6 +35,7 @@ describe('oauth persistence', () => {
 
   afterEach(async () => {
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
     process.env = { ...originalEnv };
     if (hasSpy) {
       homedirSpy.mockRestore();
@@ -374,6 +376,191 @@ describe('oauth persistence', () => {
         access_token: 'expired-token',
         refresh_token: 'refresh-123',
       })
+    );
+  });
+
+  it('refreshes explicit refreshable bearer tokens through the configured token endpoint', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-bearer-refresh-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+    process.env.CLIENT_ID = 'client-id';
+    process.env.CLIENT_SECRET = 'client-secret';
+
+    const cacheDir = path.join(tmp, 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-123',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      })
+    );
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          access_token: 'fresh-bearer',
+          token_type: 'Bearer',
+          expires_in: '3600',
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const definition: ServerDefinition = {
+      name: 'stdio-refresh',
+      command: { kind: 'stdio', command: 'node', args: ['server.js'], cwd: tmp },
+      auth: 'refreshable_bearer',
+      tokenCacheDir: cacheDir,
+      refresh: {
+        tokenEndpoint: 'https://auth.example.com/token',
+        clientIdEnv: 'CLIENT_ID',
+        clientSecretEnv: 'CLIENT_SECRET',
+        clientAuthMethod: 'client_secret_post',
+        accessTokenEnv: 'EXAMPLE_ACCESS_TOKEN',
+      },
+    };
+
+    await expect(readCachedAccessToken(definition)).resolves.toBe('fresh-bearer');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://auth.example.com/token',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          accept: 'application/json',
+          'content-type': 'application/x-www-form-urlencoded',
+        }),
+      })
+    );
+    const [, request] = fetchMock.mock.calls[0] ?? [];
+    expect((request as { body?: URLSearchParams }).body?.toString()).toContain('grant_type=refresh_token');
+    expect((request as { body?: URLSearchParams }).body?.toString()).toContain('client_id=client-id');
+    expect((request as { body?: URLSearchParams }).body?.toString()).toContain('client_secret=client-secret');
+
+    const persisted = (await readJsonFile(path.join(cacheDir, 'tokens.json'))) as
+      | { access_token?: string; refresh_token?: string; expires_at?: number }
+      | undefined;
+    expect(persisted?.access_token).toBe('fresh-bearer');
+    expect(persisted?.refresh_token).toBe('refresh-123');
+    expect(persisted?.expires_at).toBeGreaterThan(Math.floor(Date.now() / 1000));
+  });
+
+  it('form-encodes refresh credentials for client_secret_basic', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-bearer-basic-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+    process.env.CLIENT_ID = 'client:id';
+    process.env.CLIENT_SECRET = 'secret + value';
+
+    const cacheDir = path.join(tmp, 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-123',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      })
+    );
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ access_token: 'fresh-basic', token_type: 'Bearer' }), { status: 200 })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const definition: ServerDefinition = {
+      name: 'basic-refresh',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'refreshable_bearer',
+      tokenCacheDir: cacheDir,
+      refresh: {
+        tokenEndpoint: 'https://auth.example.com/token',
+        clientIdEnv: 'CLIENT_ID',
+        clientSecretEnv: 'CLIENT_SECRET',
+      },
+    };
+
+    await expect(readCachedAccessToken(definition)).resolves.toBe('fresh-basic');
+
+    const [, request] = fetchMock.mock.calls[0] ?? [];
+    const headers = (request as { headers?: Record<string, string> }).headers;
+    expect(headers?.authorization).toBe(`Basic ${Buffer.from('client%3Aid:secret+%2B+value').toString('base64')}`);
+  });
+
+  it('does not return expired refreshable bearer tokens when refresh fails', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-bearer-refresh-fail-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+    process.env.CLIENT_ID = 'client-id';
+    process.env.CLIENT_SECRET = 'client-secret';
+
+    const cacheDir = path.join(tmp, 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-123',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      })
+    );
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 500 })));
+
+    const definition: ServerDefinition = {
+      name: 'failed-refresh',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'refreshable_bearer',
+      tokenCacheDir: cacheDir,
+      refresh: {
+        tokenEndpoint: 'https://auth.example.com/token',
+        clientIdEnv: 'CLIENT_ID',
+        clientSecretEnv: 'CLIENT_SECRET',
+      },
+    };
+
+    await expect(readCachedAccessToken(definition)).rejects.toThrow(
+      "Failed to refresh cached bearer token for 'failed-refresh'"
+    );
+  });
+
+  it('rejects expired refreshable bearer tokens without refresh metadata', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-bearer-no-refresh-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+
+    const cacheDir = path.join(tmp, 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      })
+    );
+
+    const definition: ServerDefinition = {
+      name: 'missing-refresh',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'refreshable_bearer',
+      tokenCacheDir: cacheDir,
+    };
+
+    await expect(readCachedAccessToken(definition)).rejects.toThrow(
+      "Cached bearer token for 'missing-refresh' is expired"
     );
   });
 

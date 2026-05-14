@@ -27,6 +27,7 @@ export type {
   RawConfig,
   RawEntry,
   RawLifecycle,
+  RefreshableBearerOptions,
   ServerDefinition,
   ServerLifecycle,
   ServerLoggingOptions,

@@ -225,7 +225,7 @@ Server definition fields (subset of what `RawEntrySchema` accepts):
 | `cwd`                            | Working directory for stdio servers. A leading `~` is expanded to `$HOME`; relative paths resolve against the config file directory. Defaults to the config file directory when omitted.                                                                               |
 | `env`                            | Key/value pairs applied when launching stdio commands. Supports `${VAR}` interpolation and `${VAR:-fallback}` defaults. Existing process env values win over fallbacks.                                                                                                |
 | `headers`                        | Request headers for HTTP/SSE transports. Values can reference `$env:VAR` or `${VAR}` placeholders, which must be set at runtime or mcporter aborts with a helpful error.                                                                                               |
-| `auth`                           | Currently only `oauth` is recognized. Any other string is ignored (treated as undefined) to avoid stale state from other clients. `mcporter list` can still reuse an existing OAuth token cache for older HTTP entries missing this marker.                            |
+| `auth`                           | Recognizes `oauth` and `refreshable_bearer`. `oauth` runs the browser/client OAuth flow for HTTP transports; `refreshable_bearer` refreshes cached bearer tokens non-interactively before connecting.                                                                  |
 | `tokenCacheDir`                  | Directory for OAuth tokens and schema caches; still honored, but mcporter now keeps a centralized vault in `~/.mcporter/credentials.json` or `$XDG_DATA_HOME/mcporter/credentials.json` when set (legacy per-server caches are auto-migrated). Supports `~` expansion. |
 | `clientName`                     | Optional identifier some servers use for telemetry/audience segmentation.                                                                                                                                                                                              |
 | `oauthClientId`                  | Pre-registered OAuth client id for providers that do not support dynamic client registration.                                                                                                                                                                          |
@@ -234,11 +234,38 @@ Server definition fields (subset of what `RawEntrySchema` accepts):
 | `oauthRedirectUrl`               | Override the default localhost callback. Required for many pre-registered OAuth apps because the provider must allowlist the exact redirect URI. Also useful when tunneling OAuth through Codespaces or remote dev boxes.                                              |
 | `oauthScope`                     | Optional explicit OAuth scope string. If omitted, mcporter lets the MCP SDK derive scope from server/auth metadata. Use this as an escape hatch for providers that require explicit scopes but don’t publish `scopes_supported`.                                       |
 | `oauthCommand.args`              | For STDIO servers that ship a custom auth subcommand (e.g., Gmail MCP). mcporter will spawn the stdio command with these args when you run `mcporter auth <name>`, so you don’t need to call `npx ... auth` manually.                                                  |
+| `refresh`                        | Explicit token refresh settings for `auth: "refreshable_bearer"`. Supports `tokenEndpoint`, `clientIdEnv`, `clientSecretEnv`, `clientAuthMethod`, `refreshSkewSeconds`, and `accessTokenEnv` (plus snake_case aliases).                                                |
 | `allowedTools` / `allowed_tools` | Optional exact-name allowlist. Only listed tools appear in `mcporter list` and can be called. An empty array blocks all tools. Cannot be combined with `blockedTools`.                                                                                                 |
 | `blockedTools` / `blocked_tools` | Optional exact-name blocklist. Listed tools are hidden from `mcporter list` and rejected by `mcporter call`. Cannot be combined with `allowedTools`.                                                                                                                   |
 
 mcporter normalizes headers to include `Accept: application/json, text/event-stream` automatically, matching the runtime’s streaming expectations.
 String-valued config fields support `${VAR}` and `${VAR:-fallback}` placeholders. Secret-bearing `headers`, `env`, and bearer-token placeholders are preserved in `config get`/`config list` output and resolved only when the transport runs; `*Env` fields name environment variables and are not expanded.
+
+### Refreshable Bearer Tokens
+
+Use `auth: "refreshable_bearer"` when you already seeded OAuth tokens with `mcporter vault set <server>` or `tokenCacheDir`, and the server should receive only a fresh bearer token at runtime. HTTP servers get `Authorization: Bearer <token>` when no authorization header is already configured. STDIO servers require `refresh.accessTokenEnv`; mcporter refreshes before spawning the process and injects that env var with the raw access token.
+
+```json
+{
+  "mcpServers": {
+    "example": {
+      "command": "uvx",
+      "args": ["example-mcp-server"],
+      "auth": "refreshable_bearer",
+      "refresh": {
+        "tokenEndpoint": "https://api.example.com/oauth/token",
+        "clientIdEnv": "EXAMPLE_CLIENT_ID",
+        "clientSecretEnv": "EXAMPLE_CLIENT_SECRET",
+        "clientAuthMethod": "client_secret_basic",
+        "refreshSkewSeconds": 300,
+        "accessTokenEnv": "EXAMPLE_ACCESS_TOKEN"
+      }
+    }
+  }
+}
+```
+
+For keep-alive stdio servers, refresh happens before process start. If that process cannot read updated credentials after startup, use `lifecycle: "ephemeral"` or restart the daemon before the injected token expires.
 
 ## Imports & Conflict Resolution
 

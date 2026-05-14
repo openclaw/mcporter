@@ -5,6 +5,7 @@ import {
   type HttpCommand,
   loadServerDefinitions,
   type RawLifecycle,
+  type RefreshableBearerOptions,
   type ServerDefinition,
   type ServerLoggingOptions,
   type StdioCommand,
@@ -205,6 +206,7 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
   );
   const oauthRedirectUrl = typeof def.oauthRedirectUrl === 'string' ? def.oauthRedirectUrl : undefined;
   const oauthScope = typeof def.oauthScope === 'string' ? def.oauthScope : undefined;
+  const refresh = getRefresh(record.refresh);
   const httpFetch = normalizeHttpFetch(stringFromAliases(record, 'httpFetch', 'http_fetch'));
   const headers = toStringRecord((def as Record<string, unknown>).headers);
   const oauthCommand = getOauthCommand(record.oauthCommand ?? record.oauth_command);
@@ -229,6 +231,7 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
     oauthRedirectUrl,
     oauthScope,
     oauthCommand,
+    refresh,
     httpFetch,
     lifecycle: resolveLifecycle(name, rawLifecycle, command),
     logging,
@@ -382,6 +385,28 @@ function getOauthCommand(value: unknown): ServerDefinition['oauthCommand'] | und
   }
   const args = getStringArray((value as { args?: unknown }).args);
   return args ? { args } : undefined;
+}
+
+function getRefresh(value: unknown): RefreshableBearerOptions | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const tokenEndpoint = stringFromAliases(record, 'tokenEndpoint', 'token_endpoint');
+  if (!tokenEndpoint) {
+    return undefined;
+  }
+  const refreshSkewSeconds = record.refreshSkewSeconds ?? record.refresh_skew_seconds;
+  return {
+    tokenEndpoint,
+    clientIdEnv: stringFromAliases(record, 'clientIdEnv', 'client_id_env'),
+    clientSecretEnv: stringFromAliases(record, 'clientSecretEnv', 'client_secret_env'),
+    clientAuthMethod: stringFromAliases(record, 'clientAuthMethod', 'client_auth_method'),
+    ...(typeof refreshSkewSeconds === 'number' && Number.isInteger(refreshSkewSeconds) && refreshSkewSeconds >= 0
+      ? { refreshSkewSeconds }
+      : {}),
+    accessTokenEnv: stringFromAliases(record, 'accessTokenEnv', 'access_token_env'),
+  };
 }
 
 function normalizeHttpFetch(value: string | undefined): ServerDefinition['httpFetch'] | undefined {

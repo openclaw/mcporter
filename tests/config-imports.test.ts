@@ -102,6 +102,10 @@ describe('config imports', () => {
       'https://cursor.local/mcp'
     );
     expect(shared?.httpFetch).toBe('node-http1');
+    expect(shared?.refresh).toEqual({
+      tokenEndpoint: 'https://auth.cursor.local/token',
+      accessTokenEnv: 'CURSOR_ACCESS_TOKEN',
+    });
     expect(shared?.source).toEqual({
       kind: 'import',
       path: path.join(FIXTURE_ROOT, '.cursor', 'mcp.json'),

@@ -1,5 +1,6 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -209,6 +210,104 @@ describe('createClientContext (HTTP)', () => {
 
     expect(mocks.createOAuthSession).not.toHaveBeenCalled();
     expect(mocks.readCachedAccessToken).toHaveBeenCalledWith(definition, logger);
+  });
+
+  it('preserves explicit Authorization headers for refreshable bearer HTTP servers', async () => {
+    const definition: ServerDefinition = {
+      ...stubHttpDefinition('https://example.com/secure'),
+      auth: 'refreshable_bearer',
+      refresh: { tokenEndpoint: 'https://auth.example.com/token' },
+      command: {
+        kind: 'http',
+        url: new URL('https://example.com/secure'),
+        headers: { Authorization: 'Bearer configured-token' },
+      },
+    };
+    mocks.readCachedAccessToken.mockRejectedValue(new Error('invalid_grant'));
+
+    vi.spyOn(Client.prototype, 'connect').mockImplementationOnce(async (transport) => {
+      expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
+      const requestInit = (transport as { _requestInit?: RequestInit })._requestInit;
+      expect(requestInit?.headers).toEqual({ Authorization: 'Bearer configured-token' });
+    });
+
+    await createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 });
+
+    expect(mocks.readCachedAccessToken).not.toHaveBeenCalled();
+  });
+
+  it('fails refreshable bearer HTTP configs with no cached token', async () => {
+    const definition: ServerDefinition = {
+      ...stubHttpDefinition('https://example.com/secure'),
+      auth: 'refreshable_bearer',
+      refresh: { tokenEndpoint: 'https://auth.example.com/token' },
+    };
+    mocks.readCachedAccessToken.mockResolvedValue(undefined);
+
+    await expect(createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 })).rejects.toThrow(
+      'no cached access token'
+    );
+  });
+
+  it('injects refreshed bearer tokens into configured stdio env', async () => {
+    const definition: ServerDefinition = {
+      name: 'stdio-refresh',
+      command: { kind: 'stdio', command: 'node', args: ['server.js'], cwd: '/tmp' },
+      auth: 'refreshable_bearer',
+      refresh: {
+        tokenEndpoint: 'https://auth.example.com/token',
+        accessTokenEnv: 'EXAMPLE_ACCESS_TOKEN',
+      },
+      env: { STATIC_ENV: '1' },
+    };
+    mocks.readCachedAccessToken.mockResolvedValue('cached-token');
+
+    vi.spyOn(Client.prototype, 'connect').mockImplementationOnce(async (transport) => {
+      expect(transport).toBeInstanceOf(StdioClientTransport);
+      const params = (transport as { _serverParams?: { env?: Record<string, string> } })._serverParams;
+      expect(params?.env).toEqual(expect.objectContaining({ STATIC_ENV: '1', EXAMPLE_ACCESS_TOKEN: 'cached-token' }));
+    });
+
+    await createClientContext(definition, logger, clientInfo, {
+      maxOAuthAttempts: 0,
+    });
+  });
+
+  it('fails refreshable bearer stdio configs that do not name the token env var', async () => {
+    const definition: ServerDefinition = {
+      name: 'stdio-refresh',
+      command: { kind: 'stdio', command: 'node', args: ['server.js'], cwd: '/tmp' },
+      auth: 'refreshable_bearer',
+      refresh: {
+        tokenEndpoint: 'https://auth.example.com/token',
+      },
+    };
+
+    await expect(createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 })).rejects.toThrow(
+      'missing refresh.accessTokenEnv'
+    );
+    expect(mocks.readCachedAccessToken).not.toHaveBeenCalled();
+  });
+
+  it('does not promote explicit refreshable bearer HTTP servers to OAuth after 401 errors', async () => {
+    const definition: ServerDefinition = {
+      ...stubHttpDefinition('https://example.com/secure'),
+      auth: 'refreshable_bearer',
+      refresh: { tokenEndpoint: 'https://auth.example.com/token' },
+    };
+    mocks.readCachedAccessToken.mockResolvedValue('cached-token');
+
+    mocks.connectWithAuth.mockImplementationOnce(async (_client, transport) => {
+      expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
+      throw new Error('SSE error: Non-200 status code (401)');
+    });
+
+    await expect(createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 1 })).rejects.toThrow(
+      'Non-200 status code (401)'
+    );
+
+    expect(mocks.createOAuthSession).not.toHaveBeenCalled();
+    expect(mocks.connectWithAuth).toHaveBeenCalledTimes(1);
   });
 
   it('uses the HTTP/1.1 fetch compatibility path when configured', async () => {

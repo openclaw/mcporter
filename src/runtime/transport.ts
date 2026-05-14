@@ -143,6 +143,10 @@ function shouldAbortSseFallback(error: unknown): boolean {
   return isOAuthFlowError(error) || error instanceof OAuthTimeoutError;
 }
 
+function hasAuthorizationHeader(headers: Record<string, string> | undefined): boolean {
+  return Boolean(headers && Object.keys(headers).some((key) => key.toLowerCase() === 'authorization'));
+}
+
 function maybePromoteHttpDefinition(
   definition: ServerDefinition,
   logger: Logger,
@@ -169,21 +173,55 @@ async function connectHttpTransport<TTransport extends OAuthCapableTransport>(
   }
 }
 
-async function applyCachedOAuthHeaderIfAvailable(
+async function applyCachedAuthIfAvailable(
   definition: ServerDefinition,
   logger: Logger,
   allowCachedAuth: boolean | undefined
 ): Promise<ServerDefinition> {
-  if (!allowCachedAuth || definition.command.kind !== 'http') {
+  if (!allowCachedAuth && definition.auth !== 'refreshable_bearer') {
+    return definition;
+  }
+  if (
+    definition.auth === 'refreshable_bearer' &&
+    definition.command.kind === 'stdio' &&
+    !definition.refresh?.accessTokenEnv
+  ) {
+    throw new Error(
+      `Server '${definition.name}' uses refreshable_bearer stdio auth but is missing refresh.accessTokenEnv.`
+    );
+  }
+  if (definition.command.kind === 'http' && hasAuthorizationHeader(definition.command.headers)) {
     return definition;
   }
   try {
     const cached = await readCachedAccessToken(definition, logger);
     if (!cached) {
+      if (definition.auth === 'refreshable_bearer') {
+        throw new Error(`Server '${definition.name}' uses refreshable_bearer auth but has no cached access token.`);
+      }
       return definition;
     }
+    if (definition.command.kind === 'stdio') {
+      if (definition.auth !== 'refreshable_bearer') {
+        return definition;
+      }
+      const accessTokenEnv = definition.refresh?.accessTokenEnv;
+      if (!accessTokenEnv) {
+        throw new Error(
+          `Server '${definition.name}' uses refreshable_bearer stdio auth but is missing refresh.accessTokenEnv.`
+        );
+      }
+      logger.debug?.(`Using cached bearer access token for '${definition.name}' stdio env.`);
+      return {
+        ...definition,
+        env: {
+          ...definition.env,
+          [accessTokenEnv]: cached,
+        },
+      };
+    }
     const existingHeaders = definition.command.headers ?? {};
-    if ('Authorization' in existingHeaders) {
+    if (hasAuthorizationHeader(existingHeaders)) {
       return definition;
     }
     logger.debug?.(`Using cached OAuth access token for '${definition.name}' (non-interactive).`);
@@ -198,6 +236,9 @@ async function applyCachedOAuthHeaderIfAvailable(
       },
     };
   } catch (error) {
+    if (definition.auth === 'refreshable_bearer') {
+      throw error;
+    }
     logger.debug?.(
       `Failed to read cached OAuth token for '${definition.name}': ${
         error instanceof Error ? error.message : String(error)
@@ -304,6 +345,9 @@ async function attemptHttpClientContext(
       if (promoted) {
         return { nextDefinition: promoted };
       }
+      if (activeDefinition.auth) {
+        throw primaryError;
+      }
       oauthSession = undefined;
     }
     if (primaryError instanceof Error) {
@@ -382,6 +426,9 @@ async function connectSseFallbackTransport(
         options.onDefinitionPromoted?.(promoted);
         return retryHttpTransportWithFallback(client, promoted, logger, options);
       }
+      if (definition.auth) {
+        throw sseError;
+      }
     }
     throw sseError;
   }
@@ -394,7 +441,7 @@ export async function createClientContext(
   options: CreateClientContextOptions = {}
 ): Promise<ClientContext> {
   const client = new Client(clientInfo);
-  const activeDefinition = await applyCachedOAuthHeaderIfAvailable(definition, logger, options.allowCachedAuth);
+  const activeDefinition = await applyCachedAuthIfAvailable(definition, logger, options.allowCachedAuth);
 
   return withEnvOverrides(activeDefinition.env, async () => {
     if (activeDefinition.command.kind === 'stdio') {

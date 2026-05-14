@@ -158,6 +158,11 @@ function convertExternalEntry(value: Record<string, unknown>): RawEntry | null {
     result.httpFetch = httpFetch;
   }
 
+  const refresh = asRefresh(value.refresh);
+  if (refresh) {
+    result.refresh = refresh;
+  }
+
   const url = asString(value.baseUrl ?? value.base_url ?? value.url ?? value.serverUrl ?? value.server_url);
   if (url) {
     result.baseUrl = url;
@@ -204,6 +209,36 @@ function buildExternalHeaders(record: Record<string, unknown>): Record<string, s
   }
 
   return Object.keys(headers).length > 0 ? headers : undefined;
+}
+
+function asRefresh(value: unknown): RawEntry['refresh'] | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  copyString(record, result, 'tokenEndpoint', 'token_endpoint');
+  copyString(record, result, 'clientIdEnv', 'client_id_env');
+  copyString(record, result, 'clientSecretEnv', 'client_secret_env');
+  copyString(record, result, 'clientAuthMethod', 'client_auth_method');
+  copyString(record, result, 'accessTokenEnv', 'access_token_env');
+  const refreshSkewSeconds = record.refreshSkewSeconds ?? record.refresh_skew_seconds;
+  if (typeof refreshSkewSeconds === 'number' && Number.isInteger(refreshSkewSeconds) && refreshSkewSeconds >= 0) {
+    result.refreshSkewSeconds = refreshSkewSeconds;
+  }
+  return Object.keys(result).length > 0 ? (result as RawEntry['refresh']) : undefined;
+}
+
+function copyString(
+  source: Record<string, unknown>,
+  target: Record<string, unknown>,
+  camel: string,
+  snake: string
+): void {
+  const value = asString(source[camel] ?? source[snake]);
+  if (value) {
+    target[camel] = value;
+  }
 }
 
 function extractClaudeProjectEntries(raw: Record<string, unknown>, projectRoot: string): Map<string, RawEntry> {

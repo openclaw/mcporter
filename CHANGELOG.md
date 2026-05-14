@@ -4,6 +4,7 @@
 
 ### Config
 
+- Support `auth: "refreshable_bearer"` with explicit `refresh` settings so cached OAuth tokens can be refreshed before HTTP connects or injected into stdio env vars. (Issue #173, thanks @tokyo-s)
 - Add `httpFetch: "node-http1"` for HTTP MCP servers whose providers reject Node's built-in `fetch`, and auto-apply it to Sunsama's endpoint. (Issue #158, thanks @mattash)
 - Resolve `${VAR}` and `${VAR:-fallback}` placeholders across string-valued server config fields such as `baseUrl`, `command`/`args`, `tokenCacheDir`, and pre-registered OAuth fields while keeping headers/env/bearer-token placeholders lazy until runtime. (PR #161 / issue #157, thanks @zxyasfas)
 - Add `mcporter vault set <server>` and `mcporter vault clear <server>` so headless deployments can seed or clear OAuth vault credentials without reproducing mcporter's internal vault-key format. (Issue #156)

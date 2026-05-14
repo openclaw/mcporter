@@ -1,6 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { CommandSpec, RawEntry, ServerDefinition, ServerLoggingOptions, ServerSource } from './config-schema.js';
+import type {
+  CommandSpec,
+  RawEntry,
+  RawRefresh,
+  RefreshableBearerOptions,
+  ServerDefinition,
+  ServerLoggingOptions,
+  ServerSource,
+} from './config-schema.js';
 import { expandHome, resolveEnvPlaceholders } from './env.js';
 import { resolveLifecycle } from './lifecycle.js';
 
@@ -25,6 +33,7 @@ export function normalizeServerEntry(
     raw.oauthTokenEndpointAuthMethod ?? raw.oauth_token_endpoint_auth_method ?? undefined;
   const oauthRedirectUrl = raw.oauthRedirectUrl ?? raw.oauth_redirect_url ?? undefined;
   const oauthScope = raw.oauthScope ?? raw.oauth_scope ?? undefined;
+  const refresh = normalizeRefresh(raw.refresh);
   const httpFetch = normalizeHttpFetch(raw.httpFetch ?? raw.http_fetch);
   const oauthCommandRaw = raw.oauthCommand ?? raw.oauth_command;
   const oauthCommand = oauthCommandRaw ? { args: [...oauthCommandRaw.args] } : undefined;
@@ -77,6 +86,7 @@ export function normalizeServerEntry(
     oauthRedirectUrl,
     oauthScope,
     oauthCommand: defaultedOauthCommand,
+    refresh,
     httpFetch,
     source,
     sources,
@@ -145,7 +155,25 @@ function normalizeAuth(auth: string | undefined): string | undefined {
   if (auth.toLowerCase() === 'oauth') {
     return 'oauth';
   }
+  if (auth.toLowerCase() === 'refreshable_bearer') {
+    return 'refreshable_bearer';
+  }
   return undefined;
+}
+
+function normalizeRefresh(raw: RawRefresh | undefined): RefreshableBearerOptions | undefined {
+  const tokenEndpoint = raw?.tokenEndpoint ?? raw?.token_endpoint;
+  if (!tokenEndpoint) {
+    return undefined;
+  }
+  return {
+    tokenEndpoint,
+    clientIdEnv: raw?.clientIdEnv ?? raw?.client_id_env,
+    clientSecretEnv: raw?.clientSecretEnv ?? raw?.client_secret_env,
+    clientAuthMethod: raw?.clientAuthMethod ?? raw?.client_auth_method,
+    refreshSkewSeconds: raw?.refreshSkewSeconds ?? raw?.refresh_skew_seconds,
+    accessTokenEnv: raw?.accessTokenEnv ?? raw?.access_token_env,
+  };
 }
 
 function normalizeHttpFetch(value: 'default' | 'node-http1' | undefined): 'default' | 'node-http1' | undefined {

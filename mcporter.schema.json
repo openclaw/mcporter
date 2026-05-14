@@ -197,6 +197,65 @@
             "description": "Environment variable name containing the bearer token (snake_case)",
             "type": "string"
           },
+          "refresh": {
+            "type": "object",
+            "properties": {
+              "tokenEndpoint": {
+                "description": "OAuth token endpoint used to refresh access tokens",
+                "type": "string"
+              },
+              "token_endpoint": {
+                "description": "OAuth token endpoint used to refresh access tokens",
+                "type": "string"
+              },
+              "clientIdEnv": {
+                "description": "Environment variable containing the OAuth client id",
+                "type": "string"
+              },
+              "client_id_env": {
+                "description": "Environment variable containing the OAuth client id",
+                "type": "string"
+              },
+              "clientSecretEnv": {
+                "description": "Environment variable containing the OAuth client secret",
+                "type": "string"
+              },
+              "client_secret_env": {
+                "description": "Environment variable containing the OAuth client secret",
+                "type": "string"
+              },
+              "clientAuthMethod": {
+                "description": "OAuth token endpoint client auth method",
+                "type": "string"
+              },
+              "client_auth_method": {
+                "description": "OAuth token endpoint client auth method",
+                "type": "string"
+              },
+              "refreshSkewSeconds": {
+                "description": "Refresh before expiry by this many seconds",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "refresh_skew_seconds": {
+                "description": "Refresh before expiry by this many seconds",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "accessTokenEnv": {
+                "description": "STDIO env var that receives the refreshed access token",
+                "type": "string"
+              },
+              "access_token_env": {
+                "description": "STDIO env var that receives the refreshed access token",
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "description": "Refreshable bearer token settings"
+          },
           "httpFetch": {
             "description": "HTTP fetch implementation for Streamable HTTP/SSE requests",
             "type": "string",

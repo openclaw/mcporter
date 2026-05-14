@@ -54,6 +54,26 @@ describe('maybeEnableOAuth', () => {
     const updated = maybeEnableOAuth(def, logger as never);
     expect(updated).toBeUndefined();
   });
+
+  it('does not promote refreshable bearer servers to oauth', () => {
+    const def: ServerDefinition = {
+      name: 'refreshable-server',
+      auth: 'refreshable_bearer',
+      command: { kind: 'http', url: new URL('https://example.com') },
+    };
+    const updated = maybeEnableOAuth(def, logger as never);
+    expect(updated).toBeUndefined();
+  });
+
+  it('promotes unsupported auth markers consistently with config normalization', () => {
+    const def: ServerDefinition = {
+      name: 'unsupported-auth-server',
+      auth: 'bearer',
+      command: { kind: 'http', url: new URL('https://example.com') },
+    };
+    const updated = maybeEnableOAuth(def, logger as never);
+    expect(updated?.auth).toBe('oauth');
+  });
 });
 
 describe('isUnauthorizedError helper', () => {

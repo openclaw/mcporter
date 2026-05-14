@@ -93,6 +93,26 @@ describe('generate-cli runner internals', () => {
     expect(serializeDefinition(definition).httpFetch).toBe('node-http1');
   });
 
+  it('preserves refreshable bearer metadata in generated CLI definitions', () => {
+    const definition = normalizeDefinition({
+      name: 'stdio-refresh',
+      command: 'node',
+      args: ['server.js'],
+      auth: 'refreshable_bearer',
+      refresh: {
+        token_endpoint: 'https://auth.example.com/token',
+        access_token_env: 'EXAMPLE_ACCESS_TOKEN',
+      },
+    });
+
+    expect(definition.auth).toBe('refreshable_bearer');
+    expect(definition.refresh).toEqual({
+      tokenEndpoint: 'https://auth.example.com/token',
+      accessTokenEnv: 'EXAMPLE_ACCESS_TOKEN',
+    });
+    expect(serializeDefinition(definition).refresh).toEqual(definition.refresh);
+  });
+
   it('wraps single-token stdio commands when passed via --command', () => {
     const args = ['--command', './scripts/mcp-server.ts'];
     const parsed = parseGenerateFlags([...args]);

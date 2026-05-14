@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { Buffer } from 'node:buffer';
 import os from 'node:os';
 import path from 'node:path';
 import { discoverOAuthServerInfo, refreshAuthorization } from '@modelcontextprotocol/sdk/client/auth.js';
@@ -61,10 +62,10 @@ function tokenExpirySeconds(tokens: OAuthTokens): number | undefined {
   return undefined;
 }
 
-function shouldRefreshCachedToken(tokens: OAuthTokens): boolean {
+function shouldRefreshCachedToken(tokens: OAuthTokens, skewSeconds = TOKEN_EXPIRY_SKEW_SECONDS): boolean {
   const expiresAt = tokenExpirySeconds(tokens);
   if (expiresAt !== undefined) {
-    return expiresAt <= Math.floor(Date.now() / 1000) + TOKEN_EXPIRY_SKEW_SECONDS;
+    return expiresAt <= Math.floor(Date.now() / 1000) + skewSeconds;
   }
   return typeof tokens.expires_in === 'number' && typeof tokens.refresh_token === 'string';
 }
@@ -375,6 +376,9 @@ export async function readCachedAccessToken(
   if (!tokens || typeof tokens.access_token !== 'string' || tokens.access_token.trim().length === 0) {
     return undefined;
   }
+  if (definition.auth === 'refreshable_bearer') {
+    return await readExplicitRefreshableBearerToken(definition, persistence, tokens, logger);
+  }
   if (!shouldRefreshCachedToken(tokens)) {
     return tokens.access_token;
   }
@@ -411,4 +415,162 @@ export async function readCachedAccessToken(
     );
     return tokens.access_token;
   }
+}
+
+async function readExplicitRefreshableBearerToken(
+  definition: ServerDefinition,
+  persistence: OAuthPersistence,
+  tokens: OAuthTokens,
+  logger?: Logger
+): Promise<string> {
+  const refresh = definition.refresh;
+  const skewSeconds = refresh?.refreshSkewSeconds ?? TOKEN_EXPIRY_SKEW_SECONDS;
+  if (!shouldRefreshCachedToken(tokens, skewSeconds)) {
+    return tokens.access_token;
+  }
+  if (!refresh) {
+    throw new Error(`Cached bearer token for '${definition.name}' is expired, but refresh is not configured.`);
+  }
+  if (typeof tokens.refresh_token !== 'string' || tokens.refresh_token.trim().length === 0) {
+    throw new Error(`Cached bearer token for '${definition.name}' is expired, but no refresh_token is available.`);
+  }
+  try {
+    const refreshed = await refreshBearerToken(definition, tokens.refresh_token);
+    await persistence.saveTokens(refreshed);
+    logger?.debug?.(`Refreshed bearer access token for '${definition.name}' (non-interactive).`);
+    return refreshed.access_token;
+  } catch (error) {
+    logger?.debug?.(
+      `Failed to refresh bearer token for '${definition.name}' non-interactively: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+    throw new Error(
+      `Failed to refresh cached bearer token for '${definition.name}': ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      { cause: error }
+    );
+  }
+}
+
+async function refreshBearerToken(definition: ServerDefinition, refreshToken: string): Promise<OAuthTokens> {
+  const refresh = definition.refresh;
+  if (!refresh) {
+    throw new Error('Missing refresh configuration.');
+  }
+  const clientId = readEnvOrConfig(refresh.clientIdEnv, definition.oauthClientId);
+  const method = refresh.clientAuthMethod ?? definition.oauthTokenEndpointAuthMethod ?? 'client_secret_basic';
+  const clientSecret = method === 'none' ? undefined : readClientSecret(definition, refresh.clientSecretEnv);
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+  });
+  const headers: Record<string, string> = {
+    accept: 'application/json',
+    'content-type': 'application/x-www-form-urlencoded',
+  };
+
+  if (method === 'client_secret_post') {
+    if (clientId) {
+      body.set('client_id', clientId);
+    }
+    if (clientSecret) {
+      body.set('client_secret', clientSecret);
+    }
+  } else if (method === 'none') {
+    if (clientId) {
+      body.set('client_id', clientId);
+    }
+  } else {
+    if (!clientId || !clientSecret) {
+      throw new Error(`Refresh client credentials are required for '${method}'.`);
+    }
+    headers.authorization = `Basic ${Buffer.from(
+      `${formEncodeCredential(clientId)}:${formEncodeCredential(clientSecret)}`
+    ).toString('base64')}`;
+  }
+
+  const response = await fetch(refresh.tokenEndpoint, {
+    method: 'POST',
+    headers,
+    body,
+  });
+  if (!response.ok) {
+    throw new Error(`Token endpoint returned HTTP ${response.status}.`);
+  }
+  const payload = normalizeBearerTokenResponse(await response.json());
+  return {
+    ...payload,
+    ...(payload.refresh_token ? {} : { refresh_token: refreshToken }),
+  };
+}
+
+function normalizeBearerTokenResponse(value: unknown): OAuthTokens {
+  if (!value || typeof value !== 'object') {
+    throw new Error('Token endpoint did not return a JSON object.');
+  }
+  const payload = value as Record<string, unknown>;
+  if (typeof payload.access_token !== 'string' || payload.access_token.trim().length === 0) {
+    throw new Error('Token endpoint did not return an access_token.');
+  }
+  return {
+    access_token: payload.access_token,
+    token_type: typeof payload.token_type === 'string' && payload.token_type ? payload.token_type : 'Bearer',
+    ...(typeof payload.id_token === 'string' ? { id_token: payload.id_token } : {}),
+    ...(typeof payload.scope === 'string' ? { scope: payload.scope } : {}),
+    ...(typeof payload.refresh_token === 'string' && payload.refresh_token
+      ? { refresh_token: payload.refresh_token }
+      : {}),
+    ...coerceExpiresIn(payload.expires_in),
+  };
+}
+
+function coerceExpiresIn(value: unknown): Pick<OAuthTokens, 'expires_in'> {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return { expires_in: value };
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return { expires_in: parsed };
+    }
+  }
+  return {};
+}
+
+function readEnvOrConfig(envName: string | undefined, fallback: string | undefined): string | undefined {
+  if (!envName) {
+    return fallback;
+  }
+  const value = process.env[envName];
+  if (value === undefined || value.trim().length === 0) {
+    throw new Error(`Environment variable '${envName}' is required for bearer token refresh.`);
+  }
+  return value;
+}
+
+function formEncodeCredential(value: string): string {
+  return new URLSearchParams([['', value]]).toString().slice(1);
+}
+
+function readClientSecret(
+  definition: ServerDefinition,
+  refreshClientSecretEnv: string | undefined
+): string | undefined {
+  if (refreshClientSecretEnv) {
+    return readEnvOrConfig(refreshClientSecretEnv, undefined);
+  }
+  return resolveOAuthClientSecret(definition);
+}
+
+function resolveOAuthClientSecret(definition: ServerDefinition): string | undefined {
+  if (definition.oauthClientSecretEnv) {
+    const value = process.env[definition.oauthClientSecretEnv];
+    if (value === undefined || value.trim().length === 0) {
+      throw new Error(`Environment variable '${definition.oauthClientSecretEnv}' is required for OAuth client secret.`);
+    }
+    return value;
+  }
+  return definition.oauthClientSecret;
 }

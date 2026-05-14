@@ -52,6 +52,33 @@ const RawHttpFetchSchema = z
   .enum(['default', 'node-http1'])
   .describe('HTTP fetch implementation for Streamable HTTP/SSE requests');
 
+const RawRefreshSchema = z
+  .object({
+    tokenEndpoint: z.string().optional().describe('OAuth token endpoint used to refresh access tokens'),
+    token_endpoint: z.string().optional().describe('OAuth token endpoint used to refresh access tokens'),
+    clientIdEnv: z.string().optional().describe('Environment variable containing the OAuth client id'),
+    client_id_env: z.string().optional().describe('Environment variable containing the OAuth client id'),
+    clientSecretEnv: z.string().optional().describe('Environment variable containing the OAuth client secret'),
+    client_secret_env: z.string().optional().describe('Environment variable containing the OAuth client secret'),
+    clientAuthMethod: z.string().optional().describe('OAuth token endpoint client auth method'),
+    client_auth_method: z.string().optional().describe('OAuth token endpoint client auth method'),
+    refreshSkewSeconds: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe('Refresh before expiry by this many seconds'),
+    refresh_skew_seconds: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe('Refresh before expiry by this many seconds'),
+    accessTokenEnv: z.string().optional().describe('STDIO env var that receives the refreshed access token'),
+    access_token_env: z.string().optional().describe('STDIO env var that receives the refreshed access token'),
+  })
+  .describe('Refreshable bearer token settings');
+
 export const RawEntrySchema = z
   .object({
     description: z.string().optional().describe('Human-readable description of the server'),
@@ -122,6 +149,7 @@ export const RawEntrySchema = z
       .string()
       .optional()
       .describe('Environment variable name containing the bearer token (snake_case)'),
+    refresh: RawRefreshSchema.optional(),
     httpFetch: RawHttpFetchSchema.optional().describe('HTTP fetch implementation for Streamable HTTP/SSE requests'),
     http_fetch: RawHttpFetchSchema.optional().describe('HTTP fetch implementation for Streamable HTTP/SSE requests'),
     lifecycle: RawLifecycleSchema.optional(),
@@ -156,6 +184,7 @@ export const RawConfigSchema = z
 
 export type RawEntry = z.infer<typeof RawEntrySchema>;
 export type RawConfig = z.infer<typeof RawConfigSchema>;
+export type RawRefresh = z.infer<typeof RawRefreshSchema>;
 
 export interface HttpCommand {
   readonly kind: 'http';
@@ -193,6 +222,15 @@ export interface ServerLoggingOptions {
   };
 }
 
+export interface RefreshableBearerOptions {
+  readonly tokenEndpoint: string;
+  readonly clientIdEnv?: string;
+  readonly clientSecretEnv?: string;
+  readonly clientAuthMethod?: string;
+  readonly refreshSkewSeconds?: number;
+  readonly accessTokenEnv?: string;
+}
+
 export interface ServerDefinition {
   readonly name: string;
   readonly description?: string;
@@ -210,6 +248,7 @@ export interface ServerDefinition {
   readonly oauthCommand?: {
     readonly args: string[];
   };
+  readonly refresh?: RefreshableBearerOptions;
   readonly httpFetch?: 'default' | 'node-http1';
   readonly source?: ServerSource;
   readonly sources?: readonly ServerSource[];

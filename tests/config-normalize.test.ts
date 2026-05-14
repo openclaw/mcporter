@@ -159,6 +159,48 @@ describe('config normalization', () => {
     expect(servers.find((entry) => entry.name === 'defaulted')?.httpFetch).toBe('default');
   });
 
+  it('normalizes refreshable bearer config for stdio servers', async () => {
+    await fs.mkdir(TEMP_DIR, { recursive: true });
+    const configPath = path.join(TEMP_DIR, 'mcporter-refreshable-stdio.json');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          mcpServers: {
+            example: {
+              command: 'node',
+              args: ['server.js'],
+              auth: 'refreshable_bearer',
+              refresh: {
+                token_endpoint: 'https://auth.example.com/token',
+                client_id_env: 'EXAMPLE_CLIENT_ID',
+                client_secret_env: 'EXAMPLE_CLIENT_SECRET',
+                client_auth_method: 'client_secret_post',
+                refresh_skew_seconds: 300,
+                access_token_env: 'EXAMPLE_ACCESS_TOKEN',
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const servers = await loadServerDefinitions({ configPath });
+    const server = servers.find((entry) => entry.name === 'example');
+    expect(server?.auth).toBe('refreshable_bearer');
+    expect(server?.refresh).toEqual({
+      tokenEndpoint: 'https://auth.example.com/token',
+      clientIdEnv: 'EXAMPLE_CLIENT_ID',
+      clientSecretEnv: 'EXAMPLE_CLIENT_SECRET',
+      clientAuthMethod: 'client_secret_post',
+      refreshSkewSeconds: 300,
+      accessTokenEnv: 'EXAMPLE_ACCESS_TOKEN',
+    });
+  });
+
   it('normalizes pre-registered OAuth client fields', async () => {
     await fs.mkdir(TEMP_DIR, { recursive: true });
     const configPath = path.join(TEMP_DIR, 'mcporter-oauth-client.json');
