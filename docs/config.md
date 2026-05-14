@@ -148,7 +148,8 @@ Use `--scope home|project` with `mcporter config add` to pick the write target e
 ### `mcporter config login <name|url>` / `logout`
 
 - Mirrors `mcporter auth`. `login` completes OAuth (or token provisioning) for either a named server or an ad-hoc URL. When a hosted MCP returns 401/403, mcporter automatically promotes that target to OAuth and re-runs the flow, matching the behavior documented in `docs/adhoc.md`.
-- `--browser none` suppresses automatic browser launch (useful for copying the URL into a remote browser).
+- `--no-browser` suppresses automatic browser launch and prints the authorization URL to stdout so it can be copied from a headless host. `--browser none` is accepted as a compatibility alias, and `MCPORTER_OAUTH_NO_BROWSER=1` / `true` / `yes` enables the same behavior by environment.
+- In `--json --no-browser` mode, stdout contains a JSON object with `authorizationUrl` and `redirectUrl`; diagnostics stay off stdout so scripts can parse the result. Treat emitted authorization URLs as sensitive operational output.
 - `logout` wipes the shared vault entry, legacy `~/.mcporter/<name>/` caches, and the custom `tokenCacheDir` when present. Pass `--all` to clear everything.
 
 ### `mcporter config doctor`

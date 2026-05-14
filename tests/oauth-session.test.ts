@@ -10,6 +10,7 @@ type StatefulProvider = {
   redirectUrl: string | URL;
   state: () => Promise<string>;
   redirectToAuthorization: (authorizationUrl: URL) => Promise<void>;
+  hasAuthorizationRedirectStarted: () => boolean;
 };
 
 const requestStatus = (target: URL): Promise<number> =>
@@ -243,6 +244,48 @@ describe('FileOAuthClientProvider session lifecycle', () => {
     expect(status).toBe(200);
     await expect(waitPromise).resolves.toBe('stable-deferred-code');
     await session.close();
+  });
+
+  it('suppresses browser launch and reports authorization URL when configured', async () => {
+    const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+    tempDirs.push(tokenCacheDir);
+    const definition: ServerDefinition = {
+      name: 'test-oauth-no-browser-url',
+      description: 'Test OAuth server',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'oauth',
+      tokenCacheDir,
+    };
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+    const onAuthorizationUrl = vi.fn();
+
+    const session = await createOAuthSession(definition, logger, {
+      suppressBrowserLaunch: true,
+      onAuthorizationUrl,
+    });
+    const provider = session.provider as StatefulProvider;
+    const openSpy = vi.spyOn(__oauthInternals, 'openExternal').mockImplementation(() => {});
+    const authorizationUrl = new URL('https://example.com/auth?code=xyz');
+    const waitPromise = session.waitForAuthorizationCode().catch(() => undefined);
+
+    await provider.redirectToAuthorization(authorizationUrl);
+
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(onAuthorizationUrl).toHaveBeenCalledWith({
+      authorizationUrl: authorizationUrl.toString(),
+      redirectUrl: String(provider.redirectUrl),
+    });
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      expect.stringContaining(`visit ${authorizationUrl.toString()} manually`)
+    );
+    expect(provider.hasAuthorizationRedirectStarted()).toBe(true);
+
+    await session.close();
+    await waitPromise;
   });
 
   it('logs the manual OAuth URL at warn level for headless terminals (#139)', async () => {

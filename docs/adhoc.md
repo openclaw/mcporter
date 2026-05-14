@@ -53,7 +53,7 @@ This name becomes the cache key for OAuth tokens and log preferences, so repeate
 
 Many hosted MCP servers (Supabase, Vercel, etc.) advertise OAuth capabilities but expect clients to discover this dynamically. When an ad-hoc HTTP server responds with `401/403` during the initial handshake, mcporter now:
 
-1. **Promotes the definition to OAuth** and spins up the default browser flow—no need to edit config or supply `auth: "oauth"` manually.
+1. **Promotes the definition to OAuth** and spins up the default browser flow—no need to edit config or supply `auth: "oauth"` manually. On headless hosts, pass `--no-browser` (or `--browser none`) to print the authorization URL instead of launching the platform browser.
 2. **Persists the change** whenever you pass `--persist`, so future runs remember that the endpoint requires OAuth without repeating the detection step.
 
 The CLI still avoids surprise prompts during `mcporter list`; the upgrade happens the first time you run `mcporter auth <url>` or any other command that allows OAuth (i.e., not in `--autoAuthorize=false` mode).
@@ -62,6 +62,8 @@ The CLI still avoids surprise prompts during `mcporter list`; the upgrade happen
 
 - OAuth flows are allowed; successful tokens store under the inferred name just like regular definitions.
 - `mcporter auth` accepts the same `--http-url/--stdio` flags (and even bare URLs), so you can immediately re-run `mcporter auth https://…` after a 401 without touching a config file.
+- Use `mcporter auth <url> --no-browser` for human-in-the-loop headless OAuth. Text mode writes only the authorization URL to stdout; `--json --no-browser` writes `authorizationUrl` plus `redirectUrl` as JSON. Keep that URL out of durable CI logs and support bundles.
+- When opening the URL on a different machine, remember that loopback redirect URLs point at the browser machine unless an SSH tunnel forwards the callback port back to the mcporter process. Use `oauthRedirectUrl` when you need a predictable callback port.
 - Nothing is written to disk unless you pass `--persist /path/to/config.json`. When set, we merge the generated definition into that file (creating it if necessary) so future runs can rely on the standard config pipeline. Ad-hoc HTTP headers are persisted with the entry, so placeholders such as `--header 'Authorization=$env:MY_TOKEN'` keep working through the normal config header resolver.
 
 ## Safety Nets

@@ -52,6 +52,9 @@ class KeepAliveRuntime implements Runtime {
   }
 
   async listTools(server: string, options?: ListToolsOptions): Promise<Awaited<ReturnType<Runtime['listTools']>>> {
+    if (options?.oauthSessionOptions) {
+      return this.base.listTools(server, options);
+    }
     if (this.shouldUseDaemon(server)) {
       return (await this.invokeWithRestart(server, 'listTools', () =>
         this.daemon.listTools({

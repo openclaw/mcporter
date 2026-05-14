@@ -27,7 +27,11 @@ describe('mcporter auth help shortcut', () => {
 
     await runCli(['auth', '--help']);
 
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Usage: mcporter auth'));
+    const output = errorSpy.mock.calls.map(([message]) => String(message)).join('\n');
+    expect(output).toContain('Usage: mcporter auth');
+    expect(output).toContain('--no-browser');
+    expect(output).toContain('--browser none');
+    expect(output).toContain('MCPORTER_OAUTH_NO_BROWSER');
     expect(process.exitCode).toBe(0);
   });
 
@@ -37,7 +41,11 @@ describe('mcporter auth help shortcut', () => {
 
     await runCli(['auth', 'help']);
 
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Usage: mcporter auth'));
+    const output = errorSpy.mock.calls.map(([message]) => String(message)).join('\n');
+    expect(output).toContain('Usage: mcporter auth');
+    expect(output).toContain('--no-browser');
+    expect(output).toContain('--browser none');
+    expect(output).toContain('MCPORTER_OAUTH_NO_BROWSER');
     expect(process.exitCode).toBe(0);
   });
 });

@@ -8,7 +8,7 @@ import type { ServerDefinition } from '../config.js';
 import { resolveEnvValue, withEnvOverrides } from '../env.js';
 import { analyzeConnectionError } from '../error-classifier.js';
 import type { Logger } from '../logging.js';
-import { createOAuthSession, type OAuthSession } from '../oauth.js';
+import { createOAuthSession, type OAuthSession, type OAuthSessionOptions } from '../oauth.js';
 import { readCachedAccessToken } from '../oauth-persistence.js';
 import { materializeHeaders } from '../runtime-header-utils.js';
 import { isUnauthorizedError, maybeEnableOAuth } from '../runtime-oauth-support.js';
@@ -81,6 +81,7 @@ export interface CreateClientContextOptions {
   readonly oauthTimeoutMs?: number;
   readonly onDefinitionPromoted?: (definition: ServerDefinition) => void;
   readonly allowCachedAuth?: boolean;
+  readonly oauthSessionOptions?: OAuthSessionOptions;
 }
 
 function removeAuthorizationHeader(headers: Record<string, string> | undefined): Record<string, string> | undefined {
@@ -258,7 +259,7 @@ async function attemptHttpClientContext(
   let oauthSession: OAuthSession | undefined;
   const shouldEstablishOAuth = activeDefinition.auth === 'oauth' && options.maxOAuthAttempts !== 0;
   if (shouldEstablishOAuth) {
-    oauthSession = await createOAuthSession(activeDefinition, logger);
+    oauthSession = await createOAuthSession(activeDefinition, logger, options.oauthSessionOptions);
   }
   const transportOptions = createHttpTransportOptions(activeDefinition, oauthSession, shouldEstablishOAuth);
 

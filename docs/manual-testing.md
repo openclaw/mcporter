@@ -74,6 +74,13 @@ Expectations:
 - If a token cache exists, log should mention the cleared directory.
 - Failed auths emit the unified message (`Failed to authorize 'SERVER': ...`).
 
+For headless OAuth URL capture, run the same auth command with `--no-browser`:
+
+- Text mode stdout should contain exactly one authorization URL line and no logger prefix.
+- `--json --no-browser` stdout should parse as JSON with `authorizationUrl` and `redirectUrl`.
+- If completing the flow from another machine over SSH, forward the printed callback port with a loopback-only tunnel; avoid exposing the callback listener publicly.
+- Treat copied authorization URLs as sensitive and avoid storing them in long-lived logs.
+
 ## Tips
 
 - To exercise error paths, point at a placeholder endpoint and use `--timeout 1000` (e.g., `https://example.com/mcp.listStuff`).

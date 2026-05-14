@@ -164,7 +164,8 @@ Helpful flags:
 - `--` (on `mcporter call`) -- stop flag parsing so the remaining tokens stay literal positional values, even when they start with `--`.
 - `--json` (on `mcporter list`) -- emit JSON summaries/counts instead of text. Multi-server runs report per-server statuses, counts, and connection issues; single-server runs include the full tool metadata.
 - `--output json/raw` (on `mcporter call`) -- when a connection fails, MCPorter prints the usual colorized hint and also emits a structured `{ server, tool, issue }` envelope so scripts can handle auth/offline/http errors programmatically.
-- `--json` (on `mcporter auth`) -- emit the same structured connection envelope whenever OAuth/transport setup fails, instead of throwing an error.
+- `--json` (on `mcporter auth`) -- emit the same structured connection envelope whenever OAuth/transport setup fails, instead of throwing an error. With `--no-browser`, it emits auth-start JSON containing `authorizationUrl` and `redirectUrl`.
+- `--no-browser` / `--browser none` (on `mcporter auth` or `mcporter config login`) -- suppress browser launch and print the OAuth authorization URL for headless workflows; `MCPORTER_OAUTH_NO_BROWSER=1` / `true` / `yes` enables the same behavior.
 - `--json` (on `mcporter emit-ts`) -- print a JSON summary describing the emitted files (mode + output paths) instead of text logs—handy when generating artifacts inside scripts.
 - `--all-parameters` -- show every schema field when listing a server (default output shows at least five parameters plus a summary of the rest).
 - `--http-url <https://…>` / `--stdio "command …"` -- describe an ad-hoc MCP server inline. STDIO transports now inherit your current shell environment automatically; add `--env KEY=value` only when you need to inject/override variables alongside `--cwd`, `--name`, or `--persist <config.json>`. These flags now work with `mcporter auth` too, so `mcporter auth https://mcp.example.com/mcp` just works.
@@ -416,6 +417,8 @@ If an HTTP MCP requires browser login (OAuth), persist it with `--auth oauth` (o
 npx mcporter config add notion https://mcp.notion.com/mcp --auth oauth
 npx mcporter auth notion
 ```
+
+On headless hosts, use `npx mcporter auth notion --no-browser` to print the authorization URL instead of launching the platform browser. Treat the printed URL as sensitive operational output. If you open it on another machine, make sure the printed `redirectUrl` callback port is reachable through a loopback-only tunnel or a configured `oauthRedirectUrl`.
 
 Providers that do not support dynamic client registration can use a pre-registered app:
 

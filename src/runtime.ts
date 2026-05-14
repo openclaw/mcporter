@@ -1,6 +1,7 @@
 import type { CallToolRequest, ListResourcesRequest, ReadResourceRequest } from '@modelcontextprotocol/sdk/types.js';
 import { loadServerDefinitions, type ServerDefinition } from './config.js';
 import { createPrefixedConsoleLogger, type Logger, type LogLevel, resolveLogLevelFromEnv } from './logging.js';
+import type { OAuthSessionOptions } from './oauth.js';
 import { closeTransportAndWait } from './runtime-process-utils.js';
 import './sdk-patches.js';
 import { shouldResetConnection } from './runtime/errors.js';
@@ -38,12 +39,14 @@ export interface ListToolsOptions {
   readonly includeSchema?: boolean;
   readonly autoAuthorize?: boolean;
   readonly allowCachedAuth?: boolean;
+  readonly oauthSessionOptions?: OAuthSessionOptions;
 }
 
 interface ConnectOptions {
   readonly maxOAuthAttempts?: number;
   readonly skipCache?: boolean;
   readonly allowCachedAuth?: boolean;
+  readonly oauthSessionOptions?: OAuthSessionOptions;
 }
 
 export interface Runtime {
@@ -173,6 +176,7 @@ class McpRuntime implements Runtime {
       maxOAuthAttempts: autoAuthorize ? undefined : 0,
       skipCache: !autoAuthorize,
       allowCachedAuth: options.allowCachedAuth,
+      oauthSessionOptions: options.oauthSessionOptions,
     });
     try {
       const tools: ServerToolInfo[] = [];
@@ -286,6 +290,7 @@ class McpRuntime implements Runtime {
       oauthTimeoutMs: this.oauthTimeoutMs ?? OAUTH_CODE_TIMEOUT_MS,
       onDefinitionPromoted: (promoted) => this.definitions.set(promoted.name, promoted),
       allowCachedAuth: options.allowCachedAuth,
+      oauthSessionOptions: options.oauthSessionOptions,
     });
 
     if (useCache) {
