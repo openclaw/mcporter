@@ -154,6 +154,28 @@ export async function runCli(argv: string[]): Promise<void> {
     return;
   }
 
+  if (command === 'record') {
+    const { handleRecordCli, printRecordHelp } = await import('./cli/record-command.js');
+    if (consumeHelpTokens(args)) {
+      printRecordHelp();
+      process.exitCode = 0;
+      return;
+    }
+    await handleRecordCli(args);
+    return;
+  }
+
+  if (command === 'replay') {
+    const { handleReplayCli, printReplayHelp } = await import('./cli/replay-command.js');
+    if (consumeHelpTokens(args)) {
+      printReplayHelp();
+      process.exitCode = 0;
+      return;
+    }
+    await handleReplayCli(args);
+    return;
+  }
+
   if (command === 'config') {
     const { handleConfigCli } = await import('./cli/config-command.js');
     await handleConfigCli(
@@ -454,6 +476,8 @@ function isExplicitNonCallCommand(command: string): boolean {
     command === 'resources' ||
     command === 'daemon' ||
     command === 'serve' ||
+    command === 'record' ||
+    command === 'replay' ||
     command === 'config' ||
     command === 'emit-ts' ||
     command === 'generate-cli' ||

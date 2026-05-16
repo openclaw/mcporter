@@ -6,6 +6,7 @@ import { closeTransportAndWait } from './runtime-process-utils.js';
 import './sdk-patches.js';
 import { shouldResetConnection } from './runtime/errors.js';
 import { resolveOAuthTimeoutFromEnv } from './runtime/oauth.js';
+import { resolveRecordingPath } from './runtime/record-transport.js';
 import { type ClientContext, createClientContext } from './runtime/transport.js';
 import { normalizeTimeout, raceWithTimeout } from './runtime/utils.js';
 import { filterTools, isToolAllowed, validateToolFilters } from './tool-filters.js';
@@ -107,6 +108,8 @@ class McpRuntime implements Runtime {
   private readonly logger: RuntimeLogger;
   private readonly clientInfo: { name: string; version: string };
   private readonly oauthTimeoutMs?: number;
+  private readonly recordPath?: string;
+  private readonly replayPath?: string;
 
   constructor(servers: ServerDefinition[], options: RuntimeOptions = {}) {
     for (const server of servers) {
@@ -119,6 +122,13 @@ class McpRuntime implements Runtime {
       version: MCPORTER_VERSION,
     };
     this.oauthTimeoutMs = options.oauthTimeoutMs;
+    const recordSession = process.env.MCPORTER_RECORD;
+    const replaySession = process.env.MCPORTER_REPLAY;
+    if (recordSession && replaySession) {
+      this.logger.warn('Both MCPORTER_RECORD and MCPORTER_REPLAY are set; recording mode wins.');
+    }
+    this.recordPath = recordSession ? resolveRecordingPath(recordSession) : undefined;
+    this.replayPath = !recordSession && replaySession ? resolveRecordingPath(replaySession) : undefined;
   }
 
   // listServers returns configured names sorted alphabetically for stable CLI output.
@@ -291,6 +301,8 @@ class McpRuntime implements Runtime {
       onDefinitionPromoted: (promoted) => this.definitions.set(promoted.name, promoted),
       allowCachedAuth: options.allowCachedAuth,
       oauthSessionOptions: options.oauthSessionOptions,
+      recordPath: this.recordPath,
+      replayPath: this.replayPath,
     });
 
     if (useCache) {
