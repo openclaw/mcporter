@@ -53,6 +53,11 @@ function buildCommandSections(colorize: boolean): string[] {
           usage: 'mcporter list [name] [--schema] [--json]',
         },
         {
+          name: 'health',
+          summary: 'Check configured servers for status, latency, tool count, and OAuth state',
+          usage: 'mcporter health [--server <name>] [--json]',
+        },
+        {
           name: 'call',
           summary: 'Call a tool by selector (server.tool) or HTTP URL; key=value flags supported',
           usage: 'mcporter call <selector> [key=value ...]',

@@ -2,7 +2,9 @@
 
 ## [0.11.2] - Unreleased
 
-- Nothing yet.
+### Added
+
+- Add `mcporter health` for at-a-glance server status, latency, tool count, OAuth state, and JSON/quiet output.
 
 ## [0.11.1] - 2026-05-14
 

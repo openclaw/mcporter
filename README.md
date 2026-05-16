@@ -19,6 +19,7 @@ MCPorter helps you lean into the "code execution" workflows highlighted in Anthr
 
 - **Zero-config discovery.** `createRuntime()` merges your home config (`~/.mcporter/mcporter.json[c]`, or `$XDG_CONFIG_HOME/mcporter/mcporter.json[c]` when set) first, then `config/mcporter.json`, plus Cursor/Claude/Codex/Windsurf/OpenCode/VS Code imports, expands `${ENV}` placeholders, and pools connections so you can reuse transports across multiple calls.
 - **One-command CLI generation.** `mcporter generate-cli` turns any MCP server definition into a ready-to-run CLI, with optional bundling/compilation and metadata for easy regeneration.
+- **Health checks.** `mcporter health` pings every configured server and reports status, latency, tool count, and OAuth state in one table.
 - **Typed tool clients.** `mcporter emit-ts` emits `.d.ts` interfaces or ready-to-run client wrappers so agents/tests can call MCP servers with strong TypeScript types without hand-writing plumbing.
 - **Friendly composable API.** `createServerProxy()` exposes tools as ergonomic camelCase methods, automatically applies JSON-schema defaults, validates required arguments, and hands back a `CallResult` with `.text()`, `.markdown()`, `.json()`, `.images()`, and `.content()` helpers.
 - **OAuth and stdio ergonomics.** Built-in OAuth caching, log tailing, and stdio wrappers let you work with HTTP, SSE, and stdio transports from the same interface.
