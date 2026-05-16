@@ -67,13 +67,14 @@ function readRecordedMessages(recordPath: string): RecordedMessage[] {
           throw new Error(
             `Invalid JSON on recording line ${index + 1} in ${recordPath}: ${
               error instanceof Error ? error.message : String(error)
-            }`
+            }`,
+            { cause: error }
           );
         }
       });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new Error(`Replay recording not found: ${recordPath}`);
+      throw new Error(`Replay recording not found: ${recordPath}`, { cause: error });
     }
     throw error;
   }
