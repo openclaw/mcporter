@@ -418,7 +418,7 @@ npx mcporter config add notion https://mcp.notion.com/mcp --auth oauth
 npx mcporter auth notion
 ```
 
-On headless hosts, use `npx mcporter auth notion --no-browser` to print the authorization URL instead of launching the platform browser. Treat the printed URL as sensitive operational output. If you open it on another machine, make sure the printed `redirectUrl` callback port is reachable through a loopback-only tunnel or a configured `oauthRedirectUrl`.
+On headless hosts, use `npx mcporter auth notion --no-browser` to print the authorization URL instead of launching the platform browser. Treat the printed URL as sensitive operational output. Keep the `mcporter auth` process alive until the browser redirects back to the printed `redirectUrl`; process managers that exit or clean up the command after capturing stdout can kill the loopback callback listener before OAuth completes. Run the command from a persistent terminal session, `tmux`, or a supervised background process such as `nohup`, and if you open the URL on another machine, make sure the callback port is reachable through a loopback-only tunnel or a configured `oauthRedirectUrl`.
 
 Providers that do not support dynamic client registration can use a pre-registered app:
 
