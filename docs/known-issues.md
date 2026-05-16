@@ -16,6 +16,7 @@ This file tracks limitations that users regularly run into. Most of these requir
   - Ask Supabase to accept the MCP scope or publish their scope list.
 - GitHub’s MCP endpoint (`https://api.githubcopilot.com/mcp/`) returns “does not support dynamic client registration” when mcporter attempts to connect. Copilot’s backend expects pre-registered client credentials. Configure `oauthClientId`/`oauthClientSecretEnv` only if the provider gives you a usable OAuth app; otherwise use their supported client or token/header workaround.
 - Some hosted servers reject dynamic client registration before returning any authorization URL. mcporter now fails those flows immediately instead of waiting for a browser callback that cannot arrive. If the provider supports a pre-registered OAuth app, configure `oauthClientId`, `oauthClientSecretEnv`, and the required `oauthTokenEndpointAuthMethod`; otherwise use the provider's supported client or token/header workaround.
+- `mcporter auth <server> --no-browser` still starts a loopback callback server and must stay alive until the browser redirects back. Process managers that run commands in short-lived process groups can print the authorization URL and then reap the process tree, leaving no listener on the callback port and no saved tokens. Run headless OAuth from a persistent terminal, `tmux`, or `nohup`/a supervisor, and use a configured `oauthRedirectUrl` or loopback tunnel when the browser runs elsewhere.
 
 ## Output schemas missing/buggy on many servers
 
