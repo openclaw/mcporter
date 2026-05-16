@@ -88,6 +88,7 @@ function isExplicitCommand(token: string): boolean {
     token === 'list' ||
     token === 'call' ||
     token === 'auth' ||
+    token === 'health' ||
     token === 'vault' ||
     token === 'resource' ||
     token === 'resources'

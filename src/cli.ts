@@ -55,6 +55,13 @@ export async function handleList(
   return imported(...args);
 }
 
+export async function handleHealth(
+  ...args: Parameters<typeof import('./cli/health-command.js').handleHealth>
+): ReturnType<typeof import('./cli/health-command.js').handleHealth> {
+  const { handleHealth: imported } = await import('./cli/health-command.js');
+  return imported(...args);
+}
+
 export async function handleResource(
   ...args: Parameters<typeof import('./cli/resource-command.js').handleResource>
 ): ReturnType<typeof import('./cli/resource-command.js').handleResource> {
@@ -231,6 +238,18 @@ export async function runCli(argv: string[]): Promise<void> {
       }
       const { handleList: importedHandleList } = await import('./cli/list-command.js');
       await importedHandleList(runtime, resolvedArgs);
+      return;
+    }
+
+    if (resolvedCommand === 'health') {
+      if (consumeHelpTokens(resolvedArgs)) {
+        const { printHealthHelp } = await import('./cli/health-command.js');
+        printHealthHelp();
+        process.exitCode = 0;
+        return;
+      }
+      const { handleHealth: importedHandleHealth } = await import('./cli/health-command.js');
+      await importedHandleHealth(runtime, resolvedArgs);
       return;
     }
 
@@ -450,6 +469,7 @@ function isExplicitNonCallCommand(command: string): boolean {
   return (
     command === 'list' ||
     command === 'auth' ||
+    command === 'health' ||
     command === 'resource' ||
     command === 'resources' ||
     command === 'daemon' ||
