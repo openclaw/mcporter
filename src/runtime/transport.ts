@@ -21,6 +21,8 @@ import {
   type OAuthCapableTransport,
   OAuthTimeoutError,
 } from './oauth.js';
+import { RecordTransport } from './record-transport.js';
+import { ReplayTransport } from './replay-transport.js';
 import { resolveCommandArgument, resolveCommandArguments } from './utils.js';
 
 const STDIO_TRACE_ENABLED = process.env.MCPORTER_STDIO_TRACE === '1';
@@ -84,6 +86,8 @@ export interface CreateClientContextOptions {
   readonly onDefinitionPromoted?: (definition: ServerDefinition) => void;
   readonly allowCachedAuth?: boolean;
   readonly oauthSessionOptions?: OAuthSessionOptions;
+  readonly recordPath?: string;
+  readonly replayPath?: string;
 }
 
 function removeAuthorizationHeader(headers: Record<string, string> | undefined): Record<string, string> | undefined {
@@ -134,6 +138,38 @@ function resolveHttpFetchOverride(definition: ServerDefinition): typeof nodeHttp
 
 async function closeOAuthSession(oauthSession?: OAuthSession): Promise<void> {
   await oauthSession?.close().catch(() => {});
+}
+
+function shouldUseModeForServer(definition: ServerDefinition, serverFilter: string | undefined): boolean {
+  return !serverFilter || serverFilter === definition.name;
+}
+
+function wrapRecordTransport<TTransport extends Transport>(
+  transport: TTransport,
+  definition: ServerDefinition,
+  options: CreateClientContextOptions
+): TTransport {
+  if (!options.recordPath || !shouldUseModeForServer(definition, process.env.MCPORTER_RECORD_SERVER)) {
+    return transport;
+  }
+  return new RecordTransport({
+    inner: transport,
+    recordPath: options.recordPath,
+    server: definition.name,
+  }) as unknown as TTransport;
+}
+
+async function createReplayClientContext(
+  client: Client,
+  definition: ServerDefinition,
+  replayPath: string
+): Promise<ClientContext> {
+  const transport = new ReplayTransport({
+    recordPath: replayPath,
+    server: definition.name,
+  });
+  await client.connect(transport);
+  return { client, transport, definition, oauthSession: undefined };
 }
 
 function shouldAbortSseFallback(error: unknown): boolean {
@@ -251,7 +287,8 @@ async function applyCachedAuthIfAvailable(
 async function createStdioClientContext(
   client: Client,
   definition: ServerDefinition & { command: Extract<ServerDefinition['command'], { kind: 'stdio' }> },
-  logger: Logger
+  logger: Logger,
+  options: CreateClientContextOptions
 ): Promise<ClientContext> {
   const resolvedEnvOverrides =
     definition.env && Object.keys(definition.env).length > 0
@@ -271,15 +308,16 @@ async function createStdioClientContext(
   if (compat.applied) {
     logger.info(`Injecting chrome-devtools-mcp --autoConnect compatibility patch from ${compat.patchPath}.`);
   }
-  const transport = new StdioClientTransport({
+  const rawTransport = new StdioClientTransport({
     command,
     args: commandArgs,
     cwd: definition.command.cwd,
     env: compat.env,
   });
   if (STDIO_TRACE_ENABLED) {
-    attachStdioTraceLogging(transport, definition.name ?? definition.command.command);
+    attachStdioTraceLogging(rawTransport, definition.name ?? definition.command.command);
   }
+  const transport = wrapRecordTransport(rawTransport, definition, options);
   try {
     await client.connect(transport);
   } catch (error) {
@@ -376,7 +414,8 @@ async function connectPrimaryHttpTransport(
   logger: Logger,
   options: CreateClientContextOptions
 ): Promise<ClientContext> {
-  const createStreamableTransport = () => new StreamableHTTPClientTransport(command.url, transportOptions);
+  const createStreamableTransport = () =>
+    wrapRecordTransport(new StreamableHTTPClientTransport(command.url, transportOptions), definition, options);
   const transport = await connectHttpTransport(client, createStreamableTransport(), oauthSession, logger, {
     serverName: definition.name,
     serverUrl: command.url,
@@ -404,7 +443,7 @@ async function connectSseFallbackTransport(
   try {
     const transport = await connectHttpTransport(
       client,
-      new SSEClientTransport(command.url, transportOptions),
+      wrapRecordTransport(new SSEClientTransport(command.url, transportOptions), definition, options),
       oauthSession,
       logger,
       {
@@ -441,6 +480,9 @@ export async function createClientContext(
   options: CreateClientContextOptions = {}
 ): Promise<ClientContext> {
   const client = new Client(clientInfo);
+  if (options.replayPath && shouldUseModeForServer(definition, process.env.MCPORTER_REPLAY_SERVER)) {
+    return createReplayClientContext(client, definition, options.replayPath);
+  }
   const activeDefinition = await applyCachedAuthIfAvailable(definition, logger, options.allowCachedAuth);
 
   return withEnvOverrides(activeDefinition.env, async () => {
@@ -448,7 +490,8 @@ export async function createClientContext(
       return createStdioClientContext(
         client,
         activeDefinition as ServerDefinition & { command: Extract<ServerDefinition['command'], { kind: 'stdio' }> },
-        logger
+        logger,
+        options
       );
     }
     return retryHttpTransportWithFallback(client, activeDefinition, logger, options);

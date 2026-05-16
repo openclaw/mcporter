@@ -2,7 +2,9 @@
 
 ## [0.11.2] - Unreleased
 
-- Nothing yet.
+### Added
+
+- Add `mcporter record` / `mcporter replay` for capturing MCP JSON-RPC traffic to NDJSON and replaying exact sessions offline.
 
 ## [0.11.1] - 2026-05-14
 

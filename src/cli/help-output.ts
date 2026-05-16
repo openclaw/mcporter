@@ -72,6 +72,16 @@ function buildCommandSections(colorize: boolean): string[] {
           summary: 'Seed or clear OAuth credentials non-interactively',
           usage: 'mcporter vault set <server> --tokens-file <path>',
         },
+        {
+          name: 'record',
+          summary: 'Capture MCP JSON-RPC traffic to NDJSON',
+          usage: 'mcporter record <session-name> [--server <name>] [-- <command>]',
+        },
+        {
+          name: 'replay',
+          summary: 'Replay recorded MCP JSON-RPC traffic deterministically',
+          usage: 'mcporter replay <session-name> [--server <name>] [-- <command>]',
+        },
       ],
     },
     {
