@@ -241,6 +241,67 @@ describe('connectWithAuth', () => {
     expect(connectedTransport).toBe(transport);
   });
 
+  it('skips proactive OAuth when cached tokens are still usable', async () => {
+    const connect = vi.fn().mockResolvedValueOnce(undefined);
+    const client = { connect } as unknown as Client;
+    const { session, waitForAuthorizationCode } = createPendingAuthorizationSession();
+    const tokens = vi.fn(async () => ({
+      access_token: 'cached-token',
+      token_type: 'Bearer',
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+    }));
+    session.provider.tokens = tokens;
+    mocks.sdkAuth.mockResolvedValueOnce('REDIRECT');
+
+    const transport = new MockTransport();
+    const logger = createLogger();
+
+    const connectedTransport = await connectWithAuth(client, transport, session, logger, {
+      serverName: 'courtlistener',
+      maxAttempts: 1,
+      oauthTimeoutMs: 5000,
+      serverUrl: 'https://courtlistener.example/mcp',
+    });
+
+    expect(tokens).toHaveBeenCalledTimes(1);
+    expect(mocks.sdkAuth).not.toHaveBeenCalled();
+    expect(waitForAuthorizationCode).not.toHaveBeenCalled();
+    expect(transport.calls).toEqual([]);
+    expect(session.close).toHaveBeenCalled();
+    expect(connectedTransport).toBe(transport);
+  });
+
+  it('runs proactive OAuth when cached tokens are expired', async () => {
+    const connect = vi.fn().mockResolvedValueOnce(undefined);
+    const client = { connect } as unknown as Client;
+    const { session, waitForAuthorizationCode } = createPendingAuthorizationSession();
+    session.provider.tokens = vi.fn(async () => ({
+      access_token: 'expired-token',
+      token_type: 'Bearer',
+      expires_at: Math.floor(Date.now() / 1000) - 60,
+    }));
+    mocks.sdkAuth.mockResolvedValueOnce('AUTHORIZED');
+
+    const transport = new MockTransport();
+    const logger = createLogger();
+
+    const connectedTransport = await connectWithAuth(client, transport, session, logger, {
+      serverName: 'courtlistener',
+      maxAttempts: 1,
+      oauthTimeoutMs: 5000,
+      serverUrl: 'https://courtlistener.example/mcp',
+    });
+
+    expect(mocks.sdkAuth).toHaveBeenCalledWith(session.provider, {
+      serverUrl: 'https://courtlistener.example/mcp',
+      fetchFn: undefined,
+    });
+    expect(waitForAuthorizationCode).not.toHaveBeenCalled();
+    expect(transport.calls).toEqual([]);
+    expect(session.close).toHaveBeenCalled();
+    expect(connectedTransport).toBe(transport);
+  });
+
   it('marks proactive OAuth failures as OAuth flow errors', async () => {
     const connect = vi.fn().mockResolvedValueOnce(undefined);
     const client = { connect } as unknown as Client;
@@ -259,6 +320,28 @@ describe('connectWithAuth', () => {
         serverUrl: 'https://calendar.example/mcp',
       })
     ).rejects.toSatisfy((error: unknown) => error === authError && isOAuthFlowError(error));
+  });
+
+  it('marks cached token read failures during proactive OAuth as OAuth flow errors', async () => {
+    const connect = vi.fn().mockResolvedValueOnce(undefined);
+    const client = { connect } as unknown as Client;
+    const { session } = createPendingAuthorizationSession();
+    const tokenError = new Error('malformed token cache');
+    session.provider.tokens = vi.fn(async () => {
+      throw tokenError;
+    });
+
+    const transport = new MockTransport();
+    const logger = createLogger();
+
+    await expect(
+      connectWithAuth(client, transport, session, logger, {
+        serverName: 'calendar',
+        maxAttempts: 1,
+        oauthTimeoutMs: 5000,
+        serverUrl: 'https://calendar.example/mcp',
+      })
+    ).rejects.toSatisfy((error: unknown) => error === tokenError && isOAuthFlowError(error));
   });
 
   it('marks finishAuth failures as oauth flow errors', async () => {

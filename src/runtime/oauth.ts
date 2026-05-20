@@ -1,5 +1,6 @@
 import { auth as sdkAuth } from '@modelcontextprotocol/sdk/client/auth.js';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { Logger } from '../logging.js';
 import type { OAuthSession } from '../oauth.js';
@@ -9,6 +10,7 @@ export const DEFAULT_OAUTH_CODE_TIMEOUT_MS = 300_000;
 const OAUTH_FLOW_ERROR = Symbol('oauth-flow-error');
 const POST_AUTH_CONNECT_ERROR = Symbol('post-auth-connect-error');
 const MAX_OAUTH_ERROR_DETAIL_LENGTH = 1_200;
+const PROACTIVE_TOKEN_SKEW_SECONDS = 60;
 
 export interface OAuthCapableTransport extends Transport {
   close(): Promise<void>;
@@ -107,6 +109,15 @@ function hasErrorMarker(error: unknown, marker: symbol): boolean {
     marker in error &&
     Boolean((error as Record<PropertyKey, unknown>)[marker])
   );
+}
+
+function hasUsableCachedAccessToken(tokens: OAuthTokens | undefined): boolean {
+  if (!tokens || typeof tokens.access_token !== 'string' || tokens.access_token.trim().length === 0) {
+    return false;
+  }
+  const stored = tokens as OAuthTokens & { expires_at?: number; expiresAt?: number };
+  const expiresAt = typeof stored.expires_at === 'number' ? stored.expires_at : stored.expiresAt;
+  return typeof expiresAt === 'number' && expiresAt > Math.floor(Date.now() / 1000) + PROACTIVE_TOKEN_SKEW_SECONDS;
 }
 
 export async function connectWithAuth(
@@ -239,6 +250,10 @@ async function completeProactiveAuthorization(
     return;
   }
   try {
+    const cachedTokens = await session.provider.tokens?.();
+    if (hasUsableCachedAccessToken(cachedTokens)) {
+      return;
+    }
     const result = await sdkAuth(session.provider, {
       serverUrl: options.serverUrl,
       fetchFn: options.fetchFn,
