@@ -4,6 +4,7 @@
 
 ### CLI
 
+- Add `mcporter list --status`, `--exit-code`, and `--quiet` for concise server health checks without introducing a separate health command.
 - Make `generate-cli --bundle` artifacts deterministic by removing bundle-only paths/timestamps from embedded metadata and sorting generated tool/schema output. (Issue #180, thanks @imroc)
 - Let daemon-managed OAuth servers reuse cached credentials for tool calls and tool listing after token expiry. (PR #182 / issue #181, thanks @bradhallett)
 - Avoid restarting browser OAuth when an already-connected server has a still-valid cached access token. (Issue #179, thanks @jaigew and @StanAngeloff)

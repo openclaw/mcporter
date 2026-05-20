@@ -60,6 +60,7 @@ npx mcporter list --stdio "bun run ./local-server.ts" --env TOKEN=xyz
 ```
 
 - Add `--json` to emit a machine-readable summary with per-server statuses (auth/offline/http/error counts) and, for single-server runs, the full tool schema payload.
+- Add `--status` for a concise single-server status check without tool docs, `--exit-code` to fail when any checked server is unhealthy, or `--quiet` for silent health gates.
 - Add `--verbose` to show every config source that registered the server name (primary first), both in text and JSON list output.
 
 You can now point `mcporter list` at ad-hoc servers: provide a URL directly or use the new `--http-url/--stdio` flags (plus `--env`, `--cwd`, `--name`, or `--persist`) to describe any MCP endpoint. Until you persist that definition, you still need to repeat the same URL/stdio flags for `mcporter call`—the printed slug only becomes reusable once you merge it into a config via `--persist` or `mcporter config add` (use `--scope home|project` to pick the write target). Follow up with `mcporter auth https://…` (or the same flag set) to finish OAuth without editing config. Full details live in [docs/adhoc.md](docs/adhoc.md).
@@ -163,6 +164,7 @@ Helpful flags:
 - `--no-coerce` (on `mcporter call`) -- keep all `key=value` and positional values as raw strings (disables bool/null/number/JSON coercion).
 - `--` (on `mcporter call`) -- stop flag parsing so the remaining tokens stay literal positional values, even when they start with `--`.
 - `--json` (on `mcporter list`) -- emit JSON summaries/counts instead of text. Multi-server runs report per-server statuses, counts, and connection issues; single-server runs include the full tool metadata.
+- `--status`, `--exit-code`, `--quiet` (on `mcporter list`) -- run concise server health checks through the existing list flow; `--quiet` suppresses output and exits 1 if anything checked is unhealthy.
 - `--output json/raw` (on `mcporter call`) -- when a connection fails, MCPorter prints the usual colorized hint and also emits a structured `{ server, tool, issue }` envelope so scripts can handle auth/offline/http errors programmatically.
 - `--json` (on `mcporter auth`) -- emit the same structured connection envelope whenever OAuth/transport setup fails, instead of throwing an error. With `--no-browser`, it emits auth-start JSON containing `authorizationUrl` and `redirectUrl`.
 - `--no-browser` / `--browser none` (on `mcporter auth` or `mcporter config login`) -- suppress browser launch and print the OAuth authorization URL for headless workflows; `MCPORTER_OAUTH_NO_BROWSER=1` / `true` / `yes` enables the same behavior.

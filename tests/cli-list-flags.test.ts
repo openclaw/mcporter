@@ -16,6 +16,9 @@ describe('CLI list flag parsing', () => {
       verbose: false,
       ephemeral: undefined,
       format: 'text',
+      quiet: false,
+      exitCode: false,
+      statusOnly: false,
     });
     expect(args).toEqual(['server']);
   });
@@ -33,6 +36,9 @@ describe('CLI list flag parsing', () => {
       verbose: false,
       ephemeral: undefined,
       format: 'text',
+      quiet: false,
+      exitCode: false,
+      statusOnly: false,
     });
     expect(args).toEqual(['server']);
   });
@@ -44,6 +50,30 @@ describe('CLI list flag parsing', () => {
     expect(flags.format).toBe('json');
     expect(flags.brief).toBe(false);
     expect(args).toEqual(['server']);
+  });
+
+  it('parses status check flags', async () => {
+    const { extractListFlags } = await cliModulePromise;
+    const quietArgs = ['--quiet', 'server'];
+    const quietFlags = extractListFlags(quietArgs);
+    expect(quietFlags.quiet).toBe(true);
+    expect(quietFlags.exitCode).toBe(true);
+    expect(quietArgs).toEqual(['server']);
+
+    const statusArgs = ['--status', '--exit-code', 'server'];
+    const statusFlags = extractListFlags(statusArgs);
+    expect(statusFlags.statusOnly).toBe(true);
+    expect(statusFlags.exitCode).toBe(true);
+    expect(statusArgs).toEqual(['server']);
+  });
+
+  it('rejects --status with tool-doc display flags', async () => {
+    const { extractListFlags } = await cliModulePromise;
+    expect(() => extractListFlags(['--status', '--brief', 'server'])).toThrow('--status cannot be used with --brief');
+    expect(() => extractListFlags(['--status', '--schema', 'server'])).toThrow('--status cannot be used with --schema');
+    expect(() => extractListFlags(['--status', '--all-parameters', 'server'])).toThrow(
+      '--status cannot be used with --all-parameters'
+    );
   });
 
   it('parses --brief and --signatures aliases', async () => {

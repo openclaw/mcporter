@@ -12,7 +12,7 @@ This walkthrough assumes you already have an MCP server configured in Cursor, Cl
 npx mcporter list
 ```
 
-You get one row per server with auth status, transport type, and tool count. Add `--json` for machine output, or `--verbose` to see which config files registered each server.
+You get one row per server with auth status, transport type, and tool count. Add `--json` for machine output, `--quiet` for a silent health gate, or `--verbose` to see which config files registered each server.
 
 ## 2. Inspect a single server
 
@@ -26,6 +26,7 @@ Single-server output reads like a TypeScript header file: dimmed `/** … */` do
 - `--all-parameters` — show every optional parameter inline.
 - `--schema` — pretty-print the JSON schema for each tool.
 - `--json` — machine-readable schema payload.
+- `--status` — concise status only, without tool docs.
 
 `mcporter list shadcn.io/api/mcp.getComponents` works too — bare URLs (with or without a `.tool` suffix or scheme) auto-resolve.
 

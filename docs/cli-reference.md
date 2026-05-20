@@ -21,6 +21,10 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
 - Add `--brief` or `--signatures` with a server or `server.tool` target to keep
   the server header/instructions and print compact signatures without doc
   comments, examples, or schemas.
+- Add `--status` with a server target to print only the concise status row
+  instead of full tool docs.
+- Add `--exit-code` to make the command exit 1 when any checked server is
+  unhealthy, or `--quiet` to suppress output and imply `--exit-code`.
 - Hidden alias: `list-tools` (kept for muscle memory; not advertised in help output).
 - Hidden ad-hoc flag aliases: `--sse` for `--http-url`, `--insecure` for `--allow-http` (for plain HTTP testing).
 - Flags:
@@ -29,6 +33,10 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
   - `--signatures` – alias for `--brief`.
   - `--all-parameters` – include every optional parameter in the signature.
   - `--schema` – pretty-print the JSON schema for each tool.
+  - `--status` – check server status only; cannot be combined with `--brief`,
+    `--schema`, or `--all-parameters`.
+  - `--exit-code` – exit 1 when any checked server is unhealthy.
+  - `--quiet` – suppress output and exit 1 when any checked server is unhealthy.
   - `--timeout <ms>` – per-server timeout when enumerating all servers.
 
 ## `mcporter call <server.tool>`

@@ -60,6 +60,9 @@ export async function handleList(
       const perServerTimeoutSeconds = Math.round(perServerTimeoutMs / 1000);
 
       if (servers.length === 0) {
+        if (flags.quiet) {
+          return;
+        }
         if (flags.format === 'json') {
           const payload = {
             mode: 'list',
@@ -73,17 +76,17 @@ export async function handleList(
         return;
       }
 
-      if (flags.format === 'text') {
+      if (!flags.quiet && flags.format === 'text') {
         console.log(
           `mcporter ${MCPORTER_VERSION} — Listing ${servers.length} server(s) (per-server timeout: ${perServerTimeoutSeconds}s)`
         );
       }
       const spinner =
-        flags.format === 'text' && supportsSpinner
+        !flags.quiet && flags.format === 'text' && supportsSpinner
           ? ora(`Discovering ${servers.length} server(s)…`).start()
           : undefined;
       const renderedResults =
-        flags.format === 'text'
+        !flags.quiet && flags.format === 'text'
           ? (Array.from({ length: servers.length }, () => undefined) as Array<
               ReturnType<typeof renderServerListRow> | undefined
             >)
@@ -95,28 +98,7 @@ export async function handleList(
       let completedCount = 0;
 
       const tasks = servers.map((server, index) =>
-        (async (): Promise<ListSummaryResult> => {
-          const startedAt = Date.now();
-          try {
-            const tools = await withTimeout(
-              runtime.listTools(server.name, { autoAuthorize: false, allowCachedAuth: true }),
-              perServerTimeoutMs
-            );
-            return {
-              server,
-              status: 'ok' as const,
-              tools,
-              durationMs: Date.now() - startedAt,
-            };
-          } catch (error) {
-            return {
-              server,
-              status: 'error' as const,
-              error,
-              durationMs: Date.now() - startedAt,
-            };
-          }
-        })().then((result) => {
+        checkListServer(runtime, server, perServerTimeoutMs).then((result) => {
           summaryResults[index] = result;
           if (renderedResults) {
             const rendered = renderServerListRow(result, perServerTimeoutMs, { verbose: flags.verbose });
@@ -139,20 +121,25 @@ export async function handleList(
       );
 
       await Promise.all(tasks);
+      const jsonEntries = summaryResults.map((entry, index) => {
+        const serverDefinition = servers[index] ?? entry?.server ?? servers[0];
+        if (!serverDefinition) {
+          throw new Error('Unable to resolve server definition for JSON output.');
+        }
+        const normalizedEntry = entry ?? createUnknownResult(serverDefinition);
+        return buildJsonListEntry(normalizedEntry, perServerTimeoutSeconds, {
+          includeSchemas: Boolean(flags.schema),
+          includeSources: Boolean(flags.verbose || flags.includeSources),
+        });
+      });
+      const counts = summarizeStatusCounts(jsonEntries);
+      maybeSetListExitCode(jsonEntries, flags);
+
+      if (flags.quiet) {
+        return;
+      }
 
       if (flags.format === 'json') {
-        const jsonEntries = summaryResults.map((entry, index) => {
-          const serverDefinition = servers[index] ?? entry?.server ?? servers[0];
-          if (!serverDefinition) {
-            throw new Error('Unable to resolve server definition for JSON output.');
-          }
-          const normalizedEntry = entry ?? createUnknownResult(serverDefinition);
-          return buildJsonListEntry(normalizedEntry, perServerTimeoutSeconds, {
-            includeSchemas: Boolean(flags.schema),
-            includeSources: Boolean(flags.verbose || flags.includeSources),
-          });
-        });
-        const counts = summarizeStatusCounts(jsonEntries);
         console.log(JSON.stringify({ mode: 'list', counts, servers: jsonEntries }, null, 2));
         return;
       }
@@ -160,21 +147,13 @@ export async function handleList(
       if (spinner) {
         spinner.stop();
       }
-      const errorCounts = createEmptyStatusCounts();
-      renderedResults?.forEach((entry) => {
-        if (!entry) {
-          return;
-        }
-        const category = entry.category ?? 'error';
-        errorCounts[category] = (errorCounts[category] ?? 0) + 1;
-      });
-      const okSummary = `${errorCounts.ok} healthy`;
+      const okSummary = `${counts.ok} healthy`;
       const parts = [
         okSummary,
-        ...(errorCounts.auth > 0 ? [`${errorCounts.auth} auth required`] : []),
-        ...(errorCounts.offline > 0 ? [`${errorCounts.offline} offline`] : []),
-        ...(errorCounts.http > 0 ? [`${errorCounts.http} http errors`] : []),
-        ...(errorCounts.error > 0 ? [`${errorCounts.error} errors`] : []),
+        ...(counts.auth > 0 ? [`${counts.auth} auth required`] : []),
+        ...(counts.offline > 0 ? [`${counts.offline} offline`] : []),
+        ...(counts.http > 0 ? [`${counts.http} http errors`] : []),
+        ...(counts.error > 0 ? [`${counts.error} errors`] : []),
       ];
       console.log(`✔ Listed ${servers.length} server${servers.length === 1 ? '' : 's'} (${parts.join('; ')}).`);
       return;
@@ -190,9 +169,13 @@ export async function handleList(
       requestedTool = selector.tool;
     }
   }
+  if (flags.statusOnly && requestedTool) {
+    throw new Error('--status cannot be used with a tool selector.');
+  }
 
-  const resolved = resolveServerDefinition(runtime, target);
+  const resolved = resolveServerDefinition(runtime, target, { quiet: flags.quiet });
   if (!resolved) {
+    maybeSetListExitCode([{ status: 'error' }], flags);
     return;
   }
   target = resolved.name;
@@ -204,8 +187,111 @@ export async function handleList(
       : undefined;
   const transportSummary = formatTransportSummary(definition);
   const startedAt = Date.now();
-  if (flags.format === 'json') {
+  if (flags.statusOnly) {
+    const previousStdioLogMode = flags.quiet || flags.format === 'json' ? setStdioLogMode('silent') : undefined;
     try {
+      const result = await checkListServer(runtime, definition, timeoutMs);
+      await persistPreparedEphemeralServer(runtime, prepared);
+      const entry = buildJsonListEntry(result, Math.round(timeoutMs / 1000), {
+        includeSchemas: false,
+        includeSources: Boolean(flags.verbose || flags.includeSources),
+      });
+      maybeSetListExitCode([entry], flags);
+      if (flags.quiet) {
+        return;
+      }
+      if (flags.format === 'json') {
+        console.log(
+          JSON.stringify({ mode: 'list', counts: summarizeStatusCounts([entry]), servers: [entry] }, null, 2)
+        );
+        return;
+      }
+      const rendered = renderServerListRow(result, timeoutMs, { verbose: flags.verbose });
+      console.log(rendered.line);
+      console.log(
+        `✔ Listed 1 server (${entry.status === 'ok' ? '1 healthy' : `0 healthy; 1 ${statusLabel(entry.status)}`}).`
+      );
+      return;
+    } finally {
+      if (previousStdioLogMode !== undefined) {
+        setStdioLogMode(previousStdioLogMode);
+      }
+    }
+  }
+  const previousStdioLogMode = flags.quiet || flags.format === 'json' ? setStdioLogMode('silent') : undefined;
+  try {
+    if (flags.format === 'json') {
+      try {
+        const metadataEntries = filterToolMetadata(
+          await withTimeout(
+            loadToolMetadata(runtime, target, {
+              includeSchema: true,
+              autoAuthorize: false,
+              allowCachedAuth: true,
+            }),
+            timeoutMs
+          ),
+          requestedTool
+        );
+        await persistPreparedEphemeralServer(runtime, prepared);
+        const durationMs = Date.now() - startedAt;
+        if (requestedTool && metadataEntries.length === 0) {
+          if (!flags.quiet) {
+            printMissingToolJson(definition, requestedTool, durationMs, transportSummary, flags);
+          }
+          process.exitCode = 1;
+          return;
+        }
+        const instructions = await loadServerInstructions(runtime, target);
+        const payload = {
+          mode: 'server',
+          name: definition.name,
+          status: 'ok' as StatusCategory,
+          durationMs,
+          description: definition.description,
+          instructions,
+          transport: transportSummary,
+          source: definition.source,
+          sources: flags.verbose || flags.includeSources ? definition.sources : undefined,
+          tools: metadataEntries.map((entry) => ({
+            name: entry.tool.name,
+            description: entry.tool.description,
+            inputSchema: entry.tool.inputSchema,
+            outputSchema: entry.tool.outputSchema,
+            options: entry.options,
+          })),
+        };
+        if (!flags.quiet) {
+          console.log(JSON.stringify(payload, null, 2));
+        }
+        return;
+      } catch (error) {
+        await persistPreparedEphemeralServer(runtime, prepared);
+        const durationMs = Date.now() - startedAt;
+        const authCommand = buildAuthCommandHint(definition);
+        const advice = classifyListError(error, definition.name, timeoutMs, { authCommand });
+        const payload = {
+          mode: 'server',
+          name: definition.name,
+          status: advice.category,
+          durationMs,
+          description: definition.description,
+          transport: transportSummary,
+          source: definition.source,
+          sources: flags.verbose || flags.includeSources ? definition.sources : undefined,
+          issue: advice.issue,
+          authCommand: advice.authCommand,
+          error: advice.summary,
+        };
+        if (!flags.quiet) {
+          console.log(JSON.stringify(payload, null, 2));
+        }
+        process.exitCode = 1;
+        return;
+      }
+    }
+    try {
+      // Always request schemas so we can render CLI-style parameter hints without re-querying per tool.
       const metadataEntries = filterToolMetadata(
         await withTimeout(
           loadToolMetadata(runtime, target, {
@@ -220,95 +306,61 @@ export async function handleList(
       await persistPreparedEphemeralServer(runtime, prepared);
       const durationMs = Date.now() - startedAt;
       if (requestedTool && metadataEntries.length === 0) {
-        printMissingToolJson(definition, requestedTool, durationMs, transportSummary, flags);
+        if (!flags.quiet) {
+          printMissingToolText(definition, requestedTool, durationMs, transportSummary, sourcePath);
+        }
+        process.exitCode = 1;
+        return;
+      }
+      if (flags.quiet) {
         return;
       }
       const instructions = await loadServerInstructions(runtime, target);
-      const payload = {
-        mode: 'server',
-        name: definition.name,
-        status: 'ok' as StatusCategory,
+      const summaryLine = printSingleServerHeader(
+        definition,
+        metadataEntries.length,
         durationMs,
-        description: definition.description,
-        instructions,
-        transport: transportSummary,
-        source: definition.source,
-        sources: flags.verbose || flags.includeSources ? definition.sources : undefined,
-        tools: metadataEntries.map((entry) => ({
-          name: entry.tool.name,
-          description: entry.tool.description,
-          inputSchema: entry.tool.inputSchema,
-          outputSchema: entry.tool.outputSchema,
-          options: entry.options,
-        })),
-      };
-      console.log(JSON.stringify(payload, null, 2));
-      return;
-    } catch (error) {
-      await persistPreparedEphemeralServer(runtime, prepared);
-      const durationMs = Date.now() - startedAt;
-      const authCommand = buildAuthCommandHint(definition);
-      const advice = classifyListError(error, definition.name, timeoutMs, { authCommand });
-      const payload = {
-        mode: 'server',
-        name: definition.name,
-        status: advice.category,
-        durationMs,
-        description: definition.description,
-        transport: transportSummary,
-        source: definition.source,
-        sources: flags.verbose || flags.includeSources ? definition.sources : undefined,
-        issue: advice.issue,
-        authCommand: advice.authCommand,
-        error: advice.summary,
-      };
-      console.log(JSON.stringify(payload, null, 2));
-      process.exitCode = 1;
-      return;
-    }
-  }
-  try {
-    // Always request schemas so we can render CLI-style parameter hints without re-querying per tool.
-    const metadataEntries = filterToolMetadata(
-      await withTimeout(
-        loadToolMetadata(runtime, target, {
-          includeSchema: true,
-          autoAuthorize: false,
-          allowCachedAuth: true,
-        }),
-        timeoutMs
-      ),
-      requestedTool
-    );
-    await persistPreparedEphemeralServer(runtime, prepared);
-    const durationMs = Date.now() - startedAt;
-    if (requestedTool && metadataEntries.length === 0) {
-      printMissingToolText(definition, requestedTool, durationMs, transportSummary, sourcePath);
-      return;
-    }
-    const instructions = await loadServerInstructions(runtime, target);
-    const summaryLine = printSingleServerHeader(
-      definition,
-      metadataEntries.length,
-      durationMs,
-      transportSummary,
-      sourcePath,
-      {
-        printSummaryNow: false,
-        instructions,
+        transportSummary,
+        sourcePath,
+        {
+          printSummaryNow: false,
+          instructions,
+        }
+      );
+      if (metadataEntries.length === 0) {
+        console.log('  Tools: <none>');
+        console.log(summaryLine);
+        console.log('');
+        return;
       }
-    );
-    if (metadataEntries.length === 0) {
-      console.log('  Tools: <none>');
-      console.log(summaryLine);
-      console.log('');
-      return;
-    }
-    if (flags.brief) {
+      if (flags.brief) {
+        let optionalOmitted = false;
+        for (const entry of metadataEntries) {
+          const detail = printBriefTool(definition, entry, flags.requiredOnly);
+          optionalOmitted ||= detail.optionalOmitted;
+        }
+        if (flags.requiredOnly && optionalOmitted) {
+          console.log(`  ${extraDimText('Optional parameters hidden; run with --all-parameters to view all fields.')}`);
+          console.log('');
+        }
+        console.log(summaryLine);
+        console.log('');
+        return;
+      }
+      const examples: string[] = [];
       let optionalOmitted = false;
       for (const entry of metadataEntries) {
-        const detail = printBriefTool(definition, entry, flags.requiredOnly);
+        const detail = printToolDetail(definition, entry, Boolean(flags.schema), flags.requiredOnly);
+        examples.push(...detail.examples);
         optionalOmitted ||= detail.optionalOmitted;
+      }
+      const uniqueExamples = formatExampleBlock(examples);
+      if (uniqueExamples.length > 0) {
+        console.log(`  ${dimText('Examples:')}`);
+        for (const example of uniqueExamples) {
+          console.log(`    ${example}`);
+        }
+        console.log('');
       }
       if (flags.requiredOnly && optionalOmitted) {
         console.log(`  ${extraDimText('Optional parameters hidden; run with --all-parameters to view all fields.')}`);
@@ -317,42 +369,84 @@ export async function handleList(
       console.log(summaryLine);
       console.log('');
       return;
-    }
-    const examples: string[] = [];
-    let optionalOmitted = false;
-    for (const entry of metadataEntries) {
-      const detail = printToolDetail(definition, entry, Boolean(flags.schema), flags.requiredOnly);
-      examples.push(...detail.examples);
-      optionalOmitted ||= detail.optionalOmitted;
-    }
-    const uniqueExamples = formatExampleBlock(examples);
-    if (uniqueExamples.length > 0) {
-      console.log(`  ${dimText('Examples:')}`);
-      for (const example of uniqueExamples) {
-        console.log(`    ${example}`);
+    } catch (error) {
+      await persistPreparedEphemeralServer(runtime, prepared);
+      maybeSetListExitCode([{ status: 'error' }], flags);
+      if (flags.quiet) {
+        return;
       }
-      console.log('');
+      const durationMs = Date.now() - startedAt;
+      printSingleServerHeader(definition, undefined, durationMs, transportSummary, sourcePath);
+      const message = error instanceof Error ? error.message : 'Failed to load tool list.';
+      const authCommand = buildAuthCommandHint(definition);
+      const advice = classifyListError(error, definition.name, timeoutMs, { authCommand });
+      const timedOut = message === 'Timeout' || /\btimed out\b/i.test(message);
+      console.warn(`  Tools: ${timedOut ? `<timed out after ${timeoutMs}ms>` : '<unavailable>'}`);
+      console.warn(`  Reason: ${message}`);
+      if (advice.category === 'auth' && advice.authCommand) {
+        console.warn(`  Next: run '${advice.authCommand}' to finish authentication.`);
+      }
     }
-    if (flags.requiredOnly && optionalOmitted) {
-      console.log(`  ${extraDimText('Optional parameters hidden; run with --all-parameters to view all fields.')}`);
-      console.log('');
+  } finally {
+    if (previousStdioLogMode !== undefined) {
+      setStdioLogMode(previousStdioLogMode);
     }
-    console.log(summaryLine);
-    console.log('');
-    return;
+  }
+}
+
+async function checkListServer(
+  runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
+  server: ServerDefinition,
+  timeoutMs: number
+): Promise<ListSummaryResult> {
+  const startedAt = Date.now();
+  try {
+    const tools = await withTimeout(
+      runtime.listTools(server.name, { autoAuthorize: false, allowCachedAuth: true }),
+      timeoutMs
+    );
+    return {
+      server,
+      status: 'ok' as const,
+      tools,
+      durationMs: Date.now() - startedAt,
+    };
   } catch (error) {
-    await persistPreparedEphemeralServer(runtime, prepared);
-    const durationMs = Date.now() - startedAt;
-    printSingleServerHeader(definition, undefined, durationMs, transportSummary, sourcePath);
-    const message = error instanceof Error ? error.message : 'Failed to load tool list.';
-    const authCommand = buildAuthCommandHint(definition);
-    const advice = classifyListError(error, definition.name, timeoutMs, { authCommand });
-    const timedOut = message === 'Timeout' || /\btimed out\b/i.test(message);
-    console.warn(`  Tools: ${timedOut ? `<timed out after ${timeoutMs}ms>` : '<unavailable>'}`);
-    console.warn(`  Reason: ${message}`);
-    if (advice.category === 'auth' && advice.authCommand) {
-      console.warn(`  Next: run '${advice.authCommand}' to finish authentication.`);
-    }
+    return {
+      server,
+      status: 'error' as const,
+      error,
+      durationMs: Date.now() - startedAt,
+    };
+  }
+}
+
+function maybeSetListExitCode(
+  entries: readonly { status: StatusCategory }[],
+  flags: ReturnType<typeof extractListFlags>
+): void {
+  if (!flags.exitCode) {
+    return;
+  }
+  if (entries.some((entry) => entry.status !== 'ok')) {
+    process.exitCode = 1;
+  }
+}
+
+function statusLabel(status: StatusCategory): string {
+  switch (status) {
+    case 'auth':
+      return 'auth required';
+    case 'offline':
+      return 'offline';
+    case 'http':
+      return 'http error';
+    case 'error':
+      return 'error';
+    case 'ok':
+      return 'healthy';
+    default:
+      return 'error';
   }
 }
 
@@ -383,13 +477,18 @@ export function printListHelp(): void {
     '  --schema               Show tool schemas when listing servers.',
     '  --all-parameters       Include optional parameters in tool docs.',
     '  --json                 Emit a JSON summary instead of text.',
+    '  --status               Check server status only, without tool docs.',
+    '  --exit-code            Exit 1 when any checked server is unhealthy.',
+    '  --quiet                Suppress output; implies --exit-code.',
     '  --verbose              Show all config sources for matching servers.',
     '  --sources              Include source arrays in JSON output without other verbose details.',
     '  --timeout <ms>         Override the per-server discovery timeout.',
     '',
     'Examples:',
     '  mcporter list',
+    '  mcporter list --quiet',
     '  mcporter list linear --schema',
+    '  mcporter list linear --status --json',
     '  mcporter list linear --brief',
     '  mcporter list linear.list_issues --signatures',
     '  mcporter list https://mcp.example.com/mcp',
@@ -400,7 +499,8 @@ export function printListHelp(): void {
 
 function resolveServerDefinition(
   runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
-  name: string
+  name: string,
+  options: { quiet?: boolean } = {}
 ): { definition: ServerDefinition; name: string } | undefined {
   try {
     const definition = runtime.getDefinition(name);
@@ -411,7 +511,9 @@ function resolveServerDefinition(
     }
     const suggestion = suggestServerName(runtime, name);
     if (!suggestion) {
-      console.error(error.message);
+      if (!options.quiet) {
+        console.error(error.message);
+      }
       return undefined;
     }
     const messages = renderIdentifierResolutionMessages({
@@ -420,13 +522,17 @@ function resolveServerDefinition(
       resolution: suggestion,
     });
     if (suggestion.kind === 'auto' && messages.auto) {
-      console.log(dimText(messages.auto));
-      return resolveServerDefinition(runtime, suggestion.value);
+      if (!options.quiet) {
+        console.log(dimText(messages.auto));
+      }
+      return resolveServerDefinition(runtime, suggestion.value, options);
     }
-    if (messages.suggest) {
+    if (!options.quiet && messages.suggest) {
       console.error(yellowText(messages.suggest));
     }
-    console.error(error.message);
+    if (!options.quiet) {
+      console.error(error.message);
+    }
     return undefined;
   }
 }

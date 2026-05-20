@@ -14,6 +14,9 @@ export function extractListFlags(args: string[]): {
   verbose: boolean;
   includeSources: boolean;
   brief: boolean;
+  quiet: boolean;
+  exitCode: boolean;
+  statusOnly: boolean;
 } {
   let schema = false;
   let timeoutMs: number | undefined;
@@ -21,6 +24,9 @@ export function extractListFlags(args: string[]): {
   let verbose = false;
   let includeSources = false;
   let brief = false;
+  let quiet = false;
+  let exitCode = false;
+  let statusOnly = false;
   const format = consumeOutputFormat(args, {
     defaultFormat: 'text',
     allowed: ['text', 'json'],
@@ -60,6 +66,22 @@ export function extractListFlags(args: string[]): {
       args.splice(index, 1);
       continue;
     }
+    if (token === '--quiet') {
+      quiet = true;
+      exitCode = true;
+      args.splice(index, 1);
+      continue;
+    }
+    if (token === '--exit-code') {
+      exitCode = true;
+      args.splice(index, 1);
+      continue;
+    }
+    if (token === '--status') {
+      statusOnly = true;
+      args.splice(index, 1);
+      continue;
+    }
     if (token === '--timeout') {
       timeoutMs = consumeTimeoutFlag(args, index, { flagName: '--timeout' });
       continue;
@@ -84,5 +106,32 @@ export function extractListFlags(args: string[]): {
       throw new Error(`--brief cannot be used with ${conflicts.join(', ')}`);
     }
   }
-  return { schema, timeoutMs, requiredOnly, ephemeral, format, verbose, includeSources, brief };
+  if (statusOnly) {
+    const conflicts: string[] = [];
+    if (brief) {
+      conflicts.push('--brief');
+    }
+    if (schema) {
+      conflicts.push('--schema');
+    }
+    if (!requiredOnly) {
+      conflicts.push('--all-parameters');
+    }
+    if (conflicts.length > 0) {
+      throw new Error(`--status cannot be used with ${conflicts.join(', ')}`);
+    }
+  }
+  return {
+    schema,
+    timeoutMs,
+    requiredOnly,
+    ephemeral,
+    format,
+    verbose,
+    includeSources,
+    brief,
+    quiet,
+    exitCode,
+    statusOnly,
+  };
 }
