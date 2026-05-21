@@ -115,4 +115,19 @@ describe('resolveConfigPath', () => {
     expect(resolved.path).toBe(xdgConfigPath);
     expect(resolved.explicit).toBe(false);
   });
+
+  it('falls back to the legacy home config when XDG config home has no mcporter config', () => {
+    const tempRoot = makeTempDir('mcporter-project-empty-xdg-');
+    const fakeHome = makeTempDir('mcporter-empty-xdg-home-');
+    tempDirs.push(tempRoot, fakeHome);
+    const legacyConfigPath = path.join(fakeHome, '.mcporter', 'mcporter.json');
+    fs.mkdirSync(path.dirname(legacyConfigPath), { recursive: true });
+    fs.writeFileSync(legacyConfigPath, '{"mcpServers":{}}');
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(fakeHome);
+    process.env.XDG_CONFIG_HOME = path.join(fakeHome, '.empty-xdg-config');
+
+    const resolved = resolveConfigPath(undefined, tempRoot);
+    expect(resolved.path).toBe(legacyConfigPath);
+    expect(resolved.explicit).toBe(false);
+  });
 });

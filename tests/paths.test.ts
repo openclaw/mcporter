@@ -29,6 +29,7 @@ describe('mcporter path helpers', () => {
   });
 
   it('honors absolute XDG homes by kind', () => {
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue('/home/tester');
     process.env.XDG_CONFIG_HOME = '/xdg/config';
     process.env.XDG_DATA_HOME = '/xdg/data';
     process.env.XDG_STATE_HOME = '/xdg/state';
@@ -41,6 +42,8 @@ describe('mcporter path helpers', () => {
     expect(mcporterConfigCandidates()).toEqual([
       path.join('/xdg/config', 'mcporter', 'mcporter.json'),
       path.join('/xdg/config', 'mcporter', 'mcporter.jsonc'),
+      path.join('/home/tester', '.mcporter', 'mcporter.json'),
+      path.join('/home/tester', '.mcporter', 'mcporter.jsonc'),
     ]);
   });
 

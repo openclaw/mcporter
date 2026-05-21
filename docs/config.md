@@ -67,7 +67,7 @@ mcporter now merges home and project config files by default so global servers s
 1. If you pass `--config <file>` (or set `--config` programmatically), only that file is used—no merging.
 2. If `MCPORTER_CONFIG` is set, only that file is used—no merging.
 3. Otherwise, mcporter loads both of these layers (when present):
-   - `$XDG_CONFIG_HOME/mcporter/mcporter.json[c]` when `XDG_CONFIG_HOME` is set, otherwise `~/.mcporter/mcporter.json[c]`
+   - `$XDG_CONFIG_HOME/mcporter/mcporter.json[c]` when `XDG_CONFIG_HOME` is set, falling back to `~/.mcporter/mcporter.json[c]` when no XDG mcporter config exists
    - `<root>/config/mcporter.json`
      Entries from the project file override entries with the same name from the home file. Each layer still pulls in its own imports before merging.
 
@@ -82,7 +82,7 @@ mcporter honors XDG Base Directory env vars for its own paths when they are expl
 | cache  | `XDG_CACHE_HOME`  | `$XDG_CACHE_HOME/mcporter/<server>/schema.json` | `~/.mcporter/...`    |
 | state  | `XDG_STATE_HOME`  | `$XDG_STATE_HOME/mcporter/daemon/...`           | `~/.mcporter/daemon` |
 
-Unset, empty, or relative XDG vars fall back to `~/.mcporter` for backwards compatibility. Explicit overrides still win: `--config`/`MCPORTER_CONFIG` for config files, `tokenCacheDir` for per-server OAuth/schema cache directories, and `MCPORTER_DAEMON_DIR` for daemon files.
+Unset, empty, or relative XDG vars fall back to `~/.mcporter` for backwards compatibility. For config files only, an absolute `XDG_CONFIG_HOME` is XDG-first but still probes `~/.mcporter/mcporter.json[c]` when no XDG mcporter config exists, so embedders that sandbox unrelated tools with `XDG_CONFIG_HOME` do not accidentally hide the user's registry. Explicit overrides still win: `--config`/`MCPORTER_CONFIG` for config files, `tokenCacheDir` for per-server OAuth/schema cache directories, and `MCPORTER_DAEMON_DIR` for daemon files.
 
 ## Discovery & Precedence
 

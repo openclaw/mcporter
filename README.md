@@ -489,7 +489,7 @@ mcporter reads exactly one primary config per run. The lookup order is:
 1. The path you pass via `--config` (or programmatic `configPath`).
 2. The `MCPORTER_CONFIG` environment variable (set it in your shell to apply everywhere).
 3. `<root>/config/mcporter.json` inside the current project.
-4. `$XDG_CONFIG_HOME/mcporter/mcporter.json[c]` when `XDG_CONFIG_HOME` is set, otherwise `~/.mcporter/mcporter.json[c]`, if the project file is missing.
+4. `$XDG_CONFIG_HOME/mcporter/mcporter.json[c]` when `XDG_CONFIG_HOME` is set, falling back to `~/.mcporter/mcporter.json[c]` when no XDG mcporter config exists and the project file is missing.
 
 All `mcporter config …` mutations write back to whichever file was selected by that order. To manage a system-wide config explicitly, point the CLI at it:
 
@@ -499,7 +499,7 @@ mcporter config --config ~/.mcporter/mcporter.json add global-server https://api
 
 Set `MCPORTER_CONFIG=~/.mcporter/mcporter.json` in your shell profile when you want that file to be the default everywhere (handy for `npx mcporter …` runs).
 
-mcporter honors XDG Base Directory env vars for its own files when those vars are explicitly set: `XDG_CONFIG_HOME` for home configs, `XDG_DATA_HOME` for the OAuth vault, `XDG_CACHE_HOME` for schema caches, and `XDG_STATE_HOME` for daemon/runtime state. If the matching XDG var is unset or relative, mcporter keeps the legacy `~/.mcporter` path. Existing explicit overrides still win.
+mcporter honors XDG Base Directory env vars for its own files when those vars are explicitly set: `XDG_CONFIG_HOME` for home configs, `XDG_DATA_HOME` for the OAuth vault, `XDG_CACHE_HOME` for schema caches, and `XDG_STATE_HOME` for daemon/runtime state. If the matching XDG var is unset or relative, mcporter keeps the legacy `~/.mcporter` path. Config discovery is XDG-first but still probes `~/.mcporter/mcporter.json[c]` when no XDG mcporter config exists, which keeps embedders from hiding the user registry when they set `XDG_CONFIG_HOME` for another tool. Existing explicit overrides still win.
 
 ### Tool Filtering
 

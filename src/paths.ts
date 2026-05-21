@@ -28,5 +28,10 @@ export function mcporterDir(kind: McporterPathKind): string {
 
 export function mcporterConfigCandidates(): string[] {
   const base = mcporterDir('config');
-  return [path.join(base, 'mcporter.json'), path.join(base, 'mcporter.jsonc')];
+  const candidates = [path.join(base, 'mcporter.json'), path.join(base, 'mcporter.jsonc')];
+  if (base !== legacyMcporterDir()) {
+    const legacy = legacyMcporterDir();
+    candidates.push(path.join(legacy, 'mcporter.json'), path.join(legacy, 'mcporter.jsonc'));
+  }
+  return candidates;
 }

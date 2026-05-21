@@ -145,6 +145,30 @@ describe('loadServerDefinitions with layered configs', () => {
     expect(servers.map((server) => server.name)).toEqual(['fromHome']);
   });
 
+  it('falls back to legacy home config when an embedder sets an unrelated empty XDG_CONFIG_HOME', async () => {
+    const homeDir =
+      tempHomeDir ??
+      (() => {
+        throw new Error('tempHomeDir missing');
+      })();
+    const projectDir =
+      tempProjectDir ??
+      (() => {
+        throw new Error('tempProjectDir missing');
+      })();
+
+    process.env.XDG_CONFIG_HOME = path.join(homeDir, 'embedder-private-xdg');
+    const legacyConfigDir = path.join(homeDir, '.mcporter');
+    await fs.mkdir(legacyConfigDir, { recursive: true });
+    await fs.writeFile(
+      path.join(legacyConfigDir, 'mcporter.json'),
+      JSON.stringify({ mcpServers: { qmd: { command: 'node', args: ['qmd-server.js'] } } }, null, 2)
+    );
+
+    const servers = await loadServerDefinitions({ rootDir: projectDir });
+    expect(servers.map((server) => server.name)).toEqual(['qmd']);
+  });
+
   it('uses explicit config path without merging when set', async () => {
     const homeDir =
       tempHomeDir ??

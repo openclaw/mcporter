@@ -53,7 +53,7 @@ export async function handleImportCommand(options: ConfigCliOptions, args: strin
     }
   }
   if (flags.copy) {
-    const lockPath = resolveConfigPath(options.loadOptions.configPath, rootDir).path;
+    const lockPath = resolveImportCopyTarget(options.loadOptions.configPath, rootDir);
     let configPath = lockPath;
     await withFileLock(lockPath, async () => {
       const loaded = await loadOrCreateConfig({ ...options.loadOptions, configPath: lockPath });
@@ -69,6 +69,13 @@ export async function handleImportCommand(options: ConfigCliOptions, args: strin
     });
     console.log(`Copied ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'} to ${configPath}`);
   }
+}
+
+function resolveImportCopyTarget(configPath: string | undefined, rootDir: string): string {
+  if (configPath || process.env.MCPORTER_CONFIG) {
+    return resolveConfigPath(configPath, rootDir).path;
+  }
+  return path.resolve(rootDir, 'config', 'mcporter.json');
 }
 
 function extractImportFlags(args: string[]): ImportFlags {
