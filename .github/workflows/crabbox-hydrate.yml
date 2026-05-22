@@ -4,39 +4,39 @@ on:
   workflow_dispatch:
     inputs:
       crabbox_id:
-        description: "Crabbox lease ID"
+        description: 'Crabbox lease ID'
         required: true
         type: string
       ref:
-        description: "Git ref to hydrate"
+        description: 'Git ref to hydrate'
         required: false
         type: string
       crabbox_runner_label:
-        description: "Dynamic Crabbox runner label"
+        description: 'Dynamic Crabbox runner label'
         required: true
         type: string
       crabbox_job:
-        description: "Hydration job identifier expected by Crabbox"
+        description: 'Hydration job identifier expected by Crabbox'
         required: false
-        default: "hydrate"
+        default: 'hydrate'
         type: string
       crabbox_keep_alive_minutes:
-        description: "Minutes to keep the hydrated job alive"
+        description: 'Minutes to keep the hydrated job alive'
         required: false
-        default: "90"
+        default: '90'
         type: string
 
 permissions:
   contents: read
 
 env:
-  NODE_VERSION: "24"
-  PNPM_VERSION: "10.33.2"
+  NODE_VERSION: '24'
+  PNPM_VERSION: '10.33.2'
 
 jobs:
   hydrate:
     name: hydrate
-    runs-on: [self-hosted, crabbox, openclaw, mcporter, "${{ inputs.crabbox_runner_label }}"]
+    runs-on: [self-hosted, crabbox, openclaw, mcporter, '${{ inputs.crabbox_runner_label }}']
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6

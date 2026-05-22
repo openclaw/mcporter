@@ -50,4 +50,4 @@ env:
     - NPM_CONFIG_*
 ssh:
   user: crabbox
-  port: "2222"
+  port: '2222'
