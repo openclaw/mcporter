@@ -61,7 +61,13 @@
     "docs:site": "node scripts/build-docs-site.mjs",
     "generate:schema": "tsx scripts/generate-json-schema.ts",
     "mcporter:list": "pnpm exec tsx src/cli.ts list",
-    "mcporter:call": "pnpm exec tsx src/cli.ts call"
+    "mcporter:call": "pnpm exec tsx src/cli.ts call",
+    "check:changed": "pnpm run check",
+    "test:changed": "pnpm run test",
+    "crabbox:hydrate": "crabbox actions hydrate",
+    "crabbox:run": "crabbox run",
+    "crabbox:stop": "crabbox stop",
+    "crabbox:warmup": "crabbox warmup"
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",
