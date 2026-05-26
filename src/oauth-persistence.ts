@@ -458,9 +458,7 @@ export async function readCachedAccessToken(
     if (unrecoverableCode) {
       const latestTokens = await persistence.readTokens();
       if (cachedTokensChanged(tokens, latestTokens)) {
-        logger?.debug?.(
-          `Kept cached OAuth token for '${definition.name}' because another refresh updated it first.`
-        );
+        logger?.debug?.(`Kept cached OAuth token for '${definition.name}' because another refresh updated it first.`);
         return latestTokens?.access_token;
       }
       const scope = unrecoverableCode === 'invalid_grant' ? 'tokens' : 'all';

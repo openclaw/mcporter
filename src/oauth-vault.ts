@@ -124,7 +124,7 @@ function findSameUrlCredentials(
         (entry.tokens || entry.clientInfo)
     )
     .map(([key, entry]) => ({ key, entry }))
-    .sort((a, b) => Date.parse(b.entry.updatedAt) - Date.parse(a.entry.updatedAt));
+    .toSorted((a, b) => Date.parse(b.entry.updatedAt) - Date.parse(a.entry.updatedAt));
   const requiredClientId = definition.oauthClientId ?? clientIdFromEntry(exact);
   if (requiredClientId) {
     const tokenSource = candidates.find(
@@ -168,9 +168,9 @@ function legacyOAuthRenameKeys(vault: VaultFile, definition: ServerDefinition, e
 function isVaultEntry(entry: unknown): entry is VaultEntry {
   return Boolean(
     entry &&
-      typeof entry === 'object' &&
-      typeof (entry as VaultEntry).serverName === 'string' &&
-      typeof (entry as VaultEntry).updatedAt === 'string'
+    typeof entry === 'object' &&
+    typeof (entry as VaultEntry).serverName === 'string' &&
+    typeof (entry as VaultEntry).updatedAt === 'string'
   );
 }
 
@@ -193,7 +193,8 @@ export async function saveVaultEntry(definition: ServerDefinition, patch: Partia
     vault.entries[key] = {
       ...current,
       ...patch,
-      clientInfo: patch.clientInfo ?? current.clientInfo ?? (patch.tokens && !current.tokens ? fallback.clientInfo : undefined),
+      clientInfo:
+        patch.clientInfo ?? current.clientInfo ?? (patch.tokens && !current.tokens ? fallback.clientInfo : undefined),
       updatedAt: new Date().toISOString(),
     };
     await writeVault(vault);
