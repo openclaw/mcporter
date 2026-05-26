@@ -27,6 +27,12 @@ interface VaultReadState {
   needsRepair: boolean;
 }
 
+interface SameUrlCredentials {
+  tokens?: OAuthTokens;
+  clientInfo?: OAuthClientInformationMixed;
+  sourceKeys: VaultKey[];
+}
+
 export function getOAuthVaultPath(): string {
   return path.join(mcporterDir('data'), 'credentials.json');
 }
@@ -76,14 +82,110 @@ export function vaultKeyForDefinition(definition: ServerDefinition): VaultKey {
 
 export async function loadVaultEntry(definition: ServerDefinition): Promise<VaultEntry | undefined> {
   const vault = await readVault();
-  return vault.entries[vaultKeyForDefinition(definition)];
+  const key = vaultKeyForDefinition(definition);
+  const exact = isVaultEntry(vault.entries[key]) ? vault.entries[key] : undefined;
+  const fallback = findSameUrlCredentials(vault, definition, key, exact);
+  if (!fallback.tokens && !fallback.clientInfo) {
+    return exact;
+  }
+  if (!exact) {
+    return {
+      serverName: definition.name,
+      serverUrl: definition.command.kind === 'http' ? definition.command.url.toString() : undefined,
+      updatedAt: new Date().toISOString(),
+      tokens: fallback.tokens,
+      clientInfo: fallback.clientInfo,
+    };
+  }
+  return {
+    ...exact,
+    tokens: exact.tokens ?? fallback.tokens,
+    clientInfo: exact.clientInfo ?? (exact.tokens ? undefined : fallback.clientInfo),
+  };
+}
+
+function findSameUrlCredentials(
+  vault: VaultFile,
+  definition: ServerDefinition,
+  exactKey: VaultKey,
+  exact: VaultEntry | undefined
+): SameUrlCredentials {
+  if (definition.command.kind !== 'http') {
+    return { sourceKeys: [] };
+  }
+  const serverUrl = definition.command.url.toString();
+  const candidates = Object.entries(vault.entries)
+    .filter(
+      ([key, entry]) =>
+        key !== exactKey &&
+        isVaultEntry(entry) &&
+        entry.serverUrl === serverUrl &&
+        isLegacyOAuthRenameCandidate(definition, entry) &&
+        (entry.tokens || entry.clientInfo)
+    )
+    .map(([key, entry]) => ({ key, entry }))
+    .sort((a, b) => Date.parse(b.entry.updatedAt) - Date.parse(a.entry.updatedAt));
+  const requiredClientId = definition.oauthClientId ?? clientIdFromEntry(exact);
+  if (requiredClientId) {
+    const tokenSource = candidates.find(
+      ({ entry }) => (entry.tokens || entry.clientInfo) && clientIdFromEntry(entry) === requiredClientId
+    );
+    return {
+      tokens: tokenSource?.entry.tokens,
+      clientInfo: exact?.clientInfo ? undefined : tokenSource?.entry.clientInfo,
+      sourceKeys: tokenSource ? [tokenSource.key] : [],
+    };
+  }
+
+  const source = candidates.find(({ entry }) => entry.clientInfo && clientIdFromEntry(entry));
+  return {
+    tokens: source?.entry.tokens,
+    clientInfo: source?.entry.clientInfo,
+    sourceKeys: source ? [source.key] : [],
+  };
+}
+
+function isLegacyOAuthRenameCandidate(definition: ServerDefinition, entry: VaultEntry): boolean {
+  return entry.serverName === `${definition.name}-oauth`;
+}
+
+function legacyOAuthRenameKeys(vault: VaultFile, definition: ServerDefinition, exactKey: VaultKey): VaultKey[] {
+  if (definition.command.kind !== 'http') {
+    return [];
+  }
+  const serverUrl = definition.command.url.toString();
+  return Object.entries(vault.entries)
+    .filter(
+      ([key, entry]) =>
+        key !== exactKey &&
+        isVaultEntry(entry) &&
+        entry.serverUrl === serverUrl &&
+        isLegacyOAuthRenameCandidate(definition, entry)
+    )
+    .map(([key]) => key);
+}
+
+function isVaultEntry(entry: unknown): entry is VaultEntry {
+  return Boolean(
+    entry &&
+      typeof entry === 'object' &&
+      typeof (entry as VaultEntry).serverName === 'string' &&
+      typeof (entry as VaultEntry).updatedAt === 'string'
+  );
+}
+
+function clientIdFromEntry(entry: VaultEntry | undefined): string | undefined {
+  const clientId = entry?.clientInfo?.client_id;
+  return typeof clientId === 'string' && clientId.length > 0 ? clientId : undefined;
 }
 
 export async function saveVaultEntry(definition: ServerDefinition, patch: Partial<VaultEntry>): Promise<void> {
   await withFileLock(getOAuthVaultPath(), async () => {
     const vault = await readVault();
     const key = vaultKeyForDefinition(definition);
-    const current = vault.entries[key] ?? {
+    const existing = isVaultEntry(vault.entries[key]) ? vault.entries[key] : undefined;
+    const fallback = findSameUrlCredentials(vault, definition, key, existing);
+    const current = existing ?? {
       serverName: definition.name,
       serverUrl: definition.command.kind === 'http' ? definition.command.url.toString() : undefined,
       updatedAt: new Date().toISOString(),
@@ -91,6 +193,7 @@ export async function saveVaultEntry(definition: ServerDefinition, patch: Partia
     vault.entries[key] = {
       ...current,
       ...patch,
+      clientInfo: patch.clientInfo ?? current.clientInfo ?? (patch.tokens && !current.tokens ? fallback.clientInfo : undefined),
       updatedAt: new Date().toISOString(),
     };
     await writeVault(vault);
@@ -104,8 +207,10 @@ export async function clearVaultEntry(
   const key = vaultKeyForDefinition(definition);
   await withFileLock(getOAuthVaultPath(), async () => {
     const { vault, needsRepair } = await readVaultState();
-    const existing = vault.entries[key];
-    if (!existing) {
+    const existing = isVaultEntry(vault.entries[key]) ? vault.entries[key] : undefined;
+    const fallback = findSameUrlCredentials(vault, definition, key, existing);
+    const inheritedKeys = scope === 'all' ? legacyOAuthRenameKeys(vault, definition, key) : fallback.sourceKeys;
+    if (!existing && inheritedKeys.length === 0) {
       if (needsRepair) {
         await writeVault(vault);
       }
@@ -113,7 +218,7 @@ export async function clearVaultEntry(
     }
     if (scope === 'all') {
       delete vault.entries[key];
-    } else {
+    } else if (existing) {
       const updated: VaultEntry = { ...existing };
       if (scope === 'tokens') {
         delete updated.tokens;
@@ -129,6 +234,25 @@ export async function clearVaultEntry(
       }
       updated.updatedAt = new Date().toISOString();
       vault.entries[key] = updated;
+    }
+    for (const fallbackKey of inheritedKeys) {
+      const inherited = vault.entries[fallbackKey];
+      if (!inherited) {
+        continue;
+      }
+      if (scope === 'all') {
+        delete vault.entries[fallbackKey];
+        continue;
+      }
+      const updated: VaultEntry = { ...inherited };
+      if (scope === 'tokens') {
+        delete updated.tokens;
+      }
+      if (scope === 'client') {
+        delete updated.clientInfo;
+      }
+      updated.updatedAt = new Date().toISOString();
+      vault.entries[fallbackKey] = updated;
     }
     await writeVault(vault);
   });

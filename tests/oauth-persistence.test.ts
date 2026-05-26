@@ -157,6 +157,338 @@ describe('oauth persistence', () => {
     }
   });
 
+  it('reuses same-url vault credentials after an OAuth server is renamed', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-vault-rename-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const oldDefinition = mkDef('cloudflare-oauth');
+    const currentDefinition = mkDef('cloudflare');
+    await saveVaultEntry(oldDefinition, {
+      tokens: {
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-123',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      } as never,
+      clientInfo: {
+        client_id: 'client-123',
+        redirect_uris: ['http://127.0.0.1:44444/callback'],
+      },
+    });
+    await saveVaultEntry(currentDefinition, {
+      clientInfo: {
+        client_id: 'client-123',
+        redirect_uris: ['http://127.0.0.1:55555/callback'],
+      },
+    });
+
+    authMocks.discoverOAuthServerInfo.mockResolvedValue({
+      authorizationServerUrl: 'https://auth.example.com',
+      authorizationServerMetadata: { token_endpoint: 'https://auth.example.com/token' },
+      resourceMetadata: { resource: 'https://example.com/mcp' },
+    });
+    authMocks.refreshAuthorization.mockResolvedValue({
+      access_token: 'fresh-token',
+      token_type: 'Bearer',
+      refresh_token: 'refresh-456',
+      expires_in: 3600,
+    });
+
+    await expect(readCachedAccessToken(currentDefinition)).resolves.toBe('fresh-token');
+
+    expect(authMocks.refreshAuthorization).toHaveBeenCalledWith(
+      'https://auth.example.com',
+      expect.objectContaining({
+        clientInformation: expect.objectContaining({ client_id: 'client-123' }),
+        refreshToken: 'refresh-123',
+        resource: new URL('https://example.com/mcp'),
+      })
+    );
+    await expect(loadVaultEntry(currentDefinition)).resolves.toMatchObject({
+      serverName: 'cloudflare',
+      tokens: { access_token: 'fresh-token', refresh_token: 'refresh-456' },
+      clientInfo: { client_id: 'client-123' },
+    });
+  });
+
+  it('materializes inherited OAuth client info when renamed credentials refresh', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-vault-rename-materialize-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const oldDefinition = mkDef('cloudflare-oauth');
+    const currentDefinition = mkDef('cloudflare');
+    await saveVaultEntry(oldDefinition, {
+      tokens: {
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-123',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      } as never,
+      clientInfo: { client_id: 'client-123' },
+    });
+
+    authMocks.discoverOAuthServerInfo.mockResolvedValue({
+      authorizationServerUrl: 'https://auth.example.com',
+      authorizationServerMetadata: { token_endpoint: 'https://auth.example.com/token' },
+    });
+    authMocks.refreshAuthorization.mockResolvedValue({
+      access_token: 'fresh-token',
+      token_type: 'Bearer',
+      refresh_token: 'refresh-456',
+      expires_in: 3600,
+    });
+
+    await expect(readCachedAccessToken(currentDefinition)).resolves.toBe('fresh-token');
+
+    await expect(loadVaultEntry(currentDefinition)).resolves.toMatchObject({
+      serverName: 'cloudflare',
+      tokens: { access_token: 'fresh-token', refresh_token: 'refresh-456' },
+      clientInfo: { client_id: 'client-123' },
+    });
+  });
+
+  it('materializes inherited OAuth client info into partial renamed vault entries', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-vault-rename-partial-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const oldDefinition = mkDef('cloudflare-oauth');
+    const currentDefinition = mkDef('cloudflare');
+    await saveVaultEntry(oldDefinition, {
+      tokens: {
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-123',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      } as never,
+      clientInfo: { client_id: 'client-123' },
+    });
+    await saveVaultEntry(currentDefinition, { state: 'oauth-state' });
+
+    authMocks.discoverOAuthServerInfo.mockResolvedValue({ authorizationServerUrl: 'https://auth.example.com' });
+    authMocks.refreshAuthorization.mockResolvedValue({
+      access_token: 'fresh-token',
+      token_type: 'Bearer',
+      refresh_token: 'refresh-456',
+      expires_in: 3600,
+    });
+
+    await expect(readCachedAccessToken(currentDefinition)).resolves.toBe('fresh-token');
+
+    await expect(loadVaultEntry(currentDefinition)).resolves.toMatchObject({
+      state: 'oauth-state',
+      tokens: { access_token: 'fresh-token' },
+      clientInfo: { client_id: 'client-123' },
+    });
+  });
+
+  it('does not combine same-url OAuth tokens with a different dynamic client', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-vault-client-mismatch-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const oldDefinition = mkDef('cloudflare-oauth');
+    const currentDefinition = mkDef('cloudflare');
+    await saveVaultEntry(oldDefinition, {
+      tokens: { access_token: 'old-token', token_type: 'Bearer', refresh_token: 'refresh-123' },
+      clientInfo: { client_id: 'old-client' },
+    });
+    await saveVaultEntry(currentDefinition, {
+      clientInfo: { client_id: 'current-client' },
+    });
+
+    await expect(loadVaultEntry(currentDefinition)).resolves.toMatchObject({
+      serverName: 'cloudflare',
+      clientInfo: { client_id: 'current-client' },
+    });
+    expect((await loadVaultEntry(currentDefinition))?.tokens).toBeUndefined();
+    await expect(readCachedAccessToken(currentDefinition)).resolves.toBeUndefined();
+    expect(authMocks.refreshAuthorization).not.toHaveBeenCalled();
+  });
+
+  it('does not inherit same-url OAuth tokens for a different configured client id', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-vault-static-client-mismatch-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    await saveVaultEntry(mkDef('cloudflare-oauth'), {
+      tokens: { access_token: 'old-token', token_type: 'Bearer', refresh_token: 'refresh-123' },
+      clientInfo: { client_id: 'old-client' },
+    });
+
+    const currentDefinition: ServerDefinition = {
+      ...mkDef('cloudflare'),
+      oauthClientId: 'current-client',
+    };
+    await expect(loadVaultEntry(currentDefinition)).resolves.toBeUndefined();
+    await expect(readCachedAccessToken(currentDefinition)).resolves.toBeUndefined();
+    expect(authMocks.refreshAuthorization).not.toHaveBeenCalled();
+  });
+
+  it('uses one same-url vault entry for inherited OAuth tokens and client info', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-vault-single-source-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    await saveVaultEntry(mkDef('cloudflare-oauth'), {
+      tokens: { access_token: 'old-token', token_type: 'Bearer', refresh_token: 'refresh-old' },
+      clientInfo: { client_id: 'old-client' },
+    });
+    await saveVaultEntry(mkDef('cloudflare-newer-client-only'), {
+      clientInfo: { client_id: 'newer-client' },
+    });
+
+    await expect(loadVaultEntry(mkDef('cloudflare'))).resolves.toMatchObject({
+      serverName: 'cloudflare',
+      tokens: { access_token: 'old-token' },
+      clientInfo: { client_id: 'old-client' },
+    });
+  });
+
+  it('does not inherit unrelated same-url OAuth vault credentials', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-vault-unrelated-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    await saveVaultEntry(mkDef('cloudflare-other'), {
+      tokens: { access_token: 'other-token', token_type: 'Bearer', refresh_token: 'refresh-other' },
+      clientInfo: { client_id: 'other-client' },
+    });
+
+    await expect(loadVaultEntry(mkDef('cloudflare'))).resolves.toBeUndefined();
+  });
+
+  it('does not add same-url client info to an exact token-only vault entry', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-vault-token-only-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const currentDefinition = mkDef('cloudflare');
+    await saveVaultEntry(currentDefinition, {
+      tokens: { access_token: 'current-token', token_type: 'Bearer', refresh_token: 'refresh-current' },
+    });
+    await saveVaultEntry(mkDef('cloudflare-other'), {
+      tokens: { access_token: 'other-token', token_type: 'Bearer', refresh_token: 'refresh-other' },
+      clientInfo: { client_id: 'other-client' },
+    });
+
+    const entry = await loadVaultEntry(currentDefinition);
+    expect(entry?.tokens?.access_token).toBe('current-token');
+    expect(entry?.clientInfo).toBeUndefined();
+  });
+
+  it('does not materialize inherited client info when exact tokens already exist', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-vault-token-save-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const currentDefinition = mkDef('cloudflare');
+    await saveVaultEntry(currentDefinition, {
+      tokens: { access_token: 'current-token', token_type: 'Bearer', refresh_token: 'refresh-current' },
+    });
+    await saveVaultEntry(mkDef('cloudflare-oauth'), {
+      tokens: { access_token: 'old-token', token_type: 'Bearer', refresh_token: 'refresh-old' },
+      clientInfo: { client_id: 'old-client' },
+    });
+    await saveVaultEntry(currentDefinition, {
+      tokens: { access_token: 'new-current-token', token_type: 'Bearer', refresh_token: 'refresh-new-current' },
+    });
+
+    const entry = await loadVaultEntry(currentDefinition);
+    expect(entry?.tokens?.access_token).toBe('new-current-token');
+    expect(entry?.clientInfo).toBeUndefined();
+  });
+
+  it('clears inherited same-url OAuth vault credentials', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-vault-clear-inherited-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const oldDefinition = mkDef('cloudflare-oauth');
+    const currentDefinition = mkDef('cloudflare');
+    await saveVaultEntry(oldDefinition, {
+      tokens: { access_token: 'old-token', token_type: 'Bearer', refresh_token: 'refresh-123' },
+      clientInfo: { client_id: 'old-client' },
+    });
+
+    await expect(loadVaultEntry(currentDefinition)).resolves.toMatchObject({
+      tokens: { access_token: 'old-token' },
+      clientInfo: { client_id: 'old-client' },
+    });
+
+    await clearVaultEntry(currentDefinition, 'all');
+
+    await expect(loadVaultEntry(currentDefinition)).resolves.toBeUndefined();
+    await expect(loadVaultEntry(oldDefinition)).resolves.toBeUndefined();
+  });
+
+  it('keeps inherited OAuth client info reachable after token-only invalidation', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-vault-clear-inherited-tokens-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const oldDefinition = mkDef('cloudflare-oauth');
+    const currentDefinition = mkDef('cloudflare');
+    await saveVaultEntry(oldDefinition, {
+      tokens: { access_token: 'old-token', token_type: 'Bearer', refresh_token: 'refresh-123' },
+      clientInfo: { client_id: 'old-client' },
+    });
+
+    await clearVaultEntry(currentDefinition, 'tokens');
+
+    const entry = await loadVaultEntry(currentDefinition);
+    expect(entry?.tokens).toBeUndefined();
+    expect(entry?.clientInfo).toEqual(expect.objectContaining({ client_id: 'old-client' }));
+  });
+
+  it('clears legacy renamed credentials blocked by an exact client mismatch', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-vault-clear-blocked-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const oldDefinition = mkDef('cloudflare-oauth');
+    const currentDefinition = mkDef('cloudflare');
+    await saveVaultEntry(oldDefinition, {
+      tokens: { access_token: 'old-token', token_type: 'Bearer', refresh_token: 'refresh-123' },
+      clientInfo: { client_id: 'old-client' },
+    });
+    await saveVaultEntry(currentDefinition, {
+      tokens: { access_token: 'current-token', token_type: 'Bearer', refresh_token: 'refresh-456' },
+      clientInfo: { client_id: 'current-client' },
+    });
+
+    await clearVaultEntry(currentDefinition, 'all');
+
+    await expect(loadVaultEntry(currentDefinition)).resolves.toBeUndefined();
+    await expect(loadVaultEntry(oldDefinition)).resolves.toBeUndefined();
+  });
+
   it('does not create a vault file when clearing a missing vault entry', async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-vault-clear-'));
     tempRoots.push(tmp);
@@ -186,6 +518,33 @@ describe('oauth persistence', () => {
 
     expect(await readJsonFile(vaultPath)).toEqual({ version: 1, entries: {} });
     await expect(fs.access(`${vaultPath}.lock`)).rejects.toThrow();
+  });
+
+  it('skips malformed unrelated vault entries during same-url fallback scans', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-vault-malformed-entry-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const definition = mkDef('cloudflare');
+    const vaultPath = path.join(tmp, 'data', 'mcporter', 'credentials.json');
+    await fs.mkdir(path.dirname(vaultPath), { recursive: true });
+    await fs.writeFile(
+      vaultPath,
+      JSON.stringify({
+        version: 1,
+        entries: {
+          bad: null,
+          malformed: { serverName: 'cloudflare-oauth', serverUrl: 'https://example.com/mcp' },
+        },
+      }),
+      'utf8'
+    );
+
+    await expect(loadVaultEntry(definition)).resolves.toBeUndefined();
+    await expect(saveVaultEntry(definition, { state: 'ok' })).resolves.toBeUndefined();
+    await expect(clearVaultEntry(definition, 'all')).resolves.toBeUndefined();
   });
 
   it.runIf(process.platform !== 'win32')('surfaces unreadable vault files', async () => {
@@ -343,7 +702,7 @@ describe('oauth persistence', () => {
     expect(options).not.toHaveProperty('resource');
   });
 
-  it('keeps the original cached OAuth token when silent refresh fails', async () => {
+  it('clears cached OAuth tokens when silent refresh fails permanently', async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-refresh-fail-'));
     tempRoots.push(tmp);
     homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
@@ -363,9 +722,146 @@ describe('oauth persistence', () => {
     await fs.writeFile(path.join(cacheDir, 'client.json'), JSON.stringify({ client_id: 'client-123' }));
 
     authMocks.discoverOAuthServerInfo.mockResolvedValue({ authorizationServerUrl: 'https://auth.example.com' });
-    authMocks.refreshAuthorization.mockRejectedValue(new Error('invalid_grant'));
+    authMocks.refreshAuthorization.mockRejectedValue(
+      Object.assign(new Error('Refresh token expired'), { errorCode: 'invalid_grant' })
+    );
 
     const definition = mkDef('refresh-fail-service', cacheDir);
+    await expect(readCachedAccessToken(definition)).resolves.toBeUndefined();
+
+    const persisted = (await readJsonFile(path.join(cacheDir, 'tokens.json'))) as
+      | { access_token?: string; refresh_token?: string }
+      | undefined;
+    expect(persisted).toBeUndefined();
+    await expect(readJsonFile(path.join(cacheDir, 'client.json'))).resolves.toEqual({ client_id: 'client-123' });
+  });
+
+  it('keeps newer cached OAuth tokens when a concurrent refresh wins first', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-refresh-race-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+
+    const cacheDir = path.join(tmp, 'cache');
+    const definition = mkDef('refresh-race-service', cacheDir);
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-old',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      })
+    );
+    await fs.writeFile(path.join(cacheDir, 'client.json'), JSON.stringify({ client_id: 'client-123' }));
+
+    authMocks.discoverOAuthServerInfo.mockResolvedValue({ authorizationServerUrl: 'https://auth.example.com' });
+    authMocks.refreshAuthorization.mockImplementation(async () => {
+      const persistence = await buildOAuthPersistence(definition);
+      await persistence.saveTokens({
+        access_token: 'fresh-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-old',
+        expires_in: 3600,
+      });
+      throw Object.assign(new Error('Refresh token expired'), { errorCode: 'invalid_grant' });
+    });
+
+    await expect(readCachedAccessToken(definition)).resolves.toBe('fresh-token');
+    await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toEqual(
+      expect.objectContaining({ access_token: 'fresh-token', refresh_token: 'refresh-old' })
+    );
+  });
+
+  it('clears migrated legacy OAuth tokens when silent refresh fails permanently', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-legacy-refresh-fail-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+
+    const definition = mkDef('legacy-refresh-fail-service');
+    const legacyDir = path.join(tmp, '.mcporter', definition.name);
+    await fs.mkdir(legacyDir, { recursive: true });
+    await fs.writeFile(
+      path.join(legacyDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-123',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      })
+    );
+    await fs.writeFile(path.join(legacyDir, 'client.json'), JSON.stringify({ client_id: 'client-123' }));
+
+    authMocks.discoverOAuthServerInfo.mockResolvedValue({ authorizationServerUrl: 'https://auth.example.com' });
+    authMocks.refreshAuthorization.mockRejectedValue(
+      Object.assign(new Error('Refresh token expired'), { errorCode: 'invalid_grant' })
+    );
+
+    await expect(readCachedAccessToken(definition)).resolves.toBeUndefined();
+    await expect(readJsonFile(path.join(legacyDir, 'tokens.json'))).resolves.toBeUndefined();
+    await expect(readJsonFile(path.join(legacyDir, 'client.json'))).resolves.toEqual({ client_id: 'client-123' });
+
+    authMocks.refreshAuthorization.mockClear();
+    await expect(readCachedAccessToken(definition)).resolves.toBeUndefined();
+    expect(authMocks.refreshAuthorization).not.toHaveBeenCalled();
+  });
+
+  it('clears cached OAuth client registration when refresh reports an invalid client', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-refresh-invalid-client-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+
+    const cacheDir = path.join(tmp, 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-123',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      })
+    );
+    await fs.writeFile(path.join(cacheDir, 'client.json'), JSON.stringify({ client_id: 'stale-client' }));
+
+    authMocks.discoverOAuthServerInfo.mockResolvedValue({ authorizationServerUrl: 'https://auth.example.com' });
+    authMocks.refreshAuthorization.mockRejectedValue(
+      Object.assign(new Error('Client ID mismatch'), { errorCode: 'invalid_client' })
+    );
+
+    const definition = mkDef('refresh-invalid-client-service', cacheDir);
+    await expect(readCachedAccessToken(definition)).resolves.toBeUndefined();
+
+    await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toBeUndefined();
+    await expect(readJsonFile(path.join(cacheDir, 'client.json'))).resolves.toBeUndefined();
+  });
+
+  it('keeps cached OAuth tokens when silent refresh fails transiently', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-refresh-transient-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+
+    const cacheDir = path.join(tmp, 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-123',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      })
+    );
+    await fs.writeFile(path.join(cacheDir, 'client.json'), JSON.stringify({ client_id: 'client-123' }));
+
+    authMocks.discoverOAuthServerInfo.mockResolvedValue({ authorizationServerUrl: 'https://auth.example.com' });
+    authMocks.refreshAuthorization.mockRejectedValue(new Error('network timeout'));
+
+    const definition = mkDef('refresh-transient-service', cacheDir);
     await expect(readCachedAccessToken(definition)).resolves.toBe('expired-token');
 
     const persisted = (await readJsonFile(path.join(cacheDir, 'tokens.json'))) as
@@ -377,6 +873,37 @@ describe('oauth persistence', () => {
         refresh_token: 'refresh-123',
       })
     );
+  });
+
+  it('keeps cached OAuth tokens when discovery fails with an invalid-client-like message', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-discovery-message-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+
+    const cacheDir = path.join(tmp, 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-123',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      })
+    );
+    await fs.writeFile(path.join(cacheDir, 'client.json'), JSON.stringify({ client_id: 'client-123' }));
+
+    authMocks.discoverOAuthServerInfo.mockRejectedValue(new Error('invalid_client certificate chain'));
+
+    const definition = mkDef('discovery-message-service', cacheDir);
+    await expect(readCachedAccessToken(definition)).resolves.toBe('expired-token');
+
+    await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toEqual(
+      expect.objectContaining({ access_token: 'expired-token' })
+    );
+    await expect(readJsonFile(path.join(cacheDir, 'client.json'))).resolves.toEqual({ client_id: 'client-123' });
+    expect(authMocks.refreshAuthorization).not.toHaveBeenCalled();
   });
 
   it('refreshes explicit refreshable bearer tokens through the configured token endpoint', async () => {

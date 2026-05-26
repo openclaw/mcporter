@@ -2,7 +2,9 @@
 
 ## [0.11.2] - Unreleased
 
-- Nothing yet.
+### OAuth
+
+- Recover cleanly from renamed OAuth server entries, invalid refresh tokens, and stale dynamic client registrations without reusing unrelated same-URL credentials.
 
 ## [0.11.1] - 2026-05-14
 

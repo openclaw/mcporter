@@ -62,6 +62,16 @@ function tokenExpirySeconds(tokens: OAuthTokens): number | undefined {
   return undefined;
 }
 
+function cachedTokensChanged(original: OAuthTokens, current: OAuthTokens | undefined): boolean {
+  if (!current || typeof current.access_token !== 'string' || current.access_token.trim().length === 0) {
+    return false;
+  }
+  if (typeof original.refresh_token === 'string' && typeof current.refresh_token === 'string') {
+    return current.refresh_token !== original.refresh_token || current.access_token !== original.access_token;
+  }
+  return current.access_token !== original.access_token;
+}
+
 function shouldRefreshCachedToken(tokens: OAuthTokens, skewSeconds = TOKEN_EXPIRY_SKEW_SECONDS): boolean {
   const expiresAt = tokenExpirySeconds(tokens);
   if (expiresAt !== undefined) {
@@ -84,6 +94,37 @@ function resourceForRefresh(
     );
   }
   return new URL(resourceMetadata.resource);
+}
+
+function unrecoverableOAuthRefreshCode(error: unknown): string | undefined {
+  const errorCode = oauthErrorCode(error);
+  if (errorCode && ['invalid_client', 'invalid_grant', 'unauthorized_client'].includes(errorCode)) {
+    return errorCode;
+  }
+  return undefined;
+}
+
+function oauthErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object') {
+    return undefined;
+  }
+  const { errorCode, name } = error as { errorCode?: unknown; name?: unknown };
+  if (typeof errorCode === 'string' && errorCode.length > 0) {
+    return errorCode.toLowerCase();
+  }
+  if (typeof name === 'string') {
+    const normalized = name.toLowerCase();
+    if (normalized === 'invalidclienterror') {
+      return 'invalid_client';
+    }
+    if (normalized === 'invalidgranterror') {
+      return 'invalid_grant';
+    }
+    if (normalized === 'unauthorizedclienterror') {
+      return 'unauthorized_client';
+    }
+  }
+  return undefined;
 }
 
 class DirectoryPersistence implements OAuthPersistence {
@@ -344,7 +385,7 @@ export async function clearOAuthCaches(
     await legacy.clear(scope);
   }
 
-  if (definition.tokenCacheDir) {
+  if (definition.tokenCacheDir && scope === 'all') {
     await fs.rm(definition.tokenCacheDir, { recursive: true, force: true });
   }
 
@@ -413,6 +454,24 @@ export async function readCachedAccessToken(
         error instanceof Error ? error.message : String(error)
       }`
     );
+    const unrecoverableCode = unrecoverableOAuthRefreshCode(error);
+    if (unrecoverableCode) {
+      const latestTokens = await persistence.readTokens();
+      if (cachedTokensChanged(tokens, latestTokens)) {
+        logger?.debug?.(
+          `Kept cached OAuth token for '${definition.name}' because another refresh updated it first.`
+        );
+        return latestTokens?.access_token;
+      }
+      const scope = unrecoverableCode === 'invalid_grant' ? 'tokens' : 'all';
+      await clearOAuthCaches(definition, logger, scope);
+      logger?.debug?.(
+        `Cleared cached OAuth ${scope === 'all' ? 'credentials' : 'token'} for '${
+          definition.name
+        }' after unrecoverable refresh failure.`
+      );
+      return undefined;
+    }
     return tokens.access_token;
   }
 }
