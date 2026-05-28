@@ -109,5 +109,13 @@
   "engines": {
     "node": ">=24"
   },
-  "packageManager": "pnpm@10.33.2"
+  "packageManager": "pnpm@10.33.2",
+  "pnpm": {
+    "overrides": {
+      "body-parser": "2.2.1",
+      "ip-address": "10.1.1",
+      "qs": "6.15.2",
+      "vite": "8.0.13"
+    }
+  }
 }
