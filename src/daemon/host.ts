@@ -1,8 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import { loadDaemonConfig, type ServerDefinition } from '../config.js';
-import { writeJsonFile } from '../fs-json.js';
+import { withFileLock, writeJsonFile } from '../fs-json.js';
 import { isKeepAliveServer } from '../lifecycle.js';
 import { createRuntime, type Runtime } from '../runtime.js';
 import { collectConfigLayers, statConfigMtime } from './config-layers.js';
@@ -83,7 +84,6 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
     logPath: options.logPath,
   });
 
-  await prepareSocket(options.socketPath);
   await fs.mkdir(path.dirname(options.metadataPath), { recursive: true });
   const configMtimeMs = await statConfigMtime(options.configPath);
 
@@ -188,27 +188,106 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
     });
   });
 
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(options.socketPath, () => {
-      server.off('error', reject);
-      resolve();
+  // Separate lock from the client's metadata lock so a client awaiting readiness can't deadlock the bind.
+  let claimed = false;
+  await withFileLock(`${options.metadataPath}.bind`, async () => {
+    if (await isDaemonResponding(options.socketPath)) {
+      return;
+    }
+    await prepareSocket(options.socketPath);
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(options.socketPath, () => {
+        server.off('error', reject);
+        resolve();
+      });
     });
+    await writeJsonFile(options.metadataPath, {
+      pid: process.pid,
+      socketPath: options.socketPath,
+      configPath: options.configPath,
+      configLayers,
+      startedAt: Date.now(),
+      logPath: options.logPath ?? null,
+      configMtimeMs,
+    });
+    claimed = true;
   });
 
-  await writeJsonFile(options.metadataPath, {
-    pid: process.pid,
-    socketPath: options.socketPath,
-    configPath: options.configPath,
-    configLayers,
-    startedAt: Date.now(),
-    logPath: options.logPath ?? null,
-    configMtimeMs,
-  });
+  if (!claimed) {
+    logEvent(logContext, 'Daemon already running for this config; exiting without rebinding.');
+    server.close();
+    await runtime.close().catch(() => {});
+    await disposeLogContext(logContext).catch(() => {});
+    process.exit(0);
+  }
 
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);
   process.once('SIGQUIT', shutdown);
+}
+
+const DAEMON_PROBE_TIMEOUT_MS = 2_000;
+
+// Connect-only is not enough: a hung daemon still has its socket in listen(2), so the kernel accepts the
+// connection. Require a status response that reports this socket and a live pid, matching the client's liveness
+// contract, so a hung/dead/foreign listener falls through to rebind instead of stranding the caller.
+export async function isDaemonResponding(socketPath: string): Promise<boolean> {
+  const status = await probeDaemonStatus(socketPath);
+  if (!status || status.socketPath !== socketPath) {
+    return false;
+  }
+  return isProcessAlive(status.pid);
+}
+
+function isProcessAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+async function probeDaemonStatus(socketPath: string): Promise<StatusResult | null> {
+  return await new Promise<StatusResult | null>((resolve) => {
+    const probe = net.createConnection(socketPath);
+    let buffer = '';
+    let settled = false;
+    const finish = (status: StatusResult | null): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      probe.removeAllListeners();
+      probe.destroy();
+      resolve(status);
+    };
+    const parse = (): StatusResult | null => {
+      try {
+        const response = JSON.parse(buffer.trim()) as DaemonResponse<StatusResult>;
+        return response.ok && response.result ? response.result : null;
+      } catch {
+        return null;
+      }
+    };
+    probe.setTimeout(DAEMON_PROBE_TIMEOUT_MS, () => finish(null));
+    probe.once('connect', () => {
+      probe.write(JSON.stringify({ id: randomUUID(), method: 'status', params: {} } satisfies DaemonRequest));
+    });
+    probe.on('data', (chunk) => {
+      buffer += chunk.toString();
+      const status = parse();
+      if (status) {
+        finish(status);
+      }
+    });
+    probe.once('end', () => finish(parse()));
+    probe.once('error', () => finish(null));
+  });
 }
 
 async function prepareSocket(socketPath: string): Promise<void> {

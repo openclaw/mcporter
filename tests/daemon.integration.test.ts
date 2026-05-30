@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { type ChildProcess, execFile, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import os from 'node:os';
@@ -170,6 +170,55 @@ await new Promise((resolve) => {
       expect(logContents).toContain('callTool success server=daemon-e2e tool=next_value');
     } finally {
       await cli(['daemon', 'stop']).catch(() => {});
+      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }, 40_000);
+
+  it('refuses duplicate binds when foreground starts race outside the client lock', async () => {
+    await ensureDistBuilt();
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-bind-'));
+    const scriptPath = path.join(tempDir, 'bind-server.mjs');
+    const configPath = path.join(tempDir, 'mcporter.bind.json');
+
+    const serverSource = `import { McpServer } from '${MCP_SERVER_MODULE}';
+import { StdioServerTransport } from '${STDIO_SERVER_MODULE}';
+const server = new McpServer({ name: 'bind-e2e', version: '1.0.0' });
+server.registerTool('ping', { title: 'ping', description: 'ping', inputSchema: {} }, async () => ({
+  content: [{ type: 'text', text: 'pong' }],
+}));
+await server.connect(new StdioServerTransport());
+await new Promise(() => {});
+`;
+    await fs.writeFile(scriptPath, serverSource, 'utf8');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          'bind-e2e': { description: 'bind race server', command: 'node', args: [scriptPath], lifecycle: 'keep-alive' },
+        },
+      }),
+      'utf8'
+    );
+
+    const children: ChildProcess[] = [];
+    try {
+      await runCli(['daemon', 'stop'], configPath).catch(() => {});
+      for (let i = 0; i < 4; i++) {
+        children.push(
+          spawn(process.execPath, [CLI_ENTRY, '--config', configPath, 'daemon', 'start', '--foreground'], {
+            env: { ...process.env, MCPORTER_NO_FORCE_EXIT: '1' },
+            stdio: 'ignore',
+          })
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 4_000));
+      const alive = children.filter((child) => child.exitCode === null && child.signalCode === null);
+      expect(alive).toHaveLength(1);
+    } finally {
+      for (const child of children) {
+        child.kill('SIGKILL');
+      }
+      await runCli(['daemon', 'stop'], configPath).catch(() => {});
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     }
   }, 40_000);
