@@ -21,6 +21,7 @@ export interface ServeOptions {
   readonly runtime: Pick<Runtime, 'listTools' | 'callTool'>;
   readonly definitions: readonly ServerDefinition[];
   readonly servers?: readonly string[];
+  readonly bare?: boolean;
 }
 
 export interface ServeStdioOptions extends ServeOptions {}
@@ -53,11 +54,28 @@ export async function serveStdio(options: ServeStdioOptions): Promise<void> {
 export async function serveHttp(options: ServeHttpOptions): Promise<http.Server> {
   const httpServer = http.createServer((request, response) => {
     const url = new URL(request.url ?? '/', `http://${DEFAULT_SERVE_HTTP_HOST}`);
-    if (url.pathname !== '/mcp') {
+    let bridgeOptions: ServeOptions;
+    if (url.pathname === '/mcp') {
+      bridgeOptions = options;
+    } else if (url.pathname.startsWith('/mcp/')) {
+      let only: string;
+      try {
+        only = decodeURIComponent(url.pathname.slice('/mcp/'.length));
+      } catch {
+        response.writeHead(400).end('Bad request');
+        return;
+      }
+      const known = selectServedServers(options.definitions, options.servers).some((served) => served.name === only);
+      if (!known) {
+        response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }).end(`Unknown server '${only}'`);
+        return;
+      }
+      bridgeOptions = { ...options, servers: [only], bare: true };
+    } else {
       response.writeHead(404).end('Not found');
       return;
     }
-    const bridgeServer = createBridgeServer(options);
+    const bridgeServer = createBridgeServer(bridgeOptions);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
     });
@@ -90,8 +108,13 @@ export async function serveHttp(options: ServeHttpOptions): Promise<http.Server>
 
 export function createBridgeServer(options: ServeOptions): McpServer {
   const servedServers = selectServedServers(options.definitions, options.servers);
-  if (servedServers.length === 0) {
+  const [firstServed] = servedServers;
+  if (!firstServed) {
     throw new Error('No keep-alive MCP servers are available to serve.');
+  }
+  const bare = options.bare === true;
+  if (bare && servedServers.length !== 1) {
+    throw new Error('Bare serve mode requires exactly one served server.');
   }
 
   const server = new McpServer(
@@ -100,7 +123,9 @@ export function createBridgeServer(options: ServeOptions): McpServer {
       capabilities: {
         tools: {},
       } satisfies ServerCapabilities,
-      instructions: 'MCPorter bridge exposing daemon-managed MCP servers. Tool names are namespaced as server__tool.',
+      instructions: bare
+        ? `MCPorter bridge exposing the '${firstServed.name}' server.`
+        : 'MCPorter bridge exposing daemon-managed MCP servers. Tool names are namespaced as server__tool.',
     }
   );
 
@@ -119,8 +144,8 @@ export function createBridgeServer(options: ServeOptions): McpServer {
 
       for (const tool of listed) {
         tools.push({
-          name: encodeToolName(served.name, tool.name),
-          description: describeTool(served.name, tool.description),
+          name: bare ? tool.name : encodeToolName(served.name, tool.name),
+          description: bare ? tool.description : describeTool(served.name, tool.description),
           inputSchema: normalizeInputSchema(tool.inputSchema),
           outputSchema: normalizeOutputSchema(tool.outputSchema),
         });
@@ -130,7 +155,9 @@ export function createBridgeServer(options: ServeOptions): McpServer {
   });
 
   server.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const target = decodeToolName(request.params.name, servedServers);
+    const target = bare
+      ? { server: firstServed.name, tool: request.params.name }
+      : decodeToolName(request.params.name, servedServers);
     if (!target) {
       throw new McpError(ErrorCode.InvalidParams, `Unknown bridged tool '${request.params.name}'.`);
     }
