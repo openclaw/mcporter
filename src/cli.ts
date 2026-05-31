@@ -4,7 +4,7 @@ import { inferCommandRouting } from './cli/command-inference.js';
 import { CliUsageError } from './cli/errors.js';
 import { consumeHelpTokens, isHelpToken, isVersionToken, printHelp, printVersion } from './cli/help-output.js';
 import { logError, logInfo } from './cli/logger-context.js';
-import { isRecordReplayModeActive } from './cli/record-replay-env.js';
+import { isRecordReplayModeActive, isReplayModeActive } from './cli/record-replay-env.js';
 import { DEBUG_HANG, dumpActiveHandles, terminateChildProcesses } from './cli/runtime-debug.js';
 import { resolveConfigPath } from './config/path-discovery.js';
 import type { Runtime, RuntimeOptions } from './runtime.js';
@@ -305,45 +305,56 @@ export async function runCli(argv: string[]): Promise<void> {
       return;
     }
   } finally {
-    const closeStart = Date.now();
-    if (DEBUG_HANG) {
-      logInfo('[debug] beginning runtime.close()');
-      dumpActiveHandles('before runtime.close');
-    }
-    try {
-      await runtime.close();
-      if (DEBUG_HANG) {
-        const duration = Date.now() - closeStart;
-        logInfo(`[debug] runtime.close() completed in ${duration}ms`);
-        dumpActiveHandles('after runtime.close');
-      }
-    } catch (error) {
-      if (DEBUG_HANG) {
-        logError('[debug] runtime.close() failed', error);
-      }
-    } finally {
-      terminateChildProcesses('runtime.finally');
-      // By default we force an exit after cleanup so Node doesn't hang on lingering stdio handles
-      // (see typescript-sdk#579/#780/#1049). Opt out by exporting MCPORTER_NO_FORCE_EXIT=1.
-      const disableForceExit = process.env.MCPORTER_NO_FORCE_EXIT === '1';
-      const shouldForceExit = !disableForceExit || process.env.MCPORTER_FORCE_EXIT === '1';
-      const scheduleForcedExit = () => {
-        if (shouldForceExit) {
-          setTimeout(() => {
-            process.exit(process.exitCode ?? 0);
-          }, FORCE_EXIT_GRACE_MS);
-        }
-      };
-      if (DEBUG_HANG) {
-        dumpActiveHandles('after terminateChildProcesses');
-        scheduleForcedExit();
-      } else {
-        setImmediate(scheduleForcedExit);
-      }
-    }
+    await closeRuntimeAfterCommand(runtime);
   }
   printHelp(`Unknown command '${resolvedCommand}'.`);
   process.exit(1);
+}
+
+async function closeRuntimeAfterCommand(runtime: Runtime): Promise<void> {
+  const closeStart = Date.now();
+  let closeError: unknown;
+  if (DEBUG_HANG) {
+    logInfo('[debug] beginning runtime.close()');
+    dumpActiveHandles('before runtime.close');
+  }
+  try {
+    await runtime.close();
+    if (DEBUG_HANG) {
+      const duration = Date.now() - closeStart;
+      logInfo(`[debug] runtime.close() completed in ${duration}ms`);
+      dumpActiveHandles('after runtime.close');
+    }
+  } catch (error) {
+    if (DEBUG_HANG) {
+      logError('[debug] runtime.close() failed', error);
+    }
+    if (isReplayModeActive()) {
+      closeError = error;
+    }
+  } finally {
+    terminateChildProcesses('runtime.finally');
+    // By default we force an exit after cleanup so Node doesn't hang on lingering stdio handles
+    // (see typescript-sdk#579/#780/#1049). Opt out by exporting MCPORTER_NO_FORCE_EXIT=1.
+    const disableForceExit = process.env.MCPORTER_NO_FORCE_EXIT === '1';
+    const shouldForceExit = !disableForceExit || process.env.MCPORTER_FORCE_EXIT === '1';
+    const scheduleForcedExit = () => {
+      if (shouldForceExit) {
+        setTimeout(() => {
+          process.exit(process.exitCode ?? 0);
+        }, FORCE_EXIT_GRACE_MS);
+      }
+    };
+    if (DEBUG_HANG) {
+      dumpActiveHandles('after terminateChildProcesses');
+      scheduleForcedExit();
+    } else {
+      setImmediate(scheduleForcedExit);
+    }
+  }
+  if (closeError) {
+    throw closeError;
+  }
 }
 
 // main parses CLI flags and dispatches to list/call commands.

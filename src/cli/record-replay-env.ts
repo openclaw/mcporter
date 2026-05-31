@@ -26,6 +26,10 @@ export function isRecordReplayModeActive(env: NodeJS.ProcessEnv = process.env): 
   return Boolean(env.MCPORTER_RECORD || env.MCPORTER_REPLAY);
 }
 
+export function isReplayModeActive(env: NodeJS.ProcessEnv = process.env): boolean {
+  return Boolean(!env.MCPORTER_RECORD && env.MCPORTER_REPLAY);
+}
+
 function buildModeEnv(set: Record<string, string | undefined>, unset: readonly string[]): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const key of unset) {

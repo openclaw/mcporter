@@ -338,22 +338,50 @@ class McpRuntime implements Runtime {
         return;
       }
       const context = await cached.promise;
-      await context.client.close().catch(() => {});
-      await closeTransportAndWait(this.logger, context.transport).catch(() => {});
-      await context.oauthSession?.close().catch(() => {});
-      this.clients.delete(normalized);
+      try {
+        await this.closeContext(context);
+      } finally {
+        this.clients.delete(normalized);
+      }
       return;
     }
 
     for (const [name, cached] of this.clients.entries()) {
       try {
         const context = await cached.promise;
-        await context.client.close().catch(() => {});
-        await closeTransportAndWait(this.logger, context.transport).catch(() => {});
-        await context.oauthSession?.close().catch(() => {});
+        await this.closeContext(context);
       } finally {
         this.clients.delete(name);
       }
+    }
+  }
+
+  private async closeContext(context: ClientContext): Promise<void> {
+    const propagateReplayCloseErrors = this.replayPath !== undefined;
+    let closeError: unknown;
+
+    try {
+      await context.client.close();
+    } catch (error) {
+      if (propagateReplayCloseErrors) {
+        closeError ??= error;
+      }
+    }
+
+    try {
+      await closeTransportAndWait(this.logger, context.transport, {
+        throwOnCloseError: propagateReplayCloseErrors,
+      });
+    } catch (error) {
+      if (propagateReplayCloseErrors) {
+        closeError ??= error;
+      }
+    }
+
+    await context.oauthSession?.close().catch(() => {});
+
+    if (closeError) {
+      throw closeError;
     }
   }
 

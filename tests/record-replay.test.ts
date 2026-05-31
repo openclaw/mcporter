@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import type { Transport, TransportSendOptions } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { describe, expect, it } from 'vitest';
+import { createRuntime, MCPORTER_VERSION } from '../src/runtime.js';
 import { RecordTransport, type RecordedMessage } from '../src/runtime/record-transport.js';
 import { ReplayTransport } from '../src/runtime/replay-transport.js';
 
@@ -142,6 +143,83 @@ describe('record/replay transports', () => {
     );
   });
 
+  it('surfaces unused recorded requests through normal runtime close', async () => {
+    const tempHome = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-replay-runtime-'));
+    const configPath = path.join(tempHome, 'mcporter.json');
+    const recordingPath = path.join(tempHome, '.mcporter', 'recordings', 'partial.ndjson');
+    const originalHome = process.env.HOME;
+    const originalReplay = process.env.MCPORTER_REPLAY;
+    const originalReplayServer = process.env.MCPORTER_REPLAY_SERVER;
+
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          linear: {
+            description: 'Replay-only test server',
+            command: process.execPath,
+            args: ['-e', 'process.exit(1)'],
+          },
+        },
+      }),
+      'utf8'
+    );
+    await fs.mkdir(path.dirname(recordingPath), { recursive: true });
+    await fs.writeFile(
+      recordingPath,
+      [
+        send('linear', 0, 'initialize', {
+          protocolVersion: '2025-11-25',
+          capabilities: {},
+          clientInfo: { name: 'mcporter', version: MCPORTER_VERSION },
+        }),
+        recv('linear', 0, {
+          protocolVersion: '2025-11-25',
+          capabilities: { tools: {} },
+          serverInfo: { name: 'replay-fixture', version: '1.0.0' },
+        }),
+        notification('linear', 'notifications/initialized'),
+        send('linear', 1, 'tools/call', { name: 'first', arguments: {} }),
+        recv('linear', 1, { content: [] }),
+        send('linear', 2, 'tools/call', { name: 'second', arguments: {} }),
+        recv('linear', 2, { content: [] }),
+      ]
+        .map((entry) => JSON.stringify(entry))
+        .join('\n') + '\n',
+      'utf8'
+    );
+
+    process.env.HOME = tempHome;
+    process.env.MCPORTER_REPLAY = 'partial';
+    process.env.MCPORTER_REPLAY_SERVER = 'linear';
+
+    try {
+      const runtime = await createRuntime({ configPath });
+      await runtime.callTool('linear', 'first');
+
+      await expect(runtime.close()).rejects.toThrow(
+        'Replay ended for server \'linear\' with 1 recorded request still unused; next expected recv tools/call {"name":"second","arguments":{}}.'
+      );
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+      if (originalReplay === undefined) {
+        delete process.env.MCPORTER_REPLAY;
+      } else {
+        process.env.MCPORTER_REPLAY = originalReplay;
+      }
+      if (originalReplayServer === undefined) {
+        delete process.env.MCPORTER_REPLAY_SERVER;
+      } else {
+        process.env.MCPORTER_REPLAY_SERVER = originalReplayServer;
+      }
+      await fs.rm(tempHome, { recursive: true, force: true });
+    }
+  });
+
   it('keeps multi-server streams separated by metadata server', async () => {
     const recordPath = await writeRecording([
       send('linear', 1, 'tools/call', { name: 'list_issues', arguments: { limit: 1 } }),
@@ -235,5 +313,13 @@ function lifecycle(server: string, method: string): RecordedMessage {
     jsonrpc: '2.0',
     method,
     _meta: { dir: 'lifecycle', server, ts: '2026-05-16T00:00:00.000Z' },
+  } as RecordedMessage;
+}
+
+function notification(server: string, method: string): RecordedMessage {
+  return {
+    jsonrpc: '2.0',
+    method,
+    _meta: { dir: 'send', server, ts: '2026-05-16T00:00:00.000Z' },
   } as RecordedMessage;
 }

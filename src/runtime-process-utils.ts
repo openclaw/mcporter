@@ -4,24 +4,38 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { Logger } from './logging.js';
 
+export interface CloseTransportAndWaitOptions {
+  readonly throwOnCloseError?: boolean;
+}
+
 // closeTransportAndWait closes transports and ensures backing processes exit cleanly.
 export async function closeTransportAndWait(
   logger: Logger,
-  transport: Transport & { close(): Promise<void> }
+  transport: Transport & { close(): Promise<void> },
+  options: CloseTransportAndWaitOptions = {}
 ): Promise<void> {
   const pidBeforeClose = getTransportPid(transport);
   const childProcess =
     transport instanceof StdioClientTransport
       ? ((transport as unknown as { _process?: ChildProcess | null })._process ?? null)
       : null;
+  let closeError: unknown;
   try {
     await transport.close();
   } catch (error) {
-    logger.warn(`Failed to close transport cleanly: ${(error as Error).message}`);
+    if (options.throwOnCloseError) {
+      closeError = error;
+    } else {
+      logger.warn(`Failed to close transport cleanly: ${(error as Error).message}`);
+    }
   }
 
   if (childProcess) {
     await waitForChildClose(childProcess, 1_000).catch(() => {});
+  }
+
+  if (closeError) {
+    throw closeError;
   }
 
   if (!pidBeforeClose) {
