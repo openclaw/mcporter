@@ -157,7 +157,7 @@ export async function runCli(argv: string[]): Promise<void> {
 
   if (command === 'record') {
     const { handleRecordCli, printRecordHelp } = await import('./cli/record-command.js');
-    if (consumeHelpTokens(args)) {
+    if (consumeHelpTokens(wrapperArgsBeforeSeparator(args))) {
       printRecordHelp();
       process.exitCode = 0;
       return;
@@ -168,7 +168,7 @@ export async function runCli(argv: string[]): Promise<void> {
 
   if (command === 'replay') {
     const { handleReplayCli, printReplayHelp } = await import('./cli/replay-command.js');
-    if (consumeHelpTokens(args)) {
+    if (consumeHelpTokens(wrapperArgsBeforeSeparator(args))) {
       printReplayHelp();
       process.exitCode = 0;
       return;
@@ -220,14 +220,17 @@ export async function runCli(argv: string[]): Promise<void> {
     import('./lifecycle.js'),
   ]);
   const baseRuntime = await createRuntime(runtimeOptionsWithPath);
-  const keepAliveServers = new Set(
-    baseRuntime
-      .getDefinitions()
-      .filter(isKeepAliveServer)
-      .map((entry) => entry.name)
-  );
+  const recordReplayModeActive = isRecordReplayModeActive();
+  const keepAliveServers = recordReplayModeActive
+    ? new Set<string>()
+    : new Set(
+        baseRuntime
+          .getDefinitions()
+          .filter(isKeepAliveServer)
+          .map((entry) => entry.name)
+      );
   const daemonClient =
-    keepAliveServers.size > 0
+    !recordReplayModeActive && keepAliveServers.size > 0
       ? new DaemonClient({
           configPath: configResolution.path,
           configExplicit: configResolution.explicit,
@@ -244,6 +247,7 @@ export async function runCli(argv: string[]): Promise<void> {
   const resolvedCommand = inference.command;
   const resolvedArgs = inference.args;
 
+  let primaryError: unknown;
   try {
     if (resolvedCommand === 'list') {
       if (consumeHelpTokens(resolvedArgs)) {
@@ -304,14 +308,20 @@ export async function runCli(argv: string[]): Promise<void> {
       await importedHandleResource(runtime, resolvedArgs);
       return;
     }
+  } catch (error) {
+    primaryError = error;
+    throw error;
   } finally {
-    await closeRuntimeAfterCommand(runtime);
+    await closeRuntimeAfterCommand(runtime, { suppressReplayCloseError: primaryError !== undefined });
   }
   printHelp(`Unknown command '${resolvedCommand}'.`);
   process.exit(1);
 }
 
-async function closeRuntimeAfterCommand(runtime: Runtime): Promise<void> {
+async function closeRuntimeAfterCommand(
+  runtime: Runtime,
+  options: { readonly suppressReplayCloseError?: boolean } = {}
+): Promise<void> {
   const closeStart = Date.now();
   let closeError: unknown;
   if (DEBUG_HANG) {
@@ -329,7 +339,7 @@ async function closeRuntimeAfterCommand(runtime: Runtime): Promise<void> {
     if (DEBUG_HANG) {
       logError('[debug] runtime.close() failed', error);
     }
-    if (isReplayModeActive()) {
+    if (isReplayModeActive() && !options.suppressReplayCloseError) {
       closeError = error;
     }
   } finally {
@@ -355,6 +365,11 @@ async function closeRuntimeAfterCommand(runtime: Runtime): Promise<void> {
   if (closeError) {
     throw closeError;
   }
+}
+
+function wrapperArgsBeforeSeparator(args: readonly string[]): string[] {
+  const separatorIndex = args.indexOf('--');
+  return separatorIndex === -1 ? [...args] : args.slice(0, separatorIndex);
 }
 
 // main parses CLI flags and dispatches to list/call commands.

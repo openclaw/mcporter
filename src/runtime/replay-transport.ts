@@ -12,6 +12,7 @@ export interface ReplayTransportOptions {
 interface ExpectedSend {
   readonly method: string;
   readonly params?: unknown;
+  readonly expectsResponse: boolean;
   readonly response?: JSONRPCMessage;
 }
 
@@ -104,6 +105,7 @@ function buildReplayQueue(messages: RecordedMessage[], server: string): Expected
       const expectedSend: ExpectedSend = {
         method: request.method,
         params: request.params,
+        expectsResponse: request.id !== undefined,
       };
       expected.push(expectedSend);
       if (request.id !== undefined) {
@@ -124,7 +126,7 @@ function buildReplayQueue(messages: RecordedMessage[], server: string): Expected
     }
   }
 
-  return expected;
+  return expected.filter((entry) => !entry.expectsResponse || entry.response);
 }
 
 function stripMeta(message: RecordedMessage): JSONRPCMessage {
@@ -154,7 +156,11 @@ function requestDetails(message: JSONRPCMessage):
 }
 
 function responseIdOf(message: JSONRPCMessage): string | number | undefined {
-  const id = (message as JsonRpcRecord).id;
+  const record = message as JsonRpcRecord;
+  if (!('result' in record) && !('error' in record)) {
+    return undefined;
+  }
+  const id = record.id;
   return typeof id === 'string' || typeof id === 'number' ? id : undefined;
 }
 

@@ -7,6 +7,7 @@ import './sdk-patches.js';
 import { shouldResetConnection } from './runtime/errors.js';
 import { resolveOAuthTimeoutFromEnv } from './runtime/oauth.js';
 import { resolveRecordingPath } from './runtime/record-transport.js';
+import { ReplayTransport } from './runtime/replay-transport.js';
 import { type ClientContext, createClientContext } from './runtime/transport.js';
 import { normalizeTimeout, raceWithTimeout } from './runtime/utils.js';
 import { filterTools, isToolAllowed, validateToolFilters } from './tool-filters.js';
@@ -194,8 +195,9 @@ class McpRuntime implements Runtime {
       allowCachedAuth: options.allowCachedAuth ?? true,
       oauthSessionOptions: options.oauthSessionOptions,
     });
+    let closeError: unknown;
+    const tools: ServerToolInfo[] = [];
     try {
-      const tools: ServerToolInfo[] = [];
       let cursor: string | undefined;
       do {
         const response = await context.client.listTools(cursor ? { cursor } : undefined);
@@ -209,8 +211,6 @@ class McpRuntime implements Runtime {
         );
         cursor = response.nextCursor ?? undefined;
       } while (cursor);
-
-      return filterTools(tools, this.definitions.get(server.trim()));
     } catch (error) {
       // Keep-alive STDIO transports often die when Chrome closes; drop the cached client
       // so the next call spins up a fresh process instead of reusing the broken handle.
@@ -218,11 +218,18 @@ class McpRuntime implements Runtime {
       throw error;
     } finally {
       if (!autoAuthorize) {
-        await context.client.close().catch(() => {});
-        await closeTransportAndWait(this.logger, context.transport).catch(() => {});
-        await context.oauthSession?.close().catch(() => {});
+        try {
+          await this.closeContext(context);
+        } catch (error) {
+          closeError = error;
+        }
       }
     }
+    if (closeError !== undefined) {
+      throw closeError;
+    }
+
+    return filterTools(tools, this.definitions.get(server.trim()));
   }
 
   // callTool executes a tool using the args provided by the caller.
@@ -357,7 +364,7 @@ class McpRuntime implements Runtime {
   }
 
   private async closeContext(context: ClientContext): Promise<void> {
-    const propagateReplayCloseErrors = this.replayPath !== undefined;
+    const propagateReplayCloseErrors = context.transport instanceof ReplayTransport;
     let closeError: unknown;
 
     try {

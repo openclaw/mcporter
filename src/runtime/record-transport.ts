@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import type { ChildProcess } from 'node:child_process';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import type { Transport, TransportSendOptions } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { legacyMcporterDir } from '../paths.js';
@@ -21,6 +22,8 @@ export type RecordedMessage = JSONRPCMessage & {
 };
 
 const initializedRecordingPaths = new Map<string, Promise<void>>();
+export const PRIVATE_RECORDING_DIR_MODE = 0o700;
+export const PRIVATE_RECORDING_FILE_MODE = 0o600;
 
 export class RecordTransport implements Transport {
   onclose?: Transport['onclose'];
@@ -38,6 +41,15 @@ export class RecordTransport implements Transport {
     if (finishAuth) {
       this.finishAuth = (authorizationCode) => finishAuth.call(opts.inner, authorizationCode);
     }
+  }
+
+  get pid(): number | null {
+    const pid = (this.opts.inner as { pid?: unknown }).pid;
+    return typeof pid === 'number' && pid > 0 ? pid : null;
+  }
+
+  get _process(): ChildProcess | null {
+    return (this.opts.inner as { _process?: ChildProcess | null })._process ?? null;
   }
 
   async start(): Promise<void> {
@@ -105,9 +117,14 @@ export class RecordTransport implements Transport {
   }
 
   private async appendLine(message: RecordedMessage): Promise<void> {
-    await fs.mkdir(path.dirname(this.opts.recordPath), { recursive: true });
     const line = `${JSON.stringify(message)}\n`;
-    this.writes = this.writes.then(() => fs.appendFile(this.opts.recordPath, line, 'utf8'));
+    this.writes = this.writes.then(async () => {
+      await ensurePrivateRecordingDir(this.opts.recordPath);
+      await fs.appendFile(this.opts.recordPath, line, {
+        encoding: 'utf8',
+        mode: PRIVATE_RECORDING_FILE_MODE,
+      });
+    });
     await this.writes;
   }
 }
@@ -117,15 +134,29 @@ function initializeRecordingFile(recordPath: string): Promise<void> {
   if (existing) {
     return existing;
   }
-  const initialization = fs
-    .mkdir(path.dirname(recordPath), { recursive: true })
-    .then(() => fs.writeFile(recordPath, '', 'utf8'))
+  const initialization = ensurePrivateRecordingDir(recordPath)
+    .then(() =>
+      fs.writeFile(recordPath, '', {
+        encoding: 'utf8',
+        mode: PRIVATE_RECORDING_FILE_MODE,
+      })
+    )
+    .then(() => fs.chmod(recordPath, PRIVATE_RECORDING_FILE_MODE))
     .catch((error) => {
       initializedRecordingPaths.delete(recordPath);
       throw error;
     });
   initializedRecordingPaths.set(recordPath, initialization);
   return initialization;
+}
+
+export async function ensurePrivateRecordingDir(recordPath: string): Promise<void> {
+  const recordingDir = path.dirname(recordPath);
+  await fs.mkdir(recordingDir, {
+    recursive: true,
+    mode: PRIVATE_RECORDING_DIR_MODE,
+  });
+  await fs.chmod(recordingDir, PRIVATE_RECORDING_DIR_MODE);
 }
 
 export function resolveRecordingPath(sessionName: string): string {

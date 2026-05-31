@@ -1,3 +1,6 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { handleRecordCli } from '../src/cli/record-command.js';
 import { handleReplayCli } from '../src/cli/replay-command.js';
@@ -35,6 +38,7 @@ describe('record/replay CLI command environments', () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
+    vi.restoreAllMocks();
   });
 
   it('clears replay mode and disables keep-alive fast paths while recording a command', async () => {
@@ -70,4 +74,56 @@ describe('record/replay CLI command environments', () => {
     expect(env).not.toHaveProperty('MCPORTER_RECORD');
     expect(env).not.toHaveProperty('MCPORTER_RECORD_SERVER');
   });
+
+  it('writes manual record config and instructions that disable keep-alive fast paths', async () => {
+    const tempHome = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-record-cli-'));
+    vi.spyOn(os, 'homedir').mockReturnValue(tempHome);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleRecordCli(['demo', '--server', 'github']);
+
+    const configPath = path.join(tempHome, '.mcporter', 'recordings', 'demo.config.json');
+    const config = JSON.parse(await fs.readFile(configPath, 'utf8'));
+    expect(config.env).toMatchObject({
+      MCPORTER_RECORD: 'demo',
+      MCPORTER_RECORD_SERVER: 'github',
+      MCPORTER_DISABLE_KEEPALIVE: '*',
+    });
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'Set MCPORTER_RECORD=demo and MCPORTER_RECORD_SERVER=github and MCPORTER_DISABLE_KEEPALIVE=*'
+      )
+    );
+    await expectPrivateRecordingPermissions(configPath);
+  });
+
+  it('writes manual replay config and instructions that disable keep-alive fast paths', async () => {
+    const tempHome = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-replay-cli-'));
+    vi.spyOn(os, 'homedir').mockReturnValue(tempHome);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleReplayCli(['demo', '--server', 'github']);
+
+    const configPath = path.join(tempHome, '.mcporter', 'recordings', 'demo.config.json');
+    const config = JSON.parse(await fs.readFile(configPath, 'utf8'));
+    expect(config.env).toMatchObject({
+      MCPORTER_REPLAY: 'demo',
+      MCPORTER_REPLAY_SERVER: 'github',
+      MCPORTER_DISABLE_KEEPALIVE: '*',
+    });
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'Set MCPORTER_REPLAY=demo and MCPORTER_REPLAY_SERVER=github and MCPORTER_DISABLE_KEEPALIVE=*'
+      )
+    );
+    await expectPrivateRecordingPermissions(configPath);
+  });
 });
+
+async function expectPrivateRecordingPermissions(filePath: string): Promise<void> {
+  if (process.platform === 'win32') {
+    return;
+  }
+  expect((await fs.stat(path.dirname(filePath))).mode & 0o777).toBe(0o700);
+  expect((await fs.stat(filePath)).mode & 0o777).toBe(0o600);
+}

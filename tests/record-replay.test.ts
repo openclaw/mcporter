@@ -76,6 +76,46 @@ describe('record/replay transports', () => {
     expect(entries.some((entry) => (entry as { params?: { name?: string } }).params?.name === 'fresh')).toBe(true);
   });
 
+  it('creates recordings with private filesystem permissions', async () => {
+    if (process.platform === 'win32') {
+      return;
+    }
+    const recordPath = await tempRecordingPath();
+    const inner = new StubTransport();
+    const transport = new RecordTransport({ inner, recordPath, server: 'linear' });
+
+    await transport.start();
+    await transport.send({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'secret_tool', arguments: { token: 'secret' } },
+    });
+    await transport.close();
+
+    expect((await fs.stat(path.dirname(recordPath))).mode & 0o777).toBe(0o700);
+    expect((await fs.stat(recordPath)).mode & 0o777).toBe(0o600);
+  });
+
+  it('exposes wrapped stdio process metadata for cleanup helpers', async () => {
+    const child = { pid: 12345 } as unknown as import('node:child_process').ChildProcess;
+    const inner = new StubTransport() as StubTransport & {
+      pid: number;
+      _process: import('node:child_process').ChildProcess;
+    };
+    inner.pid = 12345;
+    inner._process = child;
+
+    const transport = new RecordTransport({
+      inner,
+      recordPath: await tempRecordingPath(),
+      server: 'linear',
+    });
+
+    expect(transport.pid).toBe(12345);
+    expect(transport._process).toBe(child);
+  });
+
   it('replays matching requests by method and params using the active request id', async () => {
     const recordPath = await writeRecording([
       send('linear', 1, 'tools/call', { name: 'list_issues', arguments: { limit: 1 } }),
@@ -99,6 +139,93 @@ describe('record/replay transports', () => {
         jsonrpc: '2.0',
         id: 99,
         result: { content: [{ type: 'text', text: 'recorded' }] },
+      },
+    ]);
+  });
+
+  it('skips recorded requests that never received a response', async () => {
+    const recordPath = await writeRecording([
+      send('linear', 1, 'initialize', { protocolVersion: '2025-11-25' }),
+      send('linear', 2, 'initialize', { protocolVersion: '2025-11-25' }),
+      recv('linear', 2, { protocolVersion: '2025-11-25', capabilities: {}, serverInfo: { name: 'ok' } }),
+    ]);
+    const transport = new ReplayTransport({ recordPath, server: 'linear' });
+    const received: JSONRPCMessage[] = [];
+    transport.onmessage = (message) => received.push(message);
+
+    await transport.send({
+      jsonrpc: '2.0',
+      id: 99,
+      method: 'initialize',
+      params: { protocolVersion: '2025-11-25' },
+    });
+    await Promise.resolve();
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({ id: 99 });
+  });
+
+  it('keeps replay order by request send order when responses arrive out of order', async () => {
+    const recordPath = await writeRecording([
+      send('linear', 1, 'tools/call', { name: 'first', arguments: {} }),
+      send('linear', 2, 'tools/call', { name: 'second', arguments: {} }),
+      recv('linear', 2, { content: [{ type: 'text', text: 'second' }] }),
+      recv('linear', 1, { content: [{ type: 'text', text: 'first' }] }),
+    ]);
+    const transport = new ReplayTransport({ recordPath, server: 'linear' });
+    const received: JSONRPCMessage[] = [];
+    transport.onmessage = (message) => received.push(message);
+
+    await transport.send({
+      jsonrpc: '2.0',
+      id: 10,
+      method: 'tools/call',
+      params: { name: 'first', arguments: {} },
+    });
+    await transport.send({
+      jsonrpc: '2.0',
+      id: 11,
+      method: 'tools/call',
+      params: { name: 'second', arguments: {} },
+    });
+    await Promise.resolve();
+
+    expect(
+      received.map(
+        (message) => (message as { result?: { content?: Array<{ text?: string }> } }).result?.content?.[0]?.text
+      )
+    ).toEqual(['first', 'second']);
+  });
+
+  it('does not treat server-initiated requests as responses', async () => {
+    const recordPath = await writeRecording([
+      send('linear', 1, 'tools/call', { name: 'first', arguments: {} }),
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'sampling/createMessage',
+        params: {},
+        _meta: { dir: 'recv', server: 'linear', ts: '2026-01-01T00:00:00.000Z' },
+      } satisfies RecordedMessage,
+      recv('linear', 1, { content: [{ type: 'text', text: 'first' }] }),
+    ]);
+    const transport = new ReplayTransport({ recordPath, server: 'linear' });
+    const received: JSONRPCMessage[] = [];
+    transport.onmessage = (message) => received.push(message);
+
+    await transport.send({
+      jsonrpc: '2.0',
+      id: 9,
+      method: 'tools/call',
+      params: { name: 'first', arguments: {} },
+    });
+    await Promise.resolve();
+
+    expect(received).toEqual([
+      {
+        jsonrpc: '2.0',
+        id: 9,
+        result: { content: [{ type: 'text', text: 'first' }] },
       },
     ]);
   });

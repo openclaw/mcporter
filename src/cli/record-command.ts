@@ -1,7 +1,11 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
-import path from 'node:path';
-import { resolveRecordingConfigPath, resolveRecordingPath } from '../runtime/record-transport.js';
+import {
+  ensurePrivateRecordingDir,
+  PRIVATE_RECORDING_FILE_MODE,
+  resolveRecordingConfigPath,
+  resolveRecordingPath,
+} from '../runtime/record-transport.js';
 import { buildRecordCommandEnv } from './record-replay-env.js';
 
 export interface ParsedRecordArgs {
@@ -25,10 +29,16 @@ export async function handleRecordCli(args: string[]): Promise<void> {
     env: {
       MCPORTER_RECORD: parsed.sessionName,
       ...(parsed.server ? { MCPORTER_RECORD_SERVER: parsed.server } : {}),
+      MCPORTER_DISABLE_KEEPALIVE: '*',
     },
   });
   console.log(`Recording configuration written to ${resolveRecordingConfigPath(parsed.sessionName)}`);
-  console.log(`Set MCPORTER_RECORD=${parsed.sessionName} before the next mcporter call to record ${recordPath}.`);
+  const envInstructions = [
+    `MCPORTER_RECORD=${parsed.sessionName}`,
+    ...(parsed.server ? [`MCPORTER_RECORD_SERVER=${parsed.server}`] : []),
+    'MCPORTER_DISABLE_KEEPALIVE=*',
+  ];
+  console.log(`Set ${envInstructions.join(' and ')} before the next mcporter call to record ${recordPath}.`);
 }
 
 export function printRecordHelp(): void {
@@ -50,7 +60,7 @@ export function parseReplayArgs(args: string[]): ParsedRecordArgs {
 
 async function writeModeConfig(parsed: ParsedRecordArgs, extra: Record<string, unknown>): Promise<void> {
   const configPath = resolveRecordingConfigPath(parsed.sessionName);
-  await fs.mkdir(path.dirname(configPath), { recursive: true });
+  await ensurePrivateRecordingDir(configPath);
   await fs.writeFile(
     configPath,
     `${JSON.stringify(
@@ -62,8 +72,12 @@ async function writeModeConfig(parsed: ParsedRecordArgs, extra: Record<string, u
       null,
       2
     )}\n`,
-    'utf8'
+    {
+      encoding: 'utf8',
+      mode: PRIVATE_RECORDING_FILE_MODE,
+    }
   );
+  await fs.chmod(configPath, PRIVATE_RECORDING_FILE_MODE);
 }
 
 async function runWithRecordingEnv(parsed: ParsedRecordArgs, env: NodeJS.ProcessEnv): Promise<void> {

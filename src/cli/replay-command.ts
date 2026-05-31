@@ -1,7 +1,11 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
-import path from 'node:path';
-import { resolveRecordingConfigPath, resolveRecordingPath } from '../runtime/record-transport.js';
+import {
+  ensurePrivateRecordingDir,
+  PRIVATE_RECORDING_FILE_MODE,
+  resolveRecordingConfigPath,
+  resolveRecordingPath,
+} from '../runtime/record-transport.js';
 import { parseReplayArgs } from './record-command.js';
 import { buildReplayCommandEnv } from './record-replay-env.js';
 
@@ -15,7 +19,7 @@ export async function handleReplayCli(args: string[]): Promise<void> {
   }
 
   const configPath = resolveRecordingConfigPath(parsed.sessionName);
-  await fs.mkdir(path.dirname(configPath), { recursive: true });
+  await ensurePrivateRecordingDir(configPath);
   await fs.writeFile(
     configPath,
     `${JSON.stringify(
@@ -27,15 +31,25 @@ export async function handleReplayCli(args: string[]): Promise<void> {
         env: {
           MCPORTER_REPLAY: parsed.sessionName,
           ...(parsed.server ? { MCPORTER_REPLAY_SERVER: parsed.server } : {}),
+          MCPORTER_DISABLE_KEEPALIVE: '*',
         },
       },
       null,
       2
     )}\n`,
-    'utf8'
+    {
+      encoding: 'utf8',
+      mode: PRIVATE_RECORDING_FILE_MODE,
+    }
   );
+  await fs.chmod(configPath, PRIVATE_RECORDING_FILE_MODE);
   console.log(`Replay configuration written to ${configPath}`);
-  console.log(`Set MCPORTER_REPLAY=${parsed.sessionName} before the next mcporter call to replay ${replayPath}.`);
+  const envInstructions = [
+    `MCPORTER_REPLAY=${parsed.sessionName}`,
+    ...(parsed.server ? [`MCPORTER_REPLAY_SERVER=${parsed.server}`] : []),
+    'MCPORTER_DISABLE_KEEPALIVE=*',
+  ];
+  console.log(`Set ${envInstructions.join(' and ')} before the next mcporter call to replay ${replayPath}.`);
 }
 
 export function printReplayHelp(): void {
