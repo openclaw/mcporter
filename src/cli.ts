@@ -4,6 +4,7 @@ import { inferCommandRouting } from './cli/command-inference.js';
 import { CliUsageError } from './cli/errors.js';
 import { consumeHelpTokens, isHelpToken, isVersionToken, printHelp, printVersion } from './cli/help-output.js';
 import { logError, logInfo } from './cli/logger-context.js';
+import { isRecordReplayModeActive } from './cli/record-replay-env.js';
 import { DEBUG_HANG, dumpActiveHandles, terminateChildProcesses } from './cli/runtime-debug.js';
 import { resolveConfigPath } from './config/path-discovery.js';
 import type { Runtime, RuntimeOptions } from './runtime.js';
@@ -382,6 +383,9 @@ async function maybeHandleDaemonFastCall(
   configResolution: { path: string; explicit: boolean },
   rootDir: string | undefined
 ): Promise<boolean> {
+  if (isRecordReplayModeActive()) {
+    return false;
+  }
   const callArgs = resolveDaemonFastCallArgs(command, args);
   if (!callArgs) {
     return false;

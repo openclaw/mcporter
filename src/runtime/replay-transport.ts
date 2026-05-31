@@ -50,6 +50,9 @@ export class ReplayTransport implements Transport {
   }
 
   async close(): Promise<void> {
+    if (this.expectedSends.length > 0) {
+      throw new Error(formatReplayRemainder(this.opts.server, this.expectedSends));
+    }
     this.onclose?.();
   }
 }
@@ -176,4 +179,14 @@ function formatReplayMismatch(
   return `Replay mismatch for server '${server}': request ${request.method} ${JSON.stringify(
     request.params ?? {}
   )} did not match next expected recv ${expectedText}.`;
+}
+
+function formatReplayRemainder(server: string, expectedSends: readonly ExpectedSend[]): string {
+  const expected = expectedSends[0];
+  const count = expectedSends.length;
+  const requestText = count === 1 ? 'request' : 'requests';
+  const expectedText = expected
+    ? `${expected.method} ${JSON.stringify(expected.params ?? {})}`
+    : 'no remaining recorded recv';
+  return `Replay ended for server '${server}' with ${count} recorded ${requestText} still unused; next expected recv ${expectedText}.`;
 }

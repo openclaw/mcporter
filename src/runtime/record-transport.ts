@@ -20,6 +20,8 @@ export type RecordedMessage = JSONRPCMessage & {
   readonly _meta?: RecordingMeta;
 };
 
+const initializedRecordingPaths = new Map<string, Promise<void>>();
+
 export class RecordTransport implements Transport {
   onclose?: Transport['onclose'];
   onerror?: Transport['onerror'];
@@ -39,6 +41,7 @@ export class RecordTransport implements Transport {
   }
 
   async start(): Promise<void> {
+    await initializeRecordingFile(this.opts.recordPath);
     this.opts.inner.onclose = () => {
       void this.appendCloseOnce();
       this.onclose?.();
@@ -107,6 +110,22 @@ export class RecordTransport implements Transport {
     this.writes = this.writes.then(() => fs.appendFile(this.opts.recordPath, line, 'utf8'));
     await this.writes;
   }
+}
+
+function initializeRecordingFile(recordPath: string): Promise<void> {
+  const existing = initializedRecordingPaths.get(recordPath);
+  if (existing) {
+    return existing;
+  }
+  const initialization = fs
+    .mkdir(path.dirname(recordPath), { recursive: true })
+    .then(() => fs.writeFile(recordPath, '', 'utf8'))
+    .catch((error) => {
+      initializedRecordingPaths.delete(recordPath);
+      throw error;
+    });
+  initializedRecordingPaths.set(recordPath, initialization);
+  return initialization;
 }
 
 export function resolveRecordingPath(sessionName: string): string {

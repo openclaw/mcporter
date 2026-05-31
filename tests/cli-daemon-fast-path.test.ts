@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 process.env.MCPORTER_DISABLE_AUTORUN = '1';
 
@@ -33,9 +33,12 @@ vi.mock('../src/runtime.js', () => ({
   createRuntime: mocks.createRuntime,
 }));
 
+const originalEnv = { ...process.env };
+
 describe('daemon call fast path', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    process.env = { ...originalEnv };
     mocks.DaemonClient.mockClear();
     mocks.createRuntime.mockClear();
     mocks.daemonCallTool.mockReset().mockResolvedValue({
@@ -44,6 +47,10 @@ describe('daemon call fast path', () => {
     mocks.daemonListTools.mockReset().mockResolvedValue([]);
     mocks.daemonCloseServer.mockReset().mockResolvedValue(undefined);
     process.exitCode = undefined;
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
   });
 
   it('routes explicit default keep-alive calls without building the full runtime', async () => {
@@ -81,4 +88,20 @@ describe('daemon call fast path', () => {
       })
     );
   });
+
+  it.each(['MCPORTER_RECORD', 'MCPORTER_REPLAY'] as const)(
+    'bypasses the daemon fast path while %s is active',
+    async (modeEnv) => {
+      process.env[modeEnv] = 'demo';
+      mocks.createRuntime.mockRejectedValue(new Error('runtime path used'));
+      const { runCli } = await import('../src/cli.js');
+
+      await expect(runCli(['call', 'chrome-devtools.list_pages', '--output', 'json'])).rejects.toThrow(
+        'runtime path used'
+      );
+
+      expect(mocks.createRuntime).toHaveBeenCalled();
+      expect(mocks.daemonCallTool).not.toHaveBeenCalled();
+    }
+  );
 });

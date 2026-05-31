@@ -51,6 +51,30 @@ describe('record/replay transports', () => {
     expect(traffic.every((entry) => entry._meta?.server === 'linear')).toBe(true);
   });
 
+  it('starts each recording with a fresh session file', async () => {
+    const recordPath = await tempRecordingPath();
+    await fs.writeFile(
+      recordPath,
+      `${JSON.stringify(send('linear', 1, 'tools/call', { name: 'stale', arguments: {} }))}\n`,
+      'utf8'
+    );
+    const inner = new StubTransport();
+    const transport = new RecordTransport({ inner, recordPath, server: 'linear' });
+
+    await transport.start();
+    await transport.send({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'fresh', arguments: {} },
+    });
+    await transport.close();
+
+    const entries = await readRecording(recordPath);
+    expect(entries.some((entry) => (entry as { params?: { name?: string } }).params?.name === 'stale')).toBe(false);
+    expect(entries.some((entry) => (entry as { params?: { name?: string } }).params?.name === 'fresh')).toBe(true);
+  });
+
   it('replays matching requests by method and params using the active request id', async () => {
     const recordPath = await writeRecording([
       send('linear', 1, 'tools/call', { name: 'list_issues', arguments: { limit: 1 } }),
@@ -94,6 +118,27 @@ describe('record/replay transports', () => {
       })
     ).rejects.toThrow(
       'Replay mismatch for server \'linear\': request tools/call {"name":"create_issue","arguments":{"title":"Bug"}} did not match next expected recv tools/call {"name":"list_issues","arguments":{"limit":1}}.'
+    );
+  });
+
+  it('throws on close when recorded requests remain unreplayed', async () => {
+    const recordPath = await writeRecording([
+      send('linear', 1, 'tools/call', { name: 'first', arguments: {} }),
+      recv('linear', 1, { content: [] }),
+      send('linear', 2, 'tools/call', { name: 'second', arguments: {} }),
+      recv('linear', 2, { content: [] }),
+    ]);
+    const transport = new ReplayTransport({ recordPath, server: 'linear' });
+
+    await transport.send({
+      jsonrpc: '2.0',
+      id: 99,
+      method: 'tools/call',
+      params: { name: 'first', arguments: {} },
+    });
+
+    await expect(transport.close()).rejects.toThrow(
+      'Replay ended for server \'linear\' with 1 recorded request still unused; next expected recv tools/call {"name":"second","arguments":{}}.'
     );
   });
 

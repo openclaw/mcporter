@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { resolveRecordingConfigPath, resolveRecordingPath } from '../runtime/record-transport.js';
+import { buildRecordCommandEnv } from './record-replay-env.js';
 
 export interface ParsedRecordArgs {
   readonly sessionName: string;
@@ -14,10 +15,7 @@ export async function handleRecordCli(args: string[]): Promise<void> {
   const recordPath = resolveRecordingPath(parsed.sessionName);
 
   if (parsed.command.length > 0) {
-    await runWithRecordingEnv(parsed, {
-      MCPORTER_RECORD: parsed.sessionName,
-      MCPORTER_RECORD_SERVER: parsed.server,
-    });
+    await runWithRecordingEnv(parsed, buildRecordCommandEnv(parsed.sessionName, parsed.server));
     return;
   }
 
@@ -68,7 +66,7 @@ async function writeModeConfig(parsed: ParsedRecordArgs, extra: Record<string, u
   );
 }
 
-async function runWithRecordingEnv(parsed: ParsedRecordArgs, env: Record<string, string | undefined>): Promise<void> {
+async function runWithRecordingEnv(parsed: ParsedRecordArgs, env: NodeJS.ProcessEnv): Promise<void> {
   const [command, ...commandArgs] = parsed.command;
   if (!command) {
     return;
@@ -76,10 +74,7 @@ async function runWithRecordingEnv(parsed: ParsedRecordArgs, env: Record<string,
   await new Promise<void>((resolve, reject) => {
     const child = spawn(command, commandArgs, {
       stdio: 'inherit',
-      env: {
-        ...process.env,
-        ...Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => Boolean(entry[1]))),
-      },
+      env,
     });
     child.once('error', reject);
     child.once('exit', (code, signal) => {
