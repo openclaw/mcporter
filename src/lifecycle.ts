@@ -1,6 +1,6 @@
 import type { CommandSpec, RawLifecycle, ServerDefinition, ServerLifecycle } from './config-schema.js';
 
-const DEFAULT_KEEP_ALIVE = new Set(['chrome-devtools', 'mobile-mcp', 'playwright']);
+const DEFAULT_KEEP_ALIVE = new Set(['chrome-devtools', 'mobile-mcp', 'playwright', 'cloudbase']);
 
 const includeOverride = parseList(process.env.MCPORTER_KEEPALIVE);
 const excludeOverride = parseList(process.env.MCPORTER_DISABLE_KEEPALIVE ?? process.env.MCPORTER_NO_KEEPALIVE);
@@ -19,6 +19,7 @@ const KEEP_ALIVE_COMMANDS: CommandSignature[] = [
   { label: 'chrome-devtools', fragments: ['chrome-devtools-mcp'] },
   { label: 'mobile-mcp', fragments: ['@mobilenext/mobile-mcp', 'mobile-mcp'] },
   { label: 'playwright', fragments: ['@playwright/mcp', 'playwright/mcp'] },
+  { label: 'cloudbase', fragments: ['@cloudbase/cloudbase-mcp', 'cloudbase-mcp'] },
 ];
 
 const CHROME_DEVTOOLS_URL_PLACEHOLDERS = [String.raw`\${CHROME_DEVTOOLS_URL}`, '$env:CHROME_DEVTOOLS_URL'];
