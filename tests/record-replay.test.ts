@@ -275,6 +275,7 @@ describe('record/replay transports', () => {
     const configPath = path.join(tempHome, 'mcporter.json');
     const recordingPath = path.join(tempHome, '.mcporter', 'recordings', 'partial.ndjson');
     const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
     const originalReplay = process.env.MCPORTER_REPLAY;
     const originalReplayServer = process.env.MCPORTER_REPLAY_SERVER;
 
@@ -317,6 +318,7 @@ describe('record/replay transports', () => {
     );
 
     process.env.HOME = tempHome;
+    process.env.USERPROFILE = tempHome;
     process.env.MCPORTER_REPLAY = 'partial';
     process.env.MCPORTER_REPLAY_SERVER = 'linear';
 
@@ -332,6 +334,11 @@ describe('record/replay transports', () => {
         delete process.env.HOME;
       } else {
         process.env.HOME = originalHome;
+      }
+      if (originalUserProfile === undefined) {
+        delete process.env.USERPROFILE;
+      } else {
+        process.env.USERPROFILE = originalUserProfile;
       }
       if (originalReplay === undefined) {
         delete process.env.MCPORTER_REPLAY;

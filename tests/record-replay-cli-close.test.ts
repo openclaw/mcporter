@@ -24,6 +24,7 @@ describe('record/replay CLI close behavior', () => {
     await writeReplayFixture(configPath, recordingPath);
 
     process.env.HOME = tempHome;
+    process.env.USERPROFILE = tempHome;
     process.env.MCPORTER_REPLAY = 'partial';
     process.env.MCPORTER_REPLAY_SERVER = 'linear';
     process.env.MCPORTER_NO_FORCE_EXIT = '1';
