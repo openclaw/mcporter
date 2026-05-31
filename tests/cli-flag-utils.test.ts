@@ -10,6 +10,13 @@ describe('cli flag utils', () => {
     expect(argv).toEqual(['list']);
   });
 
+  it('preserves flags after the command separator for wrapped commands', () => {
+    const argv = ['record', 'demo', '--', 'node', 'dist/cli.js', '--config', '/tmp/child.json', 'call'];
+    const flags = extractFlags(argv, ['--config']);
+    expect(flags['--config']).toBeUndefined();
+    expect(argv).toEqual(['record', 'demo', '--', 'node', 'dist/cli.js', '--config', '/tmp/child.json', 'call']);
+  });
+
   it('throws when a required flag value is missing', () => {
     expect(() => extractFlags(['--config'], ['--config'])).toThrow(/requires a value/);
     expect(() => expectValue('--output', undefined)).toThrow(/requires a value/);

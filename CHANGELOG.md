@@ -8,7 +8,6 @@
 
 ### CLI
 
-- Add `mcporter record` / `mcporter replay` for capturing MCP JSON-RPC traffic to NDJSON and replaying exact sessions offline.
 - Reconcile keep-alive daemon metadata with the responding process and serialize daemon startup across parallel clients, preventing duplicate orphaned daemons. (Issue #191, thanks @dtmsyi)
 - Keep daemon-managed stdio servers warm across repeated `mcporter list` requests instead of treating non-interactive tool listing as a throwaway process. (Issue #188, thanks @robertoronderosjr)
 

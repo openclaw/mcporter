@@ -6,6 +6,9 @@ export function extractFlags(args: string[], keys: readonly string[]): FlagMap {
   let index = 0;
   while (index < args.length) {
     const token = args[index];
+    if (token === '--') {
+      break;
+    }
     if (token === undefined || !keys.includes(token)) {
       index += 1;
       continue;
