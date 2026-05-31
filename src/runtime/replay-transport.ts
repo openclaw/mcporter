@@ -44,7 +44,8 @@ export class ReplayTransport implements Transport {
 
     this.expectedSends.shift();
     if (expected.response) {
-      queueMicrotask(() => this.onmessage?.(expected.response as JSONRPCMessage));
+      const response = withActiveRequestId(expected.response, request.id);
+      queueMicrotask(() => this.onmessage?.(response));
     }
   }
 
@@ -152,6 +153,16 @@ function requestDetails(message: JSONRPCMessage):
 function responseIdOf(message: JSONRPCMessage): string | number | undefined {
   const id = (message as JsonRpcRecord).id;
   return typeof id === 'string' || typeof id === 'number' ? id : undefined;
+}
+
+function withActiveRequestId(response: JSONRPCMessage, requestId: string | number | undefined): JSONRPCMessage {
+  if (requestId === undefined) {
+    return response;
+  }
+  return {
+    ...(response as JsonRpcRecord),
+    id: requestId,
+  } as JSONRPCMessage;
 }
 
 function formatReplayMismatch(

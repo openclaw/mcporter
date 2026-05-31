@@ -51,7 +51,7 @@ describe('record/replay transports', () => {
     expect(traffic.every((entry) => entry._meta?.server === 'linear')).toBe(true);
   });
 
-  it('replays matching requests by method and params', async () => {
+  it('replays matching requests by method and params using the active request id', async () => {
     const recordPath = await writeRecording([
       send('linear', 1, 'tools/call', { name: 'list_issues', arguments: { limit: 1 } }),
       recv('linear', 1, { content: [{ type: 'text', text: 'recorded' }] }),
@@ -72,7 +72,7 @@ describe('record/replay transports', () => {
     expect(received).toEqual([
       {
         jsonrpc: '2.0',
-        id: 1,
+        id: 99,
         result: { content: [{ type: 'text', text: 'recorded' }] },
       },
     ]);

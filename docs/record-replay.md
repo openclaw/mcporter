@@ -15,6 +15,8 @@ mcporter record demo-session -- mcporter call linear.list_issues limit:5
 mcporter replay demo-session -- mcporter call linear.list_issues limit:5
 ```
 
+Recordings contain raw JSON-RPC params and responses. Review and redact them before sharing, attaching to bug reports, or committing them to a repository because tool arguments and results can include credentials, private content, or customer data.
+
 To record or replay a later command, create the session configuration and export the matching environment variable:
 
 ```bash
