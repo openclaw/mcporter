@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import { loadDaemonConfig, type ServerDefinition } from '../config.js';
-import { withFileLock, writeJsonFile } from '../fs-json.js';
+import { readJsonFile, withFileLock, writeJsonFile } from '../fs-json.js';
 import { isKeepAliveServer } from '../lifecycle.js';
 import { createRuntime, type Runtime } from '../runtime.js';
 import { collectConfigLayers, statConfigMtime } from './config-layers.js';
@@ -188,10 +188,10 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
     });
   });
 
-  // Separate lock from the client's metadata lock so a client awaiting readiness can't deadlock the bind.
   let claimed = false;
   await withFileLock(`${options.metadataPath}.bind`, async () => {
-    if (await isDaemonResponding(options.socketPath)) {
+    const live = await probeLiveDaemon(options.socketPath);
+    if (live && (await metadataMatches(options.metadataPath, live))) {
       return;
     }
     await prepareSocket(options.socketPath);
@@ -229,15 +229,28 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
 
 const DAEMON_PROBE_TIMEOUT_MS = 2_000;
 
-// Connect-only is not enough: a hung daemon still has its socket in listen(2), so the kernel accepts the
-// connection. Require a status response that reports this socket and a live pid, matching the client's liveness
-// contract, so a hung/dead/foreign listener falls through to rebind instead of stranding the caller.
 export async function isDaemonResponding(socketPath: string): Promise<boolean> {
+  return (await probeLiveDaemon(socketPath)) !== null;
+}
+
+async function probeLiveDaemon(socketPath: string): Promise<StatusResult | null> {
   const status = await probeDaemonStatus(socketPath);
-  if (!status || status.socketPath !== socketPath) {
+  if (!status || status.socketPath !== socketPath || !isProcessAlive(status.pid)) {
+    return null;
+  }
+  return status;
+}
+
+export async function metadataMatches(
+  metadataPath: string,
+  live: Pick<StatusResult, 'pid' | 'socketPath'>
+): Promise<boolean> {
+  try {
+    const existing = await readJsonFile<{ pid?: number; socketPath?: string }>(metadataPath);
+    return existing?.pid === live.pid && existing?.socketPath === live.socketPath;
+  } catch {
     return false;
   }
-  return isProcessAlive(status.pid);
 }
 
 function isProcessAlive(pid: number): boolean {

@@ -3,9 +3,9 @@ import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerDefinition } from '../src/config.js';
-import { __testProcessRequest, isDaemonResponding } from '../src/daemon/host.js';
+import { __testProcessRequest, isDaemonResponding, metadataMatches } from '../src/daemon/host.js';
 import type { DaemonRequest } from '../src/daemon/protocol.js';
 import type { Runtime } from '../src/runtime.js';
 
@@ -116,7 +116,6 @@ describe('daemon host request handling', () => {
   });
 });
 
-// Unix-domain socket servers can't bind a filesystem path on Windows; the daemon uses named pipes there.
 const describeUnixSocket = process.platform === 'win32' ? describe.skip : describe;
 
 describeUnixSocket('isDaemonResponding', () => {
@@ -163,9 +162,7 @@ describeUnixSocket('isDaemonResponding', () => {
   it('returns false when the socket accepts but never responds (hung daemon)', async () => {
     const p = socketPath();
     await listen(
-      net.createServer(() => {
-        // Accept the connection but never reply, mimicking a daemon whose event loop is blocked.
-      }),
+      net.createServer((socket) => socket.pause()),
       p
     );
     expect(await isDaemonResponding(p)).toBe(false);
@@ -185,6 +182,38 @@ describeUnixSocket('isDaemonResponding', () => {
 
   it('returns false when nothing is listening', async () => {
     expect(await isDaemonResponding(socketPath())).toBe(false);
+  });
+});
+
+describe('metadataMatches', () => {
+  let metadataPath: string;
+  const live = { pid: 4321, socketPath: '/tmp/daemon.sock' };
+
+  beforeEach(async () => {
+    metadataPath = path.join(os.tmpdir(), `mcporter-meta-${randomUUID().slice(0, 8)}.json`);
+  });
+
+  afterEach(async () => {
+    await fs.rm(metadataPath, { force: true }).catch(() => {});
+  });
+
+  it('matches when pid and socket agree', async () => {
+    await fs.writeFile(metadataPath, JSON.stringify({ pid: 4321, socketPath: '/tmp/daemon.sock' }), 'utf8');
+    expect(await metadataMatches(metadataPath, live)).toBe(true);
+  });
+
+  it('does not match a different pid', async () => {
+    await fs.writeFile(metadataPath, JSON.stringify({ pid: 9999, socketPath: '/tmp/daemon.sock' }), 'utf8');
+    expect(await metadataMatches(metadataPath, live)).toBe(false);
+  });
+
+  it('does not match when metadata is missing', async () => {
+    expect(await metadataMatches(metadataPath, live)).toBe(false);
+  });
+
+  it('does not match when metadata is corrupt', async () => {
+    await fs.writeFile(metadataPath, '{ not json', 'utf8');
+    expect(await metadataMatches(metadataPath, live)).toBe(false);
   });
 });
 

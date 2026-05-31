@@ -222,4 +222,65 @@ await new Promise(() => {});
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     }
   }, 40_000);
+
+  it('rebinds when a live daemon owns the socket but metadata is missing', async () => {
+    await ensureDistBuilt();
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-meta-'));
+    const scriptPath = path.join(tempDir, 'meta-server.mjs');
+    const configPath = path.join(tempDir, 'mcporter.meta.json');
+    const metadataPath = path.join(tempDir, 'daemon.json');
+
+    const serverSource = `import { McpServer } from '${MCP_SERVER_MODULE}';
+import { StdioServerTransport } from '${STDIO_SERVER_MODULE}';
+const server = new McpServer({ name: 'meta-e2e', version: '1.0.0' });
+server.registerTool('ping', { title: 'ping', description: 'ping', inputSchema: {} }, async () => ({
+  content: [{ type: 'text', text: 'pong' }],
+}));
+await server.connect(new StdioServerTransport());
+await new Promise(() => {});
+`;
+    await fs.writeFile(scriptPath, serverSource, 'utf8');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          'meta-e2e': { description: 'meta server', command: 'node', args: [scriptPath], lifecycle: 'keep-alive' },
+        },
+      }),
+      'utf8'
+    );
+
+    // Pin only the metadata path (not the socket, to stay under the unix socket length limit).
+    const env = { ...process.env, MCPORTER_NO_FORCE_EXIT: '1', MCPORTER_DAEMON_METADATA: metadataPath };
+    const children: ChildProcess[] = [];
+    const startForeground = (): ChildProcess => {
+      const child = spawn(process.execPath, [CLI_ENTRY, '--config', configPath, 'daemon', 'start', '--foreground'], {
+        env,
+        stdio: 'ignore',
+      });
+      children.push(child);
+      return child;
+    };
+
+    try {
+      const first = startForeground();
+      const firstPid = JSON.parse(await readFileWithRetries(metadataPath, 50)).pid as number;
+      expect(firstPid).toBe(first.pid);
+
+      await fs.rm(metadataPath, { force: true });
+
+      const replacement = startForeground();
+      await new Promise((resolve) => setTimeout(resolve, 5_000));
+
+      const ownerPid = JSON.parse(await readFileWithRetries(metadataPath, 50)).pid as number;
+      expect(ownerPid).toBe(replacement.pid);
+      expect(replacement.exitCode).toBeNull();
+    } finally {
+      for (const child of children) {
+        child.kill('SIGKILL');
+      }
+      await runCli(['daemon', 'stop'], configPath, { MCPORTER_DAEMON_METADATA: metadataPath }).catch(() => {});
+      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }, 40_000);
 });
