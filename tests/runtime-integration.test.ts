@@ -223,4 +223,65 @@ describe('runtime integration', () => {
 
     await runtime.close('integration');
   });
+
+  it('preserves the cached client across connect(disableOAuth:true) → callTool() (no implicit eviction)', async () => {
+    // Regression for the PR-198 review note (Codex r3366238654): the
+    // documented headless setup is `await runtime.connect(server, {
+    // disableOAuth: true })`. That call stored the cache slot with
+    // `allowCachedAuth: undefined`. The subsequent internal
+    // `callTool()` path forces `allowCachedAuth: true`, and the
+    // cache-match check (existing.allowCachedAuth === options.allowCachedAuth
+    // || options.allowCachedAuth === undefined) treated the two as
+    // structurally different — every first callTool evicted and
+    // reopened the transport. Defeats the pooling guarantee for the
+    // common pre-connect path.
+    const runtime = await createRuntime({
+      servers: [
+        {
+          name: 'integration',
+          description: 'Integration test server',
+          command: { kind: 'http', url: baseUrl },
+        },
+      ],
+    });
+
+    const initial = await runtime.connect('integration', { disableOAuth: true });
+
+    const callResult = (await runtime.callTool('integration', 'add', {
+      args: { a: 1, b: 2 },
+    })) as { structuredContent?: { result: number } };
+    expect(callResult.structuredContent?.result).toBe(3);
+
+    // After callTool, the cache slot should still hold the same
+    // ClientContext established by the prior connect() — no eviction,
+    // no extra transport spawned.
+    const afterCall = await runtime.connect('integration', { disableOAuth: true });
+    expect(afterCall).toBe(initial);
+
+    await runtime.close('integration');
+  });
+
+  it('preserves the cached client across connect(disableOAuth:true) → listTools() (no implicit eviction)', async () => {
+    // Same shape as the callTool regression: listTools also forces
+    // `allowCachedAuth: options.allowCachedAuth ?? true` internally,
+    // so the pre-connected slot was being evicted on first listTools.
+    const runtime = await createRuntime({
+      servers: [
+        {
+          name: 'integration',
+          description: 'Integration test server',
+          command: { kind: 'http', url: baseUrl },
+        },
+      ],
+    });
+
+    const initial = await runtime.connect('integration', { disableOAuth: true });
+    const tools = await runtime.listTools('integration');
+    expect(tools.some((tool) => tool.name === 'add')).toBe(true);
+
+    const afterList = await runtime.connect('integration', { disableOAuth: true });
+    expect(afterList).toBe(initial);
+
+    await runtime.close('integration');
+  });
 });

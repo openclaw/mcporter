@@ -365,13 +365,23 @@ class McpRuntime implements Runtime {
     // it disables the interactive OAuth flow at the transport layer but
     // participates in caching (own slot, see the eviction rule below).
     const disableOAuth = options.disableOAuth === true;
+    // Normalize: a caller asking for `disableOAuth: true` has no path to
+    // OAuth, so cached-token application is the only auth they can ever
+    // use — default `allowCachedAuth: true` when the caller didn't pick
+    // a side. Without this, the documented headless setup
+    // `connect(server, { disableOAuth: true })` stored
+    // `allowCachedAuth: undefined`, and the next internal `callTool` /
+    // `listTools` (which force `allowCachedAuth: true`) immediately
+    // evicted and reopened the transport. Explicit `false` is honored
+    // (header-only / anonymous callers).
+    const effectiveAllowCachedAuth = options.allowCachedAuth ?? (disableOAuth ? true : undefined);
     const useCache = options.skipCache !== true && options.maxOAuthAttempts === undefined;
 
     if (useCache) {
       const existing = this.clients.get(normalized);
       if (existing) {
         const allowCachedAuthMatches =
-          existing.allowCachedAuth === options.allowCachedAuth || options.allowCachedAuth === undefined;
+          existing.allowCachedAuth === effectiveAllowCachedAuth || effectiveAllowCachedAuth === undefined;
         const disableOAuthMatches = existing.disableOAuth === disableOAuth;
         if (allowCachedAuthMatches && disableOAuthMatches) {
           return existing.promise;
@@ -394,7 +404,7 @@ class McpRuntime implements Runtime {
       maxOAuthAttempts: options.maxOAuthAttempts,
       oauthTimeoutMs: this.oauthTimeoutMs ?? OAUTH_CODE_TIMEOUT_MS,
       onDefinitionPromoted: (promoted) => this.definitions.set(promoted.name, promoted),
-      allowCachedAuth: options.allowCachedAuth,
+      allowCachedAuth: effectiveAllowCachedAuth,
       oauthSessionOptions: options.oauthSessionOptions,
       disableOAuth,
       recordPath: this.recordPath,
@@ -404,7 +414,7 @@ class McpRuntime implements Runtime {
     if (useCache) {
       this.clients.set(normalized, {
         promise: connection,
-        allowCachedAuth: options.allowCachedAuth,
+        allowCachedAuth: effectiveAllowCachedAuth,
         disableOAuth,
       });
       try {
