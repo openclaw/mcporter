@@ -479,6 +479,7 @@ async function maybeHandleSimpleDaemonFastCall(
     tool: parsed.tool,
     args: Object.keys(parsed.args).length > 0 ? parsed.args : undefined,
     timeoutMs: resolveCallTimeout(parsed.timeoutMs),
+    disableOAuth: parsed.disableOAuth,
   });
   const { callResult } = wrapCallResult(result);
   printCallOutput(callResult, result, parsed.output);
@@ -583,6 +584,8 @@ function createDaemonOnlyRuntime(daemonClient: import('./daemon/client.js').Daem
         server,
         includeSchema: options?.includeSchema,
         autoAuthorize: options?.autoAuthorize,
+        allowCachedAuth: options?.allowCachedAuth,
+        disableOAuth: options?.disableOAuth,
       })) as Awaited<ReturnType<Runtime['listTools']>>,
     callTool: (server, toolName, options) =>
       daemonClient.callTool({
@@ -590,9 +593,27 @@ function createDaemonOnlyRuntime(daemonClient: import('./daemon/client.js').Daem
         tool: toolName,
         args: options?.args,
         timeoutMs: options?.timeoutMs,
+        disableOAuth: options?.disableOAuth,
       }),
-    listResources: (server, options) => daemonClient.listResources({ server, params: options ?? {} }),
-    readResource: (server, uri) => daemonClient.readResource({ server, uri }),
+    listResources: (server, options) => {
+      const params: Record<string, unknown> = { ...options };
+      delete params.allowCachedAuth;
+      delete params.disableOAuth;
+      delete params.oauthSessionOptions;
+      return daemonClient.listResources({
+        server,
+        params,
+        allowCachedAuth: options?.allowCachedAuth,
+        disableOAuth: options?.disableOAuth,
+      });
+    },
+    readResource: (server, uri, options) =>
+      daemonClient.readResource({
+        server,
+        uri,
+        allowCachedAuth: options?.allowCachedAuth,
+        disableOAuth: options?.disableOAuth,
+      }),
     connect: async (server) => {
       throw new Error(`Server '${server}' is only available through daemon request methods.`);
     },

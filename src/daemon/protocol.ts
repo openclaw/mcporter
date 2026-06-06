@@ -28,6 +28,7 @@ export interface CallToolParams {
   readonly tool: string;
   readonly args?: Record<string, unknown>;
   readonly timeoutMs?: number;
+  readonly disableOAuth?: boolean;
 }
 
 export interface ListToolsParams {
@@ -35,16 +36,21 @@ export interface ListToolsParams {
   readonly includeSchema?: boolean;
   readonly autoAuthorize?: boolean;
   readonly allowCachedAuth?: boolean;
+  readonly disableOAuth?: boolean;
 }
 
 export interface ListResourcesParams {
   readonly server: string;
   readonly params?: Record<string, unknown>;
+  readonly allowCachedAuth?: boolean;
+  readonly disableOAuth?: boolean;
 }
 
 export interface ReadResourceParams {
   readonly server: string;
   readonly uri: string;
+  readonly allowCachedAuth?: boolean;
+  readonly disableOAuth?: boolean;
 }
 
 export interface CloseServerParams {

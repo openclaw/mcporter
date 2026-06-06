@@ -49,6 +49,7 @@ describe('daemon host request handling', () => {
     expect(runtime.callTool).toHaveBeenCalledWith('oauth', 'ping', {
       args: {},
       timeoutMs: undefined,
+      disableOAuth: undefined,
     });
 
     await __testProcessRequest('', runtime as unknown as Runtime, managedServers, new Map(), metadata, logContext, {
@@ -61,6 +62,7 @@ describe('daemon host request handling', () => {
       includeSchema: true,
       autoAuthorize: undefined,
       allowCachedAuth: true,
+      disableOAuth: undefined,
     });
   });
 
@@ -78,6 +80,7 @@ describe('daemon host request handling', () => {
       includeSchema: true,
       autoAuthorize: undefined,
       allowCachedAuth: true,
+      disableOAuth: undefined,
     });
   });
 
@@ -95,6 +98,37 @@ describe('daemon host request handling', () => {
       includeSchema: true,
       autoAuthorize: false,
       allowCachedAuth: true,
+      disableOAuth: undefined,
+    });
+  });
+
+  it('forwards disableOAuth on daemon callTool and listTools requests', async () => {
+    const runtime = createRuntimeDouble();
+    const managedServers = createManagedServers();
+
+    await __testProcessRequest('', runtime as unknown as Runtime, managedServers, new Map(), metadata, logContext, {
+      id: 'call',
+      method: 'callTool',
+      params: { server: 'oauth', tool: 'ping', disableOAuth: true },
+    });
+
+    expect(runtime.callTool).toHaveBeenCalledWith('oauth', 'ping', {
+      args: {},
+      timeoutMs: undefined,
+      disableOAuth: true,
+    });
+
+    await __testProcessRequest('', runtime as unknown as Runtime, managedServers, new Map(), metadata, logContext, {
+      id: 'list',
+      method: 'listTools',
+      params: { server: 'oauth', includeSchema: true, disableOAuth: true },
+    });
+
+    expect(runtime.listTools).toHaveBeenCalledWith('oauth', {
+      includeSchema: true,
+      autoAuthorize: undefined,
+      allowCachedAuth: true,
+      disableOAuth: true,
     });
   });
 
@@ -112,6 +146,7 @@ describe('daemon host request handling', () => {
       includeSchema: undefined,
       autoAuthorize: undefined,
       allowCachedAuth: false,
+      disableOAuth: undefined,
     });
   });
 });
