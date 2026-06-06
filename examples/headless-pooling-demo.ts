@@ -159,7 +159,6 @@ async function main(): Promise<void> {
       console.log(`[demo]   Result:   ${reused ? 'PASS' : 'FAIL'}\n`);
       await runtime.close();
     }
-
   } finally {
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));
   }
