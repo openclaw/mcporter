@@ -163,6 +163,24 @@ describe('runtime integration', () => {
     await runtime.close('integration');
   });
 
+  it('treats disableOAuth: false like omitted for cache identity', async () => {
+    const runtime = await createRuntime({
+      servers: [
+        {
+          name: 'integration',
+          description: 'Integration test server',
+          command: { kind: 'http', url: baseUrl },
+        },
+      ],
+    });
+
+    const explicitFalse = await runtime.connect('integration', { disableOAuth: false });
+    const omitted = await runtime.connect('integration', {});
+    expect(omitted).toBe(explicitFalse);
+
+    await runtime.close('integration');
+  });
+
   it('maxOAuthAttempts: 0 still bypasses the cache (existing contract preserved)', async () => {
     // Regression guard: callers passing maxOAuthAttempts: 0 today get
     // a fresh client per call. That contract is unchanged — only the

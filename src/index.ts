@@ -4,7 +4,10 @@ export type { CallResult, ConnectionIssue, ImageContent } from './result-utils.j
 export { createCallResult, describeConnectionIssue, wrapCallResult } from './result-utils.js';
 export type {
   CallOptions,
+  ConnectOptions,
+  ListResourcesOptions,
   ListToolsOptions,
+  ReadResourceOptions,
   Runtime,
   RuntimeLogger,
   RuntimeOptions,

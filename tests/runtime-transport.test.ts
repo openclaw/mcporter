@@ -352,6 +352,80 @@ describe('createClientContext (HTTP)', () => {
     await createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 });
   });
 
+  it('does not create OAuth sessions for OAuth HTTP servers when disableOAuth is true', async () => {
+    const definition = stubOAuthHttpDefinition('https://example.com/secure');
+
+    mocks.connectWithAuth.mockImplementationOnce(async (_client, transport, session) => {
+      expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
+      expect(session).toBeUndefined();
+      return transport;
+    });
+
+    const context = await createClientContext(definition, logger, clientInfo, {
+      disableOAuth: true,
+      allowCachedAuth: true,
+    });
+
+    expect(context.definition.auth).toBe('oauth');
+    expect(mocks.createOAuthSession).not.toHaveBeenCalled();
+    expect(mocks.connectWithAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not promote ad-hoc HTTP servers after Streamable 401 when disableOAuth is true', async () => {
+    const definition = stubHttpDefinition('https://example.com/secure');
+
+    mocks.connectWithAuth
+      .mockImplementationOnce(async (_client, transport, session) => {
+        expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
+        expect(session).toBeUndefined();
+        throw new Error('SSE error: Non-200 status code (401)');
+      })
+      .mockImplementationOnce(async (_client, transport, session) => {
+        expect(transport).toBeInstanceOf(SSEClientTransport);
+        expect(session).toBeUndefined();
+        return transport;
+      });
+
+    const { promotedDefinitions, onDefinitionPromoted } = createPromotionRecorder();
+    const context = await createClientContext(definition, logger, clientInfo, {
+      disableOAuth: true,
+      onDefinitionPromoted,
+    });
+
+    expect(context.definition.auth).toBeUndefined();
+    expect(mocks.createOAuthSession).not.toHaveBeenCalled();
+    expect(promotedDefinitions).toEqual([]);
+    expect(mocks.connectWithAuth).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not promote ad-hoc HTTP servers after SSE 401 when disableOAuth is true', async () => {
+    const definition = stubHttpDefinition('https://example.com/sse-auth');
+
+    mocks.connectWithAuth
+      .mockImplementationOnce(async (_client, transport, session) => {
+        expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
+        expect(session).toBeUndefined();
+        throw new Error('HTTP error 405: Method Not Allowed');
+      })
+      .mockImplementationOnce(async (_client, transport, session) => {
+        expect(transport).toBeInstanceOf(SSEClientTransport);
+        expect(session).toBeUndefined();
+        throw new Error('SSE error: Non-200 status code (401)');
+      });
+
+    const { promotedDefinitions, onDefinitionPromoted } = createPromotionRecorder();
+    await expect(
+      createClientContext(definition, logger, clientInfo, {
+        disableOAuth: true,
+        onDefinitionPromoted,
+      })
+    ).rejects.toThrow('Non-200 status code (401)');
+
+    expect(mocks.createOAuthSession).not.toHaveBeenCalled();
+    expect(promotedDefinitions).toEqual([]);
+    expect(mocks.connectWithAuth).toHaveBeenCalledTimes(2);
+  });
+
   it('promotes ad-hoc HTTP servers after generic 401 errors from Streamable HTTP', async () => {
     const definition = stubHttpDefinition('https://example.com/secure');
 

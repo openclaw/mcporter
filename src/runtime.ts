@@ -35,6 +35,11 @@ export type RuntimeLogger = Logger;
 export interface CallOptions {
   readonly args?: CallToolRequest['params']['arguments'];
   readonly timeoutMs?: number;
+  /**
+   * Suppress interactive OAuth for this call while still allowing cached
+   * bearer tokens to be applied. Intended for headless callers.
+   */
+  readonly disableOAuth?: boolean;
 }
 
 export interface ListToolsOptions {
@@ -42,6 +47,25 @@ export interface ListToolsOptions {
   readonly autoAuthorize?: boolean;
   readonly allowCachedAuth?: boolean;
   readonly oauthSessionOptions?: OAuthSessionOptions;
+  /**
+   * Suppress interactive OAuth for this listing while keeping the connection
+   * cache available. Prefer this over `autoAuthorize: false` for long-running
+   * headless callers that need cached-token-only behavior.
+   */
+  readonly disableOAuth?: boolean;
+}
+
+export interface ListResourcesOptions {
+  readonly cursor?: string;
+  readonly allowCachedAuth?: boolean;
+  readonly oauthSessionOptions?: OAuthSessionOptions;
+  readonly disableOAuth?: boolean;
+}
+
+export interface ReadResourceOptions {
+  readonly allowCachedAuth?: boolean;
+  readonly oauthSessionOptions?: OAuthSessionOptions;
+  readonly disableOAuth?: boolean;
 }
 
 export interface ConnectOptions {
@@ -76,8 +100,8 @@ export interface Runtime {
   getInstructions?(server: string): Promise<string | undefined>;
   listTools(server: string, options?: ListToolsOptions): Promise<ServerToolInfo[]>;
   callTool(server: string, toolName: string, options?: CallOptions): Promise<unknown>;
-  listResources(server: string, options?: Partial<ListResourcesRequest['params']>): Promise<unknown>;
-  readResource(server: string, uri: string): Promise<unknown>;
+  listResources(server: string, options?: ListResourcesOptions): Promise<unknown>;
+  readResource(server: string, uri: string, options?: ReadResourceOptions): Promise<unknown>;
   connect(server: string, options?: ConnectOptions): Promise<ClientContext>;
   close(server?: string): Promise<void>;
 }
@@ -127,7 +151,7 @@ class McpRuntime implements Runtime {
     {
       readonly promise: Promise<ClientContext>;
       readonly allowCachedAuth: boolean | undefined;
-      readonly disableOAuth: boolean | undefined;
+      readonly disableOAuth: boolean;
     }
   >();
   private readonly logger: RuntimeLogger;
@@ -206,12 +230,17 @@ class McpRuntime implements Runtime {
   // listTools queries tool metadata and optionally includes schemas when requested.
   async listTools(server: string, options: ListToolsOptions = {}): Promise<ServerToolInfo[]> {
     // Toggle auto authorization so list can run without forcing OAuth flows.
+    // `disableOAuth` is the cache-friendly suppression path; when present it
+    // supersedes the legacy `autoAuthorize: false` uncached behavior.
     const autoAuthorize = options.autoAuthorize !== false;
+    const disableOAuth = this.effectiveDisableOAuthForOperation(server, options.disableOAuth);
+    const useLegacyNoAuthorize = !autoAuthorize && disableOAuth !== true;
     const context = await this.connect(server, {
-      maxOAuthAttempts: autoAuthorize ? undefined : 0,
-      skipCache: !autoAuthorize,
+      maxOAuthAttempts: useLegacyNoAuthorize ? 0 : undefined,
+      skipCache: useLegacyNoAuthorize,
       allowCachedAuth: options.allowCachedAuth ?? true,
       oauthSessionOptions: options.oauthSessionOptions,
+      disableOAuth,
     });
     let closeError: unknown;
     const tools: ServerToolInfo[] = [];
@@ -235,7 +264,7 @@ class McpRuntime implements Runtime {
       await this.resetConnectionOnError(server, error);
       throw error;
     } finally {
-      if (!autoAuthorize) {
+      if (useLegacyNoAuthorize) {
         try {
           await this.closeContext(context);
         } catch (error) {
@@ -261,6 +290,7 @@ class McpRuntime implements Runtime {
     try {
       const { client } = await this.connect(server, {
         allowCachedAuth: true,
+        disableOAuth: this.effectiveDisableOAuthForOperation(server, options.disableOAuth),
       });
       const params: CallToolRequest['params'] = {
         name: toolName,
@@ -288,10 +318,15 @@ class McpRuntime implements Runtime {
   }
 
   // listResources delegates to the MCP resources/list method with passthrough params.
-  async listResources(server: string, options: Partial<ListResourcesRequest['params']> = {}): Promise<unknown> {
+  async listResources(server: string, options: ListResourcesOptions = {}): Promise<unknown> {
+    const { allowCachedAuth, disableOAuth, oauthSessionOptions, ...params } = options;
     try {
-      const { client } = await this.connect(server);
-      return await client.listResources(options as ListResourcesRequest['params']);
+      const { client } = await this.connect(server, {
+        allowCachedAuth,
+        oauthSessionOptions,
+        disableOAuth: this.effectiveDisableOAuthForOperation(server, disableOAuth),
+      });
+      return await client.listResources(params as ListResourcesRequest['params']);
     } catch (error) {
       // Fatal listResources errors usually mean the underlying transport has gone away.
       await this.resetConnectionOnError(server, error);
@@ -299,14 +334,25 @@ class McpRuntime implements Runtime {
     }
   }
 
-  async readResource(server: string, uri: string): Promise<unknown> {
+  async readResource(server: string, uri: string, options: ReadResourceOptions = {}): Promise<unknown> {
     try {
-      const { client } = await this.connect(server);
+      const { client } = await this.connect(server, {
+        allowCachedAuth: options.allowCachedAuth,
+        oauthSessionOptions: options.oauthSessionOptions,
+        disableOAuth: this.effectiveDisableOAuthForOperation(server, options.disableOAuth),
+      });
       return await client.readResource({ uri } satisfies ReadResourceRequest['params']);
     } catch (error) {
       await this.resetConnectionOnError(server, error);
       throw error;
     }
+  }
+
+  private effectiveDisableOAuthForOperation(server: string, requested: boolean | undefined): boolean | undefined {
+    if (requested !== undefined) {
+      return requested;
+    }
+    return this.clients.get(server.trim())?.disableOAuth;
   }
 
   // connect lazily instantiates a client context per server and memoizes it.
@@ -318,6 +364,7 @@ class McpRuntime implements Runtime {
     // `disableOAuth: true` is the cache-friendly OAuth-suppression knob:
     // it disables the interactive OAuth flow at the transport layer but
     // participates in caching (own slot, see the eviction rule below).
+    const disableOAuth = options.disableOAuth === true;
     const useCache = options.skipCache !== true && options.maxOAuthAttempts === undefined;
 
     if (useCache) {
@@ -325,7 +372,7 @@ class McpRuntime implements Runtime {
       if (existing) {
         const allowCachedAuthMatches =
           existing.allowCachedAuth === options.allowCachedAuth || options.allowCachedAuth === undefined;
-        const disableOAuthMatches = existing.disableOAuth === options.disableOAuth;
+        const disableOAuthMatches = existing.disableOAuth === disableOAuth;
         if (allowCachedAuthMatches && disableOAuthMatches) {
           return existing.promise;
         }
@@ -349,7 +396,7 @@ class McpRuntime implements Runtime {
       onDefinitionPromoted: (promoted) => this.definitions.set(promoted.name, promoted),
       allowCachedAuth: options.allowCachedAuth,
       oauthSessionOptions: options.oauthSessionOptions,
-      disableOAuth: options.disableOAuth,
+      disableOAuth,
       recordPath: this.recordPath,
       replayPath: this.replayPath,
     });
@@ -358,7 +405,7 @@ class McpRuntime implements Runtime {
       this.clients.set(normalized, {
         promise: connection,
         allowCachedAuth: options.allowCachedAuth,
-        disableOAuth: options.disableOAuth,
+        disableOAuth,
       });
       try {
         return await connection;

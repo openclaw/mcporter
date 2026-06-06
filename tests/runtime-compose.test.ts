@@ -271,6 +271,52 @@ describe('mcporter composability', () => {
     }
   });
 
+  it('preserves a disabled-OAuth cached connection through high-level helpers', async () => {
+    const runtime = await createRuntime({
+      servers: [
+        {
+          name: 'oauth',
+          command: { kind: 'http' as const, url: new URL('https://oauth.example.com/mcp') },
+          auth: 'oauth' as const,
+        },
+      ],
+    });
+
+    try {
+      await runtime.connect('oauth', { disableOAuth: true, allowCachedAuth: true });
+      await runtime.callTool('oauth', 'ping');
+      await runtime.listTools('oauth');
+      await runtime.listResources('oauth');
+
+      expect(mocks.streamableInstances).toHaveLength(1);
+      expect(mocks.connectMock).toHaveBeenCalledTimes(1);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it('uses disableOAuth on cold callTool/listTools helper connections', async () => {
+    const runtime = await createRuntime({
+      servers: [
+        {
+          name: 'oauth',
+          command: { kind: 'http' as const, url: new URL('https://oauth.example.com/mcp') },
+          auth: 'oauth' as const,
+        },
+      ],
+    });
+
+    try {
+      await runtime.callTool('oauth', 'ping', { disableOAuth: true });
+      await runtime.listTools('oauth', { disableOAuth: true });
+
+      expect(mocks.streamableInstances).toHaveLength(1);
+      expect(mocks.connectMock).toHaveBeenCalledTimes(1);
+    } finally {
+      await runtime.close();
+    }
+  });
+
   it('reconnects when callTool needs cached auth after an uncached connection', async () => {
     const runtime = await createRuntime({
       servers: [

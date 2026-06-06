@@ -17,7 +17,16 @@ type ToolSchemaInfo = {
   propertySet: Set<string>;
 };
 
-const KNOWN_OPTION_KEYS = new Set(['tailLog', 'timeout', 'stream', 'streamLog', 'mimeType', 'metadata', 'log']);
+const KNOWN_OPTION_KEYS = new Set([
+  'disableOAuth',
+  'tailLog',
+  'timeout',
+  'stream',
+  'streamLog',
+  'mimeType',
+  'metadata',
+  'log',
+]);
 
 export interface ServerProxyOptions {
   readonly mapPropertyToTool?: (property: string | symbol) => string;
