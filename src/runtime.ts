@@ -44,11 +44,28 @@ export interface ListToolsOptions {
   readonly oauthSessionOptions?: OAuthSessionOptions;
 }
 
-interface ConnectOptions {
+export interface ConnectOptions {
   readonly maxOAuthAttempts?: number;
   readonly skipCache?: boolean;
   readonly allowCachedAuth?: boolean;
   readonly oauthSessionOptions?: OAuthSessionOptions;
+  /**
+   * When `true`, never start an OAuth flow for this server — equivalent
+   * to `maxOAuthAttempts: 0` for the purpose of avoiding interactive
+   * authorization. Unlike `maxOAuthAttempts: 0`, callers passing
+   * `disableOAuth: true` participate in connection caching: repeated
+   * `connect()` / `callTool()` / `listTools()` calls reuse the same
+   * `ClientContext`, and `close()` reaps it.
+   *
+   * Intended for long-running headless callers (daemons, scheduled jobs,
+   * CI workers) that have no browser and must rely on cached tokens.
+   *
+   * Cache identity: clients established with `disableOAuth: true` are
+   * stored in their own cache slot — sharing with a connection that
+   * could refresh into an OAuth flow would violate the no-browser-launch
+   * guarantee. Switching the flag between calls evicts and re-establishes.
+   */
+  readonly disableOAuth?: boolean;
 }
 
 export interface Runtime {
@@ -61,7 +78,7 @@ export interface Runtime {
   callTool(server: string, toolName: string, options?: CallOptions): Promise<unknown>;
   listResources(server: string, options?: Partial<ListResourcesRequest['params']>): Promise<unknown>;
   readResource(server: string, uri: string): Promise<unknown>;
-  connect(server: string): Promise<ClientContext>;
+  connect(server: string, options?: ConnectOptions): Promise<ClientContext>;
   close(server?: string): Promise<void>;
 }
 
@@ -110,6 +127,7 @@ class McpRuntime implements Runtime {
     {
       readonly promise: Promise<ClientContext>;
       readonly allowCachedAuth: boolean | undefined;
+      readonly disableOAuth: boolean | undefined;
     }
   >();
   private readonly logger: RuntimeLogger;
@@ -296,14 +314,26 @@ class McpRuntime implements Runtime {
     // Reuse cached connections unless the caller explicitly opted out.
     const normalized = server.trim();
 
+    // `maxOAuthAttempts: 0` keeps its legacy escape-the-cache contract.
+    // `disableOAuth: true` is the cache-friendly OAuth-suppression knob:
+    // it disables the interactive OAuth flow at the transport layer but
+    // participates in caching (own slot, see the eviction rule below).
     const useCache = options.skipCache !== true && options.maxOAuthAttempts === undefined;
 
     if (useCache) {
       const existing = this.clients.get(normalized);
       if (existing) {
-        if (existing.allowCachedAuth === options.allowCachedAuth || options.allowCachedAuth === undefined) {
+        const allowCachedAuthMatches =
+          existing.allowCachedAuth === options.allowCachedAuth || options.allowCachedAuth === undefined;
+        const disableOAuthMatches = existing.disableOAuth === options.disableOAuth;
+        if (allowCachedAuthMatches && disableOAuthMatches) {
           return existing.promise;
         }
+        // Either flag differs — the new caller's intent is structurally
+        // distinct (different OAuth posture or different cached-token
+        // policy). Evict and re-establish so we don't hand back a
+        // client whose OAuth session could violate the new caller's
+        // guarantees.
         await this.close(normalized).catch(() => {});
       }
     }
@@ -319,12 +349,17 @@ class McpRuntime implements Runtime {
       onDefinitionPromoted: (promoted) => this.definitions.set(promoted.name, promoted),
       allowCachedAuth: options.allowCachedAuth,
       oauthSessionOptions: options.oauthSessionOptions,
+      disableOAuth: options.disableOAuth,
       recordPath: this.recordPath,
       replayPath: this.replayPath,
     });
 
     if (useCache) {
-      this.clients.set(normalized, { promise: connection, allowCachedAuth: options.allowCachedAuth });
+      this.clients.set(normalized, {
+        promise: connection,
+        allowCachedAuth: options.allowCachedAuth,
+        disableOAuth: options.disableOAuth,
+      });
       try {
         return await connection;
       } catch (error) {

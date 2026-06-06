@@ -133,4 +133,76 @@ describe('runtime integration', () => {
 
     await runtime.close('integration');
   });
+
+  it('reuses cached connection when disableOAuth: true is passed', async () => {
+    // Headless-daemon use case: the caller wants OAuth suppression
+    // (no browser launches) but still expects connection caching so
+    // every callTool doesn't spawn a fresh transport. Previously the
+    // only way to suppress OAuth was `maxOAuthAttempts: 0`, which
+    // forced `useCache = false` as a side effect — see the connect()
+    // gate. `disableOAuth: true` preserves caching.
+    const runtime = await createRuntime({
+      servers: [
+        {
+          name: 'integration',
+          description: 'Integration test server',
+          command: { kind: 'http', url: baseUrl },
+        },
+      ],
+    });
+
+    const first = await runtime.connect('integration', { disableOAuth: true });
+    const second = await runtime.connect('integration', { disableOAuth: true });
+    expect(second).toBe(first);
+
+    // close() reaps the cached client.
+    await runtime.close('integration');
+    const reopened = await runtime.connect('integration', { disableOAuth: true });
+    expect(reopened).not.toBe(first);
+
+    await runtime.close('integration');
+  });
+
+  it('maxOAuthAttempts: 0 still bypasses the cache (existing contract preserved)', async () => {
+    // Regression guard: callers passing maxOAuthAttempts: 0 today get
+    // a fresh client per call. That contract is unchanged — only the
+    // new `disableOAuth` flag enables caching with OAuth suppression.
+    const runtime = await createRuntime({
+      servers: [
+        {
+          name: 'integration',
+          description: 'Integration test server',
+          command: { kind: 'http', url: baseUrl },
+        },
+      ],
+    });
+
+    const first = await runtime.connect('integration', { maxOAuthAttempts: 0 });
+    const second = await runtime.connect('integration', { maxOAuthAttempts: 0 });
+    expect(second).not.toBe(first);
+
+    await runtime.close('integration');
+  });
+
+  it('evicts and re-establishes the cached client when disableOAuth flag changes', async () => {
+    // Connections established with disableOAuth: true vs without are
+    // semantically different (the former cannot inherit an OAuth
+    // session that may refresh into a flow). The cache slot must not
+    // be shared across that boundary.
+    const runtime = await createRuntime({
+      servers: [
+        {
+          name: 'integration',
+          description: 'Integration test server',
+          command: { kind: 'http', url: baseUrl },
+        },
+      ],
+    });
+
+    const cached = await runtime.connect('integration', { disableOAuth: true });
+    const withFlowAllowed = await runtime.connect('integration', {});
+    expect(withFlowAllowed).not.toBe(cached);
+
+    await runtime.close('integration');
+  });
 });

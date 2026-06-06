@@ -86,6 +86,14 @@ export interface CreateClientContextOptions {
   readonly onDefinitionPromoted?: (definition: ServerDefinition) => void;
   readonly allowCachedAuth?: boolean;
   readonly oauthSessionOptions?: OAuthSessionOptions;
+  /**
+   * When `true`, suppress the interactive OAuth flow entirely. See
+   * `ConnectOptions.disableOAuth` in `runtime.ts` for the caller-facing
+   * semantics. Internally this short-circuits `shouldEstablishOAuth` and
+   * `maybePromoteHttpDefinition` so the unauthorized-fallback path
+   * cannot re-enable OAuth on a daemon-shaped caller.
+   */
+  readonly disableOAuth?: boolean;
   readonly recordPath?: string;
   readonly replayPath?: string;
 }
@@ -188,7 +196,11 @@ function maybePromoteHttpDefinition(
   logger: Logger,
   options: CreateClientContextOptions
 ): ServerDefinition | undefined {
-  if (options.maxOAuthAttempts === 0) {
+  // Both flags suppress promotion-to-OAuth on a 401 fallback. Without
+  // this guard, a daemon-mode caller hitting an unauthorized response
+  // could trigger `maybeEnableOAuth` and effectively re-enable OAuth
+  // on the next attempt — defeating the no-browser-launch contract.
+  if (options.maxOAuthAttempts === 0 || options.disableOAuth === true) {
     return undefined;
   }
   return maybeEnableOAuth(definition, logger);
@@ -355,7 +367,8 @@ async function attemptHttpClientContext(
     throw new Error(`Server '${activeDefinition.name}' is not configured for HTTP transport.`);
   }
   let oauthSession: OAuthSession | undefined;
-  const shouldEstablishOAuth = activeDefinition.auth === 'oauth' && options.maxOAuthAttempts !== 0;
+  const shouldEstablishOAuth =
+    activeDefinition.auth === 'oauth' && options.maxOAuthAttempts !== 0 && options.disableOAuth !== true;
   if (shouldEstablishOAuth) {
     oauthSession = await createOAuthSession(activeDefinition, logger, options.oauthSessionOptions);
   }
