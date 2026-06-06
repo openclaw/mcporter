@@ -2,7 +2,14 @@ export type { CommandSpec, ServerDefinition } from './config.js';
 export { loadServerDefinitions } from './config.js';
 export type { CallResult, ConnectionIssue, ImageContent } from './result-utils.js';
 export { createCallResult, describeConnectionIssue, wrapCallResult } from './result-utils.js';
-export type { CallOptions, ListToolsOptions, Runtime, RuntimeLogger, ServerToolInfo } from './runtime.js';
+export type {
+  CallOptions,
+  ListToolsOptions,
+  Runtime,
+  RuntimeLogger,
+  RuntimeOptions,
+  ServerToolInfo,
+} from './runtime.js';
 export { callOnce, createRuntime } from './runtime.js';
 export type { GeneratedRuntimeContext } from './generated-daemon-runtime.js';
 export { createGeneratedKeepAliveRuntime } from './generated-daemon-runtime.js';
