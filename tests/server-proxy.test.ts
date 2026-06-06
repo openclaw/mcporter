@@ -333,4 +333,41 @@ describe('createServerProxy', () => {
       tailLog: true,
     });
   });
+
+  it('threads disableOAuth through schema discovery so proxy.tool({disableOAuth:true}) cannot trigger OAuth during metadata fetch', async () => {
+    // Regression for the PR-198 reviewer note: the proxy fired
+    // `runtime.listTools(server, { includeSchema: true })` for schema
+    // discovery BEFORE parsing the caller's options. On an OAuth
+    // server with no cached schema, that pre-call could start an
+    // interactive OAuth flow even when the eventual tool call had
+    // `disableOAuth: true`. Fix: the proxy must extract disableOAuth
+    // up front and pass it to listTools so the no-OAuth contract
+    // covers the whole proxy interaction.
+    const runtime = createMockRuntime({
+      'some-tool': {
+        type: 'object',
+        properties: {
+          foo: { type: 'string' },
+        },
+        required: ['foo'],
+      },
+    });
+    const proxy = createServerProxy(runtime as unknown as Runtime, 'mock') as Record<string, unknown>;
+    const fn = proxy.someTool as (args: unknown, options: unknown) => Promise<CallResult>;
+
+    await fn({ foo: 'bar' }, { disableOAuth: true });
+
+    // The schema-fetch listTools call must carry disableOAuth: true.
+    expect(runtime.listTools).toHaveBeenCalledWith('mock', {
+      includeSchema: true,
+      disableOAuth: true,
+    });
+    // And the eventual tool call must too — already covered by the
+    // existing KNOWN_OPTION_KEYS handling, asserted here so both
+    // halves of the contract are locked together.
+    expect(runtime.callTool).toHaveBeenCalledWith('mock', 'some-tool', {
+      args: { foo: 'bar' },
+      disableOAuth: true,
+    });
+  });
 });

@@ -193,7 +193,16 @@ export function createServerProxy(
   }
 
   // ensureMetadata loads schema information for the requested tool, optionally refreshing from the server.
-  async function ensureMetadata(toolName: string): Promise<ToolSchemaInfo | undefined> {
+  // `disableOAuth` flows through to the listTools metadata fetch so a
+  // headless caller passing `disableOAuth: true` on the eventual tool
+  // invocation gets the same no-OAuth posture on the schema-discovery
+  // call. Without this, the proxy's pre-call listTools could trigger
+  // an interactive OAuth flow on an OAuth server with no cached schema,
+  // defeating the no-browser guarantee.
+  async function ensureMetadata(
+    toolName: string,
+    metadataOptions: { disableOAuth?: boolean } = {}
+  ): Promise<ToolSchemaInfo | undefined> {
     await consumePersist();
     const cached = toolSchemaCache.get(toolName);
     if (cached && !refreshPending) {
@@ -212,8 +221,14 @@ export function createServerProxy(
     }
 
     if (!schemaFetch) {
+      const listToolsOptions: { includeSchema: true; disableOAuth?: boolean } = {
+        includeSchema: true,
+      };
+      if (metadataOptions.disableOAuth === true) {
+        listToolsOptions.disableOAuth = true;
+      }
       schemaFetch = runtime
-        .listTools(serverName, { includeSchema: true })
+        .listTools(serverName, listToolsOptions)
         .then((tools) => {
           for (const tool of tools) {
             if (!tool.inputSchema || typeof tool.inputSchema !== 'object') {
@@ -310,9 +325,24 @@ export function createServerProxy(
           : mapPropertyToTool(propertyKey);
 
       return async (...callArgs: unknown[]) => {
+        // Pre-scan callArgs for `disableOAuth: true` so the schema-fetch
+        // call (runtime.listTools inside ensureMetadata) inherits the
+        // same no-OAuth posture as the eventual callTool. Without this,
+        // a proxy.tool({ disableOAuth: true }) call on an OAuth server
+        // with no cached schema could trigger interactive OAuth during
+        // metadata discovery, before the call-options parsing path runs.
+        let earlyDisableOAuth = false;
+        for (const arg of callArgs) {
+          if (isPlainObject(arg) && (arg as Record<string, unknown>).disableOAuth === true) {
+            earlyDisableOAuth = true;
+            break;
+          }
+        }
+        const metadataOptions = { disableOAuth: earlyDisableOAuth };
+
         let schemaInfo: ToolSchemaInfo | undefined;
         try {
-          schemaInfo = await ensureMetadata(resolvedToolName);
+          schemaInfo = await ensureMetadata(resolvedToolName, metadataOptions);
         } catch {
           schemaInfo = undefined;
         }
@@ -321,7 +351,7 @@ export function createServerProxy(
           if (alias && alias !== resolvedToolName) {
             resolvedToolName = alias;
             try {
-              schemaInfo = await ensureMetadata(resolvedToolName);
+              schemaInfo = await ensureMetadata(resolvedToolName, metadataOptions);
             } catch {
               // ignore and keep prior schema if available
             }
