@@ -51,7 +51,7 @@ function consumeDisableOAuthFlag(args: string[]): boolean | undefined {
   let disableOAuth: boolean | undefined;
   for (let index = 0; index < args.length; ) {
     const token = args[index];
-    if (token === '--disable-oauth' || token === '--no-oauth') {
+    if (token === '--no-oauth') {
       disableOAuth = true;
       args.splice(index, 1);
       continue;
@@ -73,7 +73,7 @@ export function printResourceHelp(): void {
       '  --output auto|text|markdown|json|raw  Choose output rendering.',
       '  --json                               Shortcut for --output json.',
       '  --raw                                Shortcut for --output raw.',
-      '  --disable-oauth                     Never start OAuth; use cached tokens only.',
+      '  --no-oauth                          Never start OAuth; use cached tokens only.',
       '',
       'Examples:',
       '  mcporter resource docs',

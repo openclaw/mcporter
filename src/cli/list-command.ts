@@ -486,7 +486,7 @@ export function printListHelp(): void {
     '  --verbose              Show all config sources for matching servers.',
     '  --sources              Include source arrays in JSON output without other verbose details.',
     '  --timeout <ms>         Override the per-server discovery timeout.',
-    '  --disable-oauth        Never start OAuth; use cached tokens only.',
+    '  --no-oauth             Never start OAuth; use cached tokens only.',
     '',
     'Examples:',
     '  mcporter list',

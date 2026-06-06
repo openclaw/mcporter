@@ -57,7 +57,7 @@ describe('handleResource', () => {
     const runtime = createRuntime();
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
-      await handleResource(runtime, ['docs', 'memo://one', '--disable-oauth']);
+      await handleResource(runtime, ['docs', 'memo://one', '--no-oauth']);
       expect(runtime.readResource).toHaveBeenCalledWith('docs', 'memo://one', { disableOAuth: true });
     } finally {
       logSpy.mockRestore();

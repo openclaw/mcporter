@@ -84,7 +84,7 @@ export function extractListFlags(args: string[]): {
       args.splice(index, 1);
       continue;
     }
-    if (token === '--disable-oauth' || token === '--no-oauth') {
+    if (token === '--no-oauth') {
       disableOAuth = true;
       args.splice(index, 1);
       continue;

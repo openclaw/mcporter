@@ -60,7 +60,6 @@ const FLAG_HANDLERS: Record<string, FlagHandler> = {
   '--tool': handleToolFlag,
   '--timeout': handleTimeoutFlag,
   '--tail-log': handleTailLogFlag,
-  '--disable-oauth': handleDisableOAuthFlag,
   '--no-oauth': handleDisableOAuthFlag,
   '--save-images': handleSaveImagesFlag,
   '--yes': handleNoopFlag,

@@ -175,8 +175,8 @@ describe('parseCallArguments', () => {
     expect(parsed.positionalArgs).toEqual(['123']);
   });
 
-  it('captures --disable-oauth as a runtime flag instead of a tool argument', () => {
-    const parsed = parseCallArguments(['server.tool', '--disable-oauth', 'limit=5']);
+  it('captures --no-oauth as a runtime flag instead of a tool argument', () => {
+    const parsed = parseCallArguments(['server.tool', '--no-oauth', 'limit=5']);
     expect(parsed.disableOAuth).toBe(true);
     expect(parsed.args).toEqual({ limit: 5 });
   });

@@ -249,7 +249,7 @@ async function maybeDescribeServer(
     console.log(dimText(`[mcporter] ${server}.list_tools is a shortcut for 'mcporter list ${server}'.`));
     const listArgs = [server];
     if (disableOAuth) {
-      listArgs.push('--disable-oauth');
+      listArgs.push('--no-oauth');
     }
     if (outputFormat === 'json') {
       listArgs.push('--json');
@@ -274,7 +274,7 @@ async function maybeDescribeServer(
   console.log(dimText(`[mcporter] ${server} does not expose a 'help' tool; showing mcporter list output instead.`));
   const listArgs = [server];
   if (disableOAuth) {
-    listArgs.push('--disable-oauth');
+    listArgs.push('--no-oauth');
   }
   if (outputFormat === 'json') {
     listArgs.push('--json');
