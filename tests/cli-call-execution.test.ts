@@ -86,6 +86,7 @@ describe('CLI call execution behavior', () => {
       autoAuthorize: true,
       includeSchema: true,
       allowCachedAuth: true,
+      disableOAuth: undefined,
     });
     logSpy.mockRestore();
   });
@@ -125,6 +126,7 @@ describe('CLI call execution behavior', () => {
       autoAuthorize: true,
       includeSchema: true,
       allowCachedAuth: true,
+      disableOAuth: undefined,
     });
     logSpy.mockRestore();
   });
@@ -338,6 +340,7 @@ describe('CLI call execution behavior', () => {
       autoAuthorize: true,
       includeSchema: false,
       allowCachedAuth: true,
+      disableOAuth: undefined,
     });
 
     logSpy.mockRestore();

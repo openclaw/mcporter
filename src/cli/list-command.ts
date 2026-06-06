@@ -98,7 +98,7 @@ export async function handleList(
       let completedCount = 0;
 
       const tasks = servers.map((server, index) =>
-        checkListServer(runtime, server, perServerTimeoutMs).then((result) => {
+        checkListServer(runtime, server, perServerTimeoutMs, flags.disableOAuth).then((result) => {
           summaryResults[index] = result;
           if (renderedResults) {
             const rendered = renderServerListRow(result, perServerTimeoutMs, { verbose: flags.verbose });
@@ -190,7 +190,7 @@ export async function handleList(
   if (flags.statusOnly) {
     const previousStdioLogMode = flags.quiet || flags.format === 'json' ? setStdioLogMode('silent') : undefined;
     try {
-      const result = await checkListServer(runtime, definition, timeoutMs);
+      const result = await checkListServer(runtime, definition, timeoutMs, flags.disableOAuth);
       await persistPreparedEphemeralServer(runtime, prepared);
       const entry = buildJsonListEntry(result, Math.round(timeoutMs / 1000), {
         includeSchemas: false,
@@ -228,6 +228,7 @@ export async function handleList(
               includeSchema: true,
               autoAuthorize: false,
               allowCachedAuth: true,
+              disableOAuth: flags.disableOAuth,
             }),
             timeoutMs
           ),
@@ -298,6 +299,7 @@ export async function handleList(
             includeSchema: true,
             autoAuthorize: false,
             allowCachedAuth: true,
+            disableOAuth: flags.disableOAuth,
           }),
           timeoutMs
         ),
@@ -397,12 +399,13 @@ export async function handleList(
 async function checkListServer(
   runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
   server: ServerDefinition,
-  timeoutMs: number
+  timeoutMs: number,
+  disableOAuth: boolean
 ): Promise<ListSummaryResult> {
   const startedAt = Date.now();
   try {
     const tools = await withTimeout(
-      runtime.listTools(server.name, { autoAuthorize: false, allowCachedAuth: true }),
+      runtime.listTools(server.name, { autoAuthorize: false, allowCachedAuth: true, disableOAuth }),
       timeoutMs
     );
     return {
@@ -483,6 +486,7 @@ export function printListHelp(): void {
     '  --verbose              Show all config sources for matching servers.',
     '  --sources              Include source arrays in JSON output without other verbose details.',
     '  --timeout <ms>         Override the per-server discovery timeout.',
+    '  --disable-oauth        Never start OAuth; use cached tokens only.',
     '',
     'Examples:',
     '  mcporter list',

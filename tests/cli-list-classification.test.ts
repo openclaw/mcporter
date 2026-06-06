@@ -260,6 +260,7 @@ describe('CLI list classification and routing', () => {
     expect(listTools).toHaveBeenCalledWith('linear', {
       autoAuthorize: false,
       allowCachedAuth: true,
+      disableOAuth: false,
     });
   });
 

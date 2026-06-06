@@ -25,6 +25,7 @@ export interface CallArgsParseResult {
   tailLog: boolean;
   output: OutputFormat;
   timeoutMs?: number;
+  disableOAuth?: boolean;
   ephemeral?: EphemeralServerSpec;
   rawStrings?: boolean;
   saveImagesDir?: string;
@@ -59,6 +60,8 @@ const FLAG_HANDLERS: Record<string, FlagHandler> = {
   '--tool': handleToolFlag,
   '--timeout': handleTimeoutFlag,
   '--tail-log': handleTailLogFlag,
+  '--disable-oauth': handleDisableOAuthFlag,
+  '--no-oauth': handleDisableOAuthFlag,
   '--save-images': handleSaveImagesFlag,
   '--yes': handleNoopFlag,
   '--raw-strings': handleRawStringsFlag,
@@ -253,6 +256,11 @@ function handleTimeoutFlag(context: FlagHandlerContext): number {
 
 function handleTailLogFlag(context: FlagHandlerContext): number {
   context.result.tailLog = true;
+  return context.index + 1;
+}
+
+function handleDisableOAuthFlag(context: FlagHandlerContext): number {
+  context.result.disableOAuth = true;
   return context.index + 1;
 }
 

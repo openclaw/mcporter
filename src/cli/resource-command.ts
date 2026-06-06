@@ -13,6 +13,7 @@ export async function handleResource(runtime: Runtime, args: string[]): Promise<
     enableRawShortcut: true,
     jsonShortcutFlag: '--json',
   });
+  const disableOAuth = consumeDisableOAuthFlag(args);
   const server = args.shift();
   if (!server) {
     throw new Error('Missing server name. Usage: mcporter resource <server> [uri]');
@@ -24,7 +25,14 @@ export async function handleResource(runtime: Runtime, args: string[]): Promise<
 
   let result: unknown;
   try {
-    result = uri ? await runtime.readResource(server, uri) : await runtime.listResources(server);
+    if (disableOAuth === undefined) {
+      result = uri ? await runtime.readResource(server, uri) : await runtime.listResources(server);
+    } else {
+      const connectOptions = { disableOAuth };
+      result = uri
+        ? await runtime.readResource(server, uri, connectOptions)
+        : await runtime.listResources(server, connectOptions);
+    }
   } catch (error) {
     const issue = analyzeConnectionError(error);
     if (output === 'json' || output === 'raw') {
@@ -39,6 +47,20 @@ export async function handleResource(runtime: Runtime, args: string[]): Promise<
   printCallOutput(callResult, result, output);
 }
 
+function consumeDisableOAuthFlag(args: string[]): boolean | undefined {
+  let disableOAuth: boolean | undefined;
+  for (let index = 0; index < args.length; ) {
+    const token = args[index];
+    if (token === '--disable-oauth' || token === '--no-oauth') {
+      disableOAuth = true;
+      args.splice(index, 1);
+      continue;
+    }
+    index += 1;
+  }
+  return disableOAuth;
+}
+
 export function printResourceHelp(): void {
   console.error(
     [
@@ -51,6 +73,7 @@ export function printResourceHelp(): void {
       '  --output auto|text|markdown|json|raw  Choose output rendering.',
       '  --json                               Shortcut for --output json.',
       '  --raw                                Shortcut for --output raw.',
+      '  --disable-oauth                     Never start OAuth; use cached tokens only.',
       '',
       'Examples:',
       '  mcporter resource docs',

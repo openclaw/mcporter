@@ -17,6 +17,7 @@ export function extractListFlags(args: string[]): {
   quiet: boolean;
   exitCode: boolean;
   statusOnly: boolean;
+  disableOAuth: boolean;
 } {
   let schema = false;
   let timeoutMs: number | undefined;
@@ -27,6 +28,7 @@ export function extractListFlags(args: string[]): {
   let quiet = false;
   let exitCode = false;
   let statusOnly = false;
+  let disableOAuth = false;
   const format = consumeOutputFormat(args, {
     defaultFormat: 'text',
     allowed: ['text', 'json'],
@@ -82,6 +84,11 @@ export function extractListFlags(args: string[]): {
       args.splice(index, 1);
       continue;
     }
+    if (token === '--disable-oauth' || token === '--no-oauth') {
+      disableOAuth = true;
+      args.splice(index, 1);
+      continue;
+    }
     if (token === '--timeout') {
       timeoutMs = consumeTimeoutFlag(args, index, { flagName: '--timeout' });
       continue;
@@ -133,5 +140,6 @@ export function extractListFlags(args: string[]): {
     quiet,
     exitCode,
     statusOnly,
+    disableOAuth,
   };
 }

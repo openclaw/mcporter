@@ -38,6 +38,8 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
   - `--exit-code` – exit 1 when any checked server is unhealthy.
   - `--quiet` – suppress output and exit 1 when any checked server is unhealthy.
   - `--timeout <ms>` – per-server timeout when enumerating all servers.
+  - `--disable-oauth` – never start an interactive OAuth flow; use cached
+    tokens only while keeping eligible connections pooled.
 
 ## `mcporter call <server.tool>`
 
@@ -52,6 +54,8 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
   - `--raw-strings` – disable numeric coercion for flag-style and positional values.
   - `--no-coerce` – disable all flag-style/positional value coercion.
   - `--tail-log` – stream tail output when the tool returns log handles.
+  - `--disable-oauth` – never start an interactive OAuth flow; use cached
+    tokens only while keeping eligible connections pooled.
 
 ## `mcporter resource <server> [uri]`
 
@@ -63,6 +67,8 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
   - `--output auto|text|markdown|json|raw` – choose how to render the response.
   - `--json` – shortcut for `--output json`.
   - `--raw` – shortcut for `--output raw`.
+  - `--disable-oauth` – never start an interactive OAuth flow; use cached
+    tokens only while keeping eligible connections pooled.
 
 ## `mcporter serve [--servers a,b,c] [--stdio | --http <port>]`
 

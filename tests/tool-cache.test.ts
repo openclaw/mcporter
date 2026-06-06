@@ -40,6 +40,14 @@ describe('loadToolMetadata', () => {
     expect(listTools).toHaveBeenCalledTimes(2);
   });
 
+  it('differentiates cache entries by disableOAuth flag', async () => {
+    const listTools = vi.fn(async () => [demoTool]);
+    const runtime = createRuntimeStub(listTools);
+    await loadToolMetadata(runtime, 'integration', { includeSchema: true });
+    await loadToolMetadata(runtime, 'integration', { includeSchema: true, disableOAuth: true });
+    expect(listTools).toHaveBeenCalledTimes(2);
+  });
+
   it('passes cached OAuth preference to the runtime', async () => {
     const listTools = vi.fn(async () => [demoTool]);
     const runtime = createRuntimeStub(listTools);
@@ -47,11 +55,13 @@ describe('loadToolMetadata', () => {
       includeSchema: true,
       autoAuthorize: false,
       allowCachedAuth: true,
+      disableOAuth: true,
     });
     expect(listTools).toHaveBeenCalledWith('integration', {
       includeSchema: true,
       autoAuthorize: false,
       allowCachedAuth: true,
+      disableOAuth: true,
     });
   });
 });

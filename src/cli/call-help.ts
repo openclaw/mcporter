@@ -10,6 +10,7 @@ export const CALL_HELP_RUNTIME_FLAG_LINES = [
   '  --timeout <ms>         Override the call timeout.',
   '  --output text|markdown|json|raw  Control formatting.',
   '  --save-images <dir>    Save image content blocks to a directory.',
+  '  --disable-oauth        Never start OAuth; use cached tokens only.',
   '  --raw-strings          Keep numeric-looking argument values as strings.',
   '  --no-coerce            Keep all key/value and positional arguments as raw strings.',
   '  --tail-log             Stream returned log handles.',

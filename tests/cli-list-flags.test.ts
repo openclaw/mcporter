@@ -19,6 +19,7 @@ describe('CLI list flag parsing', () => {
       quiet: false,
       exitCode: false,
       statusOnly: false,
+      disableOAuth: false,
     });
     expect(args).toEqual(['server']);
   });
@@ -39,7 +40,16 @@ describe('CLI list flag parsing', () => {
       quiet: false,
       exitCode: false,
       statusOnly: false,
+      disableOAuth: false,
     });
+    expect(args).toEqual(['server']);
+  });
+
+  it('parses --disable-oauth and removes it from args', async () => {
+    const { extractListFlags } = await cliModulePromise;
+    const args = ['--disable-oauth', 'server'];
+    const flags = extractListFlags(args);
+    expect(flags.disableOAuth).toBe(true);
     expect(args).toEqual(['server']);
   });
 

@@ -5,6 +5,7 @@ interface LoadToolMetadataOptions {
   includeSchema?: boolean;
   autoAuthorize?: boolean;
   allowCachedAuth?: boolean;
+  disableOAuth?: boolean;
 }
 
 const runtimeCache = new WeakMap<Runtime, Map<string, Promise<ToolMetadata[]>>>();
@@ -13,7 +14,8 @@ function cacheKey(serverName: string, options: LoadToolMetadataOptions): string 
   const includeSchema = options.includeSchema !== false;
   const autoAuthorize = options.autoAuthorize !== false;
   const allowCachedAuth = options.allowCachedAuth !== false;
-  return `${serverName}::schema:${includeSchema ? '1' : '0'}::auth:${autoAuthorize ? '1' : '0'}::cached-auth:${allowCachedAuth ? '1' : '0'}`;
+  const disableOAuth = options.disableOAuth === true;
+  return `${serverName}::schema:${includeSchema ? '1' : '0'}::auth:${autoAuthorize ? '1' : '0'}::cached-auth:${allowCachedAuth ? '1' : '0'}::disable-oauth:${disableOAuth ? '1' : '0'}`;
 }
 
 export async function loadToolMetadata(
@@ -37,6 +39,7 @@ export async function loadToolMetadata(
     includeSchema,
     autoAuthorize,
     allowCachedAuth: options.allowCachedAuth ?? true,
+    disableOAuth: options.disableOAuth,
   };
   const promise = runtime
     .listTools(serverName, listOptions)

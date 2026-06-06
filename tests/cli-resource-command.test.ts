@@ -53,6 +53,17 @@ describe('handleResource', () => {
     }
   });
 
+  it('passes disableOAuth to resource helpers when requested', async () => {
+    const runtime = createRuntime();
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await handleResource(runtime, ['docs', 'memo://one', '--disable-oauth']);
+      expect(runtime.readResource).toHaveBeenCalledWith('docs', 'memo://one', { disableOAuth: true });
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
   it('prints structured JSON for resource listing failures', async () => {
     const runtime = createRuntime();
     runtime.listResources.mockRejectedValue(new Error('MCP error -32601: Method not found'));

@@ -175,6 +175,12 @@ describe('parseCallArguments', () => {
     expect(parsed.positionalArgs).toEqual(['123']);
   });
 
+  it('captures --disable-oauth as a runtime flag instead of a tool argument', () => {
+    const parsed = parseCallArguments(['server.tool', '--disable-oauth', 'limit=5']);
+    expect(parsed.disableOAuth).toBe(true);
+    expect(parsed.args).toEqual({ limit: 5 });
+  });
+
   it('captures --save-images output directory', () => {
     const parsed = parseCallArguments(['--save-images', './tmp/images', 'server.tool']);
     expect(parsed.saveImagesDir).toBe('./tmp/images');

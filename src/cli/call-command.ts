@@ -39,6 +39,7 @@ interface PreparedCallRequest extends ResolvedCallTarget {
   parsed: CallArgsParseResult;
   hydratedArgs: Record<string, unknown>;
   timeoutMs: number;
+  disableOAuth?: boolean;
   ephemeralTarget?: PrepareEphemeralServerTargetResult;
 }
 
@@ -66,12 +67,19 @@ async function prepareCallRequest(runtime: Runtime, args: string[]): Promise<Pre
   const ephemeralTarget = await normalizeParsedCallArguments(runtime, parsed);
   const { server, tool } = await resolveServerAndTool(runtime, parsed);
 
-  if (await maybeDescribeServer(runtime, server, tool, parsed.output)) {
+  if (await maybeDescribeServer(runtime, server, tool, parsed.output, parsed.disableOAuth)) {
     return undefined;
   }
 
   const timeoutMs = resolveCallTimeout(parsed.timeoutMs);
-  const hydratedArgs = await hydratePositionalArguments(runtime, server, tool, parsed.args, parsed.positionalArgs);
+  const hydratedArgs = await hydratePositionalArguments(
+    runtime,
+    server,
+    tool,
+    parsed.args,
+    parsed.positionalArgs,
+    parsed.disableOAuth
+  );
   const schemaAwareArgs = await enforceSchemaAwareArgumentTypes(
     runtime,
     server,
@@ -79,9 +87,18 @@ async function prepareCallRequest(runtime: Runtime, args: string[]): Promise<Pre
     hydratedArgs,
     parsed.schemaStringCoercionCandidates,
     parsed.schemaArrayCoercionCandidates,
-    timeoutMs
+    timeoutMs,
+    parsed.disableOAuth
   );
-  return { parsed, server, tool, hydratedArgs: schemaAwareArgs, timeoutMs, ephemeralTarget };
+  return {
+    parsed,
+    server,
+    tool,
+    hydratedArgs: schemaAwareArgs,
+    timeoutMs,
+    disableOAuth: parsed.disableOAuth,
+    ephemeralTarget,
+  };
 }
 
 async function normalizeParsedCallArguments(
@@ -145,7 +162,7 @@ async function resolveServerAndTool(runtime: Runtime, parsed: CallArgsParseResul
     throw new Error('Missing server name. Provide it via <server>.<tool> or --server.');
   }
   if (!tool) {
-    tool = await inferSingleToolName(runtime, server);
+    tool = await inferSingleToolName(runtime, server, parsed.disableOAuth);
     if (!tool) {
       throw new Error('Missing tool name. Provide it via <server>.<tool> or --tool.');
     }
@@ -165,7 +182,8 @@ async function invokePreparedCall(
       prepared.tool,
       prepared.hydratedArgs,
       prepared.timeoutMs,
-      prepared.parsed.output
+      prepared.parsed.output,
+      prepared.disableOAuth
     );
   } catch (error) {
     const issue = maybeReportConnectionIssue(prepared.server, prepared.tool, error);
@@ -224,11 +242,15 @@ async function maybeDescribeServer(
   runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
   server: string,
   tool: string,
-  outputFormat: OutputFormat
+  outputFormat: OutputFormat,
+  disableOAuth: boolean | undefined
 ): Promise<boolean> {
   if (tool === 'list_tools') {
     console.log(dimText(`[mcporter] ${server}.list_tools is a shortcut for 'mcporter list ${server}'.`));
     const listArgs = [server];
+    if (disableOAuth) {
+      listArgs.push('--disable-oauth');
+    }
     if (outputFormat === 'json') {
       listArgs.push('--json');
     }
@@ -239,7 +261,9 @@ async function maybeDescribeServer(
   if (tool !== 'help') {
     return false;
   }
-  const tools = await runtime.listTools(server, { includeSchema: false, autoAuthorize: false }).catch(() => undefined);
+  const tools = await runtime
+    .listTools(server, { includeSchema: false, autoAuthorize: false, disableOAuth })
+    .catch(() => undefined);
   if (!tools) {
     return false;
   }
@@ -249,6 +273,9 @@ async function maybeDescribeServer(
   }
   console.log(dimText(`[mcporter] ${server} does not expose a 'help' tool; showing mcporter list output instead.`));
   const listArgs = [server];
+  if (disableOAuth) {
+    listArgs.push('--disable-oauth');
+  }
   if (outputFormat === 'json') {
     listArgs.push('--json');
   }
@@ -296,7 +323,8 @@ async function enforceSchemaAwareArgumentTypes(
   args: Record<string, unknown>,
   stringCandidates: Record<string, string> | undefined,
   arrayCandidates: Record<string, string> | undefined,
-  timeoutMs: number
+  timeoutMs: number,
+  disableOAuth: boolean | undefined
 ): Promise<Record<string, unknown>> {
   if (
     (!stringCandidates || Object.keys(stringCandidates).length === 0) &&
@@ -305,9 +333,10 @@ async function enforceSchemaAwareArgumentTypes(
     return args;
   }
 
-  const tools = await withTimeout(loadToolMetadata(runtime, server, { includeSchema: true }), timeoutMs).catch(
-    () => undefined
-  );
+  const tools = await withTimeout(
+    loadToolMetadata(runtime, server, { includeSchema: true, disableOAuth }),
+    timeoutMs
+  ).catch(() => undefined);
   if (!tools) {
     return args;
   }
@@ -389,14 +418,15 @@ async function hydratePositionalArguments(
   server: string,
   tool: string,
   namedArgs: Record<string, unknown>,
-  positionalArgs: unknown[] | undefined
+  positionalArgs: unknown[] | undefined,
+  disableOAuth: boolean | undefined
 ): Promise<Record<string, unknown>> {
   if (!positionalArgs || positionalArgs.length === 0) {
     return namedArgs;
   }
   // We need the schema order to know which field each positional argument maps to; pull the
   // tool list with schemas instead of guessing locally so optional/required order stays correct.
-  const tools = await loadToolMetadata(runtime, server, { includeSchema: true }).catch(() => undefined);
+  const tools = await loadToolMetadata(runtime, server, { includeSchema: true, disableOAuth }).catch(() => undefined);
   if (!tools) {
     throw new Error('Unable to load tool metadata; name positional arguments explicitly.');
   }
@@ -436,9 +466,10 @@ type ToolResolution = IdentifierResolution;
 
 async function inferSingleToolName(
   runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
-  server: string
+  server: string,
+  disableOAuth: boolean | undefined
 ): Promise<string | undefined> {
-  const tools = await loadToolMetadata(runtime, server, { includeSchema: false });
+  const tools = await loadToolMetadata(runtime, server, { includeSchema: false, disableOAuth });
   if (tools.length !== 1) {
     return undefined;
   }
@@ -456,10 +487,11 @@ async function invokeWithAutoCorrection(
   tool: string,
   args: Record<string, unknown>,
   timeoutMs: number,
-  outputFormat: OutputFormat
+  outputFormat: OutputFormat,
+  disableOAuth: boolean | undefined
 ): Promise<{ result: unknown; resolvedTool: string }> {
   // Attempt the original request first; if it fails with a "tool not found" we opportunistically retry once with a better match.
-  return attemptCall(runtime, server, tool, args, timeoutMs, outputFormat, true);
+  return attemptCall(runtime, server, tool, args, timeoutMs, outputFormat, true, disableOAuth);
 }
 
 async function attemptCall(
@@ -469,14 +501,24 @@ async function attemptCall(
   args: Record<string, unknown>,
   timeoutMs: number,
   outputFormat: OutputFormat,
-  allowCorrection: boolean
+  allowCorrection: boolean,
+  disableOAuth: boolean | undefined
 ): Promise<{ result: unknown; resolvedTool: string }> {
   try {
-    const result = await withTimeout(runtime.callTool(server, tool, { args, timeoutMs }), timeoutMs);
+    const result = await withTimeout(runtime.callTool(server, tool, { args, timeoutMs, disableOAuth }), timeoutMs);
     if (allowCorrection && isErrorCallResult(result)) {
-      const resolution = await maybeResolveToolName(runtime, server, tool, result);
+      const resolution = await maybeResolveToolName(runtime, server, tool, result, disableOAuth);
       if (resolution) {
-        const retry = await maybeRetryResolvedTool(runtime, server, tool, args, timeoutMs, outputFormat, resolution);
+        const retry = await maybeRetryResolvedTool(
+          runtime,
+          server,
+          tool,
+          args,
+          timeoutMs,
+          outputFormat,
+          resolution,
+          disableOAuth
+        );
         if (retry) {
           return retry;
         }
@@ -497,13 +539,22 @@ async function attemptCall(
       throw error;
     }
 
-    const resolution = await maybeResolveToolName(runtime, server, tool, error);
+    const resolution = await maybeResolveToolName(runtime, server, tool, error, disableOAuth);
     if (!resolution) {
       maybeReportConnectionIssue(server, tool, error);
       throw error;
     }
 
-    const retry = await maybeRetryResolvedTool(runtime, server, tool, args, timeoutMs, outputFormat, resolution);
+    const retry = await maybeRetryResolvedTool(
+      runtime,
+      server,
+      tool,
+      args,
+      timeoutMs,
+      outputFormat,
+      resolution,
+      disableOAuth
+    );
     if (!retry) {
       throw error;
     }
@@ -518,7 +569,8 @@ async function maybeRetryResolvedTool(
   args: Record<string, unknown>,
   timeoutMs: number,
   outputFormat: OutputFormat,
-  resolution: ToolResolution
+  resolution: ToolResolution,
+  disableOAuth: boolean | undefined
 ): Promise<{ result: unknown; resolvedTool: string } | undefined> {
   const messages = renderIdentifierResolutionMessages({
     entity: 'tool',
@@ -536,14 +588,15 @@ async function maybeRetryResolvedTool(
     const emitAutoMessage = outputFormat === 'json' || outputFormat === 'raw' ? console.error : console.log;
     emitAutoMessage(dimText(messages.auto));
   }
-  return attemptCall(runtime, server, resolution.value, args, timeoutMs, outputFormat, false);
+  return attemptCall(runtime, server, resolution.value, args, timeoutMs, outputFormat, false, disableOAuth);
 }
 
 async function maybeResolveToolName(
   runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
   server: string,
   attemptedTool: string,
-  error: unknown
+  error: unknown,
+  disableOAuth: boolean | undefined
 ): Promise<ToolResolution | undefined> {
   const missingName = extractMissingToolFromError(error);
   if (!missingName) {
@@ -555,7 +608,7 @@ async function maybeResolveToolName(
     return undefined;
   }
 
-  const tools = await loadToolMetadata(runtime, server, { includeSchema: false }).catch(() => undefined);
+  const tools = await loadToolMetadata(runtime, server, { includeSchema: false, disableOAuth }).catch(() => undefined);
   if (!tools) {
     return undefined;
   }
