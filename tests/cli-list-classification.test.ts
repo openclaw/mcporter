@@ -330,6 +330,8 @@ describe('CLI list classification and routing', () => {
 
   it('suggests a server name when the typo is large', async () => {
     const { handleList } = await cliModulePromise;
+    const previousExitCode = process.exitCode;
+    process.exitCode = undefined;
     const definition = linearDefinition;
     const listTools = vi.fn();
     const runtime = {
@@ -343,13 +345,17 @@ describe('CLI list classification and routing', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await handleList(runtime, ['zzz']);
+    try {
+      await handleList(runtime, ['zzz']);
 
-    const errorLines = errorSpy.mock.calls.map((call) => call.join(' '));
-    expect(errorLines.some((line) => line.includes('Did you mean linear?'))).toBe(true);
-    expect(listTools).not.toHaveBeenCalled();
-
-    errorSpy.mockRestore();
-    logSpy.mockRestore();
+      const errorLines = errorSpy.mock.calls.map((call) => call.join(' '));
+      expect(errorLines.some((line) => line.includes('Did you mean linear?'))).toBe(true);
+      expect(listTools).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    } finally {
+      errorSpy.mockRestore();
+      logSpy.mockRestore();
+      process.exitCode = previousExitCode;
+    }
   });
 });

@@ -37,20 +37,26 @@ function createRuntime(): Runtime {
 describe('handleList JSON output', () => {
   it('emits aggregated status counts', async () => {
     const runtime = createRuntime();
+    const previousExitCode = process.exitCode;
+    process.exitCode = undefined;
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await runHandleList(runtime, ['--json']);
+    try {
+      await runHandleList(runtime, ['--json']);
 
-    const payload = JSON.parse(logSpy.mock.calls.at(-1)?.[0] ?? '{}');
-    expect(payload.mode).toBe('list');
-    expect(payload.counts.auth).toBe(1);
-    const healthyEntry = payload.servers.find((entry: { name: string }) => entry.name === 'healthy');
-    expect(healthyEntry.status).toBe('ok');
-    const authEntry = payload.servers.find((entry: { name: string }) => entry.name === 'auth-server');
-    expect(authEntry.status).toBe('auth');
-    expect(authEntry.issue.kind).toBe('auth');
-
-    logSpy.mockRestore();
+      const payload = JSON.parse(logSpy.mock.calls.at(-1)?.[0] ?? '{}');
+      expect(payload.mode).toBe('list');
+      expect(payload.counts.auth).toBe(1);
+      const healthyEntry = payload.servers.find((entry: { name: string }) => entry.name === 'healthy');
+      expect(healthyEntry.status).toBe('ok');
+      const authEntry = payload.servers.find((entry: { name: string }) => entry.name === 'auth-server');
+      expect(authEntry.status).toBe('auth');
+      expect(authEntry.issue.kind).toBe('auth');
+      expect(process.exitCode).toBeUndefined();
+    } finally {
+      logSpy.mockRestore();
+      process.exitCode = previousExitCode;
+    }
   });
 
   it('sets a non-zero exit code for unhealthy multi-server checks when requested', async () => {

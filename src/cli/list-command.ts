@@ -175,7 +175,7 @@ export async function handleList(
 
   const resolved = resolveServerDefinition(runtime, target, { quiet: flags.quiet });
   if (!resolved) {
-    maybeSetListExitCode([{ status: 'error' }], flags);
+    process.exitCode = 1;
     return;
   }
   target = resolved.name;
