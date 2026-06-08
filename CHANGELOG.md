@@ -9,6 +9,7 @@
 ### CLI
 
 - Add `mcporter record` and `mcporter replay` helpers for capturing and replaying MCP JSON-RPC traffic, with server filters and daemon-safe manual env setup. (PR #192, thanks @LDMB123)
+- Prevent direct daemon starts from rebinding over an already-running healthy daemon, avoiding orphaned keep-alive processes during foreground or launch races. (PR #195, thanks @zm2231)
 - Reconcile keep-alive daemon metadata with the responding process and serialize daemon startup across parallel clients, preventing duplicate orphaned daemons. (Issue #191, thanks @dtmsyi)
 - Keep daemon-managed stdio servers warm across repeated `mcporter list` requests instead of treating non-interactive tool listing as a throwaway process. (Issue #188, thanks @robertoronderosjr)
 
