@@ -93,7 +93,7 @@ Expose daemon-managed keep-alive MCP servers as one MCP server.
 Flags:
   --servers <csv>  Restrict the bridge to the listed keep-alive server names.
   --stdio          Serve MCP over stdio (default).
-  --http <port>    Serve MCP Streamable HTTP on /mcp.
+  --http <port>    Serve MCP Streamable HTTP on /mcp and /mcp/<server>.
   --host <host>    Host for --http (default: ${DEFAULT_SERVE_HTTP_HOST}).`);
 }
 
