@@ -29,6 +29,20 @@ async function readFileWithRetries(filePath: string, retries = 20, delayMs = 100
   throw lastError ?? new Error(`Failed to read ${filePath}`);
 }
 
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForExit(child: ChildProcess, retries = 50, delayMs = 100): Promise<void> {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      return;
+    }
+    await delay(delayMs);
+  }
+  throw new Error(`Process ${child.pid ?? '<unknown>'} did not exit.`);
+}
+
 async function ensureDistBuilt(): Promise<void> {
   try {
     await fs.access(CLI_ENTRY);
@@ -223,7 +237,7 @@ await new Promise(() => {});
     }
   }, 40_000);
 
-  it('rebinds when a live daemon owns the socket but metadata is missing', async () => {
+  it('repairs metadata when a live daemon owns the socket and metadata is missing', async () => {
     await ensureDistBuilt();
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-meta-'));
     const scriptPath = path.join(tempDir, 'meta-server.mjs');
@@ -270,7 +284,73 @@ await new Promise(() => {});
       await fs.rm(metadataPath, { force: true });
 
       const replacement = startForeground();
-      await new Promise((resolve) => setTimeout(resolve, 5_000));
+      await waitForExit(replacement);
+
+      const ownerPid = JSON.parse(await readFileWithRetries(metadataPath, 50)).pid as number;
+      expect(ownerPid).toBe(first.pid);
+      expect(first.exitCode).toBeNull();
+    } finally {
+      for (const child of children) {
+        child.kill('SIGKILL');
+      }
+      await runCli(['daemon', 'stop'], configPath, { MCPORTER_DAEMON_METADATA: metadataPath }).catch(() => {});
+      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }, 40_000);
+
+  it('stops a live daemon with stale config before rebinding', async () => {
+    await ensureDistBuilt();
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-stale-'));
+    const scriptPath = path.join(tempDir, 'stale-server.mjs');
+    const configPath = path.join(tempDir, 'mcporter.stale.json');
+    const metadataPath = path.join(tempDir, 'daemon.json');
+
+    const serverSource = `import { McpServer } from '${MCP_SERVER_MODULE}';
+import { StdioServerTransport } from '${STDIO_SERVER_MODULE}';
+const server = new McpServer({ name: 'stale-e2e', version: '1.0.0' });
+server.registerTool('ping', { title: 'ping', description: 'ping', inputSchema: {} }, async () => ({
+  content: [{ type: 'text', text: 'pong' }],
+}));
+await server.connect(new StdioServerTransport());
+await new Promise(() => {});
+`;
+    await fs.writeFile(scriptPath, serverSource, 'utf8');
+    const writeConfig = async (description: string): Promise<void> => {
+      await fs.writeFile(
+        configPath,
+        JSON.stringify({
+          mcpServers: {
+            'stale-e2e': { description, command: 'node', args: [scriptPath], lifecycle: 'keep-alive' },
+          },
+        }),
+        'utf8'
+      );
+    };
+    await writeConfig('stale server v1');
+
+    const env = { ...process.env, MCPORTER_NO_FORCE_EXIT: '1', MCPORTER_DAEMON_METADATA: metadataPath };
+    const children: ChildProcess[] = [];
+    const startForeground = (): ChildProcess => {
+      const child = spawn(process.execPath, [CLI_ENTRY, '--config', configPath, 'daemon', 'start', '--foreground'], {
+        env,
+        stdio: 'ignore',
+      });
+      children.push(child);
+      return child;
+    };
+
+    try {
+      const first = startForeground();
+      const firstPid = JSON.parse(await readFileWithRetries(metadataPath, 50)).pid as number;
+      expect(firstPid).toBe(first.pid);
+
+      await delay(20);
+      await writeConfig('stale server v2');
+      const staleConfigTime = new Date(Date.now() + 5_000);
+      await fs.utimes(configPath, staleConfigTime, staleConfigTime);
+
+      const replacement = startForeground();
+      await waitForExit(first);
 
       const ownerPid = JSON.parse(await readFileWithRetries(metadataPath, 50)).pid as number;
       expect(ownerPid).toBe(replacement.pid);

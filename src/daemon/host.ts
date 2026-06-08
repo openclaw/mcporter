@@ -191,8 +191,14 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
   let claimed = false;
   await withFileLock(`${options.metadataPath}.bind`, async () => {
     const live = await probeLiveDaemon(options.socketPath);
-    if (live && (await metadataMatches(options.metadataPath, live))) {
-      return;
+    if (live) {
+      if (daemonConfigMatches(live, configLayers, options.configPath, configMtimeMs)) {
+        if (!(await metadataMatches(options.metadataPath, live))) {
+          await writeJsonFile(options.metadataPath, metadataFromStatus(live, configLayers));
+        }
+        return;
+      }
+      await stopLiveDaemon(options.socketPath);
     }
     await prepareSocket(options.socketPath);
     await new Promise<void>((resolve, reject) => {
@@ -251,6 +257,124 @@ export async function metadataMatches(
   } catch {
     return false;
   }
+}
+
+function metadataFromStatus(
+  status: StatusResult,
+  fallbackConfigLayers: Array<{ path: string; mtimeMs: number | null }>
+): {
+  pid: number;
+  socketPath: string;
+  configPath: string;
+  configLayers?: StatusResult['configLayers'];
+  startedAt: number;
+  logPath: string | null;
+  configMtimeMs: number | null;
+} {
+  return {
+    pid: status.pid,
+    socketPath: status.socketPath,
+    configPath: status.configPath,
+    configLayers: status.configLayers && status.configLayers.length > 0 ? status.configLayers : fallbackConfigLayers,
+    startedAt: status.startedAt,
+    logPath: status.logPath ?? null,
+    configMtimeMs: status.configMtimeMs ?? null,
+  };
+}
+
+function daemonConfigMatches(
+  live: StatusResult,
+  currentLayers: Array<{ path: string; mtimeMs: number | null }>,
+  currentConfigPath: string,
+  currentConfigMtimeMs: number | null
+): boolean {
+  const liveLayers = normalizeLayers(
+    live.configLayers && live.configLayers.length > 0
+      ? live.configLayers
+      : [{ path: live.configPath, mtimeMs: live.configMtimeMs ?? null }]
+  );
+  const expectedLayers = normalizeLayers(
+    currentLayers.length > 0 ? currentLayers : [{ path: currentConfigPath, mtimeMs: currentConfigMtimeMs }]
+  );
+  if (liveLayers.length !== expectedLayers.length) {
+    return false;
+  }
+  return liveLayers.every((entry, index) => {
+    const expected = expectedLayers[index];
+    return Boolean(expected && entry.path === expected.path && entry.mtimeMs === expected.mtimeMs);
+  });
+}
+
+function normalizeLayers(
+  layers: Array<{ path: string; mtimeMs: number | null }>
+): Array<{ path: string; mtimeMs: number | null }> {
+  const normalized = layers.map((entry) => ({
+    path: path.isAbsolute(entry.path) ? entry.path : path.resolve(entry.path),
+    mtimeMs: entry.mtimeMs ?? null,
+  }));
+  if (normalized.length < 2) {
+    return normalized;
+  }
+  return normalized.toSorted((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+async function stopLiveDaemon(socketPath: string): Promise<void> {
+  const stopped = await sendDaemonStop(socketPath);
+  if (!stopped) {
+    throw new Error('Live daemon did not accept stop before rebinding.');
+  }
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    if (!(await probeLiveDaemon(socketPath))) {
+      return;
+    }
+    await delay(100);
+  }
+  throw new Error('Live daemon did not stop before rebinding.');
+}
+
+async function sendDaemonStop(socketPath: string): Promise<boolean> {
+  return await new Promise<boolean>((resolve) => {
+    const request: DaemonRequest<'stop', Record<string, never>> = {
+      id: randomUUID(),
+      method: 'stop',
+      params: {},
+    };
+    const socket = net.createConnection(socketPath);
+    let buffer = '';
+    let settled = false;
+    const finish = (result: boolean): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      socket.removeAllListeners();
+      socket.destroy();
+      resolve(result);
+    };
+    socket.setTimeout(DAEMON_PROBE_TIMEOUT_MS, () => finish(false));
+    socket.once('connect', () => {
+      socket.write(JSON.stringify(request));
+    });
+    socket.on('data', (chunk) => {
+      buffer += chunk.toString();
+    });
+    socket.once('end', () => {
+      try {
+        const response = JSON.parse(buffer.trim()) as DaemonResponse<boolean>;
+        finish(response.ok);
+      } catch {
+        finish(false);
+      }
+    });
+    socket.once('error', () => finish(false));
+  });
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 function isProcessAlive(pid: number): boolean {
