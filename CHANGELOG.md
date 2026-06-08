@@ -14,6 +14,7 @@
 - Prevent direct daemon starts from rebinding over an already-running healthy daemon, avoiding orphaned keep-alive processes during foreground or launch races. (PR #195, thanks @zm2231)
 - Return a non-zero exit code for explicit `mcporter list <unknown-server>` failures while preserving aggregate list health checks by default. (Issue #203, thanks @theo674)
 - Reconcile keep-alive daemon metadata with the responding process and serialize daemon startup across parallel clients, preventing duplicate orphaned daemons. (Issue #191, thanks @dtmsyi)
+- Keep CloudBase MCP alive by default so device-code authentication can finish polling and persist credentials after returning `AUTH_PENDING`. (PR #193, thanks @sevzq)
 - Keep daemon-managed stdio servers warm across repeated `mcporter list` requests instead of treating non-interactive tool listing as a throwaway process. (Issue #188, thanks @robertoronderosjr)
 
 ### Tooling / Dependencies

@@ -8,7 +8,7 @@ read_when:
 
 ## Goals
 
-- **Invisible keep-alive:** `mcporter call` should transparently start (and reuse) a per-login daemon whenever a configured server requires persistence (e.g., `chrome-devtools`). No extra flags for agents.
+- **Invisible keep-alive:** `mcporter call` should transparently start (and reuse) a per-login daemon whenever a configured server requires persistence (e.g., `chrome-devtools` or CloudBase device authentication). No extra flags for agents.
 - **Shared state:** Multiple CLI invocations/agents within the same user session must reuse the same warm transport so STDIO servers can hold tabs, cookies, and other stateful context.
 - **Per-config scope:** The daemon lives under the current user account, keyed by config path (`~/.mcporter/daemon/daemon-<config-hash>.sock` on Unix-like systems, or `$XDG_STATE_HOME/mcporter/daemon/...` when set), and never crosses user boundaries.
 - **Resilience:** If the daemon or a keep-alive server crashes, the next CLI call restarts it automatically.
@@ -34,7 +34,7 @@ read_when:
 - **Keep-alive detection:**
   - Extend `ServerDefinition` with `lifecycle?: "ephemeral" | { mode: "keep-alive", idleTimeoutMs?: number }`.
   - Provide a config-level `defaultKeepAlive` array or `MCPORTER_KEEPALIVE` env var for quick overrides.
-  - Ship a hardcoded allowlist (initially `chrome-devtools`, `mobile-mcp`, `playwright`) so existing configs benefit immediately; users can opt out per server.
+  - Ship a hardcoded allowlist (`chrome-devtools`, `mobile-mcp`, `playwright`, `cloudbase`) so existing configs benefit immediately; users can opt out per server.
 
 ## CLI Surface
 
