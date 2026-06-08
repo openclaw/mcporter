@@ -48,9 +48,10 @@ describe('runtime callTool timeouts', () => {
     const runtime = await createRuntime({ servers: [] });
     const callTool = vi.fn(() => new Promise(() => {}));
     type ClientContext = Awaited<ReturnType<typeof runtime.connect>>;
+    const transport = { close: vi.fn().mockResolvedValue(undefined) };
     const fakeContext = {
       client: { callTool },
-      transport: { close: vi.fn().mockResolvedValue(undefined) },
+      transport,
       definition: {
         name: 'temp',
         description: 'test',
@@ -60,16 +61,42 @@ describe('runtime callTool timeouts', () => {
       oauthSession: undefined,
     } as unknown as ClientContext;
     vi.spyOn(runtime, 'connect').mockResolvedValue(fakeContext);
-    (runtime as unknown as { clients: Map<string, Promise<ClientContext>> }).clients.set(
-      'temp',
-      Promise.resolve(fakeContext)
-    );
+    const cachedPromise = Promise.resolve(fakeContext);
+    (
+      runtime as unknown as {
+        clients: Map<
+          string,
+          {
+            server: string;
+            promise: Promise<ClientContext>;
+            allowCachedAuth: boolean | undefined;
+            disableOAuth: boolean;
+          }
+        >;
+      }
+    ).clients.set('temp:test', {
+      server: 'temp',
+      promise: cachedPromise,
+      allowCachedAuth: true,
+      disableOAuth: false,
+    });
+    (
+      runtime as unknown as {
+        contextCacheKeys: WeakMap<ClientContext, string>;
+      }
+    ).contextCacheKeys.set(fakeContext, 'temp:test');
+    (
+      runtime as unknown as {
+        contextCachePromises: WeakMap<ClientContext, Promise<ClientContext>>;
+      }
+    ).contextCachePromises.set(fakeContext, cachedPromise);
     const closeSpy = vi.spyOn(runtime, 'close').mockResolvedValue();
 
     const promise = runtime.callTool('temp', 'ping', { timeoutMs: 123 });
     const expectation = expect(promise).rejects.toThrow('Timeout');
     await vi.advanceTimersByTimeAsync(200);
     await expectation;
-    expect(closeSpy).toHaveBeenCalledWith('temp');
+    expect(closeSpy).not.toHaveBeenCalled();
+    expect(transport.close).toHaveBeenCalled();
   });
 });

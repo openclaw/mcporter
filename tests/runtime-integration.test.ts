@@ -202,7 +202,7 @@ describe('runtime integration', () => {
     await runtime.close('integration');
   });
 
-  it('evicts and re-establishes the cached client when disableOAuth flag changes', async () => {
+  it('keeps separate cached clients when disableOAuth flag changes', async () => {
     // Connections established with disableOAuth: true vs without are
     // semantically different (the former cannot inherit an OAuth
     // session that may refresh into a flow). The cache slot must not
@@ -220,6 +220,8 @@ describe('runtime integration', () => {
     const cached = await runtime.connect('integration', { disableOAuth: true });
     const withFlowAllowed = await runtime.connect('integration', {});
     expect(withFlowAllowed).not.toBe(cached);
+    const cachedAgain = await runtime.connect('integration', { disableOAuth: true });
+    expect(cachedAgain).toBe(cached);
 
     await runtime.close('integration');
   });
