@@ -56,22 +56,45 @@ function isProxyOptionKey(key: string): boolean {
   return key === 'args' || KNOWN_OPTION_KEYS.has(key);
 }
 
-function inferMetadataOptions(callArgs: unknown[]): { disableOAuth?: boolean } {
-  for (const arg of callArgs) {
+function inferMetadataOptions(callArgs: unknown[]): {
+  options: { autoAuthorize?: false; disableOAuth?: boolean };
+  optionObjects: Set<Record<string, unknown>>;
+} {
+  const options: { autoAuthorize?: false; disableOAuth?: boolean } = {};
+  const optionObjects = new Set<Record<string, unknown>>();
+
+  for (const [index, arg] of callArgs.entries()) {
     if (!isPlainObject(arg) || arg.disableOAuth !== true) {
       continue;
     }
     const keys = Object.keys(arg);
     const isOptionsOnlyObject = keys.length > 0 && keys.every(isProxyOptionKey);
-    const hasSeparateToolArgs = callArgs.length > 1;
+    const hasClearlySeparateToolArgs = callArgs.some((other, otherIndex) => {
+      if (otherIndex === index) {
+        return false;
+      }
+      if (!isPlainObject(other)) {
+        return false;
+      }
+      return Object.hasOwn(other, 'args') || Object.keys(other).some((key) => !isProxyOptionKey(key));
+    });
+    // `args` plus proxy options is reserved envelope syntax; use proxy.call()
+    // when a tool schema itself owns both `args` and `disableOAuth`.
     const hasExplicitArgsEnvelope = Object.hasOwn(arg, 'args');
     // A sole object can be a tool argument whose schema owns `disableOAuth`.
-    // Require an unambiguous options shape before suppressing schema discovery.
-    if (isOptionsOnlyObject && (hasSeparateToolArgs || hasExplicitArgsEnvelope)) {
-      return { disableOAuth: true };
+    // Multi-argument calls suppress discovery defensively, then let the schema
+    // classify option-only objects unless another argument is clearly tool input.
+    const isUnambiguousOptionsObject = isOptionsOnlyObject && (hasClearlySeparateToolArgs || hasExplicitArgsEnvelope);
+    if (isUnambiguousOptionsObject) {
+      options.disableOAuth = true;
+    } else if (isOptionsOnlyObject && callArgs.length > 1 && options.disableOAuth !== true) {
+      options.autoAuthorize = false;
+    }
+    if (isUnambiguousOptionsObject) {
+      optionObjects.add(arg);
     }
   }
-  return {};
+  return { options, optionObjects };
 }
 
 // createToolSchemaInfo normalizes schema metadata used for argument mapping.
@@ -176,7 +199,7 @@ export function createServerProxy(
   const toolSchemaCache = new Map<string, ToolSchemaInfo>();
   const persistedSchemas = new Map<string, Record<string, unknown>>();
   const toolAliasMap = new Map<string, string>();
-  const schemaFetches = new Map<boolean, Promise<void>>();
+  const schemaFetches = new Map<string, Promise<void>>();
   let diskLoad: Promise<void> | null = null;
   let persistPromise: Promise<void> | null = null;
   let refreshPending = false;
@@ -215,15 +238,12 @@ export function createServerProxy(
   }
 
   // ensureMetadata loads schema information for the requested tool, optionally refreshing from the server.
-  // `disableOAuth` flows through to the listTools metadata fetch so a
-  // headless caller passing `disableOAuth: true` on the eventual tool
-  // invocation gets the same no-OAuth posture on the schema-discovery
-  // call. Without this, the proxy's pre-call listTools could trigger
-  // an interactive OAuth flow on an OAuth server with no cached schema,
-  // defeating the no-browser guarantee.
+  // Unambiguous proxy options use cache-friendly OAuth suppression. Ambiguous
+  // option-shaped arguments use an uncached no-authorize fetch so discovery
+  // cannot launch OAuth or change the runtime's active connection posture.
   async function ensureMetadata(
     toolName: string,
-    metadataOptions: { disableOAuth?: boolean } = {}
+    metadataOptions: { autoAuthorize?: false; disableOAuth?: boolean } = {}
   ): Promise<ToolSchemaInfo | undefined> {
     await consumePersist();
     const cached = toolSchemaCache.get(toolName);
@@ -243,13 +263,24 @@ export function createServerProxy(
     }
 
     const disableOAuth = metadataOptions.disableOAuth === true;
-    let schemaFetch = schemaFetches.get(disableOAuth);
+    const schemaFetchKey = disableOAuth
+      ? 'disable-oauth'
+      : metadataOptions.autoAuthorize === false
+        ? 'no-authorize'
+        : 'default';
+    let schemaFetch = schemaFetches.get(schemaFetchKey);
     if (!schemaFetch) {
-      const listToolsOptions: { includeSchema: true; disableOAuth?: boolean } = {
+      const listToolsOptions: {
+        includeSchema: true;
+        autoAuthorize?: false;
+        disableOAuth?: boolean;
+      } = {
         includeSchema: true,
       };
       if (disableOAuth) {
         listToolsOptions.disableOAuth = true;
+      } else if (metadataOptions.autoAuthorize === false) {
+        listToolsOptions.autoAuthorize = false;
       }
       schemaFetch = runtime
         .listTools(serverName, listToolsOptions)
@@ -264,12 +295,12 @@ export function createServerProxy(
           refreshPending = false;
         })
         .catch((error) => {
-          if (schemaFetches.get(disableOAuth) === schemaFetch) {
-            schemaFetches.delete(disableOAuth);
+          if (schemaFetches.get(schemaFetchKey) === schemaFetch) {
+            schemaFetches.delete(schemaFetchKey);
           }
           throw error;
         });
-      schemaFetches.set(disableOAuth, schemaFetch);
+      schemaFetches.set(schemaFetchKey, schemaFetch);
     }
 
     await schemaFetch;
@@ -352,7 +383,7 @@ export function createServerProxy(
           : mapPropertyToTool(propertyKey);
 
       return async (...callArgs: unknown[]) => {
-        const metadataOptions = inferMetadataOptions(callArgs);
+        const { options: metadataOptions, optionObjects } = inferMetadataOptions(callArgs);
 
         let schemaInfo: ToolSchemaInfo | undefined;
         try {
@@ -380,6 +411,7 @@ export function createServerProxy(
           if (isPlainObject(arg)) {
             const keys = Object.keys(arg);
             const treatAsArgs =
+              !optionObjects.has(arg) &&
               schemaInfo !== undefined &&
               keys.length > 0 &&
               (keys.every((key) => schemaInfo.propertySet.has(key)) ||

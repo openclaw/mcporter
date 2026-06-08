@@ -348,6 +348,7 @@ describe('createServerProxy', () => {
         type: 'object',
         properties: {
           foo: { type: 'string' },
+          disableOAuth: { type: 'boolean' },
         },
         required: ['foo'],
       },
@@ -416,6 +417,103 @@ describe('createServerProxy', () => {
     });
     expect(runtime.callTool).toHaveBeenCalledWith('mock', 'some-tool', {
       args: { disableOAuth: true },
+    });
+  });
+
+  it('preserves schema-owned disableOAuth fields beside proxy options', async () => {
+    const runtime = createMockRuntime({
+      'some-tool': {
+        type: 'object',
+        properties: {
+          disableOAuth: { type: 'boolean' },
+        },
+        required: ['disableOAuth'],
+      },
+    });
+    const proxy = createServerProxy(runtime as unknown as Runtime, 'mock') as Record<string, unknown>;
+    const fn = proxy.someTool as (args: unknown, options: unknown) => Promise<CallResult>;
+
+    await fn({ disableOAuth: true }, { tailLog: true });
+
+    expect(runtime.listTools).toHaveBeenCalledWith('mock', {
+      includeSchema: true,
+      autoAuthorize: false,
+    });
+    expect(runtime.callTool).toHaveBeenCalledWith('mock', 'some-tool', {
+      args: { disableOAuth: true },
+      tailLog: true,
+    });
+  });
+
+  it('preserves schema-owned disableOAuth fields beside positional arguments', async () => {
+    const runtime = createMockRuntime({
+      'some-tool': {
+        type: 'object',
+        properties: {
+          value: { type: 'string' },
+          disableOAuth: { type: 'boolean' },
+        },
+        required: ['value', 'disableOAuth'],
+      },
+    });
+    const proxy = createServerProxy(runtime as unknown as Runtime, 'mock') as Record<string, unknown>;
+    const fn = proxy.someTool as (value: string, args: unknown) => Promise<CallResult>;
+
+    await fn('x', { disableOAuth: true });
+
+    expect(runtime.callTool).toHaveBeenCalledWith('mock', 'some-tool', {
+      args: {
+        value: 'x',
+        disableOAuth: true,
+      },
+    });
+  });
+
+  it('does not override active OAuth posture when schema discovery is cached', async () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        value: { type: 'string' },
+        disableOAuth: { type: 'boolean' },
+      },
+      required: ['value', 'disableOAuth'],
+    };
+    const runtime = createMockRuntime({ 'some-tool': schema });
+    const proxy = createServerProxy(runtime as unknown as Runtime, 'mock', {
+      initialSchemas: { 'some-tool': schema },
+    }) as Record<string, unknown>;
+    const fn = proxy.someTool as (value: string, args: unknown) => Promise<CallResult>;
+
+    await fn('x', { disableOAuth: true });
+
+    expect(runtime.listTools).not.toHaveBeenCalled();
+    expect(runtime.callTool).toHaveBeenCalledWith('mock', 'some-tool', {
+      args: {
+        value: 'x',
+        disableOAuth: true,
+      },
+    });
+  });
+
+  it('suppresses schema discovery for split proxy option bags', async () => {
+    const runtime = createMockRuntime({
+      ping: {
+        type: 'object',
+        properties: {},
+      },
+    });
+    const proxy = createServerProxy(runtime as unknown as Runtime, 'mock') as Record<string, unknown>;
+    const fn = proxy.ping as (options: unknown, additionalOptions: unknown) => Promise<CallResult>;
+
+    await fn({ disableOAuth: true }, { tailLog: true });
+
+    expect(runtime.listTools).toHaveBeenCalledWith('mock', {
+      includeSchema: true,
+      autoAuthorize: false,
+    });
+    expect(runtime.callTool).toHaveBeenCalledWith('mock', 'ping', {
+      disableOAuth: true,
+      tailLog: true,
     });
   });
 
