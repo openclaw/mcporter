@@ -49,7 +49,7 @@ describe('daemon host request handling', () => {
     expect(runtime.callTool).toHaveBeenCalledWith('oauth', 'ping', {
       args: {},
       timeoutMs: undefined,
-      disableOAuth: undefined,
+      disableOAuth: false,
     });
 
     await __testProcessRequest('', runtime as unknown as Runtime, managedServers, new Map(), metadata, logContext, {
@@ -62,7 +62,7 @@ describe('daemon host request handling', () => {
       includeSchema: true,
       autoAuthorize: undefined,
       allowCachedAuth: true,
-      disableOAuth: undefined,
+      disableOAuth: false,
     });
   });
 
@@ -80,7 +80,7 @@ describe('daemon host request handling', () => {
       includeSchema: true,
       autoAuthorize: undefined,
       allowCachedAuth: true,
-      disableOAuth: undefined,
+      disableOAuth: false,
     });
   });
 
@@ -98,7 +98,7 @@ describe('daemon host request handling', () => {
       includeSchema: true,
       autoAuthorize: false,
       allowCachedAuth: true,
-      disableOAuth: undefined,
+      disableOAuth: false,
     });
   });
 
@@ -146,7 +146,7 @@ describe('daemon host request handling', () => {
       includeSchema: undefined,
       autoAuthorize: undefined,
       allowCachedAuth: false,
-      disableOAuth: undefined,
+      disableOAuth: false,
     });
   });
 });

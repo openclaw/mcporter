@@ -27,6 +27,7 @@ const KNOWN_OPTION_KEYS = new Set([
   'metadata',
   'log',
 ]);
+const EXPLICIT_ARGS_OPTION_KEY = 'args';
 
 export interface ServerProxyOptions {
   readonly mapPropertyToTool?: (property: string | symbol) => string;
@@ -50,6 +51,29 @@ function canonicalizeToolName(name: string): string {
 // isPlainObject narrows unknown values to plain object records.
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isProxyOptionKey(key: string): boolean {
+  return key === EXPLICIT_ARGS_OPTION_KEY || KNOWN_OPTION_KEYS.has(key);
+}
+
+function inferMetadataOptions(callArgs: unknown[]): { disableOAuth?: boolean } {
+  for (const arg of callArgs) {
+    if (!isPlainObject(arg) || arg.disableOAuth !== true) {
+      continue;
+    }
+    const keys = Object.keys(arg);
+    const isOptionsOnlyObject = keys.length > 0 && keys.every(isProxyOptionKey);
+    const hasSeparateToolArgs = callArgs.length > 1;
+    const hasExplicitArgsOption = Object.hasOwn(arg, EXPLICIT_ARGS_OPTION_KEY);
+    // A sole `{ disableOAuth: true }` is ambiguous before schema discovery:
+    // it may be the runtime option or a real tool input field. Treat only
+    // separate or explicit-args option bags as metadata-fetch controls.
+    if (isOptionsOnlyObject && (hasSeparateToolArgs || hasExplicitArgsOption)) {
+      return { disableOAuth: true };
+    }
+  }
+  return {};
 }
 
 // createToolSchemaInfo normalizes schema metadata used for argument mapping.
@@ -325,20 +349,7 @@ export function createServerProxy(
           : mapPropertyToTool(propertyKey);
 
       return async (...callArgs: unknown[]) => {
-        // Pre-scan callArgs for `disableOAuth: true` so the schema-fetch
-        // call (runtime.listTools inside ensureMetadata) inherits the
-        // same no-OAuth posture as the eventual callTool. Without this,
-        // a proxy.tool({ disableOAuth: true }) call on an OAuth server
-        // with no cached schema could trigger interactive OAuth during
-        // metadata discovery, before the call-options parsing path runs.
-        let earlyDisableOAuth = false;
-        for (const arg of callArgs) {
-          if (isPlainObject(arg) && (arg as Record<string, unknown>).disableOAuth === true) {
-            earlyDisableOAuth = true;
-            break;
-          }
-        }
-        const metadataOptions = { disableOAuth: earlyDisableOAuth };
+        const metadataOptions = inferMetadataOptions(callArgs);
 
         let schemaInfo: ToolSchemaInfo | undefined;
         try {

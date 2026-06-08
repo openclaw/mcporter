@@ -55,12 +55,11 @@ export interface ListToolsOptions {
   readonly disableOAuth?: boolean;
 }
 
-export interface ListResourcesOptions {
-  readonly cursor?: string;
+export type ListResourcesOptions = Partial<ListResourcesRequest['params']> & {
   readonly allowCachedAuth?: boolean;
   readonly oauthSessionOptions?: OAuthSessionOptions;
   readonly disableOAuth?: boolean;
-}
+};
 
 export interface ReadResourceOptions {
   readonly allowCachedAuth?: boolean;

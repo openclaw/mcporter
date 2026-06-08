@@ -503,6 +503,13 @@ async function handleSocketRequest(
   });
 }
 
+function normalizeDaemonDisableOAuth(value: boolean | undefined): boolean {
+  // Daemon messages are independent requests. Omission means the caller did
+  // not request OAuth suppression, so a previous --no-oauth pooled transport
+  // must not make later ordinary calls inherit the no-OAuth posture.
+  return value === true;
+}
+
 async function processRequest(
   rawPayload: string,
   runtime: Runtime,
@@ -554,7 +561,7 @@ async function processRequest(
           const result = await runtime.callTool(params.server, params.tool, {
             args: params.args ?? {},
             timeoutMs: params.timeoutMs,
-            disableOAuth: params.disableOAuth,
+            disableOAuth: normalizeDaemonDisableOAuth(params.disableOAuth),
           });
           markActivity(params.server, activity);
           if (loggable) {
@@ -582,7 +589,7 @@ async function processRequest(
             includeSchema: params.includeSchema,
             autoAuthorize: resolveDaemonListToolsAutoAuthorize(params, definition),
             allowCachedAuth: params.allowCachedAuth ?? true,
-            disableOAuth: params.disableOAuth,
+            disableOAuth: normalizeDaemonDisableOAuth(params.disableOAuth),
           });
           markActivity(params.server, activity);
           if (loggable) {
@@ -608,7 +615,7 @@ async function processRequest(
           const result = await runtime.listResources(params.server, {
             ...params.params,
             allowCachedAuth: params.allowCachedAuth,
-            disableOAuth: params.disableOAuth,
+            disableOAuth: normalizeDaemonDisableOAuth(params.disableOAuth),
           });
           markActivity(params.server, activity);
           if (loggable) {
@@ -633,7 +640,7 @@ async function processRequest(
         try {
           const result = await runtime.readResource(params.server, params.uri, {
             allowCachedAuth: params.allowCachedAuth,
-            disableOAuth: params.disableOAuth,
+            disableOAuth: normalizeDaemonDisableOAuth(params.disableOAuth),
           });
           markActivity(params.server, activity);
           if (loggable) {
