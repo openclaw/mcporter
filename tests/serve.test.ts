@@ -329,7 +329,7 @@ describe('mcporter serve bridge', () => {
     );
   });
 
-  it('serves a single server unprefixed over /mcp/<server> and 404s an unknown server', async () => {
+  it('serves a single server unprefixed over /mcp/<server> without changing aggregate /mcp', async () => {
     const runtime = {
       listTools: vi.fn().mockResolvedValue([{ name: 'ping', inputSchema: { type: 'object' } }]),
       callTool: vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'pong-http' }] }),
@@ -339,19 +339,32 @@ describe('mcporter serve bridge', () => {
     if (!address || typeof address !== 'object') {
       throw new Error('Expected test HTTP server to listen on a TCP port.');
     }
-    const client = new Client({ name: 'test-http-client', version: '1.0.0' });
-    const transport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${address.port}/mcp/alpha`));
+    const perServerClient = new Client({ name: 'test-http-client', version: '1.0.0' });
+    const perServerTransport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${address.port}/mcp/alpha`));
+    const aggregateClient = new Client({ name: 'test-http-aggregate-client', version: '1.0.0' });
+    const aggregateTransport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${address.port}/mcp`));
     try {
-      await client.connect(transport);
-      const tools = await client.listTools();
-      expect(tools.tools.map((tool) => tool.name)).toEqual(['ping']);
-      await expect(client.callTool({ name: 'ping', arguments: {} })).resolves.toEqual({
+      await perServerClient.connect(perServerTransport);
+      const perServerTools = await perServerClient.listTools();
+      expect(perServerTools.tools.map((tool) => tool.name)).toEqual(['ping']);
+      await expect(perServerClient.callTool({ name: 'ping', arguments: {} })).resolves.toEqual({
         content: [{ type: 'text', text: 'pong-http' }],
       });
+
+      await aggregateClient.connect(aggregateTransport);
+      const aggregateTools = await aggregateClient.listTools();
+      expect(aggregateTools.tools.map((tool) => tool.name)).toEqual(['alpha__ping']);
+      await expect(aggregateClient.callTool({ name: 'alpha__ping', arguments: {} })).resolves.toEqual({
+        content: [{ type: 'text', text: 'pong-http' }],
+      });
+
       const unknown = await fetch(`http://127.0.0.1:${address.port}/mcp/nope`);
       expect(unknown.status).toBe(404);
+      expect(unknown.headers.get('content-type')).toBe('text/plain; charset=utf-8');
+      expect(await unknown.text()).toBe("Unknown server 'nope'");
     } finally {
-      await client.close().catch(() => {});
+      await perServerClient.close().catch(() => {});
+      await aggregateClient.close().catch(() => {});
       await new Promise<void>((resolve, reject) => {
         httpServer.close((error) => {
           if (error) {

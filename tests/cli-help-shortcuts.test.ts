@@ -45,4 +45,17 @@ describe('mcporter help shortcuts (hidden)', () => {
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(expectSnippet));
     expect(process.exitCode).toBe(0);
   });
+
+  it.each([
+    ['serve', '--help'],
+    ['serve', 'help'],
+  ])('prints serve HTTP endpoint help for %j', async (...args) => {
+    const { runCli } = await cliModulePromise;
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runCli(args);
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('/mcp/<server>'));
+    expect(process.exitCode).toBe(0);
+  });
 });

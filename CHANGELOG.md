@@ -8,6 +8,7 @@
 
 ### CLI
 
+- Add per-server Streamable HTTP paths for `mcporter serve` at `/mcp/<server>`, exposing one keep-alive server with original tool names while preserving aggregate `/mcp` namespacing. (PR #194, thanks @zm2231)
 - Add `mcporter record` and `mcporter replay` helpers for capturing and replaying MCP JSON-RPC traffic, with server filters and daemon-safe manual env setup. (PR #192, thanks @LDMB123)
 - Prevent direct daemon starts from rebinding over an already-running healthy daemon, avoiding orphaned keep-alive processes during foreground or launch races. (PR #195, thanks @zm2231)
 - Return a non-zero exit code for explicit `mcporter list <unknown-server>` failures while preserving aggregate list health checks by default. (Issue #203, thanks @theo674)
