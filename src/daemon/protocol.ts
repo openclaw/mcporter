@@ -60,6 +60,7 @@ export interface StatusResult {
     readonly path: string;
     readonly mtimeMs: number | null;
   }>;
+  readonly definitionHash?: string;
   readonly socketPath: string;
   readonly logPath?: string;
   readonly servers: Array<{

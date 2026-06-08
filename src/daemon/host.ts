@@ -7,6 +7,7 @@ import { readJsonFile, withFileLock, writeJsonFile } from '../fs-json.js';
 import { isKeepAliveServer } from '../lifecycle.js';
 import { createRuntime, type Runtime } from '../runtime.js';
 import { collectConfigLayers, statConfigMtime } from './config-layers.js';
+import { hashDaemonDefinitions } from './definition-hash.js';
 import {
   createLogContext,
   disposeLogContext,
@@ -60,6 +61,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
     rootDir: options.rootDir,
   });
   const keepAliveDefinitions = runtime.getDefinitions().filter(isKeepAliveServer);
+  const definitionHash = hashDaemonDefinitions(keepAliveDefinitions);
   if (keepAliveDefinitions.length === 0) {
     throw new Error('No MCP servers require keep-alive; daemon will not start.');
   }
@@ -164,6 +166,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
           startedAt,
           logPath: options.logPath ?? null,
           configMtimeMs,
+          definitionHash,
         },
         logContext,
         shutdown,
@@ -192,7 +195,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
   await withFileLock(`${options.metadataPath}.bind`, async () => {
     const live = await probeLiveDaemon(options.socketPath);
     if (live) {
-      if (daemonConfigMatches(live, configLayers, options.configPath, configMtimeMs)) {
+      if (daemonConfigMatches(live, configLayers, options.configPath, configMtimeMs, definitionHash)) {
         if (!(await metadataMatches(options.metadataPath, live))) {
           await writeJsonFile(options.metadataPath, metadataFromStatus(live, configLayers));
         }
@@ -216,6 +219,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
       startedAt: Date.now(),
       logPath: options.logPath ?? null,
       configMtimeMs,
+      definitionHash,
     });
     claimed = true;
   });
@@ -270,6 +274,7 @@ function metadataFromStatus(
   startedAt: number;
   logPath: string | null;
   configMtimeMs: number | null;
+  definitionHash?: string;
 } {
   return {
     pid: status.pid,
@@ -279,6 +284,7 @@ function metadataFromStatus(
     startedAt: status.startedAt,
     logPath: status.logPath ?? null,
     configMtimeMs: status.configMtimeMs ?? null,
+    definitionHash: status.definitionHash,
   };
 }
 
@@ -286,8 +292,12 @@ function daemonConfigMatches(
   live: StatusResult,
   currentLayers: Array<{ path: string; mtimeMs: number | null }>,
   currentConfigPath: string,
-  currentConfigMtimeMs: number | null
+  currentConfigMtimeMs: number | null,
+  currentDefinitionHash: string
 ): boolean {
+  if (live.definitionHash !== currentDefinitionHash) {
+    return false;
+  }
   const liveLayers = normalizeLayers(
     live.configLayers && live.configLayers.length > 0
       ? live.configLayers
@@ -469,6 +479,7 @@ async function handleSocketRequest(
     socketPath: string;
     startedAt: number;
     logPath: string | null;
+    definitionHash?: string;
   },
   logContext: LogContext,
   shutdown: () => Promise<void>,
@@ -504,6 +515,7 @@ async function processRequest(
     socketPath: string;
     startedAt: number;
     logPath: string | null;
+    definitionHash?: string;
   },
   logContext: LogContext,
   preParsedRequest?: DaemonRequest
@@ -659,6 +671,7 @@ async function processRequest(
           configPath: metadata.configPath,
           configLayers: metadata.configLayers,
           configMtimeMs: metadata.configMtimeMs,
+          definitionHash: metadata.definitionHash,
           socketPath: metadata.socketPath,
           logPath: metadata.logPath ?? undefined,
           servers: Array.from(managedServers.values()).map((def) => {
@@ -715,6 +728,7 @@ export async function __testProcessRequest(
     socketPath: string;
     startedAt: number;
     logPath: string | null;
+    definitionHash?: string;
   },
   logContext: LogContext,
   preParsedRequest?: DaemonRequest

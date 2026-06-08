@@ -363,4 +363,107 @@ await new Promise(() => {});
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     }
   }, 40_000);
+
+  it('stops a live daemon when imported root definitions change', async () => {
+    await ensureDistBuilt();
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-root-'));
+    const scriptPath = path.join(tempDir, 'root-server.mjs');
+    const configPath = path.join(tempDir, 'mcporter.root.json');
+    const metadataPath = path.join(tempDir, 'daemon.json');
+    const socketPath = path.join(tempDir, 'daemon.sock');
+    const rootA = path.join(tempDir, 'root-a');
+    const rootB = path.join(tempDir, 'root-b');
+    const fakeHome = path.join(tempDir, 'home');
+
+    const serverSource = `import { McpServer } from '${MCP_SERVER_MODULE}';
+import { StdioServerTransport } from '${STDIO_SERVER_MODULE}';
+const server = new McpServer({ name: 'root-e2e', version: '1.0.0' });
+server.registerTool('ping', { title: 'ping', description: 'ping', inputSchema: {} }, async () => ({
+  content: [{ type: 'text', text: 'pong' }],
+}));
+await server.connect(new StdioServerTransport());
+await new Promise(() => {});
+`;
+    await fs.writeFile(scriptPath, serverSource, 'utf8');
+    await fs.writeFile(configPath, JSON.stringify({ imports: ['cursor'], mcpServers: {} }), 'utf8');
+
+    const writeCursorImport = async (rootDir: string, name: string): Promise<void> => {
+      const importPath = path.join(rootDir, '.cursor', 'mcp.json');
+      await fs.mkdir(path.dirname(importPath), { recursive: true });
+      await fs.writeFile(
+        importPath,
+        JSON.stringify({
+          mcpServers: {
+            [name]: {
+              description: name,
+              command: 'node',
+              args: [scriptPath],
+              lifecycle: 'keep-alive',
+            },
+          },
+        }),
+        'utf8'
+      );
+    };
+    await writeCursorImport(rootA, 'root-a-e2e');
+    await writeCursorImport(rootB, 'root-b-e2e');
+
+    const env = {
+      ...process.env,
+      MCPORTER_NO_FORCE_EXIT: '1',
+      MCPORTER_DAEMON_METADATA: metadataPath,
+      MCPORTER_DAEMON_SOCKET: socketPath,
+      MCPORTER_KEEPALIVE: '*',
+      HOME: fakeHome,
+      XDG_CONFIG_HOME: path.join(tempDir, 'xdg'),
+      APPDATA: path.join(tempDir, 'appdata'),
+    };
+    const children: ChildProcess[] = [];
+    const startForeground = (rootDir: string): ChildProcess => {
+      const child = spawn(
+        process.execPath,
+        [CLI_ENTRY, '--config', configPath, '--root', rootDir, 'daemon', 'start', '--foreground'],
+        {
+          env,
+          stdio: 'ignore',
+        }
+      );
+      children.push(child);
+      return child;
+    };
+
+    try {
+      const first = startForeground(rootA);
+      const firstMetadata = JSON.parse(await readFileWithRetries(metadataPath, 50)) as {
+        pid: number;
+        definitionHash?: string;
+      };
+      expect(firstMetadata.pid).toBe(first.pid);
+      expect(typeof firstMetadata.definitionHash).toBe('string');
+
+      const replacement = startForeground(rootB);
+      await waitForExit(first);
+
+      const replacementMetadata = JSON.parse(await readFileWithRetries(metadataPath, 50)) as {
+        pid: number;
+        definitionHash?: string;
+      };
+      expect(replacementMetadata.pid).toBe(replacement.pid);
+      expect(replacementMetadata.definitionHash).not.toBe(firstMetadata.definitionHash);
+      expect(replacement.exitCode).toBeNull();
+    } finally {
+      for (const child of children) {
+        child.kill('SIGKILL');
+      }
+      await runCli(['daemon', 'stop'], configPath, {
+        MCPORTER_DAEMON_METADATA: metadataPath,
+        MCPORTER_DAEMON_SOCKET: socketPath,
+        MCPORTER_KEEPALIVE: '*',
+        HOME: fakeHome,
+        XDG_CONFIG_HOME: path.join(tempDir, 'xdg'),
+        APPDATA: path.join(tempDir, 'appdata'),
+      }).catch(() => {});
+      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }, 40_000);
 });
