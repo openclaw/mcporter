@@ -133,11 +133,13 @@ export async function callOnce(params: {
   toolName: string;
   args?: Record<string, unknown>;
   configPath?: string;
+  disableOAuth?: boolean;
 }): Promise<unknown> {
   const runtime = await createRuntime({ configPath: params.configPath });
   try {
     return await runtime.callTool(params.server, params.toolName, {
       args: params.args,
+      disableOAuth: params.disableOAuth,
     });
   } finally {
     await runtime.close(params.server);

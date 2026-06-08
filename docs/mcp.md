@@ -35,7 +35,7 @@ Use `createServerProxy(runtime, name)` inside scripts when you want ergonomic ca
 2. Automatically merges default values.
 3. Returns a `CallResult` helper so you can render `.text()`, `.markdown()`, or `.json()` without manual parsing.
 
-When you need raw access (custom transports, streaming), use the bare `Client` from `@modelcontextprotocol/sdk` or inspect `runtime.connect(name)` for lower-level control. Headless callers that must rely on cached tokens without launching OAuth can pass `disableOAuth: true` to `connect`, `callTool`, `listTools`, and resource helpers; this suppresses interactive OAuth while keeping eligible connections pooled.
+When you need raw access (custom transports, streaming), use the bare `Client` from `@modelcontextprotocol/sdk` or inspect `runtime.connect(name)` for lower-level control. Headless callers that must rely on cached tokens without launching OAuth can pass `disableOAuth: true` to `connect`, `callTool`, `listTools`, resource helpers, and `callOnce`; this suppresses interactive OAuth while keeping eligible connections pooled.
 
 ## Debug + Support Docs
 

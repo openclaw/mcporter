@@ -1,3 +1,6 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
@@ -108,7 +111,7 @@ vi.mock('../src/oauth-persistence.js', () => ({
   readCachedAccessToken: mocks.readCachedAccessTokenMock,
 }));
 
-import { createRuntime } from '../src/runtime.js';
+import { callOnce, createRuntime } from '../src/runtime.js';
 
 describe('mcporter composability', () => {
   beforeEach(() => {
@@ -314,6 +317,44 @@ describe('mcporter composability', () => {
       expect(mocks.connectMock).toHaveBeenCalledTimes(1);
     } finally {
       await runtime.close();
+    }
+  });
+
+  it('forwards disableOAuth through callOnce', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-call-once-'));
+    const configPath = path.join(tempDir, 'mcporter.json');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          oauth: {
+            url: 'https://oauth.example.com/mcp',
+            auth: 'oauth',
+          },
+        },
+      }),
+      'utf8'
+    );
+
+    try {
+      await callOnce({
+        server: 'oauth',
+        toolName: 'ping',
+        args: { ok: true },
+        configPath,
+        disableOAuth: true,
+      });
+
+      expect(mocks.callToolMock).toHaveBeenCalledWith({
+        name: 'ping',
+        arguments: { ok: true },
+      });
+      const streamableTransport = mocks.streamableInstances[0] as {
+        options?: { authProvider?: unknown };
+      };
+      expect(streamableTransport.options?.authProvider).toBeUndefined();
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
     }
   });
 
