@@ -14,7 +14,7 @@ export { extractListFlags } from './cli/list-flags.js';
 export { resolveCallTimeout } from './cli/timeouts.js';
 
 const FORCE_EXIT_GRACE_MS = 50;
-const DAEMON_FAST_PATH_SERVERS = new Set(['chrome-devtools', 'mobile-mcp', 'playwright']);
+const DAEMON_FAST_PATH_SERVERS = new Set(['chrome-devtools', 'mobile-mcp', 'playwright', 'cloudbase']);
 
 export async function handleAuth(
   ...args: Parameters<typeof import('./cli/auth-command.js').handleAuth>

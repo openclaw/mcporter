@@ -89,6 +89,21 @@ describe('daemon call fast path', () => {
     );
   });
 
+  it('routes CloudBase auth calls through the daemon fast path', async () => {
+    const { runCli } = await import('../src/cli.js');
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runCli(['call', 'cloudbase.auth', '--output', 'json']);
+
+    expect(mocks.createRuntime).not.toHaveBeenCalled();
+    expect(mocks.daemonCallTool).toHaveBeenCalledWith(
+      expect.objectContaining({
+        server: 'cloudbase',
+        tool: 'auth',
+      })
+    );
+  });
+
   it.each(['MCPORTER_RECORD', 'MCPORTER_REPLAY'] as const)(
     'bypasses the daemon fast path while %s is active',
     async (modeEnv) => {
