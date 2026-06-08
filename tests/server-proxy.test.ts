@@ -396,7 +396,7 @@ describe('createServerProxy', () => {
     });
   });
 
-  it('does not infer disableOAuth from a possible tool argument before schema discovery', async () => {
+  it('preserves schema-owned disableOAuth fields after metadata discovery', async () => {
     const runtime = createMockRuntime({
       'some-tool': {
         type: 'object',
@@ -416,6 +416,48 @@ describe('createServerProxy', () => {
     });
     expect(runtime.callTool).toHaveBeenCalledWith('mock', 'some-tool', {
       args: { disableOAuth: true },
+    });
+  });
+
+  it('supports explicit args envelopes for option-only disableOAuth metadata discovery', async () => {
+    const runtime = createMockRuntime({
+      ping: {
+        type: 'object',
+        properties: {},
+      },
+    });
+    const proxy = createServerProxy(runtime as unknown as Runtime, 'mock') as Record<string, unknown>;
+    const fn = proxy.ping as (options: unknown) => Promise<CallResult>;
+
+    await fn({ args: {}, disableOAuth: true });
+
+    expect(runtime.listTools).toHaveBeenCalledWith('mock', {
+      includeSchema: true,
+      disableOAuth: true,
+    });
+    expect(runtime.callTool).toHaveBeenCalledWith('mock', 'ping', {
+      args: {},
+      disableOAuth: true,
+    });
+  });
+
+  it('preserves schema-owned fields that share proxy option names', async () => {
+    const runtime = createMockRuntime({
+      wait: {
+        type: 'object',
+        properties: {
+          timeout: { type: 'number' },
+        },
+        required: ['timeout'],
+      },
+    });
+    const proxy = createServerProxy(runtime as unknown as Runtime, 'mock') as Record<string, unknown>;
+    const fn = proxy.wait as (args: unknown) => Promise<CallResult>;
+
+    await fn({ timeout: 1000 });
+
+    expect(runtime.callTool).toHaveBeenCalledWith('mock', 'wait', {
+      args: { timeout: 1000 },
     });
   });
 });

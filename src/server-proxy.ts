@@ -27,7 +27,6 @@ const KNOWN_OPTION_KEYS = new Set([
   'metadata',
   'log',
 ]);
-const EXPLICIT_ARGS_OPTION_KEY = 'args';
 
 export interface ServerProxyOptions {
   readonly mapPropertyToTool?: (property: string | symbol) => string;
@@ -54,7 +53,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function isProxyOptionKey(key: string): boolean {
-  return key === EXPLICIT_ARGS_OPTION_KEY || KNOWN_OPTION_KEYS.has(key);
+  return key === 'args' || KNOWN_OPTION_KEYS.has(key);
 }
 
 function inferMetadataOptions(callArgs: unknown[]): { disableOAuth?: boolean } {
@@ -65,11 +64,8 @@ function inferMetadataOptions(callArgs: unknown[]): { disableOAuth?: boolean } {
     const keys = Object.keys(arg);
     const isOptionsOnlyObject = keys.length > 0 && keys.every(isProxyOptionKey);
     const hasSeparateToolArgs = callArgs.length > 1;
-    const hasExplicitArgsOption = Object.hasOwn(arg, EXPLICIT_ARGS_OPTION_KEY);
-    // A sole `{ disableOAuth: true }` is ambiguous before schema discovery:
-    // it may be the runtime option or a real tool input field. Treat only
-    // separate or explicit-args option bags as metadata-fetch controls.
-    if (isOptionsOnlyObject && (hasSeparateToolArgs || hasExplicitArgsOption)) {
+    const hasExplicitArgsEnvelope = Object.hasOwn(arg, 'args');
+    if (isOptionsOnlyObject && (hasSeparateToolArgs || hasExplicitArgsEnvelope)) {
       return { disableOAuth: true };
     }
   }
