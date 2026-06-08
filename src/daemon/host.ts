@@ -198,7 +198,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
         }
         return;
       }
-      await stopLiveDaemon(options.socketPath);
+      await stopLiveDaemon(options.socketPath, live.pid);
     }
     await prepareSocket(options.socketPath);
     await new Promise<void>((resolve, reject) => {
@@ -318,14 +318,14 @@ function normalizeLayers(
   return normalized.toSorted((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
-async function stopLiveDaemon(socketPath: string): Promise<void> {
+async function stopLiveDaemon(socketPath: string, livePid: number): Promise<void> {
   const stopped = await sendDaemonStop(socketPath);
   if (!stopped) {
     throw new Error('Live daemon did not accept stop before rebinding.');
   }
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
-    if (!(await probeLiveDaemon(socketPath))) {
+    if (!isProcessAlive(livePid)) {
       return;
     }
     await delay(100);
