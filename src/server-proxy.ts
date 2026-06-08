@@ -65,6 +65,8 @@ function inferMetadataOptions(callArgs: unknown[]): { disableOAuth?: boolean } {
     const isOptionsOnlyObject = keys.length > 0 && keys.every(isProxyOptionKey);
     const hasSeparateToolArgs = callArgs.length > 1;
     const hasExplicitArgsEnvelope = Object.hasOwn(arg, 'args');
+    // A sole object can be a tool argument whose schema owns `disableOAuth`.
+    // Require an unambiguous options shape before suppressing schema discovery.
     if (isOptionsOnlyObject && (hasSeparateToolArgs || hasExplicitArgsEnvelope)) {
       return { disableOAuth: true };
     }
@@ -174,7 +176,7 @@ export function createServerProxy(
   const toolSchemaCache = new Map<string, ToolSchemaInfo>();
   const persistedSchemas = new Map<string, Record<string, unknown>>();
   const toolAliasMap = new Map<string, string>();
-  let schemaFetch: Promise<void> | null = null;
+  const schemaFetches = new Map<boolean, Promise<void>>();
   let diskLoad: Promise<void> | null = null;
   let persistPromise: Promise<void> | null = null;
   let refreshPending = false;
@@ -240,11 +242,13 @@ export function createServerProxy(
       }
     }
 
+    const disableOAuth = metadataOptions.disableOAuth === true;
+    let schemaFetch = schemaFetches.get(disableOAuth);
     if (!schemaFetch) {
       const listToolsOptions: { includeSchema: true; disableOAuth?: boolean } = {
         includeSchema: true,
       };
-      if (metadataOptions.disableOAuth === true) {
+      if (disableOAuth) {
         listToolsOptions.disableOAuth = true;
       }
       schemaFetch = runtime
@@ -260,9 +264,12 @@ export function createServerProxy(
           refreshPending = false;
         })
         .catch((error) => {
-          schemaFetch = null;
+          if (schemaFetches.get(disableOAuth) === schemaFetch) {
+            schemaFetches.delete(disableOAuth);
+          }
           throw error;
         });
+      schemaFetches.set(disableOAuth, schemaFetch);
     }
 
     await schemaFetch;

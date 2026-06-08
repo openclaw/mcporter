@@ -441,6 +441,50 @@ describe('createServerProxy', () => {
     });
   });
 
+  it('does not join an unsuppressed in-flight schema fetch for a disabled-OAuth call', async () => {
+    const tools: ServerToolInfo[] = [
+      {
+        name: 'ping',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
+    ];
+    let resolveOrdinary!: (tools: ServerToolInfo[]) => void;
+    const listTools = vi.fn((_server: string, options?: { disableOAuth?: boolean }) => {
+      if (options?.disableOAuth === true) {
+        return Promise.resolve(tools);
+      }
+      return new Promise<ServerToolInfo[]>((resolve) => {
+        resolveOrdinary = resolve;
+      });
+    });
+    const runtime = {
+      callTool: vi.fn(async (_, __, options) => options),
+      listTools,
+      getDefinition: vi.fn(() => {
+        throw new Error('no persistent schema cache');
+      }),
+    };
+    const proxy = createServerProxy(runtime as unknown as Runtime, 'mock', {
+      cacheSchemas: false,
+    }) as Record<string, unknown>;
+    const fn = proxy.ping as (options?: unknown) => Promise<CallResult>;
+
+    const ordinary = fn();
+    await vi.waitFor(() => expect(listTools).toHaveBeenCalledTimes(1));
+    const suppressed = fn({ args: {}, disableOAuth: true });
+
+    await expect(suppressed).resolves.toBeDefined();
+    expect(listTools).toHaveBeenNthCalledWith(2, 'mock', {
+      includeSchema: true,
+      disableOAuth: true,
+    });
+    resolveOrdinary(tools);
+    await ordinary;
+  });
+
   it('preserves schema-owned fields that share proxy option names', async () => {
     const runtime = createMockRuntime({
       wait: {
