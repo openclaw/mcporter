@@ -238,6 +238,39 @@ describe('fs-json helpers', () => {
     await expect(fs.access(`${lockTarget}.lock`)).rejects.toThrow();
   });
 
+  it('applies the timeout while waiting for a same-process lock', async () => {
+    const lockTarget = path.join(tempDir, 'shared.json');
+    let enter!: () => void;
+    let unblock!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    const holder = withFileLock(lockTarget, async () => {
+      enter();
+      await blocked;
+    });
+    await entered;
+
+    await expect(withFileLock(lockTarget, async () => {}, { timeoutMs: 50 })).rejects.toThrow(
+      /Timed out waiting for file lock/
+    );
+
+    let followerEntered = false;
+    const follower = withFileLock(lockTarget, async () => {
+      followerEntered = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(followerEntered).toBe(false);
+
+    unblock();
+    await Promise.all([holder, follower]);
+    expect(followerEntered).toBe(true);
+    await expect(fs.access(`${lockTarget}.lock`)).rejects.toThrow();
+  });
+
   it('recovers lock files left by dead processes', async () => {
     const lockTarget = path.join(tempDir, 'shared.json');
     await fs.writeFile(`${lockTarget}.lock`, '99999999\n2026-01-01T00:00:00.000Z\n', 'utf8');

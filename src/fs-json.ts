@@ -8,6 +8,7 @@ const LOCK_POLL_MS = 25;
 const MALFORMED_LOCK_STALE_MS = 1_000;
 const MAX_SYMLINK_DEPTH = 40;
 const DEFAULT_ATOMIC_FILE_MODE = 0o600;
+const localLockTails = new Map<string, Promise<void>>();
 
 // readJsonFile reads a JSON file and returns undefined when the file does not exist.
 export async function readJsonFile<T = unknown>(filePath: string): Promise<T | undefined> {
@@ -64,49 +65,51 @@ export async function withFileLock<T>(
   options: { timeoutMs?: number } = {}
 ): Promise<T> {
   const lockTargetPath = await resolvePathFollowingSymlinks(filePath);
-  await fs.mkdir(path.dirname(lockTargetPath), { recursive: true });
-  let lockPath = `${lockTargetPath}.lock`;
-  const fallbackLockPath = lockTargetPath !== filePath ? `${filePath}.lock` : undefined;
   const timeoutMs = options.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
   const startedAt = Date.now();
-  let acquired = false;
+  return withLocalLock(lockTargetPath, timeoutMs, async () => {
+    await fs.mkdir(path.dirname(lockTargetPath), { recursive: true });
+    let lockPath = `${lockTargetPath}.lock`;
+    const fallbackLockPath = lockTargetPath !== filePath ? `${filePath}.lock` : undefined;
+    let acquired = false;
 
-  while (!acquired) {
-    try {
-      await fs.writeFile(lockPath, `${process.pid}\n${new Date().toISOString()}\n`, {
-        encoding: 'utf8',
-        flag: 'wx',
-      });
-      acquired = true;
-      break;
-    } catch (error) {
-      if (fallbackLockPath && lockPath !== fallbackLockPath && isPermissionError(error)) {
-        await fs.mkdir(path.dirname(fallbackLockPath), { recursive: true });
-        lockPath = fallbackLockPath;
-        continue;
+    while (!acquired) {
+      try {
+        await fs.writeFile(lockPath, `${process.pid}\n${new Date().toISOString()}\n`, {
+          encoding: 'utf8',
+          flag: 'wx',
+        });
+        acquired = true;
+        break;
+      } catch (error) {
+        if (fallbackLockPath && lockPath !== fallbackLockPath && isPermissionError(error)) {
+          await fs.mkdir(path.dirname(fallbackLockPath), { recursive: true });
+          lockPath = fallbackLockPath;
+          continue;
+        }
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+          throw error;
+        }
+        if (await removeRecoverableLock(lockPath)) {
+          continue;
+        }
+        if (Date.now() - startedAt > timeoutMs) {
+          throw new Error(`Timed out waiting for file lock ${lockPath}`, { cause: error });
+        }
+        await sleep(LOCK_POLL_MS);
       }
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
-        throw error;
-      }
-      if (await removeRecoverableLock(lockPath)) {
-        continue;
-      }
-      if (Date.now() - startedAt > timeoutMs) {
-        throw new Error(`Timed out waiting for file lock ${lockPath}`, { cause: error });
-      }
-      await sleep(LOCK_POLL_MS);
     }
-  }
 
-  try {
-    return await task();
-  } finally {
-    await fs.unlink(lockPath).catch((error) => {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw error;
-      }
-    });
-  }
+    try {
+      return await task();
+    } finally {
+      await fs.unlink(lockPath).catch((error) => {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          throw error;
+        }
+      });
+    }
+  });
 }
 
 function isPermissionError(error: unknown): boolean {
@@ -116,6 +119,46 @@ function isPermissionError(error: unknown): boolean {
 
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withLocalLock<T>(key: string, timeoutMs: number, task: () => Promise<T>): Promise<T> {
+  const previous = localLockTails.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = previous.then(() => current);
+  localLockTails.set(key, tail);
+  try {
+    await waitForLocalLock(previous, timeoutMs, key);
+    return await task();
+  } finally {
+    release();
+    void tail.then(() => {
+      if (localLockTails.get(key) === tail) {
+        localLockTails.delete(key);
+      }
+    });
+  }
+}
+
+async function waitForLocalLock(previous: Promise<void>, timeoutMs: number, key: string): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      previous,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Timed out waiting for file lock ${key}.lock`)),
+          Math.max(0, timeoutMs)
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
 }
 
 async function resolveAtomicWriteTarget(filePath: string): Promise<{ path: string; mode?: number }> {

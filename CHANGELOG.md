@@ -6,6 +6,7 @@
 
 - Add cache-friendly `disableOAuth` support across headless runtime, CLI, daemon, proxy, and `callOnce` paths so callers can suppress interactive OAuth without losing connection reuse. (Issues #197, #199, #201, thanks @feniix)
 - Recover cleanly from renamed OAuth server entries, invalid refresh tokens, and stale dynamic client registrations without reusing unrelated same-URL credentials.
+- Prevent concurrent OAuth vault updates from briefly exposing empty lock files and losing credential entries under load.
 
 ### CLI
 
