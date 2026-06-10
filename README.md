@@ -254,7 +254,7 @@ const result = await callOnce({
 console.log(result); // raw MCP envelope
 ```
 
-`callOnce` automatically discovers the selected server (including Cursor/Claude/Codex/Windsurf/OpenCode/VS Code imports), handles OAuth prompts, and closes transports when it finishes. It is ideal for manual runs or wiring MCPorter directly into an agent tool hook.
+`callOnce` automatically discovers the selected server (including Cursor/Claude/Codex/Windsurf/OpenCode/VS Code imports), handles OAuth prompts, and closes transports when it finishes. It is ideal for manual runs or wiring MCPorter directly into an agent tool hook. In headless contexts, pass `disableOAuth: true` to suppress interactive OAuth and rely on cached tokens only — the library equivalent of the CLI's `--no-oauth` flag.
 
 ## Compose Automations with the Runtime
 
