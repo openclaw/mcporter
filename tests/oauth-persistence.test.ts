@@ -44,6 +44,28 @@ describe('oauth persistence', () => {
     await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
   });
 
+  it('degrades to undefined when a cached credential file is corrupt instead of throwing', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-corrupt-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+
+    const cacheDir = path.join(tmp, 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    // Truncated / malformed credential files, e.g. an interrupted write.
+    await fs.writeFile(path.join(cacheDir, 'tokens.json'), '{ "access_token": "part');
+    await fs.writeFile(path.join(cacheDir, 'client.json'), 'not json at all');
+    await fs.writeFile(path.join(cacheDir, 'state.txt'), '"unterminated');
+
+    const persistence = await buildOAuthPersistence(mkDef('service', cacheDir));
+
+    // A corrupt cache must read as "no usable credentials" (degrade to re-auth),
+    // not surface a SyntaxError that crashes the connection.
+    expect(await persistence.readTokens()).toBeUndefined();
+    expect(await persistence.readClientInfo()).toBeUndefined();
+    expect(await persistence.readState()).toBeUndefined();
+  });
+
   it('prefers explicit tokenCacheDir before vault when reading tokens', async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-'));
     tempRoots.push(tmp);
