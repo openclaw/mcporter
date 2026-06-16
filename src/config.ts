@@ -99,7 +99,13 @@ export async function loadServerDefinitions(options: LoadConfigOptions = {}): Pr
 
   const servers: ServerDefinition[] = [];
   for (const [name, { raw, baseDir: entryBaseDir, source, sources }] of merged) {
-    servers.push(normalizeServerEntry(name, raw, entryBaseDir, source, sources));
+    try {
+      servers.push(normalizeServerEntry(name, raw, entryBaseDir, source, sources));
+    } catch (error) {
+      if (source.kind !== 'import') {
+        throw error;
+      }
+    }
   }
 
   return servers;
