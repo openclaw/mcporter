@@ -44,7 +44,7 @@ describe('oauth persistence', () => {
     await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
   });
 
-  it('degrades to undefined when a cached credential file is corrupt instead of throwing', async () => {
+  it('degrades corrupt credential caches to undefined but keeps corrupt OAuth state failing closed', async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-corrupt-'));
     tempRoots.push(tmp);
     homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
@@ -59,11 +59,13 @@ describe('oauth persistence', () => {
 
     const persistence = await buildOAuthPersistence(mkDef('service', cacheDir));
 
-    // A corrupt cache must read as "no usable credentials" (degrade to re-auth),
-    // not surface a SyntaxError that crashes the connection.
+    // Corrupt credential caches must read as "no usable credentials" (degrade to
+    // re-auth), not surface a SyntaxError that crashes the connection.
     expect(await persistence.readTokens()).toBeUndefined();
     expect(await persistence.readClientInfo()).toBeUndefined();
-    expect(await persistence.readState()).toBeUndefined();
+    // OAuth state must NOT silently degrade: returning undefined would skip the
+    // CSRF state check on callback (oauth.ts). It must fail closed.
+    await expect(persistence.readState()).rejects.toThrow(SyntaxError);
   });
 
   it('prefers explicit tokenCacheDir before vault when reading tokens', async () => {

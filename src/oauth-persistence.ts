@@ -187,13 +187,19 @@ class DirectoryPersistence implements OAuthPersistence {
   }
 
   async readState(): Promise<string | undefined> {
-    return this.readJsonOrUndefined<string>(this.statePath);
+    // Deliberately NOT corrupt-tolerant: a corrupt OAuth state must fail the
+    // flow closed. Returning undefined here would skip the CSRF state check on
+    // the authorization callback (see oauth.ts), so only the credential caches
+    // (tokens/client) degrade to re-auth.
+    return readJsonFile<string>(this.statePath);
   }
 
-  // A present-but-corrupt cache file (truncated or malformed JSON) means "no
-  // usable credentials": degrade to re-auth instead of crashing the connection,
+  // A present-but-corrupt credential cache (tokens/client) means "no usable
+  // credentials": degrade to re-auth instead of crashing the connection,
   // mirroring VaultPersistence and the daemon/server-proxy readers. Genuine I/O
   // faults still propagate (readJsonFile re-throws everything except ENOENT).
+  // OAuth state is intentionally excluded (see readState) so its CSRF check
+  // still fails closed on a corrupt state file.
   private async readJsonOrUndefined<T>(filePath: string): Promise<T | undefined> {
     try {
       return await readJsonFile<T>(filePath);
