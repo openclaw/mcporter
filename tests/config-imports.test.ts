@@ -223,6 +223,48 @@ describe('config imports', () => {
     }
   });
 
+  it('falls back to a later imported duplicate when an earlier import has unresolved placeholders', async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mcporter-import-fallback-'));
+    try {
+      const configPath = path.join(tempRoot, 'config', 'mcporter.json');
+      const cursorPath = path.join(tempRoot, '.cursor', 'mcp.json');
+      const claudePath = path.join(ensureFakeHomeDir(), '.claude', 'settings.json');
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.mkdirSync(path.dirname(cursorPath), { recursive: true });
+
+      fs.writeFileSync(configPath, JSON.stringify({ mcpServers: {}, imports: ['cursor', 'claude-code'] }));
+      fs.writeFileSync(
+        cursorPath,
+        JSON.stringify({
+          mcpServers: {
+            shared: { command: 'cursor-mcp', args: ['${workspaceFolder}'] },
+          },
+        })
+      );
+      fs.writeFileSync(
+        claudePath,
+        JSON.stringify({
+          mcpServers: {
+            shared: { command: 'claude-mcp', args: ['--usable'] },
+          },
+        })
+      );
+
+      const servers = await loadServerDefinitions({ configPath, rootDir: tempRoot });
+      const shared = servers.find((server) => server.name === 'shared');
+
+      expect(shared?.command.kind).toBe('stdio');
+      expect(shared?.command.kind === 'stdio' ? shared.command.command : undefined).toBe('claude-mcp');
+      expect(shared?.source).toEqual({
+        kind: 'import',
+        path: claudePath,
+        importKind: 'claude-code',
+      });
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('loads Claude project-scoped servers without treating metadata as servers', async () => {
     const homeDir = ensureFakeHomeDir();
     const claudeDir = path.join(homeDir, '.claude');
