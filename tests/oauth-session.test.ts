@@ -148,10 +148,9 @@ describe('FileOAuthClientProvider session lifecycle', () => {
     expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('clearing stale client registration'));
   });
 
-  it('closes the callback server when stale-client reads throw', async () => {
+  it('closes the callback server when stale-client reads have I/O errors', async () => {
     const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
     tempDirs.push(tokenCacheDir);
-    await fs.writeFile(path.join(tokenCacheDir, 'client.json'), '{not-valid-json', 'utf8');
     const definition: ServerDefinition = {
       name: 'test-oauth-read-failure',
       description: 'Test OAuth server',
@@ -165,6 +164,8 @@ describe('FileOAuthClientProvider session lifecycle', () => {
       error: vi.fn(),
     };
 
+    const readError = Object.assign(new Error('permission denied'), { code: 'EACCES' });
+    const readFileSpy = vi.spyOn(fs, 'readFile').mockRejectedValueOnce(readError);
     const originalCreateServer = http.createServer.bind(http);
     const createdServers: http.Server[] = [];
     const createServerSpy = vi.spyOn(http, 'createServer').mockImplementation((...args) => {
@@ -174,11 +175,12 @@ describe('FileOAuthClientProvider session lifecycle', () => {
     });
 
     try {
-      await expect(createOAuthSession(definition, logger)).rejects.toThrow(SyntaxError);
+      await expect(createOAuthSession(definition, logger)).rejects.toMatchObject({ code: 'EACCES' });
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(createdServers).toHaveLength(1);
       expect(createdServers[0]?.listening).toBe(false);
     } finally {
+      readFileSpy.mockRestore();
       createServerSpy.mockRestore();
     }
   });

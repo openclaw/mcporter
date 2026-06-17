@@ -152,7 +152,7 @@ class DirectoryPersistence implements OAuthPersistence {
   }
 
   async readTokens(): Promise<OAuthTokens | undefined> {
-    return readJsonFile<OAuthTokens>(this.tokenPath);
+    return this.readJsonOrUndefined<OAuthTokens>(this.tokenPath);
   }
 
   async saveTokens(tokens: OAuthTokens): Promise<void> {
@@ -162,7 +162,7 @@ class DirectoryPersistence implements OAuthPersistence {
   }
 
   async readClientInfo(): Promise<OAuthClientInformationMixed | undefined> {
-    return readJsonFile<OAuthClientInformationMixed>(this.clientInfoPath);
+    return this.readJsonOrUndefined<OAuthClientInformationMixed>(this.clientInfoPath);
   }
 
   async saveClientInfo(info: OAuthClientInformationMixed): Promise<void> {
@@ -187,7 +187,29 @@ class DirectoryPersistence implements OAuthPersistence {
   }
 
   async readState(): Promise<string | undefined> {
+    // Deliberately NOT corrupt-tolerant: a corrupt OAuth state must fail the
+    // flow closed. Returning undefined here would skip the CSRF state check on
+    // the authorization callback (see oauth.ts), so only the credential caches
+    // (tokens/client) degrade to re-auth.
     return readJsonFile<string>(this.statePath);
+  }
+
+  // A present-but-corrupt credential cache (tokens/client) means "no usable
+  // credentials": degrade to re-auth instead of crashing the connection,
+  // mirroring VaultPersistence and the daemon/server-proxy readers. Genuine I/O
+  // faults still propagate (readJsonFile re-throws everything except ENOENT).
+  // OAuth state is intentionally excluded (see readState) so its CSRF check
+  // still fails closed on a corrupt state file.
+  private async readJsonOrUndefined<T>(filePath: string): Promise<T | undefined> {
+    try {
+      return await readJsonFile<T>(filePath);
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) {
+        throw error;
+      }
+      this.logger?.debug?.(`Ignoring corrupt OAuth cache file ${filePath}: ${error.message}`);
+      return undefined;
+    }
   }
 
   async saveState(value: string): Promise<void> {
