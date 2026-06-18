@@ -53,6 +53,7 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
   - `--save-images <dir>` – persist image content blocks to files under the specified directory.
   - `--raw-strings` – disable numeric coercion for flag-style and positional values.
   - `--no-coerce` – disable all flag-style/positional value coercion.
+  - `key=@path` / `--key @path` – read a named UTF-8 string argument from a file; prefix with `@@` for a literal leading `@`.
   - `--tail-log` – stream tail output when the tool returns log handles.
   - `--no-oauth` – never start an interactive OAuth flow; use cached
     tokens only while keeping eligible connections pooled.

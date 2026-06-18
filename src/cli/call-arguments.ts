@@ -193,7 +193,7 @@ function applyTrailingArguments(positional: string[], result: CallArgsParseResul
       continue;
     }
     index += parsed.consumed;
-    const value = coerceValue(parsed.rawValue, state.coercionMode);
+    const { value, schemaValue } = resolveNamedArgumentValue(parsed.rawValue, state.coercionMode);
     if (parsed.key === 'tool' && !result.tool) {
       if (typeof value !== 'string') {
         throw new Error("Argument 'tool' must be a string value.");
@@ -210,7 +210,7 @@ function applyTrailingArguments(positional: string[], result: CallArgsParseResul
     }
     if (state.coercionMode === 'default' && typeof value === 'number') {
       result.schemaStringCoercionCandidates ??= {};
-      result.schemaStringCoercionCandidates[parsed.key] = parsed.rawValue;
+      result.schemaStringCoercionCandidates[parsed.key] = schemaValue;
     }
     result.args[parsed.key] = value;
   }
@@ -327,16 +327,48 @@ function handleNamedArgumentFlag(context: FlagHandlerContext): number {
     eqIndex === -1
       ? consumeFlagValue(context.args, context.index, token, `Flag '${token}' requires a value.`)
       : body.slice(eqIndex + 1);
-  const value = coerceValue(rawValue, context.state.coercionMode);
+  const { value, schemaValue } = resolveNamedArgumentValue(rawValue, context.state.coercionMode);
   if (context.state.coercionMode === 'default' && typeof value === 'number') {
     context.result.schemaStringCoercionCandidates ??= {};
-    context.result.schemaStringCoercionCandidates[key] = rawValue;
+    context.result.schemaStringCoercionCandidates[key] = schemaValue;
   } else if (context.state.coercionMode === 'default' && typeof value === 'string') {
     context.result.schemaArrayCoercionCandidates ??= {};
-    context.result.schemaArrayCoercionCandidates[key] = rawValue;
+    context.result.schemaArrayCoercionCandidates[key] = schemaValue;
   }
   context.result.args[key] = value;
   return context.index + (eqIndex === -1 ? 2 : 1);
+}
+
+function resolveNamedArgumentValue(
+  rawValue: string,
+  coercionMode: CoercionMode
+): { value: unknown; schemaValue: string } {
+  if (rawValue.startsWith('@@')) {
+    const literal = rawValue.slice(1);
+    return { value: literal, schemaValue: literal };
+  }
+  if (!rawValue.startsWith('@')) {
+    return { value: coerceValue(rawValue, coercionMode), schemaValue: rawValue };
+  }
+
+  const filePath = rawValue.slice(1);
+  if (!filePath) {
+    throw new CliUsageError("Argument file reference '@' requires a path. Use '@@' for a literal leading '@'.");
+  }
+
+  let contents: Buffer;
+  try {
+    contents = fs.readFileSync(filePath);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new CliUsageError(`Unable to read argument file '${filePath}': ${detail}`);
+  }
+  try {
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(contents);
+    return { value: text, schemaValue: text };
+  } catch {
+    throw new CliUsageError(`Argument file '${filePath}' is not valid UTF-8 text.`);
+  }
 }
 
 function normalizeLongFlagArgumentKey(rawKey: string): string {

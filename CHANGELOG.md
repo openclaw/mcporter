@@ -2,7 +2,7 @@
 
 ## [0.12.1] - Unreleased
 
-- Nothing yet.
+- Add `key=@path` and `--key @path` call arguments for exact UTF-8 file values, with `@@` escaping for literal leading `@`. (Issue #212, thanks @andr-ec)
 
 ## [0.12.0] - 2026-06-10
 

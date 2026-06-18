@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { parseCallArguments } from '../src/cli/call-arguments.js';
 
@@ -90,6 +92,50 @@ describe('parseCallArguments', () => {
       expect(readFileSync).toHaveBeenCalledWith(0, 'utf8');
     } finally {
       readFileSync.mockRestore();
+    }
+  });
+
+  it('reads exact UTF-8 text from @path named argument values', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcporter-call-args-'));
+    const payloadPath = path.join(tempDir, 'payload.txt');
+    fs.writeFileSync(payloadPath, 'first line\nsecond line\n', 'utf8');
+    try {
+      const parsed = parseCallArguments(['server.tool', `body=@${payloadPath}`]);
+      expect(parsed.args.body).toBe('first line\nsecond line\n');
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('supports @path through generic long tool flags', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcporter-call-args-'));
+    const payloadPath = path.join(tempDir, 'payload.txt');
+    fs.writeFileSync(payloadPath, 'from file', 'utf8');
+    try {
+      const parsed = parseCallArguments(['server.tool', '--body', `@${payloadPath}`]);
+      expect(parsed.args.body).toBe('from file');
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses @@ to preserve a literal leading @ without reading a file', () => {
+    const parsed = parseCallArguments(['server.tool', 'body=@@literal']);
+    expect(parsed.args.body).toBe('@literal');
+  });
+
+  it('reports missing and non-UTF-8 argument files before transport', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcporter-call-args-'));
+    const invalidPath = path.join(tempDir, 'invalid.bin');
+    fs.writeFileSync(invalidPath, Buffer.from([0xc3, 0x28]));
+    try {
+      expect(() => parseCallArguments(['server.tool', `body=@${path.join(tempDir, 'missing.txt')}`])).toThrow(
+        /Unable to read argument file/
+      );
+      expect(() => parseCallArguments(['server.tool', `body=@${invalidPath}`])).toThrow(/not valid UTF-8 text/);
+      expect(() => parseCallArguments(['server.tool', 'body=@'])).toThrow(/requires a path/);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
 

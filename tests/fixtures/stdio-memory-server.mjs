@@ -33,6 +33,24 @@ server.registerTool(
 );
 
 server.registerTool(
+  'echo_text',
+  {
+    title: 'Echo Text',
+    description: 'Return the provided text unchanged',
+    inputSchema: {
+      text: z.string(),
+    },
+    outputSchema: {
+      text: z.string(),
+    },
+  },
+  async ({ text }) => ({
+    content: [{ type: 'text', text }],
+    structuredContent: { text },
+  })
+);
+
+server.registerTool(
   'list_entities',
   {
     title: 'List Entities',

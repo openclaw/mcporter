@@ -117,4 +117,20 @@ describe('stdio MCP servers (filesystem + memory)', () => {
     },
     20000
   );
+
+  memoryTest(
+    'passes multiline @path argument values unchanged to a stdio MCP server',
+    async () => {
+      const payloadPath = path.join(tempDir, 'multiline.txt');
+      const payload = 'first line\nsecond line\n';
+      await fs.writeFile(payloadPath, payload, 'utf8');
+      const callResult = await runCli(
+        ['call', 'memory-test.echo_text', '--output', 'json', `text=@${payloadPath}`],
+        configPath
+      );
+      expect(callResult.stderr).toBe('');
+      expect(JSON.parse(callResult.stdout)).toMatchObject({ text: payload });
+    },
+    20000
+  );
 });

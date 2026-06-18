@@ -1,5 +1,6 @@
 export const CALL_HELP_ARGUMENT_LINES = [
   '  key=value / key:value  Flag-style named arguments.',
+  '  key=@path              Read a UTF-8 string value from a file; use @@ for a literal @.',
   '  function-call syntax   \'server.tool(arg: "value", other: 1)\'.',
   '  --args <json>          Provide a JSON object payload.',
   '  positional values      Accepted when schema order is known.',
@@ -32,6 +33,7 @@ export const CALL_HELP_ADHOC_SERVER_LINES = [
 
 export const CALL_HELP_EXAMPLE_LINES = [
   '  mcporter call linear.list_issues team=ENG limit:5',
+  '  mcporter call linear.create_comment body=@comment.md',
   '  mcporter call "linear.create_issue(title: \\"Bug\\", team: \\"ENG\\")"',
   '  mcporter call https://api.example.com/mcp.fetch url:https://example.com',
   '  mcporter call --stdio "bun run ./server.ts" scrape url=https://example.com',

@@ -143,6 +143,7 @@ LINEAR_API_KEY=sk_linear_example npx mcporter call linear.search_documentation q
 ```bash
 npx mcporter call chrome-devtools.take_snapshot
 npx mcporter call 'linear.create_comment(issueId: "LNR-123", body: "Hello world")'
+npx mcporter call linear.create_comment issueId=LNR-123 body=@comment.md
 npx mcporter call https://mcp.linear.app/mcp.list_issues assignee=me
 npx mcporter call shadcn.io/api/mcp.getComponent component=vortex   # protocol optional; defaults to https
 npx mcporter call linear.listIssues --tool listIssues   # auto-corrects to list_issues
@@ -163,6 +164,7 @@ Helpful flags:
 - `--save-images <dir>` (on `mcporter call`) -- save MCP image content blocks to files in the given directory (opt-in; stdout output shape stays unchanged).
 - `--raw-strings` (on `mcporter call`) -- keep numeric-looking argument values (for `key=value`, `key:value`, and trailing positional values) as strings.
 - `--no-coerce` (on `mcporter call`) -- keep all `key=value` and positional values as raw strings (disables bool/null/number/JSON coercion).
+- `key=@path` / `--key @path` (on `mcporter call`) -- read a named argument as exact UTF-8 text from a file; use `@@` for a literal leading `@`.
 - `--` (on `mcporter call`) -- stop flag parsing so the remaining tokens stay literal positional values, even when they start with `--`.
 - `--json` (on `mcporter list`) -- emit JSON summaries/counts instead of text. Multi-server runs report per-server statuses, counts, and connection issues; single-server runs include the full tool metadata.
 - `--status`, `--exit-code`, `--quiet` (on `mcporter list`) -- run concise server health checks through the existing list flow; `--quiet` suppresses output and exits 1 if anything checked is unhealthy.
