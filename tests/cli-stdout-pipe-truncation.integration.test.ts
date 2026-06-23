@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import os from 'node:os';
@@ -140,4 +140,27 @@ await server.connect(transport);
     // The piped output must match the complete file output byte-for-byte.
     expect(pipeBytes).toBe(fileBytes);
   }, 30000);
+
+  it('still force-exits when stdout is piped to a consumer that never reads', async () => {
+    // A consumer that keeps stdout open but never reads fills the pipe buffer
+    // and blocks the drain callback. The fallback deadline must still terminate
+    // the process instead of hanging indefinitely.
+    const start = Date.now();
+    const child = spawn(
+      process.execPath,
+      [CLI_ENTRY, '--config', configPath, 'call', 'large-output.big', '--output', 'json'],
+      { cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'ignore'] }
+    );
+    // Intentionally never consume stdout so the OS pipe buffer stays full.
+    child.stdout.pause();
+
+    const code = await new Promise<number>((resolve) => {
+      child.on('exit', (exitCode) => resolve(exitCode ?? -1));
+    });
+    const elapsed = Date.now() - start;
+
+    expect(code).toBe(0);
+    // Terminates via the fallback deadline (~2s) rather than hanging.
+    expect(elapsed).toBeLessThan(8000);
+  }, 20000);
 });

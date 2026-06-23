@@ -14,6 +14,7 @@ export { extractListFlags } from './cli/list-flags.js';
 export { resolveCallTimeout } from './cli/timeouts.js';
 
 const FORCE_EXIT_GRACE_MS = 50;
+const STDOUT_FLUSH_TIMEOUT_MS = 2000;
 const DAEMON_FAST_PATH_SERVERS = new Set(['chrome-devtools', 'mobile-mcp', 'playwright']);
 
 export async function handleAuth(
@@ -352,8 +353,21 @@ async function closeRuntimeAfterCommand(
     const scheduleForcedExit = () => {
       if (shouldForceExit) {
         setTimeout(() => {
-          process.stdout.write('', () => {
+          let exited = false;
+          const exit = () => {
+            if (exited) {
+              return;
+            }
+            exited = true;
             process.exit(process.exitCode ?? 0);
+          };
+          // Fallback deadline so a consumer that keeps stdout open but stops
+          // reading cannot block the forced exit indefinitely.
+          const fallback = setTimeout(exit, STDOUT_FLUSH_TIMEOUT_MS);
+          fallback.unref?.();
+          process.stdout.write('', () => {
+            clearTimeout(fallback);
+            exit();
           });
         }, FORCE_EXIT_GRACE_MS);
       }
