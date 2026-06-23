@@ -88,6 +88,7 @@ if (!cleanupWriteSeen) {
         cwd: process.cwd(),
         env: process.env,
         maxBuffer: 1024 * 1024,
+        timeout: 15000,
       },
       (error, stdout, stderr) => {
         const code = typeof error?.code === 'number' ? error.code : 0;
