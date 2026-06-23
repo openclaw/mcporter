@@ -352,7 +352,9 @@ async function closeRuntimeAfterCommand(
     const scheduleForcedExit = () => {
       if (shouldForceExit) {
         setTimeout(() => {
-          process.exit(process.exitCode ?? 0);
+          process.stdout.write('', () => {
+            process.exit(process.exitCode ?? 0);
+          });
         }, FORCE_EXIT_GRACE_MS);
       }
     };
