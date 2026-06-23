@@ -17,6 +17,39 @@ const FORCE_EXIT_GRACE_MS = 50;
 const STDOUT_FLUSH_TIMEOUT_MS = 2000;
 const DAEMON_FAST_PATH_SERVERS = new Set(['chrome-devtools', 'mobile-mcp', 'playwright']);
 
+function ignoreStreamError(): void {}
+
+function flushWriteStreamForExit(stream: NodeJS.WriteStream): Promise<void> {
+  return new Promise((resolve) => {
+    if (!stream.writable || stream.destroyed || stream.writableEnded) {
+      resolve();
+      return;
+    }
+    stream.write('', () => {
+      resolve();
+    });
+  });
+}
+
+function flushStdioThenForceExit(): void {
+  let exited = false;
+  const exit = () => {
+    if (exited) {
+      return;
+    }
+    exited = true;
+    process.exit(process.exitCode ?? 0);
+  };
+  const fallback = setTimeout(exit, STDOUT_FLUSH_TIMEOUT_MS);
+  fallback.unref?.();
+  void Promise.allSettled([flushWriteStreamForExit(process.stdout), flushWriteStreamForExit(process.stderr)]).then(
+    () => {
+      clearTimeout(fallback);
+      exit();
+    }
+  );
+}
+
 export async function handleAuth(
   ...args: Parameters<typeof import('./cli/auth-command.js').handleAuth>
 ): ReturnType<typeof import('./cli/auth-command.js').handleAuth> {
@@ -352,24 +385,9 @@ async function closeRuntimeAfterCommand(
     const shouldForceExit = !disableForceExit || process.env.MCPORTER_FORCE_EXIT === '1';
     const scheduleForcedExit = () => {
       if (shouldForceExit) {
-        setTimeout(() => {
-          let exited = false;
-          const exit = () => {
-            if (exited) {
-              return;
-            }
-            exited = true;
-            process.exit(process.exitCode ?? 0);
-          };
-          // Fallback deadline so a consumer that keeps stdout open but stops
-          // reading cannot block the forced exit indefinitely.
-          const fallback = setTimeout(exit, STDOUT_FLUSH_TIMEOUT_MS);
-          fallback.unref?.();
-          process.stdout.write('', () => {
-            clearTimeout(fallback);
-            exit();
-          });
-        }, FORCE_EXIT_GRACE_MS);
+        process.stdout.on('error', ignoreStreamError);
+        process.stderr.on('error', ignoreStreamError);
+        setTimeout(flushStdioThenForceExit, FORCE_EXIT_GRACE_MS);
       }
     };
     if (DEBUG_HANG) {

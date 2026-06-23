@@ -165,4 +165,34 @@ await server.connect(transport);
     // Terminates via the fallback deadline (~2s) rather than hanging.
     expect(elapsed).toBeLessThan(8000);
   }, 20000);
+
+  it('does not crash when a piped consumer closes stdout early (EPIPE)', async () => {
+    const command = [
+      shellQuote(process.execPath),
+      shellQuote(CLI_ENTRY),
+      '--config',
+      shellQuote(configPath),
+      'call',
+      'large-output.big',
+      '--output',
+      'json',
+      '|',
+      'head -c 100',
+      '>',
+      '/dev/null',
+    ].join(' ');
+    const result = await new Promise<{ code: number; stderr: string }>((resolve) => {
+      execFile(
+        'bash',
+        ['-c', `set -o pipefail; ${command}`],
+        { cwd: process.cwd(), env: process.env },
+        (error, _stdout, stderr) => {
+          resolve({ code: typeof error?.code === 'number' ? error.code : 0, stderr });
+        }
+      );
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).not.toMatch(/EPIPE|Unhandled 'error'/);
+  }, 20000);
 });
