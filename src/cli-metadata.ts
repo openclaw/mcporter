@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import type { ServerDefinition, ServerSource } from './config.js';
 
 export type CliArtifactKind = 'template' | 'bundle' | 'binary';
@@ -98,7 +99,8 @@ export async function readCliMetadata(artifactPath: string): Promise<CliArtifact
 
 async function readMetadataFromCli(artifactPath: string): Promise<CliArtifactMetadata> {
   return await new Promise<CliArtifactMetadata>((resolve, reject) => {
-    const child = spawn(artifactPath, ['__mcporter_inspect'], {
+    const inspectCommand = resolveMetadataInspectCommand(artifactPath);
+    const child = spawn(inspectCommand.command, inspectCommand.args, {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
@@ -137,6 +139,18 @@ async function readMetadataFromCli(artifactPath: string): Promise<CliArtifactMet
       }
     });
   });
+}
+
+function resolveMetadataInspectCommand(artifactPath: string): { readonly command: string; readonly args: string[] } {
+  if (process.platform === 'win32' && shouldRunArtifactWithNode(artifactPath)) {
+    return { command: process.execPath, args: [artifactPath, '__mcporter_inspect'] };
+  }
+  return { command: artifactPath, args: ['__mcporter_inspect'] };
+}
+
+function shouldRunArtifactWithNode(artifactPath: string): boolean {
+  const extension = path.extname(artifactPath).toLowerCase();
+  return extension === '' || extension === '.js' || extension === '.mjs' || extension === '.cjs' || extension === '.ts';
 }
 
 function isErrno(error: unknown, code: string): error is NodeJS.ErrnoException {
