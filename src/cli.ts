@@ -380,6 +380,9 @@ function flushWriteStream(stream: NodeJS.WriteStream, timeoutMs: number): Promis
   if (!stream.writable || stream.destroyed || stream.writableEnded) {
     return Promise.resolve();
   }
+  if (stream.writableLength === 0 && !stream.writableNeedDrain) {
+    return Promise.resolve();
+  }
 
   return new Promise((resolve) => {
     let settled = false;

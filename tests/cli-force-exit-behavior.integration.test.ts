@@ -50,6 +50,10 @@ const [cliEntry, configPath] = process.argv.slice(2);
 process.env.MCPORTER_DISABLE_AUTORUN = '1';
 
 let cleanupWriteSeen = false;
+Object.defineProperty(process.stdout, 'writableNeedDrain', {
+  configurable: true,
+  get: () => true,
+});
 const originalWrite = process.stdout.write.bind(process.stdout);
 process.stdout.write = (chunk, encoding, callback) => {
   const done = typeof encoding === 'function' ? encoding : callback;
