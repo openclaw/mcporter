@@ -1,4 +1,4 @@
-import { execFile, spawn } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import os from 'node:os';
@@ -39,37 +39,56 @@ function runCli(args: string[], configPath: string): Promise<{ stdout: string; s
   });
 }
 
-function runCliWithClosedStdout(
-  args: string[],
-  configPath: string
-): Promise<{ stderr: string; code: number | null; signal: NodeJS.Signals | null }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [CLI_ENTRY, '--config', configPath, ...args], {
-      cwd: process.cwd(),
-      env: process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let stderr = '';
-    const timeout = setTimeout(() => {
-      child.kill();
-      reject(new Error('mcporter did not exit after stdout reader closed'));
-    }, 20000);
+function runCliWithCleanupStdoutError(configPath: string): Promise<{ stdout: string; stderr: string; code: number }> {
+  const script = `
+import { pathToFileURL } from 'node:url';
 
-    child.stdout.once('data', () => {
-      child.stdout.destroy();
+const [cliEntry, configPath] = process.argv.slice(1);
+process.env.MCPORTER_DISABLE_AUTORUN = '1';
+
+let cleanupWriteSeen = false;
+const originalWrite = process.stdout.write.bind(process.stdout);
+process.stdout.write = (chunk, encoding, callback) => {
+  const done = typeof encoding === 'function' ? encoding : callback;
+  if (chunk === '') {
+    cleanupWriteSeen = true;
+    process.nextTick(() => {
+      const error = new Error('write EPIPE');
+      error.code = 'EPIPE';
+      process.stdout.emit('error', error);
     });
-    child.stderr.setEncoding('utf8');
-    child.stderr.on('data', (chunk: string) => {
-      stderr += chunk;
-    });
-    child.once('error', (error) => {
-      clearTimeout(timeout);
-      reject(error);
-    });
-    child.once('close', (code, signal) => {
-      clearTimeout(timeout);
-      resolve({ stderr, code, signal });
-    });
+    process.nextTick(() => done?.());
+    return false;
+  }
+  return originalWrite(chunk, encoding, callback);
+};
+
+const { runCli } = await import(pathToFileURL(cliEntry).href);
+await runCli(['--config', configPath, 'list', 'force-exit', '--schema', '--output', 'json']);
+if (!cleanupWriteSeen) {
+  console.error('expected force-exit cleanup to flush stdout');
+  process.exitCode = 1;
+}
+`;
+
+  return new Promise((resolve, reject) => {
+    execFile(
+      process.execPath,
+      ['--input-type=module', '-e', script, CLI_ENTRY, configPath],
+      {
+        cwd: process.cwd(),
+        env: process.env,
+        maxBuffer: 1024 * 1024,
+      },
+      (error, stdout, stderr) => {
+        const code = typeof error?.code === 'number' ? error.code : 0;
+        if (error && typeof error.code !== 'number') {
+          reject(error);
+          return;
+        }
+        resolve({ stdout, stderr, code });
+      }
+    );
   });
 }
 
@@ -172,10 +191,9 @@ await server.connect(transport);
     expect(payload.tools.at(-1)?.name).toBe('tool_63');
   }, 20000);
 
-  it('does not fail when the stdout reader closes during force exit cleanup', async () => {
-    const result = await runCliWithClosedStdout(['list', 'force-exit', '--schema', '--output', 'json'], configPath);
+  it('does not fail when stdout reports EPIPE during force exit cleanup', async () => {
+    const result = await runCliWithCleanupStdoutError(configPath);
     expect(result.code).toBe(0);
-    expect(result.signal).toBeNull();
     expect(result.stderr).toBe('');
   }, 20000);
 });
