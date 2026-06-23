@@ -12,6 +12,8 @@ const testRequire = createRequire(import.meta.url);
 const MCP_SERVER_MODULE = pathToFileURL(testRequire.resolve('@modelcontextprotocol/sdk/server/mcp.js')).href;
 const STDIO_SERVER_MODULE = pathToFileURL(testRequire.resolve('@modelcontextprotocol/sdk/server/stdio.js')).href;
 const ZOD_MODULE = pathToFileURL(path.join(process.cwd(), 'node_modules', 'zod', 'index.js')).href;
+// This harness patches Node's stdout internals to synthesize an emitted EPIPE.
+// Keep the cross-platform coverage in the large-output test below.
 const itWithMutableStdoutInternals = process.platform === 'win32' ? it.skip : it;
 
 async function ensureDistBuilt(): Promise<void> {
