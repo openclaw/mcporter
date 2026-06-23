@@ -15,6 +15,7 @@ export { resolveCallTimeout } from './cli/timeouts.js';
 
 const FORCE_EXIT_GRACE_MS = 50;
 const FORCE_EXIT_STDIO_FLUSH_TIMEOUT_MS = 500;
+const FORCE_EXIT_STDIO_SETTLE_MS = 25;
 const DAEMON_FAST_PATH_SERVERS = new Set(['chrome-devtools', 'mobile-mcp', 'playwright']);
 
 export async function handleAuth(
@@ -373,10 +374,13 @@ async function closeRuntimeAfterCommand(
 }
 
 async function flushProcessStdio(timeoutMs = FORCE_EXIT_STDIO_FLUSH_TIMEOUT_MS): Promise<void> {
-  await Promise.allSettled([flushWriteStream(process.stdout, timeoutMs), flushWriteStream(process.stderr, timeoutMs)]);
+  await Promise.allSettled([
+    flushWriteStream(process.stdout, timeoutMs, FORCE_EXIT_STDIO_SETTLE_MS),
+    flushWriteStream(process.stderr, timeoutMs, FORCE_EXIT_STDIO_SETTLE_MS),
+  ]);
 }
 
-function flushWriteStream(stream: NodeJS.WriteStream, timeoutMs: number): Promise<void> {
+function flushWriteStream(stream: NodeJS.WriteStream, timeoutMs: number, settleMs: number): Promise<void> {
   if (!stream.writable || stream.destroyed || stream.writableEnded) {
     return Promise.resolve();
   }
@@ -414,7 +418,7 @@ function flushWriteStream(stream: NodeJS.WriteStream, timeoutMs: number): Promis
       setImmediate(finishWhenDrained);
     };
 
-    timeout = setTimeout(cleanup, timeoutMs);
+    timeout = setTimeout(cleanup, stream.writableNeedDrain ? timeoutMs : settleMs);
     stream.once('drain', finishAfterDrain);
     stream.once('error', cleanup);
     setImmediate(finishWhenDrained);
