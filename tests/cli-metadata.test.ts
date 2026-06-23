@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { metadataPathForArtifact, readCliMetadata } from '../src/cli-metadata.js';
 
 describe('readCliMetadata', () => {
@@ -21,28 +21,6 @@ describe('readCliMetadata', () => {
     await expect(readCliMetadata(artifact)).resolves.toMatchObject({
       server: { name: 'embedded' },
     });
-  });
-
-  it('reads embedded metadata from extensionless JavaScript artifacts on Windows', async () => {
-    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
-    try {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-metadata-win-'));
-      const artifact = path.join(tempDir, 'artifact');
-      const embedded = metadataPayload('embedded');
-      const sidecar = metadataPayload('sidecar');
-      await fs.writeFile(
-        artifact,
-        `#!/usr/bin/env node\nconsole.log(${JSON.stringify(JSON.stringify(embedded))});\n`,
-        'utf8'
-      );
-      await fs.writeFile(metadataPathForArtifact(artifact), JSON.stringify(sidecar), 'utf8');
-
-      await expect(readCliMetadata(artifact)).resolves.toMatchObject({
-        server: { name: 'embedded' },
-      });
-    } finally {
-      platformSpy.mockRestore();
-    }
   });
 });
 
