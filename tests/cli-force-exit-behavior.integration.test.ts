@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import os from 'node:os';
@@ -36,6 +36,40 @@ function runCli(args: string[], configPath: string): Promise<{ stdout: string; s
         resolve({ stdout, stderr, code });
       }
     );
+  });
+}
+
+function runCliWithClosedStdout(
+  args: string[],
+  configPath: string
+): Promise<{ stderr: string; code: number | null; signal: NodeJS.Signals | null }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [CLI_ENTRY, '--config', configPath, ...args], {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stderr = '';
+    const timeout = setTimeout(() => {
+      child.kill();
+      reject(new Error('mcporter did not exit after stdout reader closed'));
+    }, 20000);
+
+    child.stdout.once('data', () => {
+      child.stdout.destroy();
+    });
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    child.once('error', (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.once('close', (code, signal) => {
+      clearTimeout(timeout);
+      resolve({ stderr, code, signal });
+    });
   });
 }
 
@@ -136,5 +170,12 @@ await server.connect(transport);
     const payload = JSON.parse(result.stdout) as { tools: Array<{ name: string }> };
     expect(payload.tools).toHaveLength(65);
     expect(payload.tools.at(-1)?.name).toBe('tool_63');
+  }, 20000);
+
+  it('does not fail when the stdout reader closes during force exit cleanup', async () => {
+    const result = await runCliWithClosedStdout(['list', 'force-exit', '--schema', '--output', 'json'], configPath);
+    expect(result.code).toBe(0);
+    expect(result.signal).toBeNull();
+    expect(result.stderr).toBe('');
   }, 20000);
 });
