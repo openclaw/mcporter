@@ -12,6 +12,7 @@ const testRequire = createRequire(import.meta.url);
 const MCP_SERVER_MODULE = pathToFileURL(testRequire.resolve('@modelcontextprotocol/sdk/server/mcp.js')).href;
 const STDIO_SERVER_MODULE = pathToFileURL(testRequire.resolve('@modelcontextprotocol/sdk/server/stdio.js')).href;
 const ZOD_MODULE = pathToFileURL(path.join(process.cwd(), 'node_modules', 'zod', 'index.js')).href;
+const itWithMutableStdoutInternals = process.platform === 'win32' ? it.skip : it;
 
 async function ensureDistBuilt(): Promise<void> {
   try {
@@ -215,14 +216,18 @@ await server.connect(transport);
     expect(payload.tools.at(-1)?.name).toBe('tool_63');
   }, 20000);
 
-  it('does not fail when stdout reports EPIPE during force exit cleanup', async () => {
-    const result = await runCliWithCleanupStdoutError(configPath, tempDir);
-    if (result.code !== 0 || result.stderr !== '') {
-      throw new Error(
-        `cleanup stdout EPIPE command failed with code ${result.code}; stdout bytes=${Buffer.byteLength(result.stdout)}; stderr=${JSON.stringify(result.stderr)}`
-      );
-    }
-    expect(result.code).toBe(0);
-    expect(result.stderr).toBe('');
-  }, 20000);
+  itWithMutableStdoutInternals(
+    'does not fail when stdout reports EPIPE during force exit cleanup',
+    async () => {
+      const result = await runCliWithCleanupStdoutError(configPath, tempDir);
+      if (result.code !== 0 || result.stderr !== '') {
+        throw new Error(
+          `cleanup stdout EPIPE command failed with code ${result.code}; stdout bytes=${Buffer.byteLength(result.stdout)}; stderr=${JSON.stringify(result.stderr)}`
+        );
+      }
+      expect(result.code).toBe(0);
+      expect(result.stderr).toBe('');
+    },
+    20000
+  );
 });
