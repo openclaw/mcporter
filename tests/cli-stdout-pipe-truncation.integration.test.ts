@@ -47,8 +47,10 @@ function runCliThroughPipe(args: string[], configPath: string, outFile: string):
     '>',
     shellQuote(outFile),
   ].join(' ');
+  // Use bash with `pipefail` so a non-zero exit from the CLI (the first pipeline
+  // stage) propagates, instead of being masked by the trailing `cat`.
   return new Promise((resolve) => {
-    execFile('sh', ['-c', command], { cwd: process.cwd(), env: process.env }, (error) => {
+    execFile('bash', ['-c', `set -o pipefail; ${command}`], { cwd: process.cwd(), env: process.env }, (error) => {
       resolve(typeof error?.code === 'number' ? error.code : 0);
     });
   });
