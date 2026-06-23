@@ -15,7 +15,7 @@ export { resolveCallTimeout } from './cli/timeouts.js';
 
 const FORCE_EXIT_GRACE_MS = 50;
 const FORCE_EXIT_STDIO_FLUSH_TIMEOUT_MS = 500;
-const FORCE_EXIT_STDIO_SETTLE_MS = 25;
+const FORCE_EXIT_STDIO_SETTLE_MS = 0;
 const DAEMON_FAST_PATH_SERVERS = new Set(['chrome-devtools', 'mobile-mcp', 'playwright']);
 
 export async function handleAuth(
