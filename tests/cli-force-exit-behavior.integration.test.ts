@@ -49,31 +49,33 @@ import { pathToFileURL } from 'node:url';
 const [cliEntry, configPath] = process.argv.slice(2);
 process.env.MCPORTER_DISABLE_AUTORUN = '1';
 
-let cleanupWriteSeen = false;
+let cleanupErrorListenerSeen = false;
+let cliRunning = false;
 Object.defineProperty(process.stdout, 'writableNeedDrain', {
   configurable: true,
-  get: () => true,
+  get: () => false,
 });
-const originalWrite = process.stdout.write.bind(process.stdout);
-process.stdout.write = (chunk, encoding, callback) => {
-  const done = typeof encoding === 'function' ? encoding : callback;
-  if (chunk === '') {
-    cleanupWriteSeen = true;
-    process.nextTick(() => {
-      const error = new Error('write EPIPE');
-      error.code = 'EPIPE';
-      process.stdout.emit('error', error);
-    });
-    process.nextTick(() => done?.());
-    return false;
+Object.defineProperty(process.stdout, 'writableLength', {
+  configurable: true,
+  get: () => 1,
+});
+const originalOnce = process.stdout.once.bind(process.stdout);
+process.stdout.once = (event, listener) => {
+  const result = originalOnce(event, listener);
+  if (cliRunning && event === 'error' && !cleanupErrorListenerSeen) {
+    cleanupErrorListenerSeen = true;
+    const error = new Error('write EPIPE');
+    error.code = 'EPIPE';
+    process.stdout.emit('error', error);
   }
-  return originalWrite(chunk, encoding, callback);
+  return result;
 };
 
 const { runCli } = await import(pathToFileURL(cliEntry).href);
+cliRunning = true;
 await runCli(['--config', configPath, 'list', 'force-exit', '--schema', '--output', 'json']);
-if (!cleanupWriteSeen) {
-  console.error('expected force-exit cleanup to flush stdout');
+if (!cleanupErrorListenerSeen) {
+  console.error('expected force-exit cleanup to observe stdout errors');
   process.exitCode = 1;
 }
 `;
@@ -203,6 +205,11 @@ await server.connect(transport);
 
   it('does not fail when stdout reports EPIPE during force exit cleanup', async () => {
     const result = await runCliWithCleanupStdoutError(configPath, tempDir);
+    if (result.code !== 0 || result.stderr !== '') {
+      throw new Error(
+        `cleanup stdout EPIPE command failed with code ${result.code}; stdout bytes=${Buffer.byteLength(result.stdout)}; stderr=${JSON.stringify(result.stderr)}`
+      );
+    }
     expect(result.code).toBe(0);
     expect(result.stderr).toBe('');
   }, 20000);

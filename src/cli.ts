@@ -388,7 +388,7 @@ function flushWriteStream(stream: NodeJS.WriteStream, timeoutMs: number): Promis
     let settled = false;
     let timeout: ReturnType<typeof setTimeout> | undefined;
 
-    const resolveFlush = () => {
+    const cleanup = () => {
       if (settled) {
         return;
       }
@@ -396,22 +396,22 @@ function flushWriteStream(stream: NodeJS.WriteStream, timeoutMs: number): Promis
       if (timeout) {
         clearTimeout(timeout);
       }
+      stream.off('drain', finishAfterDrain);
+      stream.off('error', cleanup);
       resolve();
     };
-    const finish = () => {
-      stream.off('error', finish);
-      resolveFlush();
+    const finishAfterDrain = () => {
+      setImmediate(cleanup);
     };
 
-    timeout = setTimeout(resolveFlush, timeoutMs);
-    stream.once('error', finish);
-    try {
-      stream.write('', () => {
-        setImmediate(finish);
-      });
-    } catch {
-      finish();
-    }
+    timeout = setTimeout(cleanup, timeoutMs);
+    stream.once('drain', finishAfterDrain);
+    stream.once('error', cleanup);
+    setImmediate(() => {
+      if (stream.destroyed || stream.writableEnded || !stream.writableNeedDrain) {
+        cleanup();
+      }
+    });
   });
 }
 
