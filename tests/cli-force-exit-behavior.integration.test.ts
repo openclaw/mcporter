@@ -39,11 +39,14 @@ function runCli(args: string[], configPath: string): Promise<{ stdout: string; s
   });
 }
 
-function runCliWithCleanupStdoutError(configPath: string): Promise<{ stdout: string; stderr: string; code: number }> {
+async function runCliWithCleanupStdoutError(
+  configPath: string,
+  tempDir: string
+): Promise<{ stdout: string; stderr: string; code: number }> {
   const script = `
 import { pathToFileURL } from 'node:url';
 
-const [cliEntry, configPath] = process.argv.slice(1);
+const [cliEntry, configPath] = process.argv.slice(2);
 process.env.MCPORTER_DISABLE_AUTORUN = '1';
 
 let cleanupWriteSeen = false;
@@ -70,11 +73,13 @@ if (!cleanupWriteSeen) {
   process.exitCode = 1;
 }
 `;
+  const scriptPath = path.join(tempDir, 'cleanup-stdout-error.mjs');
+  await fs.writeFile(scriptPath, script, 'utf8');
 
   return new Promise((resolve, reject) => {
     execFile(
       process.execPath,
-      ['--input-type=module', '-e', script, CLI_ENTRY, configPath],
+      [scriptPath, CLI_ENTRY, configPath],
       {
         cwd: process.cwd(),
         env: process.env,
@@ -192,7 +197,7 @@ await server.connect(transport);
   }, 20000);
 
   it('does not fail when stdout reports EPIPE during force exit cleanup', async () => {
-    const result = await runCliWithCleanupStdoutError(configPath);
+    const result = await runCliWithCleanupStdoutError(configPath, tempDir);
     expect(result.code).toBe(0);
     expect(result.stderr).toBe('');
   }, 20000);
