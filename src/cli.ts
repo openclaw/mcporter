@@ -14,6 +14,7 @@ export { extractListFlags } from './cli/list-flags.js';
 export { resolveCallTimeout } from './cli/timeouts.js';
 
 const FORCE_EXIT_GRACE_MS = 50;
+const FORCE_EXIT_STDIO_FLUSH_TIMEOUT_MS = 500;
 const DAEMON_FAST_PATH_SERVERS = new Set(['chrome-devtools', 'mobile-mcp', 'playwright']);
 
 export async function handleAuth(
@@ -356,6 +357,9 @@ async function closeRuntimeAfterCommand(
         }, FORCE_EXIT_GRACE_MS);
       }
     };
+    if (shouldForceExit) {
+      await flushProcessStdio();
+    }
     if (DEBUG_HANG) {
       dumpActiveHandles('after terminateChildProcesses');
       scheduleForcedExit();
@@ -366,6 +370,39 @@ async function closeRuntimeAfterCommand(
   if (closeError) {
     throw closeError;
   }
+}
+
+async function flushProcessStdio(timeoutMs = FORCE_EXIT_STDIO_FLUSH_TIMEOUT_MS): Promise<void> {
+  await Promise.allSettled([flushWriteStream(process.stdout, timeoutMs), flushWriteStream(process.stderr, timeoutMs)]);
+}
+
+function flushWriteStream(stream: NodeJS.WriteStream, timeoutMs: number): Promise<void> {
+  if (!stream.writable || stream.destroyed || stream.writableEnded) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      resolve();
+    };
+
+    timeout = setTimeout(finish, timeoutMs);
+    try {
+      stream.write('', finish);
+    } catch {
+      finish();
+    }
+  });
 }
 
 function wrapperArgsBeforeSeparator(args: readonly string[]): string[] {

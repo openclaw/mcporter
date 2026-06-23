@@ -48,7 +48,7 @@ describe('mcporter forced exit behavior', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-force-exit-'));
     const serverScriptPath = path.join(tempDir, 'force-exit-server.mjs');
     configPath = path.join(tempDir, 'config.json');
-    const longDescription = 'Large schema tool description. '.repeat(30);
+    const longDescription = 'Large schema tool description. '.repeat(40);
 
     await fs.writeFile(
       serverScriptPath,
@@ -131,7 +131,7 @@ await server.connect(transport);
     const result = await runCli(['list', 'force-exit', '--schema', '--output', 'json'], configPath);
     expect(result.code).toBe(0);
     expect(result.stderr).toBe('');
-    expect(Buffer.byteLength(result.stdout)).toBeGreaterThan(8192);
+    expect(Buffer.byteLength(result.stdout)).toBeGreaterThan(64 * 1024);
 
     const payload = JSON.parse(result.stdout) as { tools: Array<{ name: string }> };
     expect(payload.tools).toHaveLength(65);
