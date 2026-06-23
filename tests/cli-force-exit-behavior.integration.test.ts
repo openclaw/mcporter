@@ -50,6 +50,7 @@ const [cliEntry, configPath] = process.argv.slice(2);
 process.env.MCPORTER_DISABLE_AUTORUN = '1';
 
 let cleanupErrorListenerSeen = false;
+let cleanupEmptyWriteSeen = false;
 let cliRunning = false;
 Object.defineProperty(process.stdout, 'writableNeedDrain', {
   configurable: true,
@@ -70,12 +71,23 @@ process.stdout.once = (event, listener) => {
   }
   return result;
 };
+const originalWrite = process.stdout.write.bind(process.stdout);
+process.stdout.write = (chunk, encoding, callback) => {
+  if (cliRunning && chunk === '') {
+    cleanupEmptyWriteSeen = true;
+  }
+  return originalWrite(chunk, encoding, callback);
+};
 
 const { runCli } = await import(pathToFileURL(cliEntry).href);
 cliRunning = true;
 await runCli(['--config', configPath, 'list', 'force-exit', '--schema', '--output', 'json']);
 if (!cleanupErrorListenerSeen) {
   console.error('expected force-exit cleanup to observe stdout errors');
+  process.exitCode = 1;
+}
+if (cleanupEmptyWriteSeen) {
+  console.error('expected force-exit cleanup not to write to stdout');
   process.exitCode = 1;
 }
 `;

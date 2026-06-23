@@ -403,15 +403,21 @@ function flushWriteStream(stream: NodeJS.WriteStream, timeoutMs: number): Promis
     const finishAfterDrain = () => {
       setImmediate(cleanup);
     };
+    const finishWhenDrained = () => {
+      if (settled) {
+        return;
+      }
+      if (stream.destroyed || stream.writableEnded || (!stream.writableNeedDrain && stream.writableLength === 0)) {
+        cleanup();
+        return;
+      }
+      setImmediate(finishWhenDrained);
+    };
 
     timeout = setTimeout(cleanup, timeoutMs);
     stream.once('drain', finishAfterDrain);
     stream.once('error', cleanup);
-    setImmediate(() => {
-      if (stream.destroyed || stream.writableEnded || !stream.writableNeedDrain) {
-        cleanup();
-      }
-    });
+    setImmediate(finishWhenDrained);
   });
 }
 
