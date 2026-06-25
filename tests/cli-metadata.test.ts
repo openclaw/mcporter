@@ -7,20 +7,30 @@ import { metadataPathForArtifact, readCliMetadata } from '../src/cli-metadata.js
 describe('readCliMetadata', () => {
   it('prefers embedded metadata over stale sidecar metadata', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-metadata-'));
-    const artifact = path.join(tempDir, 'artifact');
+    const artifact = path.join(tempDir, process.platform === 'win32' ? 'artifact.cmd' : 'artifact');
     const embedded = metadataPayload('embedded');
     const sidecar = metadataPayload('sidecar');
-    await fs.writeFile(
-      artifact,
-      `#!/usr/bin/env node\nconsole.log(${JSON.stringify(JSON.stringify(embedded))});\n`,
-      'utf8'
-    );
+    const previousEmbeddedMetadata = process.env.MCPORTER_TEST_EMBEDDED_METADATA;
+    process.env.MCPORTER_TEST_EMBEDDED_METADATA = JSON.stringify(embedded);
+    const artifactContent =
+      process.platform === 'win32'
+        ? '@echo off\r\nnode -e "console.log(process.env.MCPORTER_TEST_EMBEDDED_METADATA)"\r\n'
+        : '#!/usr/bin/env node\nconsole.log(process.env.MCPORTER_TEST_EMBEDDED_METADATA);\n';
+    await fs.writeFile(artifact, artifactContent, 'utf8');
     await fs.chmod(artifact, 0o755);
     await fs.writeFile(metadataPathForArtifact(artifact), JSON.stringify(sidecar), 'utf8');
 
-    await expect(readCliMetadata(artifact)).resolves.toMatchObject({
-      server: { name: 'embedded' },
-    });
+    try {
+      await expect(readCliMetadata(artifact)).resolves.toMatchObject({
+        server: { name: 'embedded' },
+      });
+    } finally {
+      if (previousEmbeddedMetadata === undefined) {
+        delete process.env.MCPORTER_TEST_EMBEDDED_METADATA;
+      } else {
+        process.env.MCPORTER_TEST_EMBEDDED_METADATA = previousEmbeddedMetadata;
+      }
+    }
   });
 });
 
