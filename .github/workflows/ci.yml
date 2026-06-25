@@ -48,6 +48,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --version
       - run: pnpm check
+        if: matrix.os != 'macos-15'
+
+      - name: Check without type-aware oxlint
+        if: matrix.os == 'macos-15'
+        run: pnpm format:check && pnpm typecheck
 
       - name: Verify generated schema is committed
         if: matrix.os == 'ubuntu-latest'
