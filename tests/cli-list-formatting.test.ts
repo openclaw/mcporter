@@ -148,6 +148,50 @@ describe('CLI list formatting', () => {
     metadataSpy.mockRestore();
   });
 
+  it('emits JSON schemas for configured HTTP servers listed by name', async () => {
+    const { handleList } = await cliModulePromise;
+    const toolCache = await import('../src/cli/tool-cache.js');
+    const metadata = [
+      {
+        tool: {
+          name: 'check_login_status',
+          description: 'Check login status',
+          inputSchema: { type: 'object', properties: {} },
+        },
+        methodName: 'check_login_status',
+        options: [],
+      },
+    ];
+    const metadataSpy = vi.spyOn(toolCache, 'loadToolMetadata').mockResolvedValue(metadata as never);
+    const definition: ServerDefinition = {
+      name: 'xhs',
+      command: { kind: 'http', url: new URL('http://127.0.0.1:18060/mcp') },
+      source: { kind: 'local', path: '<test>' },
+    };
+    const registerDefinition = vi.fn();
+    const runtime = {
+      getDefinitions: () => [definition],
+      getDefinition: () => definition,
+      registerDefinition,
+    } as unknown as Awaited<ReturnType<(typeof import('../src/runtime.js'))['createRuntime']>>;
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleList(runtime, ['xhs', '--schema', '--json']);
+
+    const payload = JSON.parse(logSpy.mock.calls.at(-1)?.[0] ?? '{}');
+    expect(payload).toMatchObject({
+      mode: 'server',
+      name: 'xhs',
+      status: 'ok',
+      tools: [{ name: 'check_login_status', inputSchema: { type: 'object', properties: {} } }],
+    });
+    expect(registerDefinition).not.toHaveBeenCalled();
+
+    logSpy.mockRestore();
+    metadataSpy.mockRestore();
+  });
+
   it('surfaces initialize instructions in single server text and JSON output', async () => {
     const { handleList } = await cliModulePromise;
     const definition: ServerDefinition = {

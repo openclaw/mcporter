@@ -138,6 +138,16 @@ async function normalizeParsedCallArguments(
       parsed.selector = undefined;
     }
   }
+  if (ephemeralSpec?.httpUrl && parsed.selector && !looksLikeHttpUrl(parsed.selector)) {
+    const selector = splitServerToolSelector(parsed.selector);
+    if (selector) {
+      if (!ephemeralSpec.name) {
+        nameHints.push(selector.server);
+      }
+      parsed.tool ??= selector.tool;
+      parsed.selector = undefined;
+    }
+  }
 
   const prepared = await prepareEphemeralServerTarget({
     runtime,
@@ -314,6 +324,17 @@ function resolveCallTarget(
   }
 
   return { server, tool };
+}
+
+function splitServerToolSelector(selector: string): { server: string; tool: string } | undefined {
+  const dotIndex = selector.indexOf('.');
+  if (dotIndex <= 0 || dotIndex === selector.length - 1) {
+    return undefined;
+  }
+  return {
+    server: selector.slice(0, dotIndex),
+    tool: selector.slice(dotIndex + 1),
+  };
 }
 
 async function enforceSchemaAwareArgumentTypes(
