@@ -273,7 +273,11 @@ describe('daemon artifact cleanup', () => {
     await cleanupDaemonArtifactsIfOwned({ metadataPath, socketPath }, 4321);
 
     await expect(fs.access(metadataPath)).rejects.toThrow();
-    await expect(fs.access(socketPath)).rejects.toThrow();
+    if (process.platform === 'win32') {
+      await expect(fs.access(socketPath)).resolves.toBeUndefined();
+    } else {
+      await expect(fs.access(socketPath)).rejects.toThrow();
+    }
   });
 
   it('preserves artifacts replaced by a newer daemon', async () => {
