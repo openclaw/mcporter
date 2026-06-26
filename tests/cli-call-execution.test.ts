@@ -364,6 +364,35 @@ describe('CLI call execution behavior', () => {
     logSpy.mockRestore();
   });
 
+  it('uses the server prefix as the ad-hoc name when --tool overrides a qualified selector', async () => {
+    const httpUrl = 'http://127.0.0.1:18060/mcp';
+    const { handleCall } = await cliModulePromise;
+    const { runtime, callTool, registerDefinition } = createRuntimeStub({});
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleCall(runtime, [
+      'xhs.selector_tool',
+      '--http-url',
+      httpUrl,
+      '--allow-http',
+      '--tool',
+      'check_login_status',
+    ]);
+
+    expect(callTool).toHaveBeenCalledWith(
+      'xhs',
+      'check_login_status',
+      expect.objectContaining({
+        args: {},
+      })
+    );
+    expect(registerDefinition).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'xhs' }),
+      expect.objectContaining({ overwrite: true })
+    );
+    logSpy.mockRestore();
+  });
+
   it('honors explicit literal dotted tool names for named ad-hoc HTTP servers', async () => {
     const httpUrl = 'http://127.0.0.1:18060/mcp';
     const { handleCall } = await cliModulePromise;

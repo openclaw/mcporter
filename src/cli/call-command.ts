@@ -131,13 +131,6 @@ async function normalizeParsedCallArguments(
     parsed.server = undefined;
   }
 
-  if (ephemeralSpec?.httpUrl && !ephemeralSpec.name && parsed.tool) {
-    const candidate = parsed.selector && !looksLikeHttpUrl(parsed.selector) ? parsed.selector : undefined;
-    if (candidate) {
-      nameHints.push(candidate);
-      parsed.selector = undefined;
-    }
-  }
   if (ephemeralSpec?.httpUrl && parsed.selector && !looksLikeHttpUrl(parsed.selector)) {
     const selector = splitServerToolSelector(parsed.selector);
     if (selector) {
@@ -145,6 +138,11 @@ async function normalizeParsedCallArguments(
         nameHints.push(selector.server);
       }
       parsed.tool ??= selector.tool;
+      parsed.selector = undefined;
+    } else if (parsed.tool) {
+      if (!ephemeralSpec.name) {
+        nameHints.push(parsed.selector);
+      }
       parsed.selector = undefined;
     }
   }

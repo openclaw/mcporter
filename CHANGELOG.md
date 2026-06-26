@@ -5,6 +5,7 @@
 ### CLI
 
 - Prevent large piped CLI output from being truncated during forced shutdown, while keeping stalled readers bounded and treating broken pipes as normal shell behavior. (Issue #214, thanks @badmoo)
+- Resolve configured and ad-hoc HTTP tool selectors consistently so targeted list and call commands keep server names separate from MCP tool names. (Issue #218, thanks @xinFu3576 and @TurboTheTurtle)
 
 ## [0.12.1] - 2026-06-26
 
