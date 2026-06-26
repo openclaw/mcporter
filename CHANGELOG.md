@@ -2,7 +2,9 @@
 
 ## [0.12.2] - Unreleased
 
-- Nothing yet.
+### CLI
+
+- Prevent large piped CLI output from being truncated during forced shutdown, while keeping stalled readers bounded and treating broken pipes as normal shell behavior. (Issue #214, thanks @badmoo)
 
 ## [0.12.1] - 2026-06-26
 
