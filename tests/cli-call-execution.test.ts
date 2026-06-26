@@ -292,6 +292,133 @@ describe('CLI call execution behavior', () => {
     logSpy.mockRestore();
   });
 
+  it('calls configured HTTP servers by server.tool selector', async () => {
+    const { handleCall } = await cliModulePromise;
+    const definition: ServerDefinition = {
+      name: 'xhs',
+      command: { kind: 'http', url: new URL('http://127.0.0.1:18060/mcp') },
+      source: { kind: 'local', path: '<test>' },
+    };
+    const { runtime, callTool, registerDefinition } = createRuntimeStub(
+      {
+        xhs: [{ name: 'check_login_status', inputSchema: { type: 'object', properties: {} } }],
+      },
+      { definitions: [definition] }
+    );
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleCall(runtime, ['xhs.check_login_status']);
+
+    expect(callTool).toHaveBeenCalledWith(
+      'xhs',
+      'check_login_status',
+      expect.objectContaining({
+        args: {},
+      })
+    );
+    expect(registerDefinition).not.toHaveBeenCalled();
+    logSpy.mockRestore();
+  });
+
+  it('splits server.tool selectors before calling ad-hoc HTTP servers', async () => {
+    const httpUrl = 'http://127.0.0.1:18060/mcp';
+    const { handleCall } = await cliModulePromise;
+    const { runtime, callTool, registerDefinition } = createRuntimeStub({});
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleCall(runtime, ['xhs.check_login_status', '--http-url', httpUrl, '--allow-http']);
+
+    expect(callTool).toHaveBeenCalledWith(
+      'xhs',
+      'check_login_status',
+      expect.objectContaining({
+        args: {},
+      })
+    );
+    expect(registerDefinition).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'xhs' }),
+      expect.objectContaining({ overwrite: true })
+    );
+    logSpy.mockRestore();
+  });
+
+  it('splits server.tool selectors when ad-hoc HTTP servers also use --name', async () => {
+    const httpUrl = 'http://127.0.0.1:18060/mcp';
+    const { handleCall } = await cliModulePromise;
+    const { runtime, callTool, registerDefinition } = createRuntimeStub({});
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleCall(runtime, ['xhs.check_login_status', '--http-url', httpUrl, '--allow-http', '--name', 'xhs']);
+
+    expect(callTool).toHaveBeenCalledWith(
+      'xhs',
+      'check_login_status',
+      expect.objectContaining({
+        args: {},
+      })
+    );
+    expect(registerDefinition).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'xhs' }),
+      expect.objectContaining({ overwrite: true })
+    );
+    logSpy.mockRestore();
+  });
+
+  it('uses the server prefix as the ad-hoc name when --tool overrides a qualified selector', async () => {
+    const httpUrl = 'http://127.0.0.1:18060/mcp';
+    const { handleCall } = await cliModulePromise;
+    const { runtime, callTool, registerDefinition } = createRuntimeStub({});
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleCall(runtime, [
+      'xhs.selector_tool',
+      '--http-url',
+      httpUrl,
+      '--allow-http',
+      '--tool',
+      'check_login_status',
+    ]);
+
+    expect(callTool).toHaveBeenCalledWith(
+      'xhs',
+      'check_login_status',
+      expect.objectContaining({
+        args: {},
+      })
+    );
+    expect(registerDefinition).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'xhs' }),
+      expect.objectContaining({ overwrite: true })
+    );
+    logSpy.mockRestore();
+  });
+
+  it('honors explicit literal dotted tool names for named ad-hoc HTTP servers', async () => {
+    const httpUrl = 'http://127.0.0.1:18060/mcp';
+    const { handleCall } = await cliModulePromise;
+    const { runtime, callTool } = createRuntimeStub({});
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleCall(runtime, [
+      '--http-url',
+      httpUrl,
+      '--allow-http',
+      '--name',
+      'xhs',
+      '--tool',
+      'xhs.check_login_status',
+    ]);
+
+    expect(callTool).toHaveBeenCalledWith(
+      'xhs',
+      'xhs.check_login_status',
+      expect.objectContaining({
+        args: {},
+      })
+    );
+    logSpy.mockRestore();
+  });
+
   it('aborts long-running tools when the timeout elapses', async () => {
     vi.useFakeTimers();
     try {
@@ -448,6 +575,7 @@ function createRuntimeStub(
   runtime: Awaited<ReturnType<(typeof import('../src/runtime.js'))['createRuntime']>>;
   callTool: ReturnType<typeof vi.fn>;
   listTools: ReturnType<typeof vi.fn>;
+  registerDefinition: ReturnType<typeof vi.fn>;
 } {
   const definitions = new Map<string, ServerDefinition>();
   for (const entry of options.definitions ?? []) {
@@ -462,6 +590,9 @@ function createRuntimeStub(
     return tools;
   });
   const close = vi.fn().mockResolvedValue(undefined);
+  const registerDefinition = vi.fn().mockImplementation((definition: ServerDefinition) => {
+    definitions.set(definition.name, definition);
+  });
   const runtime = {
     getDefinitions: () => [...definitions.values()],
     getDefinition: vi.fn().mockImplementation((name: string) => {
@@ -471,12 +602,10 @@ function createRuntimeStub(
       }
       return definition;
     }),
-    registerDefinition: vi.fn().mockImplementation((definition: ServerDefinition) => {
-      definitions.set(definition.name, definition);
-    }),
+    registerDefinition,
     listTools,
     callTool,
     close,
   } as unknown as Awaited<ReturnType<(typeof import('../src/runtime.js'))['createRuntime']>>;
-  return { runtime, callTool, listTools };
+  return { runtime, callTool, listTools, registerDefinition };
 }

@@ -131,10 +131,18 @@ async function normalizeParsedCallArguments(
     parsed.server = undefined;
   }
 
-  if (ephemeralSpec?.httpUrl && !ephemeralSpec.name && parsed.tool) {
-    const candidate = parsed.selector && !looksLikeHttpUrl(parsed.selector) ? parsed.selector : undefined;
-    if (candidate) {
-      nameHints.push(candidate);
+  if (ephemeralSpec?.httpUrl && parsed.selector && !looksLikeHttpUrl(parsed.selector)) {
+    const selector = splitServerToolSelector(parsed.selector);
+    if (selector) {
+      if (!ephemeralSpec.name) {
+        nameHints.push(selector.server);
+      }
+      parsed.tool ??= selector.tool;
+      parsed.selector = undefined;
+    } else if (parsed.tool) {
+      if (!ephemeralSpec.name) {
+        nameHints.push(parsed.selector);
+      }
       parsed.selector = undefined;
     }
   }
@@ -314,6 +322,17 @@ function resolveCallTarget(
   }
 
   return { server, tool };
+}
+
+function splitServerToolSelector(selector: string): { server: string; tool: string } | undefined {
+  const dotIndex = selector.indexOf('.');
+  if (dotIndex <= 0 || dotIndex === selector.length - 1) {
+    return undefined;
+  }
+  return {
+    server: selector.slice(0, dotIndex),
+    tool: selector.slice(dotIndex + 1),
+  };
 }
 
 async function enforceSchemaAwareArgumentTypes(
