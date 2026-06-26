@@ -24,6 +24,11 @@ function handleStdioError(error: Error): void {
   throw error;
 }
 
+function installStdioErrorHandlers(): void {
+  process.stdout.on('error', handleStdioError);
+  process.stderr.on('error', handleStdioError);
+}
+
 function flushWriteStreamForExit(stream: NodeJS.WriteStream): Promise<void> {
   return new Promise((resolve) => {
     if (!stream.writable || stream.destroyed || stream.writableEnded) {
@@ -390,8 +395,6 @@ async function closeRuntimeAfterCommand(
     const shouldForceExit = !disableForceExit || process.env.MCPORTER_FORCE_EXIT === '1';
     const scheduleForcedExit = () => {
       if (shouldForceExit) {
-        process.stdout.on('error', handleStdioError);
-        process.stderr.on('error', handleStdioError);
         setTimeout(flushStdioThenForceExit, FORCE_EXIT_GRACE_MS);
       }
     };
@@ -418,6 +421,7 @@ async function main(): Promise<void> {
 }
 
 if (process.env.MCPORTER_DISABLE_AUTORUN !== '1') {
+  installStdioErrorHandlers();
   main().catch((error) => {
     if (error instanceof CliUsageError) {
       logError(error.message);

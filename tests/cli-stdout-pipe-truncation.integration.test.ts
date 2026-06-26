@@ -75,6 +75,46 @@ function runCliToFile(args: string[], configPath: string, outFile: string): Prom
   });
 }
 
+describe('mcporter broken pipe handling', () => {
+  it('handles asynchronous EPIPE before runtime cleanup begins', async () => {
+    await ensureDistBuilt();
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-early-epipe-'));
+    const preloadPath = path.join(tempDir, 'inject-epipe.cjs');
+    await fs.writeFile(
+      preloadPath,
+      `const originalWrite = process.stdout.write.bind(process.stdout);
+let injected = false;
+process.stdout.write = (...args) => {
+  const result = originalWrite(...args);
+  if (!injected) {
+    injected = true;
+    process.nextTick(() => {
+      process.stdout.emit(
+        'error',
+        Object.assign(new Error('simulated asynchronous broken pipe'), { code: 'EPIPE' })
+      );
+    });
+  }
+  return result;
+};
+`,
+      'utf8'
+    );
+
+    try {
+      const result = await new Promise<{ code: number; stderr: string }>((resolve) => {
+        execFile(process.execPath, ['--require', preloadPath, CLI_ENTRY, '--version'], (error, _stdout, stderr) => {
+          resolve({ code: typeof error?.code === 'number' ? error.code : 0, stderr });
+        });
+      });
+      expect(result.code).toBe(0);
+      expect(result.stderr).toBe('');
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+});
+
 // POSIX-only: relies on `sh`, `sleep`, `cat` and POSIX async pipe semantics.
 describe.skipIf(process.platform === 'win32')('mcporter stdout pipe truncation on forced exit', () => {
   let tempDir: string;
