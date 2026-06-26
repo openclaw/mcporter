@@ -747,17 +747,16 @@ describeGenerateCli('generateCli', () => {
   }, 30_000);
 
   it('accepts both kebab-case and underscore tool names for generated CLIs', async () => {
-    const deepwikiRef = JSON.stringify({
-      name: 'deepwiki',
-      description: 'DeepWiki MCP',
-      command: 'https://mcp.deepwiki.com/mcp',
-      tokenCacheDir: path.join(tmpDir, 'deepwiki-cache'),
+    const serverRef = JSON.stringify({
+      name: 'tool-alias-test',
+      description: 'Tool alias test',
+      command: baseUrl.toString(),
     });
-    const outputPath = path.join(tmpDir, 'deepwiki-cli.ts');
+    const outputPath = path.join(tmpDir, 'tool-alias-test.ts');
     await fs.rm(outputPath, { force: true });
 
     const { outputPath: renderedPath } = await generateCli({
-      serverRef: deepwikiRef,
+      serverRef,
       outputPath,
       runtime: 'node',
       timeoutMs: 10_000,
@@ -781,14 +780,14 @@ describeGenerateCli('generateCli', () => {
       );
     });
 
-    expect(helpOutput).toMatch(/read-wiki-structure/);
-    expect(helpOutput).not.toMatch(/read_wiki_structure/);
+    expect(helpOutput).toMatch(/list-comments/);
+    expect(helpOutput).not.toMatch(/list_comments/);
 
     // underscore alias should still work
     await new Promise<void>((resolve, reject) => {
       execFile(
         'pnpm',
-        ['exec', 'tsx', renderedPath, 'read_wiki_structure', '--help'],
+        ['exec', 'tsx', renderedPath, 'list_comments', '--help'],
         execOptions(),
         (error: import('node:child_process').ExecFileException | null) => {
           if (error) {
@@ -804,7 +803,7 @@ describeGenerateCli('generateCli', () => {
     await new Promise<void>((resolve, reject) => {
       execFile(
         'pnpm',
-        ['exec', 'tsx', renderedPath, 'read-wiki-structure', '--help'],
+        ['exec', 'tsx', renderedPath, 'list-comments', '--help'],
         execOptions(),
         (error: import('node:child_process').ExecFileException | null) => {
           if (error) {

@@ -1,8 +1,17 @@
 # mcporter Changelog
 
-## [0.12.1] - 2026-06-18
+## [0.12.2] - Unreleased
+
+### CLI
+
+- Prevent large piped CLI output from being truncated during forced shutdown, while keeping stalled readers bounded and treating broken pipes as normal shell behavior. (Issue #214, thanks @badmoo)
+
+## [0.12.1] - 2026-06-26
+
+### CLI
 
 - Add `key=@path` and `--key @path` call arguments for exact UTF-8 file values, with `@@` escaping for literal leading `@`. (Issue #212, thanks @andr-ec)
+- Preserve replacement daemon socket and metadata ownership while a superseded daemon shuts down, preventing repeated keep-alive restarts and Chrome remote-debugging permission prompts.
 
 ### Config
 

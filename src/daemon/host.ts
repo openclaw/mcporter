@@ -452,18 +452,24 @@ async function prepareSocket(socketPath: string): Promise<void> {
 }
 
 async function cleanupArtifacts(options: DaemonHostOptions): Promise<void> {
+  await cleanupDaemonArtifactsIfOwned(options, process.pid);
+}
+
+export async function cleanupDaemonArtifactsIfOwned(
+  paths: Pick<DaemonHostOptions, 'metadataPath' | 'socketPath'>,
+  ownerPid: number
+): Promise<void> {
+  // A superseded daemon may finish shutting down after its replacement has
+  // already rebound the same paths. Never let that old process unlink the
+  // replacement daemon's live socket and metadata.
+  const metadata = await readJsonFile<{ pid?: number; socketPath?: string }>(paths.metadataPath).catch(() => undefined);
+  if (metadata?.pid !== ownerPid || metadata.socketPath !== paths.socketPath) {
+    return;
+  }
   if (process.platform !== 'win32') {
-    try {
-      await fs.unlink(options.socketPath);
-    } catch {
-      // ignore
-    }
+    await fs.unlink(paths.socketPath).catch(() => {});
   }
-  try {
-    await fs.unlink(options.metadataPath);
-  } catch {
-    // ignore
-  }
+  await fs.unlink(paths.metadataPath).catch(() => {});
 }
 
 async function handleSocketRequest(
