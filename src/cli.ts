@@ -17,7 +17,12 @@ const FORCE_EXIT_GRACE_MS = 50;
 const STDOUT_FLUSH_TIMEOUT_MS = 2000;
 const DAEMON_FAST_PATH_SERVERS = new Set(['chrome-devtools', 'mobile-mcp', 'playwright']);
 
-function ignoreStreamError(): void {}
+function handleStdioError(error: Error): void {
+  if ((error as NodeJS.ErrnoException).code === 'EPIPE') {
+    return;
+  }
+  throw error;
+}
 
 function flushWriteStreamForExit(stream: NodeJS.WriteStream): Promise<void> {
   return new Promise((resolve) => {
@@ -385,8 +390,8 @@ async function closeRuntimeAfterCommand(
     const shouldForceExit = !disableForceExit || process.env.MCPORTER_FORCE_EXIT === '1';
     const scheduleForcedExit = () => {
       if (shouldForceExit) {
-        process.stdout.on('error', ignoreStreamError);
-        process.stderr.on('error', ignoreStreamError);
+        process.stdout.on('error', handleStdioError);
+        process.stderr.on('error', handleStdioError);
         setTimeout(flushStdioThenForceExit, FORCE_EXIT_GRACE_MS);
       }
     };
