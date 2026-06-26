@@ -24,7 +24,7 @@ jobs:
         os: [ubuntu-latest, macos-15, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
@@ -48,6 +48,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --version
       - run: pnpm check
+        if: matrix.os != 'macos-15'
+
+      - name: Check without type-aware oxlint
+        if: matrix.os == 'macos-15'
+        run: pnpm format:check && pnpm typecheck
 
       - name: Verify generated schema is committed
         if: matrix.os == 'ubuntu-latest'

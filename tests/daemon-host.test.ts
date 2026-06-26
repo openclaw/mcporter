@@ -5,7 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerDefinition } from '../src/config.js';
-import { __testProcessRequest, isDaemonResponding, metadataMatches } from '../src/daemon/host.js';
+import {
+  __testProcessRequest,
+  cleanupDaemonArtifactsIfOwned,
+  isDaemonResponding,
+  metadataMatches,
+} from '../src/daemon/host.js';
 import type { DaemonRequest } from '../src/daemon/protocol.js';
 import type { Runtime } from '../src/runtime.js';
 
@@ -243,6 +248,45 @@ describe('metadataMatches', () => {
   it('does not match when metadata is corrupt', async () => {
     await fs.writeFile(metadataPath, '{ not json', 'utf8');
     expect(await metadataMatches(metadataPath, live)).toBe(false);
+  });
+});
+
+describe('daemon artifact cleanup', () => {
+  let dir: string;
+  let metadataPath: string;
+  let socketPath: string;
+
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-cleanup-'));
+    metadataPath = path.join(dir, 'daemon.json');
+    socketPath = path.join(dir, 'daemon.sock');
+    await fs.writeFile(socketPath, 'socket', 'utf8');
+  });
+
+  afterEach(async () => {
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  it('removes artifacts still owned by the stopping daemon', async () => {
+    await fs.writeFile(metadataPath, JSON.stringify({ pid: 4321, socketPath }), 'utf8');
+
+    await cleanupDaemonArtifactsIfOwned({ metadataPath, socketPath }, 4321);
+
+    await expect(fs.access(metadataPath)).rejects.toThrow();
+    if (process.platform === 'win32') {
+      await expect(fs.access(socketPath)).resolves.toBeUndefined();
+    } else {
+      await expect(fs.access(socketPath)).rejects.toThrow();
+    }
+  });
+
+  it('preserves artifacts replaced by a newer daemon', async () => {
+    await fs.writeFile(metadataPath, JSON.stringify({ pid: 9876, socketPath }), 'utf8');
+
+    await cleanupDaemonArtifactsIfOwned({ metadataPath, socketPath }, 4321);
+
+    await expect(fs.access(metadataPath)).resolves.toBeUndefined();
+    await expect(fs.access(socketPath)).resolves.toBeUndefined();
   });
 });
 
