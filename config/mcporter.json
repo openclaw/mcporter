@@ -88,9 +88,9 @@
       "baseUrl": "https://www.shadcn.io/api/mcp"
     },
     "iterm": {
-      "description": "iTerm2 terminal bridge via iterm-mcp.",
-      "command": "npx",
-      "args": ["-y", "iterm-mcp@latest"],
+      "description": "iTerm2 terminal bridge via local iterm-mcp",
+      "command": "pnpm",
+      "args": ["--dir", "/Users/steipete/Projects/iterm-mcp", "exec", "node", "build/index.js"],
       "env": {
         "npm_config_loglevel": "error"
       }
