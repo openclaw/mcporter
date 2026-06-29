@@ -37,6 +37,8 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$GH_TOKEN"
+          # Source releases come from openclaw/mcporter; the active Homebrew tap
+          # remains steipete/homebrew-tap until an explicit tap migration is approved.
           gh workflow run update-formula.yml \
             --repo steipete/homebrew-tap \
             -f formula=mcporter \

@@ -67,7 +67,7 @@ Shipping a release means **all** of:
 17. Tag the release (git tag v<version> && git push --tags).
 18. Post-tag housekeeping: add a fresh "Unreleased" stub to CHANGELOG.md (set to "- Nothing yet.") and start a new version section for the just-released patch if it isn’t already recorded.
 
-After the release is live, always update the Homebrew tap and re-verify both installers. The tap formula should install the npm `.tgz`, not the Bun-compiled macOS tarball, because `generate-cli --compile` needs the installed package tree so Bun can resolve `mcporter`, `commander`, and related dependencies when compiling from an empty directory. Keep the macOS tarball on the GitHub release as a direct binary asset, but point Homebrew at `mcporter-<version>.tgz`.
+After the release is live, always update the Homebrew tap and re-verify both installers. The source repository is `openclaw/mcporter`, but `steipete/homebrew-tap` remains the active tap target until an explicit tap migration is approved. The tap formula should install the npm `.tgz`, not the Bun-compiled macOS tarball, because `generate-cli --compile` needs the installed package tree so Bun can resolve `mcporter`, `commander`, and related dependencies when compiling from an empty directory. Keep the macOS tarball on the GitHub release as a direct binary asset, but point Homebrew at `mcporter-<version>.tgz`.
 
 1. Update `steipete/homebrew-tap` -> `Formula/mcporter.rb` with:
    - URL `https://github.com/openclaw/mcporter/releases/download/v<version>/mcporter-<version>.tgz`
