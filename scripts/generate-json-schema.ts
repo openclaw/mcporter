@@ -9,7 +9,7 @@ import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { RawConfigSchema } from '../src/config-schema.js';
 
-export const CONFIG_SCHEMA_ID = 'https://raw.githubusercontent.com/steipete/mcporter/main/mcporter.schema.json';
+export const CONFIG_SCHEMA_ID = 'https://raw.githubusercontent.com/openclaw/mcporter/main/mcporter.schema.json';
 export const CONFIG_SCHEMA_DRAFT = 'https://json-schema.org/draft/2020-12/schema';
 
 export function buildConfigJsonSchema(): Record<string, unknown> {

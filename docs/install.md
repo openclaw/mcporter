@@ -41,7 +41,7 @@ The tap publishes alongside npm. If you previously installed from an older tap, 
 
 ## Standalone binary
 
-Each release also ships a Bun-compiled standalone binary you can drop on `$PATH` without a Node toolchain. Grab the asset for your OS/arch from the [GitHub releases page](https://github.com/steipete/mcporter/releases) and `chmod +x` it. The compiled CLI behaves the same as the Node build but boots noticeably faster and bundles its dependencies.
+Each release also ships a Bun-compiled standalone binary you can drop on `$PATH` without a Node toolchain. Grab the asset for your OS/arch from the [GitHub releases page](https://github.com/openclaw/mcporter/releases) and `chmod +x` it. The compiled CLI behaves the same as the Node build but boots noticeably faster and bundles its dependencies.
 
 ## Verify
 

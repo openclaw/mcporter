@@ -30,7 +30,7 @@ Global Options:
   -h, --help                     Display help for mcporter config
 
 Run `mcporter config help add` to see transport flags, ad-hoc persistence tips, and schema docs.
-See https://github.com/sweetistics/mcporter/blob/main/docs/config.md for config anatomy, import precedence, and troubleshooting guidance.
+See https://github.com/openclaw/mcporter/blob/main/docs/config.md for config anatomy, import precedence, and troubleshooting guidance.
 ```
 
 # Configuration Guide
@@ -44,7 +44,7 @@ mcporter keeps three configuration buckets in sync: repository-scoped JSON (`con
 1. Create `config/mcporter.json` at the repo root:
    ```jsonc
    {
-     "$schema": "https://raw.githubusercontent.com/steipete/mcporter/main/mcporter.schema.json",
+     "$schema": "https://raw.githubusercontent.com/openclaw/mcporter/main/mcporter.schema.json",
      "mcpServers": {
        "linear": {
          "description": "Linear issues",
@@ -190,7 +190,7 @@ mcporter provides a JSON Schema for config file validation and autocompletion. A
 
 ```jsonc
 {
-  "$schema": "https://raw.githubusercontent.com/steipete/mcporter/main/mcporter.schema.json",
+  "$schema": "https://raw.githubusercontent.com/openclaw/mcporter/main/mcporter.schema.json",
   "mcpServers": { ... }
 }
 ```
