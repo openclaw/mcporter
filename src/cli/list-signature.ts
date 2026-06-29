@@ -158,7 +158,8 @@ function inferSchemaDisplayType(descriptor: Record<string, unknown>): string {
   if (title) {
     return title;
   }
-  const type = typeof descriptor.type === 'string' ? (descriptor.type as string) : undefined;
+  const rawType = typeof descriptor.type === 'string' ? descriptor.type : undefined;
+  const type = rawType === 'integer' ? 'number' : rawType;
   if (!type && typeof descriptor.properties === 'object') {
     return 'object';
   }
@@ -190,7 +191,7 @@ function formatTypeAnnotation(option: GeneratedOption, colorize: boolean): strin
         baseType = 'boolean';
         break;
       case 'array':
-        baseType = 'string[]';
+        baseType = `${formatArrayItemType(option.arrayItemType)}[]`;
         break;
       case 'object':
         baseType = 'Record<string, unknown>';
@@ -217,4 +218,19 @@ function formatTypeAnnotation(option: GeneratedOption, colorize: boolean): strin
     return `${base} ${tint(`/* ${option.formatHint} */`)}`;
   }
   return base;
+}
+
+function formatArrayItemType(type: GeneratedOption['arrayItemType']): string {
+  switch (type) {
+    case 'string':
+      return 'string';
+    case 'number':
+      return 'number';
+    case 'boolean':
+      return 'boolean';
+    case 'object':
+      return 'Record<string, unknown>';
+    default:
+      return 'unknown';
+  }
 }

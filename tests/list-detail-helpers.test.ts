@@ -95,6 +95,36 @@ describe('formatFunctionSignature', () => {
     expect(signature).toBe('function create_comment(issueId: string, parentId?: string): Comment;');
   });
 
+  it('renders array parameters from their schema item types', () => {
+    const signature = formatFunctionSignature(
+      'filter_docs',
+      [
+        baseOption({ property: 'names', type: 'array', arrayItemType: 'string' }),
+        baseOption({ property: 'scores', type: 'array', arrayItemType: 'number' }),
+        baseOption({ property: 'enabled', type: 'array', arrayItemType: 'boolean' }),
+        baseOption({ property: 'metadata', type: 'array', arrayItemType: 'object' }),
+        baseOption({ property: 'unknownItems', type: 'array', arrayItemType: 'unknown' }),
+        baseOption({ property: 'missingItems', type: 'array' }),
+      ],
+      undefined,
+      { colorize: false }
+    );
+
+    expect(signature).toBe(
+      'function filter_docs(names: string[], scores: number[], enabled: boolean[], metadata: Record<string, unknown>[], unknownItems: unknown[], missingItems: unknown[]);'
+    );
+  });
+
+  it('normalizes integer item output schemas to number arrays', () => {
+    const signature = formatFunctionSignature(
+      'list_ids',
+      [],
+      { type: 'array', items: { type: 'integer' } },
+      { colorize: false }
+    );
+    expect(signature).toBe('function list_ids(): number[];');
+  });
+
   it('falls back to unknown return types when schema is empty', () => {
     const signature = stripAnsi(formatFunctionSignature('list_docs', [], undefined));
     expect(signature).toBe('function list_docs();');
