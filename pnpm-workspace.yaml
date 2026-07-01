@@ -1,9 +1,9 @@
 onlyBuiltDependencies:
   - esbuild
 overrides:
-  body-parser: 2.2.1
+  body-parser: 2.3.0
   esbuild: 0.28.1
-  hono: 4.12.25
-  ip-address: 10.1.1
-  qs: 6.15.2
-  vite: 8.0.16
+  hono: 4.12.27
+  ip-address: 10.2.0
+  qs: 6.15.3
+  vite: 8.1.2

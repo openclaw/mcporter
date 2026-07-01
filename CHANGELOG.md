@@ -2,7 +2,13 @@
 
 ## [0.12.3] - Unreleased
 
+### CLI
+
 - Render list signatures and call examples from array item schemas, keeping number, boolean, object, and unknown arrays type-correct. (Issue #221, thanks @VincXiong)
+
+### Tooling / Dependencies
+
+- Refresh compatible runtime, bundling, type-checking, lint, and security-override dependencies while preserving the Node and pnpm toolchain.
 
 ## [0.12.2] - 2026-06-27
 
