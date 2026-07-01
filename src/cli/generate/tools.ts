@@ -100,7 +100,7 @@ export function extractOptions(tool: ServerToolInfo): GeneratedOption[] {
     const defaultValue = getDescriptorDefault(descriptor);
     const formatInfo = getDescriptorFormatHint(descriptor);
     const placeholder = buildPlaceholder(property, type, enumValues, formatInfo?.slug);
-    const exampleValue = buildExampleValue(property, type, enumValues, defaultValue);
+    const exampleValue = buildExampleValue(property, type, enumValues, defaultValue, arrayItemType);
     return {
       property,
       cliName: toCliOption(property),
@@ -181,7 +181,8 @@ export function buildExampleValue(
   property: string,
   type: GeneratedOption['type'],
   enumValues: string[] | undefined,
-  defaultValue: unknown
+  defaultValue: unknown,
+  arrayItemType?: GeneratedOption['arrayItemType']
 ): string | undefined {
   if (enumValues && enumValues.length > 0) {
     return enumValues[0] as string;
@@ -199,7 +200,16 @@ export function buildExampleValue(
     case 'boolean':
       return 'true';
     case 'array':
-      return 'value1,value2';
+      switch (arrayItemType) {
+        case 'number':
+          return '1,2';
+        case 'boolean':
+          return 'true,false';
+        case 'object':
+          return '[{"key":"value"}]';
+        default:
+          return 'value1,value2';
+      }
     case 'object':
       return '{"key":"value"}';
     default:
@@ -214,6 +224,28 @@ export function buildExampleValue(
 }
 
 export function pickExampleLiteral(option: GeneratedOption): string | undefined {
+  if (option.type === 'array') {
+    if (Array.isArray(option.defaultValue)) {
+      try {
+        return JSON.stringify(option.defaultValue);
+      } catch {
+        return undefined;
+      }
+    }
+    if (option.enumValues && option.enumValues.length > 0) {
+      return JSON.stringify([option.enumValues[0]]);
+    }
+    switch (option.arrayItemType) {
+      case 'number':
+        return '[1, 2]';
+      case 'boolean':
+        return '[true, false]';
+      case 'object':
+        return '[{"key":"value"}]';
+      default:
+        break;
+    }
+  }
   if (option.enumValues && option.enumValues.length > 0) {
     return JSON.stringify(option.enumValues[0]);
   }
@@ -251,7 +283,16 @@ export function buildFallbackLiteral(option: GeneratedOption): string {
     case 'boolean':
       return 'true';
     case 'array':
-      return '["value1"]';
+      switch (option.arrayItemType) {
+        case 'number':
+          return '[1]';
+        case 'boolean':
+          return '[true]';
+        case 'object':
+          return '[{"key":"value"}]';
+        default:
+          return '["value1"]';
+      }
     case 'object':
       return '{"key":"value"}';
     default: {

@@ -2,7 +2,7 @@
 
 ## [0.12.3] - Unreleased
 
-- Nothing yet.
+- Render list signatures and call examples from array item schemas, keeping number, boolean, object, and unknown arrays type-correct. (Issue #221, thanks @VincXiong)
 
 ## [0.12.2] - 2026-06-27
 

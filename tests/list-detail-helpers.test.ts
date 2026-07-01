@@ -150,6 +150,24 @@ describe('formatCallExpressionExample', () => {
     );
     expect(example).toBe('mcporter call \'https://mcp.sentry.dev/mcp?agent=1.use_sentry(request: "value")\'');
   });
+
+  it('keeps array examples consistent with their item types', () => {
+    const example = formatCallExpressionExample('fixture', 'array_probe', [
+      baseOption({ property: 'scores', type: 'array', arrayItemType: 'number', exampleValue: '1,2' }),
+      baseOption({ property: 'flags', type: 'array', arrayItemType: 'boolean', exampleValue: 'true,false' }),
+      baseOption({
+        property: 'records',
+        type: 'array',
+        arrayItemType: 'object',
+        exampleValue: '[{"key":"value"}]',
+      }),
+      baseOption({ property: 'names', type: 'array', arrayItemType: 'string', exampleValue: 'value1,value2' }),
+    ]);
+
+    expect(example).toBe(
+      'mcporter call fixture.array_probe(scores: [1, 2], flags: [true, false], records: [{"key":"value"}], names: ["value1", "value2"])'
+    );
+  });
 });
 
 describe('formatExampleBlock', () => {
