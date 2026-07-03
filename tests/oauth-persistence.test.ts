@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import { Buffer } from 'node:buffer';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerDefinition } from '../src/config.js';
 import { readJsonFile } from '../src/fs-json.js';
 import { buildOAuthPersistence, clearOAuthCaches, readCachedAccessToken } from '../src/oauth-persistence.js';
@@ -32,6 +32,15 @@ describe('oauth persistence', () => {
   const tempRoots: string[] = [];
   let homedirSpy!: ReturnType<typeof vi.spyOn>;
   let hasSpy = false;
+
+  beforeEach(() => {
+    // The vault honors XDG_* dirs (src/paths.ts), which the os.homedir() spy does
+    // not cover — without this, tests read and write the developer's real vault.
+    delete process.env.XDG_CONFIG_HOME;
+    delete process.env.XDG_DATA_HOME;
+    delete process.env.XDG_STATE_HOME;
+    delete process.env.XDG_CACHE_HOME;
+  });
 
   afterEach(async () => {
     vi.clearAllMocks();
@@ -1083,6 +1092,161 @@ describe('oauth persistence', () => {
 
     await expect(readCachedAccessToken(definition)).rejects.toThrow(
       "Failed to refresh cached bearer token for 'failed-refresh'"
+    );
+
+    // A transient failure must not clear the cache: the refresh token stays for retry.
+    await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toEqual(
+      expect.objectContaining({ access_token: 'expired-token', refresh_token: 'refresh-123' })
+    );
+  });
+
+  it('clears cached bearer tokens instead of replaying a refresh token rejected with invalid_grant', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-bearer-invalid-grant-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+    process.env.CLIENT_ID = 'client-id';
+
+    const cacheDir = path.join(tmp, 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'rotated-out-refresh',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      })
+    );
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: 'invalid_grant', error_description: 'refresh token rotated' }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const definition: ServerDefinition = {
+      name: 'invalid-grant-refresh',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'refreshable_bearer',
+      tokenCacheDir: cacheDir,
+      refresh: {
+        tokenEndpoint: 'https://auth.example.com/token',
+        clientIdEnv: 'CLIENT_ID',
+        clientAuthMethod: 'none',
+      },
+    };
+
+    await expect(readCachedAccessToken(definition)).rejects.toThrow('invalid_grant');
+
+    // The dead refresh token must not survive to be replayed on later invocations.
+    await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toBeUndefined();
+
+    fetchMock.mockClear();
+    await expect(readCachedAccessToken(definition)).resolves.toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('clears all cached bearer credentials when refresh reports an invalid client', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-bearer-invalid-client-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+    process.env.CLIENT_ID = 'client-id';
+
+    const cacheDir = path.join(tmp, 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-123',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      })
+    );
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: 'invalid_client' }), {
+          status: 401,
+          headers: { 'content-type': 'application/json' },
+        })
+      )
+    );
+
+    const definition: ServerDefinition = {
+      name: 'invalid-client-refresh',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'refreshable_bearer',
+      tokenCacheDir: cacheDir,
+      refresh: {
+        tokenEndpoint: 'https://auth.example.com/token',
+        clientIdEnv: 'CLIENT_ID',
+        clientAuthMethod: 'none',
+      },
+    };
+
+    await expect(readCachedAccessToken(definition)).rejects.toThrow('invalid_client');
+    await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toBeUndefined();
+  });
+
+  it('adopts the concurrent winner token when a bearer refresh loses the race with invalid_grant', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-bearer-refresh-race-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+    process.env.CLIENT_ID = 'client-id';
+
+    const cacheDir = path.join(tmp, 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-old',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      })
+    );
+
+    const definition: ServerDefinition = {
+      name: 'bearer-race-refresh',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'refreshable_bearer',
+      tokenCacheDir: cacheDir,
+      refresh: {
+        tokenEndpoint: 'https://auth.example.com/token',
+        clientIdEnv: 'CLIENT_ID',
+        clientAuthMethod: 'none',
+      },
+    };
+
+    // The token endpoint rejects our (already rotated-out) refresh token, but a
+    // concurrent invocation has meanwhile persisted the rotated replacement.
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      const persistence = await buildOAuthPersistence(definition);
+      await persistence.saveTokens({
+        access_token: 'winner-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-new',
+        expires_in: 3600,
+      });
+      return new Response(JSON.stringify({ error: 'invalid_grant' }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(readCachedAccessToken(definition)).resolves.toBe('winner-token');
+
+    // The winner's tokens must survive — not be clobbered or cleared by the loser.
+    await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toEqual(
+      expect.objectContaining({ access_token: 'winner-token', refresh_token: 'refresh-new' })
     );
   });
 

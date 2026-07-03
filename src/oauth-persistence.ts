@@ -104,6 +104,18 @@ function unrecoverableOAuthRefreshCode(error: unknown): string | undefined {
   return undefined;
 }
 
+async function oauthErrorCodeFromResponse(response: Response): Promise<string | undefined> {
+  try {
+    const payload = (await response.json()) as { error?: unknown };
+    if (payload && typeof payload.error === 'string' && payload.error.length > 0) {
+      return payload.error.toLowerCase();
+    }
+  } catch {
+    // Non-JSON error body; leave the error unclassified.
+  }
+  return undefined;
+}
+
 function oauthErrorCode(error: unknown): string | undefined {
   if (!error || typeof error !== 'object') {
     return undefined;
@@ -478,22 +490,42 @@ export async function readCachedAccessToken(
     );
     const unrecoverableCode = unrecoverableOAuthRefreshCode(error);
     if (unrecoverableCode) {
-      const latestTokens = await persistence.readTokens();
-      if (cachedTokensChanged(tokens, latestTokens)) {
-        logger?.debug?.(`Kept cached OAuth token for '${definition.name}' because another refresh updated it first.`);
-        return latestTokens?.access_token;
-      }
-      const scope = unrecoverableCode === 'invalid_grant' ? 'tokens' : 'all';
-      await clearOAuthCaches(definition, logger, scope);
-      logger?.debug?.(
-        `Cleared cached OAuth ${scope === 'all' ? 'credentials' : 'token'} for '${
-          definition.name
-        }' after unrecoverable refresh failure.`
-      );
-      return undefined;
+      return await recoverFromUnrecoverableRefresh(definition, persistence, tokens, unrecoverableCode, 'OAuth', logger);
     }
     return tokens.access_token;
   }
+}
+
+/**
+ * After a refresh fails with an unrecoverable OAuth error code, adopt the
+ * tokens a concurrent refresh persisted first, or clear the dead credentials
+ * so the rejected refresh token is never replayed (providers that rotate
+ * refresh tokens treat replays as stolen-token signals and revoke the grant).
+ * Returns the concurrent winner's access token, or undefined after clearing.
+ */
+async function recoverFromUnrecoverableRefresh(
+  definition: ServerDefinition,
+  persistence: OAuthPersistence,
+  tokens: OAuthTokens,
+  unrecoverableCode: string,
+  tokenKind: 'OAuth' | 'bearer',
+  logger?: Logger
+): Promise<string | undefined> {
+  const latestTokens = await persistence.readTokens();
+  if (latestTokens && cachedTokensChanged(tokens, latestTokens)) {
+    logger?.debug?.(
+      `Kept cached ${tokenKind} token for '${definition.name}' because another refresh updated it first.`
+    );
+    return latestTokens.access_token;
+  }
+  const scope: OAuthClearScope = unrecoverableCode === 'invalid_grant' ? 'tokens' : 'all';
+  await clearOAuthCaches(definition, logger, scope);
+  logger?.debug?.(
+    `Cleared cached ${tokenKind} ${scope === 'all' ? 'credentials' : 'token'} for '${
+      definition.name
+    }' after unrecoverable refresh failure.`
+  );
+  return undefined;
 }
 
 async function readExplicitRefreshableBearerToken(
@@ -524,6 +556,20 @@ async function readExplicitRefreshableBearerToken(
         error instanceof Error ? error.message : String(error)
       }`
     );
+    const unrecoverableCode = unrecoverableOAuthRefreshCode(error);
+    if (unrecoverableCode) {
+      const winnerToken = await recoverFromUnrecoverableRefresh(
+        definition,
+        persistence,
+        tokens,
+        unrecoverableCode,
+        'bearer',
+        logger
+      );
+      if (winnerToken) {
+        return winnerToken;
+      }
+    }
     throw new Error(
       `Failed to refresh cached bearer token for '${definition.name}': ${
         error instanceof Error ? error.message : String(error)
@@ -576,7 +622,11 @@ async function refreshBearerToken(definition: ServerDefinition, refreshToken: st
     body,
   });
   if (!response.ok) {
-    throw new Error(`Token endpoint returned HTTP ${response.status}.`);
+    const errorCode = await oauthErrorCodeFromResponse(response);
+    throw Object.assign(
+      new Error(`Token endpoint returned HTTP ${response.status}${errorCode ? ` (${errorCode})` : ''}.`),
+      errorCode ? { errorCode } : {}
+    );
   }
   const payload = normalizeBearerTokenResponse(await response.json());
   return {
