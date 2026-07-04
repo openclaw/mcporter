@@ -10,10 +10,16 @@ import type {
 } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { checkResourceAllowed, resourceUrlFromServerUrl } from '@modelcontextprotocol/sdk/shared/auth-utils.js';
 import type { ServerDefinition } from './config.js';
-import { readJsonFile, writeJsonFile, writeTextFileAtomic } from './fs-json.js';
+import { readJsonFile, withFileLock, writeJsonFile, writeTextFileAtomic } from './fs-json.js';
 import type { Logger } from './logging.js';
 import { buildStaticClientInformation } from './oauth-client-info.js';
-import { clearVaultEntry, getOAuthVaultPath, loadVaultEntry, saveVaultEntry } from './oauth-vault.js';
+import {
+  clearVaultEntry,
+  clearVaultTokensIfMatching,
+  getOAuthVaultPath,
+  loadVaultEntry,
+  saveVaultEntry,
+} from './oauth-vault.js';
 import { legacyMcporterDir } from './paths.js';
 
 export type OAuthClearScope = 'all' | 'client' | 'tokens' | 'verifier' | 'state';
@@ -29,6 +35,9 @@ export interface OAuthPersistence {
   readState(): Promise<string | undefined>;
   saveState(value: string): Promise<void>;
   clear(scope: OAuthClearScope): Promise<void>;
+  // Clears stored tokens only when they still equal `expected`, atomically with
+  // respect to concurrent saveTokens, so a refresh winner is never deleted.
+  clearTokensIfMatching(expected: OAuthTokens): Promise<void>;
 }
 
 type StoredOAuthTokens = OAuthTokens & {
@@ -169,8 +178,32 @@ class DirectoryPersistence implements OAuthPersistence {
 
   async saveTokens(tokens: OAuthTokens): Promise<void> {
     await this.ensureDir();
-    await writeJsonFile(this.tokenPath, withStoredExpiry(tokens));
+    // Locked so clearTokensIfMatching cannot compare-then-unlink across a
+    // concurrent write.
+    await withFileLock(this.tokenPath, async () => {
+      await writeJsonFile(this.tokenPath, withStoredExpiry(tokens));
+    });
     this.logger?.debug?.(`Saved tokens to ${this.tokenPath}`);
+  }
+
+  async clearTokensIfMatching(expected: OAuthTokens): Promise<void> {
+    await withFileLock(this.tokenPath, async () => {
+      const current = await this.readJsonOrUndefined<OAuthTokens>(this.tokenPath);
+      if (
+        !current ||
+        current.access_token !== expected.access_token ||
+        current.refresh_token !== expected.refresh_token
+      ) {
+        return;
+      }
+      try {
+        await fs.unlink(this.tokenPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          throw error;
+        }
+      }
+    });
   }
 
   async readClientInfo(): Promise<OAuthClientInformationMixed | undefined> {
@@ -299,6 +332,10 @@ class VaultPersistence implements OAuthPersistence {
   async clear(scope: OAuthClearScope): Promise<void> {
     await clearVaultEntry(this.definition, scope);
   }
+
+  async clearTokensIfMatching(expected: OAuthTokens): Promise<void> {
+    await clearVaultTokensIfMatching(this.definition, expected);
+  }
 }
 
 class CompositePersistence implements OAuthPersistence {
@@ -320,6 +357,10 @@ class CompositePersistence implements OAuthPersistence {
 
   async saveTokens(tokens: OAuthTokens): Promise<void> {
     await Promise.all(this.stores.map((store) => store.saveTokens(tokens)));
+  }
+
+  async clearTokensIfMatching(expected: OAuthTokens): Promise<void> {
+    await Promise.all(this.stores.map((store) => store.clearTokensIfMatching(expected)));
   }
 
   async readClientInfo(): Promise<OAuthClientInformationMixed | undefined> {
@@ -413,14 +454,25 @@ export async function clearOAuthCaches(
   const persistence = await buildOAuthPersistence(definition, logger);
   await persistence.clear(scope);
 
+  if (definition.tokenCacheDir && scope === 'all') {
+    await fs.rm(definition.tokenCacheDir, { recursive: true, force: true });
+  }
+
+  await clearLegacyOAuthArtifacts(definition, logger, scope);
+}
+
+// Legacy artifacts are never written by live refresh winners (the migration in
+// buildOAuthPersistence only reads them), so clearing them cannot race a
+// concurrent token save.
+async function clearLegacyOAuthArtifacts(
+  definition: ServerDefinition,
+  logger: Logger | undefined,
+  scope: OAuthClearScope
+): Promise<void> {
   const legacyDir = path.join(legacyMcporterDir(), definition.name);
   if (legacyDir && (!definition.tokenCacheDir || legacyDir !== definition.tokenCacheDir)) {
     const legacy = new DirectoryPersistence(legacyDir, logger);
     await legacy.clear(scope);
-  }
-
-  if (definition.tokenCacheDir && scope === 'all') {
-    await fs.rm(definition.tokenCacheDir, { recursive: true, force: true });
   }
 
   // Known provider-specific legacy paths (gmail server writes to ~/.gmail-mcp/credentials.json).
@@ -502,6 +554,11 @@ export async function readCachedAccessToken(
  * so the rejected refresh token is never replayed (providers that rotate
  * refresh tokens treat replays as stolen-token signals and revoke the grant).
  * Returns the concurrent winner's access token, or undefined after clearing.
+ *
+ * The clear happens first, as a compare-and-clear under each store's file
+ * lock: only the exact tokens that just failed are removed, so a concurrent
+ * winner's tokens can never be deleted no matter when its writes land. Any
+ * tokens still readable afterwards are therefore newer and are adopted.
  */
 async function recoverFromUnrecoverableRefresh(
   definition: ServerDefinition,
@@ -511,6 +568,7 @@ async function recoverFromUnrecoverableRefresh(
   tokenKind: 'OAuth' | 'bearer',
   logger?: Logger
 ): Promise<string | undefined> {
+  await persistence.clearTokensIfMatching(tokens);
   const latestTokens = await persistence.readTokens();
   if (latestTokens && cachedTokensChanged(tokens, latestTokens)) {
     logger?.debug?.(
@@ -518,10 +576,15 @@ async function recoverFromUnrecoverableRefresh(
     );
     return latestTokens.access_token;
   }
-  const scope: OAuthClearScope = unrecoverableCode === 'invalid_grant' ? 'tokens' : 'all';
-  await clearOAuthCaches(definition, logger, scope);
+  if (unrecoverableCode === 'invalid_grant') {
+    // Live stores were already compare-and-cleared; only sweep legacy
+    // artifacts, which concurrent refreshes never write.
+    await clearLegacyOAuthArtifacts(definition, logger, 'tokens');
+  } else {
+    await clearOAuthCaches(definition, logger, 'all');
+  }
   logger?.debug?.(
-    `Cleared cached ${tokenKind} ${scope === 'all' ? 'credentials' : 'token'} for '${
+    `Cleared cached ${tokenKind} ${unrecoverableCode === 'invalid_grant' ? 'token' : 'credentials'} for '${
       definition.name
     }' after unrecoverable refresh failure.`
   );

@@ -1250,6 +1250,129 @@ describe('oauth persistence', () => {
     );
   });
 
+  it('preserves and adopts a late winner that persisted mid-recovery instead of clearing it', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-bearer-late-winner-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+    process.env.CLIENT_ID = 'client-id';
+
+    const cacheDir = path.join(tmp, 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-old',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      })
+    );
+
+    const definition: ServerDefinition = {
+      name: 'late-winner-refresh',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'refreshable_bearer',
+      tokenCacheDir: cacheDir,
+      refresh: {
+        tokenEndpoint: 'https://auth.example.com/token',
+        clientIdEnv: 'CLIENT_ID',
+        clientAuthMethod: 'none',
+      },
+    };
+
+    // A concurrent winner's saveTokens writes stores independently; here its
+    // vault write has landed while the directory cache still holds the failed
+    // tokens. The loser's recovery must not treat the stale directory read as
+    // "nothing changed" and wipe the winner's vault entry along with it.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => {
+        await saveVaultEntry(definition, {
+          tokens: {
+            access_token: 'winner-token',
+            token_type: 'Bearer',
+            refresh_token: 'refresh-new',
+            expires_in: 3600,
+          },
+        });
+        return new Response(JSON.stringify({ error: 'invalid_grant' }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        });
+      })
+    );
+
+    await expect(readCachedAccessToken(definition)).resolves.toBe('winner-token');
+
+    // The failed directory tokens are cleared, the winner's vault entry survives.
+    await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toBeUndefined();
+    const entry = await loadVaultEntry(definition);
+    expect(entry?.tokens?.access_token).toBe('winner-token');
+    expect(entry?.tokens?.refresh_token).toBe('refresh-new');
+  });
+
+  it('leaves a mismatched directory token cache untouched while clearing the matching vault copy', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-bearer-dir-winner-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+    process.env.CLIENT_ID = 'client-id';
+
+    const failedTokens = {
+      access_token: 'expired-token',
+      token_type: 'Bearer',
+      refresh_token: 'refresh-old',
+      expires_at: Math.floor(Date.now() / 1000) - 30,
+    };
+    const cacheDir = path.join(tmp, 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(path.join(cacheDir, 'tokens.json'), JSON.stringify(failedTokens));
+
+    const definition: ServerDefinition = {
+      name: 'dir-winner-refresh',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'refreshable_bearer',
+      tokenCacheDir: cacheDir,
+      refresh: {
+        tokenEndpoint: 'https://auth.example.com/token',
+        clientIdEnv: 'CLIENT_ID',
+        clientAuthMethod: 'none',
+      },
+    };
+    await saveVaultEntry(definition, { tokens: failedTokens });
+
+    // The opposite interleaving of the late-winner case: the winner's directory
+    // write landed but its vault write has not. The failed vault copy must be
+    // cleared while the winner's directory tokens survive and are adopted.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => {
+        await fs.writeFile(
+          path.join(cacheDir, 'tokens.json'),
+          JSON.stringify({
+            access_token: 'winner-token',
+            token_type: 'Bearer',
+            refresh_token: 'refresh-new',
+            expires_at: Math.floor(Date.now() / 1000) + 3600,
+          })
+        );
+        return new Response(JSON.stringify({ error: 'invalid_grant' }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        });
+      })
+    );
+
+    await expect(readCachedAccessToken(definition)).resolves.toBe('winner-token');
+
+    await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toEqual(
+      expect.objectContaining({ access_token: 'winner-token', refresh_token: 'refresh-new' })
+    );
+    const entry = await loadVaultEntry(definition);
+    expect(entry?.tokens).toBeUndefined();
+  });
+
   it('rejects expired refreshable bearer tokens without refresh metadata', async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-bearer-no-refresh-'));
     tempRoots.push(tmp);
