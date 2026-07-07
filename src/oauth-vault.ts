@@ -201,30 +201,44 @@ export async function saveVaultEntry(definition: ServerDefinition, patch: Partia
   });
 }
 
-// Atomically clears the entry's tokens only when they still match `expected`.
-// A concurrent refresh winner's newer tokens are left untouched because the
-// comparison happens under the same file lock every vault write takes.
+function tokensMatch(tokens: OAuthTokens | undefined, expected: OAuthTokens): boolean {
+  return (
+    tokens !== undefined &&
+    tokens.access_token === expected.access_token &&
+    tokens.refresh_token === expected.refresh_token
+  );
+}
+
+// Atomically clears tokens only where they still match `expected`. A concurrent
+// refresh winner's newer tokens are left untouched because the comparison
+// happens under the same file lock every vault write takes.
+//
+// readTokens() sources tokens from the exact entry, or — when the exact entry
+// has none — inherits them from a same-URL legacy rename entry (see
+// loadVaultEntry). Both are compare-and-cleared so an invalid_grant refresh
+// token can never be reread and replayed from the inherited source, while any
+// inherited client info survives for re-auth.
 export async function clearVaultTokensIfMatching(definition: ServerDefinition, expected: OAuthTokens): Promise<void> {
   const key = vaultKeyForDefinition(definition);
   await withFileLock(getOAuthVaultPath(), async () => {
     const { vault, needsRepair } = await readVaultState();
     const existing = isVaultEntry(vault.entries[key]) ? vault.entries[key] : undefined;
-    const tokens = existing?.tokens;
-    const matches =
-      tokens !== undefined &&
-      tokens.access_token === expected.access_token &&
-      tokens.refresh_token === expected.refresh_token;
-    if (!existing || !matches) {
-      if (needsRepair) {
-        await writeVault(vault);
+    const fallback = findSameUrlCredentials(vault, definition, key, existing);
+    let mutated = false;
+    for (const targetKey of [key, ...fallback.sourceKeys]) {
+      const entry = isVaultEntry(vault.entries[targetKey]) ? vault.entries[targetKey] : undefined;
+      if (!entry || !tokensMatch(entry.tokens, expected)) {
+        continue;
       }
-      return;
+      const updated: VaultEntry = { ...entry };
+      delete updated.tokens;
+      updated.updatedAt = new Date().toISOString();
+      vault.entries[targetKey] = updated;
+      mutated = true;
     }
-    const updated: VaultEntry = { ...existing };
-    delete updated.tokens;
-    updated.updatedAt = new Date().toISOString();
-    vault.entries[key] = updated;
-    await writeVault(vault);
+    if (mutated || needsRepair) {
+      await writeVault(vault);
+    }
   });
 }
 

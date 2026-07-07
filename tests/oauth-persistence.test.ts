@@ -3,6 +3,7 @@ import { Buffer } from 'node:buffer';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { ServerDefinition } from '../src/config.js';
 import { readJsonFile } from '../src/fs-json.js';
 import { buildOAuthPersistence, clearOAuthCaches, readCachedAccessToken } from '../src/oauth-persistence.js';
@@ -1147,6 +1148,118 @@ describe('oauth persistence', () => {
     fetchMock.mockClear();
     await expect(readCachedAccessToken(definition)).resolves.toBeUndefined();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('clears inherited same-url bearer tokens on invalid_grant while keeping inherited client info', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-bearer-inherited-invalid-grant-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+    process.env.CLIENT_ID = 'client-id';
+
+    // A renamed refreshable_bearer definition whose exact vault entry has no
+    // tokens: readTokens() inherits the poison tokens from the same-url legacy
+    // <name>-oauth entry (see loadVaultEntry).
+    const currentDefinition: ServerDefinition = {
+      name: 'inherited-bearer',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'refreshable_bearer',
+      refresh: {
+        tokenEndpoint: 'https://auth.example.com/token',
+        clientIdEnv: 'CLIENT_ID',
+        clientAuthMethod: 'none',
+      },
+    };
+    const legacyDefinition = mkDef('inherited-bearer-oauth');
+    await saveVaultEntry(legacyDefinition, {
+      tokens: {
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'rotated-out-refresh',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      } as OAuthTokens,
+      clientInfo: { client_id: 'inherited-client' },
+    });
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: 'invalid_grant', error_description: 'refresh token rotated' }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(readCachedAccessToken(currentDefinition)).rejects.toThrow('invalid_grant');
+
+    // The poison tokens are cleared from the source entry, but its client info
+    // stays reachable for re-auth.
+    const legacyEntry = await loadVaultEntry(legacyDefinition);
+    expect(legacyEntry?.tokens).toBeUndefined();
+    expect(legacyEntry?.clientInfo).toEqual(expect.objectContaining({ client_id: 'inherited-client' }));
+    const inherited = await loadVaultEntry(currentDefinition);
+    expect(inherited?.tokens).toBeUndefined();
+    expect(inherited?.clientInfo).toEqual(expect.objectContaining({ client_id: 'inherited-client' }));
+
+    // A later invocation cannot reread or replay the dead refresh token.
+    fetchMock.mockClear();
+    await expect(readCachedAccessToken(currentDefinition)).resolves.toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('adopts a concurrent winner persisted to the inherited same-url entry instead of clearing it', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-bearer-inherited-winner-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+    process.env.CLIENT_ID = 'client-id';
+
+    const currentDefinition: ServerDefinition = {
+      name: 'inherited-winner-bearer',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'refreshable_bearer',
+      refresh: {
+        tokenEndpoint: 'https://auth.example.com/token',
+        clientIdEnv: 'CLIENT_ID',
+        clientAuthMethod: 'none',
+      },
+    };
+    const legacyDefinition = mkDef('inherited-winner-bearer-oauth');
+    await saveVaultEntry(legacyDefinition, {
+      tokens: {
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-old',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      } as OAuthTokens,
+      clientInfo: { client_id: 'inherited-client' },
+    });
+
+    // A concurrent invocation rotates the refresh token and persists the winner
+    // back onto the same source entry before our failed refresh recovers.
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      await saveVaultEntry(legacyDefinition, {
+        tokens: {
+          access_token: 'winner-token',
+          token_type: 'Bearer',
+          refresh_token: 'refresh-new',
+          expires_in: 3600,
+        },
+      });
+      return new Response(JSON.stringify({ error: 'invalid_grant' }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(readCachedAccessToken(currentDefinition)).resolves.toBe('winner-token');
+
+    // The winner's newer tokens on the source entry are preserved, not cleared.
+    const legacyEntry = await loadVaultEntry(legacyDefinition);
+    expect(legacyEntry?.tokens?.access_token).toBe('winner-token');
+    expect(legacyEntry?.tokens?.refresh_token).toBe('refresh-new');
   });
 
   it('clears all cached bearer credentials when refresh reports an invalid client', async () => {
