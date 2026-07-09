@@ -376,65 +376,65 @@ release_workflow="$ROOT/.github/workflows/release-assets.yml"
 homebrew_workflow="$ROOT/.github/workflows/update-homebrew-tap.yml"
 assert_fails "$ROOT/scripts/package-release.sh" v1.2.3-rc.1
 assert_fails "$ROOT/scripts/verify-release.sh" v1.2.3-rc.1 "$WORK/missing-prerelease-assets"
-rg -Fq '[[ "$RELEASE_TAG" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]' "$release_workflow"
-rg -Fq '[[ "$RELEASE_TAG" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]' "$homebrew_workflow"
-rg -q 'GITHUB_REF.*expected_ref' "$release_workflow"
-rg -q 'GITHUB_WORKFLOW_REF.*expected_workflow_ref' "$release_workflow"
-rg -q 'github.workflow_sha' "$release_workflow"
-rg -q 'persist-credentials: false' "$release_workflow"
-rg -q '^    permissions:$' "$release_workflow"
-rg -q '^      contents: write$' "$release_workflow"
-rg -Fq 'GH_TOKEN: ${{ github.token }}' "$release_workflow"
-! rg -q 'pnpm install' "$release_workflow" || fail 'draft verifier borrows checkout dependencies'
-rg -q 'releases\?per_page=100' "$release_workflow"
-rg -q 'draft == true' "$release_workflow"
-rg -q 'releases/assets/\$asset_id' "$release_workflow"
-rg -q 'env -u GH_TOKEN -u GITHUB_TOKEN' "$release_workflow"
-rg -q 'verified-assets.json' "$release_workflow"
-rg -q 'actions/upload-artifact@' "$release_workflow"
-rg -q 'schemaVersion: 2' "$release_workflow"
-rg -q 'arch: process.env.RELEASE_ARCH' "$release_workflow"
-[[ "$(rg -c '^          GH_TOKEN:' "$release_workflow")" == 1 ]] || fail 'release token scope changed'
-! rg -q 'secrets\.RELEASE_ASSET_TOKEN' "$release_workflow" || fail 'release verifier uses a persistent secret'
-! rg -q 'gh release download' "$release_workflow" || fail 'release download bypasses exact REST lookup'
+grep -Fq '[[ "$RELEASE_TAG" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]' "$release_workflow"
+grep -Fq '[[ "$RELEASE_TAG" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]' "$homebrew_workflow"
+grep -Eq 'GITHUB_REF.*expected_ref' "$release_workflow"
+grep -Eq 'GITHUB_WORKFLOW_REF.*expected_workflow_ref' "$release_workflow"
+grep -Eq 'github.workflow_sha' "$release_workflow"
+grep -Eq 'persist-credentials: false' "$release_workflow"
+grep -Eq '^    permissions:$' "$release_workflow"
+grep -Eq '^      contents: write$' "$release_workflow"
+grep -Fq 'GH_TOKEN: ${{ github.token }}' "$release_workflow"
+! grep -Eq 'pnpm install' "$release_workflow" || fail 'draft verifier borrows checkout dependencies'
+grep -Eq 'releases\?per_page=100' "$release_workflow"
+grep -Eq 'draft == true' "$release_workflow"
+grep -Eq 'releases/assets/\$asset_id' "$release_workflow"
+grep -Eq 'env -u GH_TOKEN -u GITHUB_TOKEN' "$release_workflow"
+grep -Eq 'verified-assets.json' "$release_workflow"
+grep -Eq 'actions/upload-artifact@' "$release_workflow"
+grep -Eq 'schemaVersion: 2' "$release_workflow"
+grep -Eq 'arch: process.env.RELEASE_ARCH' "$release_workflow"
+[[ "$(grep -Ec '^          GH_TOKEN:' "$release_workflow")" == 1 ]] || fail 'release token scope changed'
+! grep -Eq 'secrets\.RELEASE_ASSET_TOKEN' "$release_workflow" || fail 'release verifier uses a persistent secret'
+! grep -Eq 'gh release download' "$release_workflow" || fail 'release download bypasses exact REST lookup'
 
-! rg -q '\bspctl\b' "$ROOT/scripts/codesign-native.sh" "$ROOT/scripts/verify-release.sh" || \
+! grep -Eq '\bspctl\b' "$ROOT/scripts/codesign-native.sh" "$ROOT/scripts/verify-release.sh" || \
   fail 'standalone CLI verification must not require raw-binary spctl success'
-rg -q -- '--requirements "=designated => \$REQUIREMENT"' "$ROOT/scripts/codesign-native.sh"
+grep -Eq -- '--requirements "=designated => \$REQUIREMENT"' "$ROOT/scripts/codesign-native.sh"
 for native_script in "$ROOT/scripts/codesign-native.sh" "$ROOT/scripts/verify-release.sh"; do
-  rg -q -- '--verify --strict --check-notarization -R=notarized' "$native_script" || \
+  grep -Eq -- '--verify --strict --check-notarization -R=notarized' "$native_script" || \
     fail 'standalone CLI online notarization constraint changed'
 done
 
-rg -q 'GITHUB_REF.*expected_ref' "$homebrew_workflow"
-rg -q 'GITHUB_WORKFLOW_REF.*expected_workflow_ref' "$homebrew_workflow"
-! rg -q '^  release:' "$homebrew_workflow" || fail 'Homebrew workflow regained automatic release trigger'
-[[ "$(rg -c '^          GH_TOKEN:' "$homebrew_workflow")" == 2 ]] || fail 'Homebrew token scope changed'
-rg -q 'native_verifier_run_id' "$homebrew_workflow"
-rg -q 'gh run download' "$homebrew_workflow"
-rg -q 'verified-assets-arm64' "$homebrew_workflow"
-rg -q 'verified-assets-x86_64' "$homebrew_workflow"
-rg -q 'native proof artifacts disagree on the verified asset set' "$homebrew_workflow"
-rg -q 'published asset digest changed after native verification' "$homebrew_workflow"
-rg -q 'npm registry integrity does not match the verified GitHub tarball' "$homebrew_workflow"
-rg -q 'codesign-run --' "$ROOT/scripts/release.sh"
-rg -q 'command -v mac-release' "$ROOT/scripts/release.sh"
-rg -q 'MAC_RELEASE_HELPER' "$ROOT/scripts/release.sh"
-rg -q 'gh run download' "$ROOT/scripts/release.sh"
-rg -q 'verified-assets-arm64' "$ROOT/scripts/release.sh"
-rg -q 'verified-assets-x86_64' "$ROOT/scripts/release.sh"
-rg -q 'native proof artifacts disagree on the verified asset set' "$ROOT/scripts/release.sh"
-rg -q 'immutable registry metadata' "$ROOT/scripts/release.sh"
-rg -q 'registry did not expose the verified release artifact before timeout' "$ROOT/scripts/release.sh"
-! rg -q '^  all|git push|git tag ' "$ROOT/scripts/release.sh" || fail 'release helper regained combined/tag/push path'
-rg -q 'pnpm clean' "$ROOT/scripts/package-release.sh"
-rg -q 'pnpm build' "$ROOT/scripts/package-release.sh"
-rg -q 'NPM_CONFIG_IGNORE_SCRIPTS=true.*pnpm pack' "$ROOT/scripts/package-release.sh"
-rg -q 'NPM_CONFIG_IGNORE_SCRIPTS=true.*pnpm publish.*\$npm_archive' "$ROOT/scripts/release.sh"
-rg -q 'packed npm CLI version mismatch' "$ROOT/scripts/verify-release.sh"
-rg -q 'packed npm library export is missing' "$ROOT/scripts/verify-release.sh"
-rg -q 'npm install' "$ROOT/scripts/verify-release.sh"
-! rg -q 'ROOT/node_modules|ln -s.*node_modules' "$ROOT/scripts/verify-release.sh" || \
+grep -Eq 'GITHUB_REF.*expected_ref' "$homebrew_workflow"
+grep -Eq 'GITHUB_WORKFLOW_REF.*expected_workflow_ref' "$homebrew_workflow"
+! grep -Eq '^  release:' "$homebrew_workflow" || fail 'Homebrew workflow regained automatic release trigger'
+[[ "$(grep -Ec '^          GH_TOKEN:' "$homebrew_workflow")" == 2 ]] || fail 'Homebrew token scope changed'
+grep -Eq 'native_verifier_run_id' "$homebrew_workflow"
+grep -Eq 'gh run download' "$homebrew_workflow"
+grep -Eq 'verified-assets-arm64' "$homebrew_workflow"
+grep -Eq 'verified-assets-x86_64' "$homebrew_workflow"
+grep -Eq 'native proof artifacts disagree on the verified asset set' "$homebrew_workflow"
+grep -Eq 'published asset digest changed after native verification' "$homebrew_workflow"
+grep -Eq 'npm registry integrity does not match the verified GitHub tarball' "$homebrew_workflow"
+grep -Eq 'codesign-run --' "$ROOT/scripts/release.sh"
+grep -Eq 'command -v mac-release' "$ROOT/scripts/release.sh"
+grep -Eq 'MAC_RELEASE_HELPER' "$ROOT/scripts/release.sh"
+grep -Eq 'gh run download' "$ROOT/scripts/release.sh"
+grep -Eq 'verified-assets-arm64' "$ROOT/scripts/release.sh"
+grep -Eq 'verified-assets-x86_64' "$ROOT/scripts/release.sh"
+grep -Eq 'native proof artifacts disagree on the verified asset set' "$ROOT/scripts/release.sh"
+grep -Eq 'immutable registry metadata' "$ROOT/scripts/release.sh"
+grep -Eq 'registry did not expose the verified release artifact before timeout' "$ROOT/scripts/release.sh"
+! grep -Eq '^  all|git push|git tag ' "$ROOT/scripts/release.sh" || fail 'release helper regained combined/tag/push path'
+grep -Eq 'pnpm clean' "$ROOT/scripts/package-release.sh"
+grep -Eq 'pnpm build' "$ROOT/scripts/package-release.sh"
+grep -Eq 'NPM_CONFIG_IGNORE_SCRIPTS=true.*pnpm pack' "$ROOT/scripts/package-release.sh"
+grep -Eq 'NPM_CONFIG_IGNORE_SCRIPTS=true.*pnpm publish.*\$npm_archive' "$ROOT/scripts/release.sh"
+grep -Eq 'packed npm CLI version mismatch' "$ROOT/scripts/verify-release.sh"
+grep -Eq 'packed npm library export is missing' "$ROOT/scripts/verify-release.sh"
+grep -Eq 'npm install' "$ROOT/scripts/verify-release.sh"
+! grep -Eq 'ROOT/node_modules|ln -s.*node_modules' "$ROOT/scripts/verify-release.sh" || \
   fail 'npm verifier borrows checkout dependencies'
 
 echo "Release contract tests passed for $TAG"
