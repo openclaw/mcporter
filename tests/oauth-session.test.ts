@@ -2,9 +2,10 @@ import fs from 'node:fs/promises';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerDefinition } from '../src/config.js';
 import { __oauthInternals, createOAuthSession } from '../src/oauth.js';
+import { createIsolatedTestHome, type IsolatedTestHome } from './helpers/isolated-test-home.js';
 
 type StatefulProvider = {
   redirectUrl: string | URL;
@@ -35,11 +36,20 @@ const requestStatus = (target: URL): Promise<number> =>
 
 describe('FileOAuthClientProvider session lifecycle', () => {
   const tempDirs: string[] = [];
+  let isolatedHome: IsolatedTestHome;
+
+  beforeEach(async () => {
+    isolatedHome = await createIsolatedTestHome('mcporter-oauth-session');
+  });
 
   afterEach(async () => {
-    vi.restoreAllMocks();
-    delete process.env.MCPORTER_TEST_OAUTH_SECRET;
-    await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+    try {
+      delete process.env.MCPORTER_TEST_OAUTH_SECRET;
+      await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+      await isolatedHome.cleanup();
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 
   it('rejects pending authorization waits when the session closes early', async () => {
@@ -318,5 +328,29 @@ describe('FileOAuthClientProvider session lifecycle', () => {
 
     await session.close();
     await waitPromise;
+  });
+
+  it('keeps session persistence out of ambient OAuth credentials', async () => {
+    const tokenCacheDir = await fs.mkdtemp(path.join(isolatedHome.homeDir, 'token-cache-'));
+    tempDirs.push(tokenCacheDir);
+    const definition: ServerDefinition = {
+      name: 'test-oauth-isolated-home',
+      description: 'Test OAuth server',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'oauth',
+      tokenCacheDir,
+    };
+    const session = await createOAuthSession(definition, {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    });
+    try {
+      await (session.provider as StatefulProvider).state();
+      await expect(fs.access(isolatedHome.vaultPath)).resolves.toBeUndefined();
+      await isolatedHome.assertAmbientVaultUntouched();
+    } finally {
+      await session.close();
+    }
   });
 });

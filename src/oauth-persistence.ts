@@ -10,10 +10,27 @@ import type {
 } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { checkResourceAllowed, resourceUrlFromServerUrl } from '@modelcontextprotocol/sdk/shared/auth-utils.js';
 import type { ServerDefinition } from './config.js';
-import { readJsonFile, writeJsonFile, writeTextFileAtomic } from './fs-json.js';
+import { readJsonFile, withFileLock, writeJsonFile, writeTextFileAtomic } from './fs-json.js';
 import type { Logger } from './logging.js';
 import { buildStaticClientInformation } from './oauth-client-info.js';
-import { clearVaultEntry, getOAuthVaultPath, loadVaultEntry, saveVaultEntry } from './oauth-vault.js';
+import {
+  sameOAuthClientGeneration,
+  sameOAuthClientValue,
+  sameOAuthTokenGeneration,
+  sameOAuthTokenValue,
+  withHiddenOAuthClientGeneration,
+  withHiddenOAuthTokenGeneration,
+  withOAuthClientGeneration,
+  withOAuthTokenGeneration,
+} from './oauth-token-generation.js';
+import {
+  clearVaultEntry,
+  clearVaultTokensIfMatching,
+  getOAuthVaultPath,
+  loadVaultEntry,
+  loadVaultEntryForRecovery,
+  saveVaultEntry,
+} from './oauth-vault.js';
 import { legacyMcporterDir } from './paths.js';
 
 export type OAuthClearScope = 'all' | 'client' | 'tokens' | 'verifier' | 'state';
@@ -29,6 +46,12 @@ export interface OAuthPersistence {
   readState(): Promise<string | undefined>;
   saveState(value: string): Promise<void>;
   clear(scope: OAuthClearScope): Promise<void>;
+  // Clears a rejected token generation and, when supplied, only the exact
+  // client registration used by that refresh. Concurrent auth state survives.
+  clearRejectedCredentials(
+    expectedTokens?: OAuthTokens,
+    expectedClientInfo?: OAuthClientInformationMixed
+  ): Promise<void>;
 }
 
 type StoredOAuthTokens = OAuthTokens & {
@@ -52,6 +75,10 @@ function withStoredExpiry(tokens: OAuthTokens): OAuthTokens {
   return tokens;
 }
 
+function prepareStoredTokens(tokens: OAuthTokens): OAuthTokens {
+  return withStoredExpiry(withOAuthTokenGeneration(tokens));
+}
+
 function tokenExpirySeconds(tokens: OAuthTokens): number | undefined {
   const stored = tokens as StoredOAuthTokens;
   for (const candidate of [stored.expires_at, stored.expiresAt]) {
@@ -66,10 +93,7 @@ function cachedTokensChanged(original: OAuthTokens, current: OAuthTokens | undef
   if (!current || typeof current.access_token !== 'string' || current.access_token.trim().length === 0) {
     return false;
   }
-  if (typeof original.refresh_token === 'string' && typeof current.refresh_token === 'string') {
-    return current.refresh_token !== original.refresh_token || current.access_token !== original.access_token;
-  }
-  return current.access_token !== original.access_token;
+  return !sameOAuthTokenGeneration(current, original);
 }
 
 function shouldRefreshCachedToken(tokens: OAuthTokens, skewSeconds = TOKEN_EXPIRY_SKEW_SECONDS): boolean {
@@ -100,6 +124,18 @@ function unrecoverableOAuthRefreshCode(error: unknown): string | undefined {
   const errorCode = oauthErrorCode(error);
   if (errorCode && ['invalid_client', 'invalid_grant', 'unauthorized_client'].includes(errorCode)) {
     return errorCode;
+  }
+  return undefined;
+}
+
+async function oauthErrorCodeFromResponse(response: Response): Promise<string | undefined> {
+  try {
+    const payload = (await response.json()) as { error?: unknown };
+    if (payload && typeof payload.error === 'string' && payload.error.length > 0) {
+      return payload.error.toLowerCase();
+    }
+  } catch {
+    // Non-JSON error body; leave the error unclassified.
   }
   return undefined;
 }
@@ -152,22 +188,60 @@ class DirectoryPersistence implements OAuthPersistence {
   }
 
   async readTokens(): Promise<OAuthTokens | undefined> {
-    return this.readJsonOrUndefined<OAuthTokens>(this.tokenPath);
+    const tokens = await this.readJsonOrUndefined<OAuthTokens>(this.tokenPath);
+    return tokens ? withHiddenOAuthTokenGeneration(tokens) : undefined;
   }
 
   async saveTokens(tokens: OAuthTokens): Promise<void> {
     await this.ensureDir();
-    await writeJsonFile(this.tokenPath, withStoredExpiry(tokens));
+    // Locked so clearRejectedCredentials cannot compare-then-unlink across a
+    // concurrent write.
+    await withFileLock(this.tokenPath, async () => {
+      await writeJsonFile(this.tokenPath, prepareStoredTokens(tokens));
+    });
     this.logger?.debug?.(`Saved tokens to ${this.tokenPath}`);
   }
 
+  async clearRejectedCredentials(
+    expectedTokens?: OAuthTokens,
+    expectedClientInfo?: OAuthClientInformationMixed
+  ): Promise<void> {
+    await withFileLock(this.tokenPath, async () => {
+      if (expectedTokens) {
+        const current = await this.readJsonOrUndefined<OAuthTokens>(this.tokenPath);
+        if (sameOAuthTokenGeneration(current, expectedTokens)) {
+          await this.unlinkIfPresent(this.tokenPath);
+        }
+      }
+      if (expectedClientInfo) {
+        const currentClientInfo = await this.readJsonOrUndefined<OAuthClientInformationMixed>(this.clientInfoPath);
+        if (sameOAuthClientGeneration(currentClientInfo, expectedClientInfo)) {
+          await this.unlinkIfPresent(this.clientInfoPath);
+        }
+      }
+    });
+  }
+
+  private async unlinkIfPresent(file: string): Promise<void> {
+    try {
+      await fs.unlink(file);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error;
+      }
+    }
+  }
+
   async readClientInfo(): Promise<OAuthClientInformationMixed | undefined> {
-    return this.readJsonOrUndefined<OAuthClientInformationMixed>(this.clientInfoPath);
+    const info = await this.readJsonOrUndefined<OAuthClientInformationMixed>(this.clientInfoPath);
+    return info ? withHiddenOAuthClientGeneration(info) : undefined;
   }
 
   async saveClientInfo(info: OAuthClientInformationMixed): Promise<void> {
     await this.ensureDir();
-    await writeJsonFile(this.clientInfoPath, info);
+    await withFileLock(this.tokenPath, async () => {
+      await writeJsonFile(this.clientInfoPath, withOAuthClientGeneration(info));
+    });
   }
 
   async readCodeVerifier(): Promise<string | undefined> {
@@ -246,6 +320,9 @@ class DirectoryPersistence implements OAuthPersistence {
 }
 
 class VaultPersistence implements OAuthPersistence {
+  private tokenSnapshots: ReadonlyMap<string, OAuthTokens> | undefined;
+  private clientSnapshots: ReadonlyMap<string, OAuthClientInformationMixed> | undefined;
+
   constructor(private readonly definition: ServerDefinition) {}
 
   describe(): string {
@@ -253,15 +330,19 @@ class VaultPersistence implements OAuthPersistence {
   }
 
   async readTokens(): Promise<OAuthTokens | undefined> {
-    return (await loadVaultEntry(this.definition))?.tokens;
+    const recovery = await loadVaultEntryForRecovery(this.definition);
+    this.tokenSnapshots = recovery.tokenSnapshots;
+    return recovery.entry?.tokens;
   }
 
   async saveTokens(tokens: OAuthTokens): Promise<void> {
-    await saveVaultEntry(this.definition, { tokens: withStoredExpiry(tokens) });
+    await saveVaultEntry(this.definition, { tokens: prepareStoredTokens(tokens) });
   }
 
   async readClientInfo(): Promise<OAuthClientInformationMixed | undefined> {
-    return (await loadVaultEntry(this.definition))?.clientInfo;
+    const recovery = await loadVaultEntryForRecovery(this.definition);
+    this.clientSnapshots = recovery.clientSnapshots;
+    return recovery.entry?.clientInfo;
   }
 
   async saveClientInfo(info: OAuthClientInformationMixed): Promise<void> {
@@ -287,9 +368,27 @@ class VaultPersistence implements OAuthPersistence {
   async clear(scope: OAuthClearScope): Promise<void> {
     await clearVaultEntry(this.definition, scope);
   }
+
+  async clearRejectedCredentials(
+    expectedTokens?: OAuthTokens,
+    expectedClientInfo?: OAuthClientInformationMixed
+  ): Promise<void> {
+    await clearVaultTokensIfMatching(
+      this.definition,
+      expectedTokens,
+      expectedClientInfo,
+      expectedTokens ? this.tokenSnapshots : undefined,
+      expectedClientInfo ? this.clientSnapshots : undefined
+    );
+  }
 }
 
 class CompositePersistence implements OAuthPersistence {
+  private readonly recoveryTokenSnapshots = new Map<OAuthPersistence, OAuthTokens | undefined>();
+  private readonly recoveryClientSnapshots = new Map<OAuthPersistence, OAuthClientInformationMixed | undefined>();
+  private recoveryTokenSource: OAuthPersistence | undefined;
+  private recoveryClientSource: OAuthPersistence | undefined;
+
   constructor(private readonly stores: OAuthPersistence[]) {}
 
   describe(): string {
@@ -297,31 +396,60 @@ class CompositePersistence implements OAuthPersistence {
   }
 
   async readTokens(): Promise<OAuthTokens | undefined> {
-    for (const store of this.stores) {
-      const result = await store.readTokens();
-      if (result) {
-        return result;
-      }
-    }
-    return undefined;
+    const results = await Promise.all(this.stores.map((store) => store.readTokens()));
+    this.recoveryTokenSnapshots.clear();
+    this.stores.forEach((store, index) => this.recoveryTokenSnapshots.set(store, results[index]));
+    const sourceIndex = results.findIndex((tokens) => tokens !== undefined);
+    this.recoveryTokenSource = sourceIndex >= 0 ? this.stores[sourceIndex] : undefined;
+    return sourceIndex >= 0 ? results[sourceIndex] : undefined;
   }
 
   async saveTokens(tokens: OAuthTokens): Promise<void> {
-    await Promise.all(this.stores.map((store) => store.saveTokens(tokens)));
+    // Compute the absolute expiry once so every backing store records the same
+    // generation value even at a wall-clock second boundary.
+    const stored = prepareStoredTokens(tokens);
+    await Promise.all(this.stores.map((store) => store.saveTokens(stored)));
+  }
+
+  async clearRejectedCredentials(
+    expectedTokens?: OAuthTokens,
+    expectedClientInfo?: OAuthClientInformationMixed
+  ): Promise<void> {
+    await Promise.all(
+      this.stores.map((store) => {
+        const storedTokenSnapshot = expectedTokens ? this.recoveryTokenSnapshots.get(store) : undefined;
+        const tokenSnapshot =
+          expectedTokens &&
+          storedTokenSnapshot &&
+          (store === this.recoveryTokenSource || sameOAuthTokenValue(storedTokenSnapshot, expectedTokens))
+            ? storedTokenSnapshot
+            : undefined;
+        const storedClientSnapshot = expectedClientInfo ? this.recoveryClientSnapshots.get(store) : undefined;
+        const clientSnapshot =
+          expectedClientInfo &&
+          storedClientSnapshot &&
+          (store === this.recoveryClientSource || sameOAuthClientValue(storedClientSnapshot, expectedClientInfo))
+            ? storedClientSnapshot
+            : undefined;
+        return tokenSnapshot || clientSnapshot
+          ? store.clearRejectedCredentials(tokenSnapshot, clientSnapshot)
+          : Promise.resolve();
+      })
+    );
   }
 
   async readClientInfo(): Promise<OAuthClientInformationMixed | undefined> {
-    for (const store of this.stores) {
-      const result = await store.readClientInfo();
-      if (result) {
-        return result;
-      }
-    }
-    return undefined;
+    const results = await Promise.all(this.stores.map((store) => store.readClientInfo()));
+    this.recoveryClientSnapshots.clear();
+    this.stores.forEach((store, index) => this.recoveryClientSnapshots.set(store, results[index]));
+    const sourceIndex = results.findIndex((clientInfo) => clientInfo !== undefined);
+    this.recoveryClientSource = sourceIndex >= 0 ? this.stores[sourceIndex] : undefined;
+    return sourceIndex >= 0 ? results[sourceIndex] : undefined;
   }
 
   async saveClientInfo(info: OAuthClientInformationMixed): Promise<void> {
-    await Promise.all(this.stores.map((store) => store.saveClientInfo(info)));
+    const stored = withOAuthClientGeneration(info);
+    await Promise.all(this.stores.map((store) => store.saveClientInfo(stored)));
   }
 
   async readCodeVerifier(): Promise<string | undefined> {
@@ -401,14 +529,25 @@ export async function clearOAuthCaches(
   const persistence = await buildOAuthPersistence(definition, logger);
   await persistence.clear(scope);
 
+  if (definition.tokenCacheDir && scope === 'all') {
+    await fs.rm(definition.tokenCacheDir, { recursive: true, force: true });
+  }
+
+  await clearLegacyOAuthArtifacts(definition, logger, scope);
+}
+
+// Legacy artifacts are never written by live refresh winners (the migration in
+// buildOAuthPersistence only reads them), so clearing them cannot race a
+// concurrent token save.
+async function clearLegacyOAuthArtifacts(
+  definition: ServerDefinition,
+  logger: Logger | undefined,
+  scope: OAuthClearScope
+): Promise<void> {
   const legacyDir = path.join(legacyMcporterDir(), definition.name);
   if (legacyDir && (!definition.tokenCacheDir || legacyDir !== definition.tokenCacheDir)) {
     const legacy = new DirectoryPersistence(legacyDir, logger);
     await legacy.clear(scope);
-  }
-
-  if (definition.tokenCacheDir && scope === 'all') {
-    await fs.rm(definition.tokenCacheDir, { recursive: true, force: true });
   }
 
   // Known provider-specific legacy paths (gmail server writes to ~/.gmail-mcp/credentials.json).
@@ -448,8 +587,11 @@ export async function readCachedAccessToken(
   if (typeof tokens.refresh_token !== 'string' || tokens.refresh_token.trim().length === 0) {
     return tokens.access_token;
   }
+  let persistedClientInformation: OAuthClientInformationMixed | undefined;
   try {
-    const clientInformation = buildStaticClientInformation(definition) ?? (await persistence.readClientInfo());
+    const staticClientInformation = buildStaticClientInformation(definition);
+    persistedClientInformation = staticClientInformation ? undefined : await persistence.readClientInfo();
+    const clientInformation = staticClientInformation ?? persistedClientInformation;
     if (!clientInformation) {
       logger?.debug?.(
         `Cached OAuth token for '${definition.name}' is expired, but no client information is available.`
@@ -478,22 +620,60 @@ export async function readCachedAccessToken(
     );
     const unrecoverableCode = unrecoverableOAuthRefreshCode(error);
     if (unrecoverableCode) {
-      const latestTokens = await persistence.readTokens();
-      if (cachedTokensChanged(tokens, latestTokens)) {
-        logger?.debug?.(`Kept cached OAuth token for '${definition.name}' because another refresh updated it first.`);
-        return latestTokens?.access_token;
-      }
-      const scope = unrecoverableCode === 'invalid_grant' ? 'tokens' : 'all';
-      await clearOAuthCaches(definition, logger, scope);
-      logger?.debug?.(
-        `Cleared cached OAuth ${scope === 'all' ? 'credentials' : 'token'} for '${
-          definition.name
-        }' after unrecoverable refresh failure.`
+      return await recoverFromUnrecoverableRefresh(
+        definition,
+        persistence,
+        tokens,
+        unrecoverableCode,
+        'OAuth',
+        logger,
+        persistedClientInformation
       );
-      return undefined;
     }
     return tokens.access_token;
   }
+}
+
+/**
+ * After a refresh fails with an unrecoverable OAuth error code, adopt the
+ * tokens a concurrent refresh persisted first, or clear the dead credentials
+ * so the rejected refresh token is never replayed (providers that rotate
+ * refresh tokens treat replays as stolen-token signals and revoke the grant).
+ * Returns the concurrent winner's access token, or undefined after clearing.
+ *
+ * The rejected token and the specific dynamic client registration used by the
+ * refresh are compare-and-cleared under each store's lock. State and PKCE
+ * verifier data belong to interactive auth and are never removed here. There
+ * is no later unconditional live-store sweep, so any different generation is
+ * preserved and adopted.
+ */
+async function recoverFromUnrecoverableRefresh(
+  definition: ServerDefinition,
+  persistence: OAuthPersistence,
+  tokens: OAuthTokens,
+  unrecoverableCode: string,
+  tokenKind: 'OAuth' | 'bearer',
+  logger?: Logger,
+  rejectedClientInformation?: OAuthClientInformationMixed
+): Promise<string | undefined> {
+  const clientToClear = unrecoverableCode === 'invalid_grant' ? undefined : rejectedClientInformation;
+  await persistence.clearRejectedCredentials(tokens, clientToClear);
+  // Legacy artifacts are not live refresh destinations, so this sweep cannot
+  // race a winner. Live stores were handled only by guarded mutations above.
+  await clearLegacyOAuthArtifacts(definition, logger, unrecoverableCode === 'invalid_grant' ? 'tokens' : 'all');
+  const latestTokens = await persistence.readTokens();
+  if (latestTokens && cachedTokensChanged(tokens, latestTokens)) {
+    logger?.debug?.(
+      `Kept cached ${tokenKind} token for '${definition.name}' because another refresh updated it first.`
+    );
+    return latestTokens.access_token;
+  }
+  logger?.debug?.(
+    `Cleared cached ${tokenKind} ${unrecoverableCode === 'invalid_grant' ? 'token' : 'credentials'} for '${
+      definition.name
+    }' after unrecoverable refresh failure.`
+  );
+  return undefined;
 }
 
 async function readExplicitRefreshableBearerToken(
@@ -524,6 +704,20 @@ async function readExplicitRefreshableBearerToken(
         error instanceof Error ? error.message : String(error)
       }`
     );
+    const unrecoverableCode = unrecoverableOAuthRefreshCode(error);
+    if (unrecoverableCode) {
+      const winnerToken = await recoverFromUnrecoverableRefresh(
+        definition,
+        persistence,
+        tokens,
+        unrecoverableCode,
+        'bearer',
+        logger
+      );
+      if (winnerToken) {
+        return winnerToken;
+      }
+    }
     throw new Error(
       `Failed to refresh cached bearer token for '${definition.name}': ${
         error instanceof Error ? error.message : String(error)
@@ -576,7 +770,11 @@ async function refreshBearerToken(definition: ServerDefinition, refreshToken: st
     body,
   });
   if (!response.ok) {
-    throw new Error(`Token endpoint returned HTTP ${response.status}.`);
+    const errorCode = await oauthErrorCodeFromResponse(response);
+    throw Object.assign(
+      new Error(`Token endpoint returned HTTP ${response.status}${errorCode ? ` (${errorCode})` : ''}.`),
+      errorCode ? { errorCode } : {}
+    );
   }
   const payload = normalizeBearerTokenResponse(await response.json());
   return {
