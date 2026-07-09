@@ -49,7 +49,7 @@ export async function handleResource(runtime: Runtime, args: string[]): Promise<
 
 function consumeDisableOAuthFlag(args: string[]): boolean | undefined {
   let disableOAuth: boolean | undefined;
-  for (let index = 0; index < args.length; ) {
+  for (let index = 0; index < args.length;) {
     const token = args[index];
     if (token === '--no-oauth') {
       disableOAuth = true;
