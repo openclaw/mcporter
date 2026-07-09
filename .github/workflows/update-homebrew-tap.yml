@@ -1,12 +1,14 @@
 name: Update Homebrew Tap
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:
         description: 'Release tag to publish to the tap (for example, v0.10.1)'
+        required: true
+        type: string
+      native_verifier_run_id:
+        description: 'Successful Verify Release Assets workflow run ID for this tag'
         required: true
         type: string
 
@@ -17,12 +19,31 @@ jobs:
   update-homebrew-tap:
     runs-on: ubuntu-latest
     steps:
+      - name: Guard protected default-branch dispatch
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]
+          expected_ref="refs/heads/$DEFAULT_BRANCH"
+          expected_workflow_ref="$GITHUB_REPOSITORY/.github/workflows/update-homebrew-tap.yml@$expected_ref"
+          [[ "$GITHUB_REF" == "$expected_ref" ]] || {
+            echo "::error::Homebrew dispatch must run from $expected_ref"
+            exit 1
+          }
+          [[ "$GITHUB_WORKFLOW_REF" == "$expected_workflow_ref" ]] || {
+            echo "::error::Homebrew workflow must come from $expected_workflow_ref"
+            exit 1
+          }
+
       - name: Resolve release tag
         id: release
         shell: bash
         run: |
           set -euo pipefail
-          tag="${{ inputs.tag || github.event.release.tag_name }}"
+          tag="${{ inputs.tag }}"
           if [[ -z "$tag" ]]; then
             echo "Missing release tag." >&2
             exit 1
@@ -30,13 +51,135 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "request_id=mcporter-${tag}-${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
 
+      - name: Verify npm publication
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          [[ "$(npm view "mcporter@$version" version)" == "$version" ]]
+
       - name: Dispatch tap update
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          NATIVE_VERIFIER_RUN_ID: ${{ inputs.native_verifier_run_id }}
         shell: bash
         run: |
           set -euo pipefail
           test -n "$GH_TOKEN"
+          [[ "$NATIVE_VERIFIER_RUN_ID" =~ ^[0-9]+$ ]]
+          proof=$(gh run view "$NATIVE_VERIFIER_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json conclusion,displayTitle,event,headBranch,headSha,workflowName)
+          [[ "$(jq -r '.conclusion' <<<"$proof")" == success ]]
+          [[ "$(jq -r '.event' <<<"$proof")" == workflow_dispatch ]]
+          [[ "$(jq -r '.headBranch' <<<"$proof")" == "${{ github.event.repository.default_branch }}" ]]
+          tag_commit=$(gh api "repos/$GITHUB_REPOSITORY/commits/${{ steps.release.outputs.tag }}" --jq .sha)
+          [[ "$(jq -r '.headSha' <<<"$proof")" == "$tag_commit" ]]
+          [[ "$(jq -r '.workflowName' <<<"$proof")" == 'Verify Release Assets' ]]
+          [[ "$(jq -r '.displayTitle' <<<"$proof")" == 'Verify release assets ${{ steps.release.outputs.tag }}' ]]
+          release=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/${{ steps.release.outputs.tag }}")
+          [[ "$(jq -r '.draft' <<<"$release")" == false ]]
+          [[ "$(jq -r '.prerelease' <<<"$release")" == false ]]
+
+          proof_dir="$RUNNER_TEMP/native-proof"
+          published_dir="$RUNNER_TEMP/published-assets"
+          mkdir -p "$proof_dir/arm64" "$proof_dir/x86_64" "$published_dir"
+          printf '%s\n' "$release" > "$RUNNER_TEMP/release.json"
+          gh run download "$NATIVE_VERIFIER_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name verified-assets-arm64 \
+            --dir "$proof_dir/arm64"
+          gh run download "$NATIVE_VERIFIER_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name verified-assets-x86_64 \
+            --dir "$proof_dir/x86_64"
+          arm_manifest="$proof_dir/arm64/verified-assets.json"
+          x86_manifest="$proof_dir/x86_64/verified-assets.json"
+          manifest="$arm_manifest"
+          RELEASE_JSON="$RUNNER_TEMP/release.json" \
+          RELEASE_ARM_PROOF="$arm_manifest" \
+          RELEASE_X86_PROOF="$x86_manifest" \
+          RELEASE_TAG='${{ steps.release.outputs.tag }}' \
+          RELEASE_COMMIT="$tag_commit" \
+          node <<'NODE'
+          const fs = require('node:fs');
+          const armManifest = JSON.parse(fs.readFileSync(process.env.RELEASE_ARM_PROOF, 'utf8'));
+          const x86Manifest = JSON.parse(fs.readFileSync(process.env.RELEASE_X86_PROOF, 'utf8'));
+          const release = JSON.parse(fs.readFileSync(process.env.RELEASE_JSON, 'utf8'));
+          const tag = process.env.RELEASE_TAG;
+          const version = tag.slice(1);
+          const expectedNames = [
+            `mcporter_${version}_darwin_arm64.tar.gz`,
+            `mcporter_${version}_darwin_x86_64.tar.gz`,
+            `mcporter-${version}.tgz`,
+            'checksums.txt',
+            'provenance.json',
+          ].sort();
+          const published = [...(release.assets ?? [])].sort((a, b) => a.name.localeCompare(b.name));
+          function validateManifest(manifest, arch) {
+            const assets = [...(manifest.assets ?? [])].sort((a, b) => a.name.localeCompare(b.name));
+            if (
+              manifest.schemaVersion !== 2 ||
+              manifest.arch !== arch ||
+              manifest.repository !== process.env.GITHUB_REPOSITORY ||
+              manifest.tag !== tag ||
+              manifest.commit !== process.env.RELEASE_COMMIT ||
+              manifest.releaseId !== release.id ||
+              JSON.stringify(assets.map((asset) => asset.name)) !== JSON.stringify(expectedNames) ||
+              assets.length !== published.length
+            ) {
+              throw new Error(`published release is not bound to the protected ${arch} native proof`);
+            }
+            return assets;
+          }
+          const armAssets = validateManifest(armManifest, 'arm64');
+          const x86Assets = validateManifest(x86Manifest, 'x86_64');
+          const proofVector = (assets) => assets.map(({ id, name, size, sha256 }) => ({ id, name, size, sha256 }));
+          if (JSON.stringify(proofVector(armAssets)) !== JSON.stringify(proofVector(x86Assets))) {
+            throw new Error('arm64 and x86_64 native proof artifacts disagree on the verified asset set');
+          }
+          for (let index = 0; index < armAssets.length; index += 1) {
+            const before = armAssets[index];
+            const after = published[index];
+            if (
+              before.id !== after.id ||
+              before.name !== after.name ||
+              before.size !== after.size ||
+              !/^[0-9a-f]{64}$/.test(before.sha256)
+            ) {
+              throw new Error(`published asset identity changed after native verification: ${before.name}`);
+            }
+          }
+          NODE
+          while IFS=$'\t' read -r asset_id asset_name expected_sha; do
+            gh api \
+              --header 'Accept: application/octet-stream' \
+              "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" > "$published_dir/$asset_name"
+            [[ "$(sha256sum "$published_dir/$asset_name" | awk '{ print $1 }')" == "$expected_sha" ]] || {
+              echo "published asset digest changed after native verification: $asset_name" >&2
+              exit 1
+            }
+          done < <(jq -r '.assets[] | [.id, .name, .sha256] | @tsv' "$manifest")
+
+          version='${{ steps.release.outputs.tag }}'
+          version="${version#v}"
+          verified_npm_archive="$published_dir/mcporter-$version.tgz"
+          verified_npm_integrity=$(NPM_ARCHIVE="$verified_npm_archive" node <<'NODE'
+          const crypto = require('node:crypto');
+          const fs = require('node:fs');
+          const digest = crypto.createHash('sha512').update(fs.readFileSync(process.env.NPM_ARCHIVE)).digest('base64');
+          process.stdout.write(`sha512-${digest}`);
+          NODE
+          )
+          registry_npm_integrity=$(npm view "mcporter@$version" dist.integrity)
+          [[ "$registry_npm_integrity" == "$verified_npm_integrity" ]] || {
+            echo "npm registry integrity does not match the verified GitHub tarball" >&2
+            exit 1
+          }
+          [[ "$(npm view mcporter dist-tags.latest)" == "$version" ]]
+
           gh workflow run update-formula.yml \
             --repo steipete/homebrew-tap \
             -f formula=mcporter \

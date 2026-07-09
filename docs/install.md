@@ -41,7 +41,9 @@ The tap publishes alongside npm. If you previously installed from an older tap, 
 
 ## Standalone binary
 
-Each release also ships a Bun-compiled standalone binary you can drop on `$PATH` without a Node toolchain. Grab the asset for your OS/arch from the [GitHub releases page](https://github.com/steipete/mcporter/releases) and `chmod +x` it. The compiled CLI behaves the same as the Node build but boots noticeably faster and bundles its dependencies.
+Each release also ships Bun-compiled standalone binaries for macOS arm64 and x86_64. Grab `mcporter_<version>_darwin_arm64.tar.gz` or `mcporter_<version>_darwin_x86_64.tar.gz` from the [GitHub releases page](https://github.com/openclaw/mcporter/releases), verify it against the basename-only `checksums.txt`, then extract it onto `$PATH`.
+
+Official macOS binaries use the stable `org.openclaw.mcporter` identifier, OpenClaw Foundation Developer ID team `FWJYW4S8P8`, hardened runtime, timestamping, and Apple notarization. `provenance.json` records the exact signed tag, commit, builder versions, asset inventory, architectures, and payload hashes. v0.12.3's standalone binary did not meet this contract and is not a signing or checksum continuity baseline.
 
 ## Verify
 

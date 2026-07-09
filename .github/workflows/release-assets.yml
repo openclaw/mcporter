@@ -1,0 +1,159 @@
+name: Verify Release Assets
+run-name: Verify release assets ${{ inputs.tag }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Draft release tag to verify (for example, v0.12.4)'
+        required: true
+        type: string
+
+jobs:
+  verify-native:
+    name: verify native (${{ matrix.arch }})
+    # GitHub requires contents:write for the built-in token to see draft
+    # releases. No other permission is granted, and the token is step-scoped.
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-26
+            arch: arm64
+          - runner: macos-26-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - name: Guard protected default-branch dispatch
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]
+          expected_ref="refs/heads/$DEFAULT_BRANCH"
+          expected_workflow_ref="$GITHUB_REPOSITORY/.github/workflows/release-assets.yml@$expected_ref"
+          [[ "$GITHUB_REF" == "$expected_ref" ]] || {
+            echo "::error::Release verification must be dispatched from $expected_ref"
+            exit 1
+          }
+          [[ "$GITHUB_WORKFLOW_REF" == "$expected_workflow_ref" ]] || {
+            echo "::error::Verifier workflow must come from $expected_workflow_ref"
+            exit 1
+          }
+
+      - name: Check out protected verifier source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Configure allowed release tag signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config gpg.format ssh
+          git config gpg.ssh.allowedSignersFile "$GITHUB_WORKSPACE/.github/release-allowed-signers"
+
+      - name: Download exact draft asset inventory
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          test -n "$GH_TOKEN"
+          version="${RELEASE_TAG#v}"
+          destination="$RUNNER_TEMP/release-assets"
+          mkdir -p "$destination"
+
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$RUNNER_TEMP/releases.json"
+          jq --arg tag "$RELEASE_TAG" '
+            [.[][] | select(.tag_name == $tag and .draft == true and .prerelease == false)]
+            | if length == 1 then .[0] else error("expected exactly one draft release for " + $tag) end
+          ' "$RUNNER_TEMP/releases.json" > "$RUNNER_TEMP/release.json"
+
+          expected_assets=$(printf '%s\n' \
+            "mcporter_${version}_darwin_arm64.tar.gz" \
+            "mcporter_${version}_darwin_x86_64.tar.gz" \
+            "mcporter-${version}.tgz" \
+            checksums.txt \
+            provenance.json | LC_ALL=C sort)
+          actual_assets=$(jq -r '.assets[].name' "$RUNNER_TEMP/release.json" | LC_ALL=C sort)
+          [[ "$actual_assets" == "$expected_assets" ]] || {
+            echo "::error::Draft release asset inventory mismatch"
+            diff -u <(printf '%s\n' "$expected_assets") <(printf '%s\n' "$actual_assets") || true
+            exit 1
+          }
+
+          while IFS=$'\t' read -r asset_id asset_name; do
+            gh api \
+              --header 'Accept: application/octet-stream' \
+              "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" > "$destination/$asset_name"
+          done < <(jq -r '.assets[] | [.id, .name] | @tsv' "$RUNNER_TEMP/release.json")
+
+          RELEASE_ASSET_DIR="$destination" \
+          RELEASE_ARCH="${{ matrix.arch }}" \
+          RELEASE_COMMIT="$(git rev-parse HEAD)" \
+          RELEASE_JSON="$RUNNER_TEMP/release.json" \
+          RELEASE_PROOF="$RUNNER_TEMP/verified-assets.json" \
+          node <<'NODE'
+          const crypto = require('node:crypto');
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const release = JSON.parse(fs.readFileSync(process.env.RELEASE_JSON, 'utf8'));
+          const assets = release.assets
+            .map((asset) => {
+              const file = path.join(process.env.RELEASE_ASSET_DIR, asset.name);
+              const bytes = fs.readFileSync(file);
+              if (bytes.length !== asset.size) throw new Error(`asset size mismatch: ${asset.name}`);
+              return {
+                id: asset.id,
+                name: asset.name,
+                size: asset.size,
+                sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
+              };
+            })
+            .sort((a, b) => a.name.localeCompare(b.name));
+          fs.writeFileSync(
+            process.env.RELEASE_PROOF,
+            `${JSON.stringify({
+              schemaVersion: 2,
+              arch: process.env.RELEASE_ARCH,
+              repository: process.env.GITHUB_REPOSITORY,
+              tag: process.env.RELEASE_TAG,
+              commit: process.env.RELEASE_COMMIT,
+              releaseId: release.id,
+              assets,
+            }, null, 2)}\n`
+          );
+          NODE
+
+      - name: Verify without GitHub credentials
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          VERIFY_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          [[ -z "${GH_TOKEN:-}" && -z "${GITHUB_TOKEN:-}" ]]
+          env -u GH_TOKEN -u GITHUB_TOKEN \
+            MCPORTER_VERIFY_EXEC_ARCH="$VERIFY_ARCH" \
+            ./scripts/verify-release.sh "$RELEASE_TAG" "$RUNNER_TEMP/release-assets"
+
+      - name: Preserve exact verified asset identity
+        uses: actions/upload-artifact@v6
+        with:
+          name: verified-assets-${{ matrix.arch }}
+          path: ${{ runner.temp }}/verified-assets.json
+          if-no-files-found: error
+          retention-days: 30

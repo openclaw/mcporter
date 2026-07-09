@@ -1,16 +1,19 @@
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs/promises';
 import http from 'node:http';
-import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ServerDefinition } from '../src/config.js';
 import { createOAuthSession } from '../src/oauth.js';
+import { createIsolatedTestHome, type IsolatedTestHome } from './helpers/isolated-test-home.js';
+
+let isolatedHome: IsolatedTestHome;
 
 const makeDefinition = (overrides: Partial<ServerDefinition> = {}): ServerDefinition => ({
   name: overrides.name ?? 'svc',
   description: 'test',
   command: { kind: 'http', url: new URL('https://example.com/mcp') },
-  tokenCacheDir: overrides.tokenCacheDir ?? path.join(os.tmpdir(), 'mcporter-oauth-test', randomUUID()),
+  tokenCacheDir: overrides.tokenCacheDir ?? path.join(isolatedHome.homeDir, 'token-cache', randomUUID()),
   auth: 'oauth',
   ...overrides,
 });
@@ -39,10 +42,18 @@ const requestStatus = (target: URL): Promise<number> =>
   });
 
 let cleanup: (() => Promise<void>) | null = null;
+beforeEach(async () => {
+  isolatedHome = await createIsolatedTestHome('mcporter-oauth-callback');
+});
+
 afterEach(async () => {
-  if (cleanup) {
-    await cleanup();
-    cleanup = null;
+  try {
+    if (cleanup) {
+      await cleanup();
+      cleanup = null;
+    }
+  } finally {
+    await isolatedHome.cleanup();
   }
 });
 
@@ -122,5 +133,14 @@ describe('oauth callback handling', () => {
     const status = await requestStatus(okUrl);
     expect(status).toBe(200);
     await expect(wait).resolves.toBe('nostate');
+  });
+
+  it('keeps callback state out of ambient OAuth credentials', async () => {
+    const session = await createOAuthSession(makeDefinition(), logger);
+    cleanup = () => session.close();
+    await (session.provider as StatefulProvider).state();
+
+    await expect(fs.access(isolatedHome.vaultPath)).resolves.toBeUndefined();
+    await isolatedHome.assertAmbientVaultUntouched();
   });
 });

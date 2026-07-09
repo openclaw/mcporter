@@ -6,4 +6,4 @@ overrides:
   hono: 4.12.27
   ip-address: 10.2.0
   qs: 6.15.3
-  vite: 8.1.2
+  vite: 8.1.4

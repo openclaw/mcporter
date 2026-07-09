@@ -2,7 +2,17 @@
 
 ## [0.12.4] - Unreleased
 
-- Nothing yet.
+### OAuth
+
+- Recover rotating refresh tokens after transient OAuth refresh failures without clearing a concurrently persisted winner, and clear only the exact rejected token on `invalid_grant`. (PR #227, thanks @feniix)
+
+### Distribution
+
+- Replace the broken v0.12.3 standalone artifact path with exact-tag arm64 and x86_64 macOS builds that require Foundation Developer ID signing, hardened runtime, timestamping, Bun JIT entitlements, notarization, strict native execution proof, basename-only checksums, and exact provenance/inventory verification before GitHub, npm, or Homebrew publication.
+
+### Tests
+
+- Isolate OAuth callback and session tests behind temporary HOME and XDG roots, with a regression sentinel proving ambient credentials stay untouched.
 
 ## [0.12.3] - 2026-07-01
 

@@ -180,7 +180,7 @@ function resolveSelectorAndTool(
 
 function applyTrailingArguments(positional: string[], result: CallArgsParseResult, state: FlagParseState): void {
   const trailingPositional: unknown[] = [];
-  for (let index = 0; index < positional.length; ) {
+  for (let index = 0; index < positional.length;) {
     const token = positional[index];
     if (!token) {
       index += 1;

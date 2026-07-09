@@ -54,6 +54,10 @@ jobs:
         if: matrix.os == 'macos-15'
         run: pnpm format:check && pnpm typecheck
 
+      - name: Verify release contracts without credentials
+        if: matrix.os == 'macos-15'
+        run: ./scripts/test-release.sh
+
       - name: Verify generated schema is committed
         if: matrix.os == 'ubuntu-latest'
         shell: bash

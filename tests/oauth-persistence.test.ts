@@ -146,6 +146,28 @@ describe('oauth persistence', () => {
     expect(logger.info).toHaveBeenCalledWith("Migrated legacy OAuth cache for 'legacy-service' into vault.");
   });
 
+  it('retains a hidden token generation while migrating a generated legacy cache', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-generated-migration-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+
+    const definition = mkDef('generated-migration');
+    const legacyDir = path.join(tmp, '.mcporter', definition.name);
+    await fs.mkdir(legacyDir, { recursive: true });
+    await fs.writeFile(
+      path.join(legacyDir, 'tokens.json'),
+      JSON.stringify({ access_token: 'old', token_type: 'Bearer', __mcporter_generation: 'gen-1' })
+    );
+
+    await buildOAuthPersistence(definition);
+
+    const rawVault = (await readJsonFile(path.join(tmp, '.mcporter', 'credentials.json'))) as
+      | { entries: Record<string, { tokens?: { __mcporter_generation?: string } }> }
+      | undefined;
+    expect(rawVault?.entries[vaultKeyForDefinition(definition)]?.tokens?.__mcporter_generation).toBe('gen-1');
+  });
+
   it('writes the shared vault under XDG_DATA_HOME when configured', async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-xdg-'));
     tempRoots.push(tmp);
@@ -873,6 +895,313 @@ describe('oauth persistence', () => {
     await expect(readJsonFile(path.join(cacheDir, 'client.json'))).resolves.toBeUndefined();
   });
 
+  it('clears rejected credentials from stores that supplied different refresh inputs', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-split-refresh-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const cacheDir = path.join(tmp, 'cache');
+    const definition = mkDef('split-refresh', cacheDir);
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(path.join(cacheDir, 'client.json'), JSON.stringify({ client_id: 'stale' }));
+    await saveVaultEntry(definition, {
+      tokens: {
+        access_token: 'old',
+        token_type: 'Bearer',
+        refresh_token: 'dead',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      } as OAuthTokens,
+    });
+
+    authMocks.discoverOAuthServerInfo.mockResolvedValue({ authorizationServerUrl: 'https://auth.example.com' });
+    authMocks.refreshAuthorization.mockRejectedValue(
+      Object.assign(new Error('Client rejected'), { errorCode: 'invalid_client' })
+    );
+
+    await expect(readCachedAccessToken(definition)).resolves.toBeUndefined();
+    await expect(readJsonFile(path.join(cacheDir, 'client.json'))).resolves.toBeUndefined();
+    const remaining = await loadVaultEntry(definition);
+    expect(remaining?.tokens).toBeUndefined();
+  });
+
+  it('preserves a concurrent directory-backed auth session during invalid-client recovery', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-directory-auth-race-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+
+    const cacheDir = path.join(tmp, 'cache');
+    const definition = mkDef('directory-auth-race', cacheDir);
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'old',
+        token_type: 'Bearer',
+        refresh_token: 'dead',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      })
+    );
+    await fs.writeFile(path.join(cacheDir, 'client.json'), JSON.stringify({ client_id: 'stale' }));
+
+    authMocks.discoverOAuthServerInfo.mockResolvedValue({ authorizationServerUrl: 'https://auth.example.com' });
+    authMocks.refreshAuthorization.mockImplementation(async () => {
+      const concurrent = await buildOAuthPersistence(definition);
+      await concurrent.saveClientInfo({ client_id: 'fresh' });
+      await concurrent.saveCodeVerifier('verify');
+      await concurrent.saveState('state');
+      throw Object.assign(new Error('Client rejected'), { errorCode: 'invalid_client' });
+    });
+
+    await expect(readCachedAccessToken(definition)).resolves.toBeUndefined();
+    await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toBeUndefined();
+    const remaining = await buildOAuthPersistence(definition);
+    await expect(remaining.readClientInfo()).resolves.toEqual({ client_id: 'fresh' });
+    await expect(remaining.readCodeVerifier()).resolves.toBe('verify');
+    await expect(remaining.readState()).resolves.toBe('state');
+  });
+
+  it('preserves a same-value client registration rewritten by concurrent auth', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-client-generation-race-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+
+    const cacheDir = path.join(tmp, 'cache');
+    const definition = mkDef('client-generation-race', cacheDir);
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'old',
+        token_type: 'Bearer',
+        refresh_token: 'dead',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      })
+    );
+    await fs.writeFile(path.join(cacheDir, 'client.json'), JSON.stringify({ client_id: 'same' }));
+
+    authMocks.discoverOAuthServerInfo.mockResolvedValue({ authorizationServerUrl: 'https://auth.example.com' });
+    authMocks.refreshAuthorization.mockImplementation(async () => {
+      const concurrent = await buildOAuthPersistence(definition);
+      await concurrent.saveClientInfo({ client_id: 'same' });
+      throw Object.assign(new Error('Client rejected'), { errorCode: 'invalid_client' });
+    });
+
+    await expect(readCachedAccessToken(definition)).resolves.toBeUndefined();
+    await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toBeUndefined();
+    const remaining = await buildOAuthPersistence(definition);
+    await expect(remaining.readClientInfo()).resolves.toEqual({ client_id: 'same' });
+  });
+
+  it.each(['invalid_client', 'unauthorized_client'] as const)(
+    'preserves a same-token newer-expiry winner during %s recovery',
+    async (errorCode) => {
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), `mcporter-oauth-${errorCode}-winner-`));
+      tempRoots.push(tmp);
+      homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+      hasSpy = true;
+      process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+      const cacheDir = path.join(tmp, 'cache');
+      const definition = mkDef(`${errorCode}-winner-service`, cacheDir);
+      const accessToken = 'same';
+      const refreshToken = 'same-r';
+      await fs.mkdir(cacheDir, { recursive: true });
+      await fs.writeFile(
+        path.join(cacheDir, 'tokens.json'),
+        JSON.stringify({
+          access_token: accessToken,
+          token_type: 'Bearer',
+          refresh_token: refreshToken,
+          expires_at: Math.floor(Date.now() / 1000) - 30,
+        })
+      );
+      await fs.writeFile(path.join(cacheDir, 'client.json'), JSON.stringify({ client_id: 'client-123' }));
+
+      authMocks.discoverOAuthServerInfo.mockResolvedValue({ authorizationServerUrl: 'https://auth.example.com' });
+      authMocks.refreshAuthorization.mockImplementation(async () => {
+        // This write represents the other process landing after our failed
+        // generation was read but before recovery compare-and-clears stores.
+        // Some providers retain both token strings while extending expiry.
+        await saveVaultEntry(definition, {
+          tokens: {
+            access_token: accessToken,
+            token_type: 'Bearer',
+            refresh_token: refreshToken,
+            expires_at: Math.floor(Date.now() / 1000) + 3600,
+          } as OAuthTokens,
+          clientInfo: { client_id: 'client-123' },
+        });
+        throw Object.assign(new Error(errorCode), { errorCode });
+      });
+
+      await expect(readCachedAccessToken(definition)).resolves.toBe(accessToken);
+
+      // The stale directory generation is gone, while the complete newer vault
+      // value and its client registration survive and become authoritative.
+      await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toBeUndefined();
+      await expect(readJsonFile(path.join(cacheDir, 'client.json'))).resolves.toBeUndefined();
+      const winner = await loadVaultEntry(definition);
+      expect(winner?.tokens).toEqual(
+        expect.objectContaining({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+          expires_at: expect.any(Number),
+        })
+      );
+      expect(winner?.clientInfo).toEqual(expect.objectContaining({ client_id: 'client-123' }));
+    }
+  );
+
+  it('preserves a concurrent vault auth session while clearing inherited rejected credentials', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-inherited-invalid-client-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const definition = mkDef('renamed-client');
+    const legacyDefinition = mkDef('renamed-client-oauth');
+    await saveVaultEntry(legacyDefinition, {
+      tokens: {
+        access_token: 'old',
+        token_type: 'Bearer',
+        refresh_token: 'dead',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      } as OAuthTokens,
+      clientInfo: { client_id: 'stale-client' },
+    });
+    await saveVaultEntry(definition, {
+      clientInfo: { client_id: 'stale-client' },
+    });
+
+    authMocks.discoverOAuthServerInfo.mockResolvedValue({ authorizationServerUrl: 'https://auth.example.com' });
+    authMocks.refreshAuthorization.mockImplementation(async () => {
+      await saveVaultEntry(definition, {
+        // The winner can legitimately reuse the exact same registration
+        // payload; its save generation, not its public fields, distinguishes it.
+        clientInfo: { client_id: 'stale-client' },
+        codeVerifier: 'verify',
+        state: 'state',
+      });
+      throw Object.assign(new Error('Client rejected'), { errorCode: 'invalid_client' });
+    });
+
+    await expect(readCachedAccessToken(definition)).resolves.toBeUndefined();
+    const current = await loadVaultEntry(definition);
+    expect(current?.tokens).toBeUndefined();
+    expect(current?.clientInfo).toEqual({ client_id: 'stale-client' });
+    expect(current?.codeVerifier).toBe('verify');
+    expect(current?.state).toBe('state');
+    const legacy = await loadVaultEntry(legacyDefinition);
+    expect(legacy?.tokens).toBeUndefined();
+    expect(legacy?.clientInfo).toBeUndefined();
+  });
+
+  it('clears only the renamed vault entry that supplied rejected credentials', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-renamed-source-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const definition = mkDef('multi-rename');
+    const vaultPath = path.join(tmp, 'data', 'mcporter', 'credentials.json');
+    await fs.mkdir(path.dirname(vaultPath), { recursive: true });
+    await fs.writeFile(
+      vaultPath,
+      JSON.stringify({
+        version: 1,
+        entries: {
+          selected: {
+            serverName: 'multi-rename-oauth',
+            serverUrl: 'https://example.com/mcp',
+            updatedAt: '2026-01-02T00:00:00.000Z',
+            tokens: {
+              access_token: 'old',
+              token_type: 'Bearer',
+              refresh_token: 'dead',
+              expires_at: Math.floor(Date.now() / 1000) - 30,
+            },
+            clientInfo: { client_id: 'bad' },
+          },
+          unrelated: {
+            serverName: 'multi-rename-oauth',
+            serverUrl: 'https://example.com/mcp',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+            tokens: { access_token: 'keep', token_type: 'Bearer', refresh_token: 'live' },
+            clientInfo: { client_id: 'other' },
+          },
+        },
+      })
+    );
+
+    authMocks.discoverOAuthServerInfo.mockResolvedValue({ authorizationServerUrl: 'https://auth.example.com' });
+    authMocks.refreshAuthorization.mockRejectedValue(
+      Object.assign(new Error('Client rejected'), { errorCode: 'invalid_client' })
+    );
+
+    await expect(readCachedAccessToken(definition)).resolves.toBe('keep');
+    const vault = (await readJsonFile(vaultPath)) as
+      | {
+          entries: Record<string, { tokens?: { access_token?: string }; clientInfo?: { client_id?: string } }>;
+        }
+      | undefined;
+    expect(vault?.entries.selected?.tokens).toBeUndefined();
+    expect(vault?.entries.selected?.clientInfo).toBeUndefined();
+    expect(vault?.entries.unrelated?.tokens?.access_token).toBe('keep');
+    expect(vault?.entries.unrelated?.clientInfo?.client_id).toBe('other');
+  });
+
+  it('preserves a lower-priority generated token when the rejected legacy snapshot differs', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-legacy-mixed-cache-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const cacheDir = path.join(tmp, 'cache');
+    const definition = mkDef('legacy-mixed-cache', cacheDir);
+    const expiredAt = Math.floor(Date.now() / 1000) - 30;
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'old',
+        token_type: 'Bearer',
+        refresh_token: 'dead',
+        expires_at: expiredAt,
+      })
+    );
+    await fs.writeFile(path.join(cacheDir, 'client.json'), JSON.stringify({ client_id: 'client-123' }));
+
+    // This live vault write receives a generation marker, while the directory
+    // remains a legacy shape with a different expiry spelling and second.
+    await saveVaultEntry(definition, {
+      tokens: {
+        access_token: 'old',
+        token_type: 'Bearer',
+        refresh_token: 'dead',
+        expiresAt: expiredAt + 1,
+      } as OAuthTokens,
+      clientInfo: { client_id: 'client-123' },
+    });
+
+    authMocks.discoverOAuthServerInfo.mockResolvedValue({ authorizationServerUrl: 'https://auth.example.com' });
+    authMocks.refreshAuthorization.mockRejectedValue(
+      Object.assign(new Error('Grant rejected'), { errorCode: 'invalid_grant' })
+    );
+
+    await expect(readCachedAccessToken(definition)).resolves.toBe('old');
+    await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toBeUndefined();
+    const remaining = await loadVaultEntry(definition);
+    expect(remaining?.tokens).toEqual(expect.objectContaining({ access_token: 'old', expiresAt: expiredAt + 1 }));
+    expect(remaining?.clientInfo).toEqual(expect.objectContaining({ client_id: 'client-123' }));
+  });
+
   it('keeps cached OAuth tokens when silent refresh fails transiently', async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-refresh-transient-'));
     tempRoots.push(tmp);
@@ -1097,7 +1426,7 @@ describe('oauth persistence', () => {
 
     // A transient failure must not clear the cache: the refresh token stays for retry.
     await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toEqual(
-      expect.objectContaining({ access_token: 'expired-token', refresh_token: 'refresh-123' })
+      expect.objectContaining({ refresh_token: 'refresh-123' })
     );
   });
 
@@ -1113,9 +1442,9 @@ describe('oauth persistence', () => {
     await fs.writeFile(
       path.join(cacheDir, 'tokens.json'),
       JSON.stringify({
-        access_token: 'expired-token',
+        access_token: 'old',
         token_type: 'Bearer',
-        refresh_token: 'rotated-out-refresh',
+        refresh_token: 'dead',
         expires_at: Math.floor(Date.now() / 1000) - 30,
       })
     );
@@ -1174,9 +1503,9 @@ describe('oauth persistence', () => {
     const legacyDefinition = mkDef('inherited-bearer-oauth');
     await saveVaultEntry(legacyDefinition, {
       tokens: {
-        access_token: 'expired-token',
+        access_token: 'old',
         token_type: 'Bearer',
-        refresh_token: 'rotated-out-refresh',
+        refresh_token: 'dead',
         expires_at: Math.floor(Date.now() / 1000) - 30,
       } as OAuthTokens,
       clientInfo: { client_id: 'inherited-client' },
@@ -1228,7 +1557,7 @@ describe('oauth persistence', () => {
     const legacyDefinition = mkDef('inherited-winner-bearer-oauth');
     await saveVaultEntry(legacyDefinition, {
       tokens: {
-        access_token: 'expired-token',
+        access_token: 'old',
         token_type: 'Bearer',
         refresh_token: 'refresh-old',
         expires_at: Math.floor(Date.now() / 1000) - 30,
@@ -1241,7 +1570,7 @@ describe('oauth persistence', () => {
     const fetchMock = vi.fn().mockImplementation(async () => {
       await saveVaultEntry(legacyDefinition, {
         tokens: {
-          access_token: 'winner-token',
+          access_token: 'new',
           token_type: 'Bearer',
           refresh_token: 'refresh-new',
           expires_in: 3600,
@@ -1254,11 +1583,11 @@ describe('oauth persistence', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(readCachedAccessToken(currentDefinition)).resolves.toBe('winner-token');
+    await expect(readCachedAccessToken(currentDefinition)).resolves.toBe('new');
 
     // The winner's newer tokens on the source entry are preserved, not cleared.
     const legacyEntry = await loadVaultEntry(legacyDefinition);
-    expect(legacyEntry?.tokens?.access_token).toBe('winner-token');
+    expect(legacyEntry?.tokens?.access_token).toBe('new');
     expect(legacyEntry?.tokens?.refresh_token).toBe('refresh-new');
   });
 
@@ -1274,7 +1603,7 @@ describe('oauth persistence', () => {
     await fs.writeFile(
       path.join(cacheDir, 'tokens.json'),
       JSON.stringify({
-        access_token: 'expired-token',
+        access_token: 'old',
         token_type: 'Bearer',
         refresh_token: 'refresh-123',
         expires_at: Math.floor(Date.now() / 1000) - 30,
@@ -1319,7 +1648,7 @@ describe('oauth persistence', () => {
     await fs.writeFile(
       path.join(cacheDir, 'tokens.json'),
       JSON.stringify({
-        access_token: 'expired-token',
+        access_token: 'old',
         token_type: 'Bearer',
         refresh_token: 'refresh-old',
         expires_at: Math.floor(Date.now() / 1000) - 30,
@@ -1343,7 +1672,7 @@ describe('oauth persistence', () => {
     const fetchMock = vi.fn().mockImplementation(async () => {
       const persistence = await buildOAuthPersistence(definition);
       await persistence.saveTokens({
-        access_token: 'winner-token',
+        access_token: 'new',
         token_type: 'Bearer',
         refresh_token: 'refresh-new',
         expires_in: 3600,
@@ -1355,11 +1684,11 @@ describe('oauth persistence', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(readCachedAccessToken(definition)).resolves.toBe('winner-token');
+    await expect(readCachedAccessToken(definition)).resolves.toBe('new');
 
     // The winner's tokens must survive — not be clobbered or cleared by the loser.
     await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toEqual(
-      expect.objectContaining({ access_token: 'winner-token', refresh_token: 'refresh-new' })
+      expect.objectContaining({ access_token: 'new', refresh_token: 'refresh-new' })
     );
   });
 
@@ -1375,7 +1704,7 @@ describe('oauth persistence', () => {
     await fs.writeFile(
       path.join(cacheDir, 'tokens.json'),
       JSON.stringify({
-        access_token: 'expired-token',
+        access_token: 'old',
         token_type: 'Bearer',
         refresh_token: 'refresh-old',
         expires_at: Math.floor(Date.now() / 1000) - 30,
@@ -1403,7 +1732,7 @@ describe('oauth persistence', () => {
       vi.fn().mockImplementation(async () => {
         await saveVaultEntry(definition, {
           tokens: {
-            access_token: 'winner-token',
+            access_token: 'new',
             token_type: 'Bearer',
             refresh_token: 'refresh-new',
             expires_in: 3600,
@@ -1416,12 +1745,12 @@ describe('oauth persistence', () => {
       })
     );
 
-    await expect(readCachedAccessToken(definition)).resolves.toBe('winner-token');
+    await expect(readCachedAccessToken(definition)).resolves.toBe('new');
 
     // The failed directory tokens are cleared, the winner's vault entry survives.
     await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toBeUndefined();
     const entry = await loadVaultEntry(definition);
-    expect(entry?.tokens?.access_token).toBe('winner-token');
+    expect(entry?.tokens?.access_token).toBe('new');
     expect(entry?.tokens?.refresh_token).toBe('refresh-new');
   });
 
@@ -1433,7 +1762,7 @@ describe('oauth persistence', () => {
     process.env.CLIENT_ID = 'client-id';
 
     const failedTokens = {
-      access_token: 'expired-token',
+      access_token: 'old',
       token_type: 'Bearer',
       refresh_token: 'refresh-old',
       expires_at: Math.floor(Date.now() / 1000) - 30,
@@ -1464,7 +1793,7 @@ describe('oauth persistence', () => {
         await fs.writeFile(
           path.join(cacheDir, 'tokens.json'),
           JSON.stringify({
-            access_token: 'winner-token',
+            access_token: 'new',
             token_type: 'Bearer',
             refresh_token: 'refresh-new',
             expires_at: Math.floor(Date.now() / 1000) + 3600,
@@ -1477,10 +1806,10 @@ describe('oauth persistence', () => {
       })
     );
 
-    await expect(readCachedAccessToken(definition)).resolves.toBe('winner-token');
+    await expect(readCachedAccessToken(definition)).resolves.toBe('new');
 
     await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toEqual(
-      expect.objectContaining({ access_token: 'winner-token', refresh_token: 'refresh-new' })
+      expect.objectContaining({ access_token: 'new', refresh_token: 'refresh-new' })
     );
     const entry = await loadVaultEntry(definition);
     expect(entry?.tokens).toBeUndefined();

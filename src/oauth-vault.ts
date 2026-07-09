@@ -3,6 +3,16 @@ import path from 'node:path';
 import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { ServerDefinition } from './config.js';
 import { readJsonFile, withFileLock, writeJsonFile } from './fs-json.js';
+import {
+  sameOAuthClientGeneration,
+  sameOAuthClientValue,
+  sameOAuthTokenGeneration,
+  sameOAuthTokenValue,
+  withHiddenOAuthClientGeneration,
+  withHiddenOAuthTokenGeneration,
+  withOAuthClientGeneration,
+  withOAuthTokenGeneration,
+} from './oauth-token-generation.js';
 import { mcporterDir } from './paths.js';
 
 type VaultKey = string;
@@ -25,6 +35,12 @@ interface VaultFile {
 interface VaultReadState {
   vault: VaultFile;
   needsRepair: boolean;
+}
+
+export interface VaultRecoveryRead {
+  entry: VaultEntry | undefined;
+  tokenSnapshots: ReadonlyMap<string, OAuthTokens>;
+  clientSnapshots: ReadonlyMap<string, OAuthClientInformationMixed>;
 }
 
 interface SameUrlCredentials {
@@ -82,6 +98,40 @@ export function vaultKeyForDefinition(definition: ServerDefinition): VaultKey {
 
 export async function loadVaultEntry(definition: ServerDefinition): Promise<VaultEntry | undefined> {
   const vault = await readVault();
+  return externalVaultEntry(resolveVaultEntry(vault, definition));
+}
+
+export async function loadVaultEntryForRecovery(definition: ServerDefinition): Promise<VaultRecoveryRead> {
+  const vault = await readVault();
+  const key = vaultKeyForDefinition(definition);
+  const resolved = resolveVaultEntry(vault, definition);
+  const tokenSnapshots = new Map<string, OAuthTokens>();
+  const clientSnapshots = new Map<string, OAuthClientInformationMixed>();
+
+  // Snapshot only the effective rejected values and exact public-value
+  // duplicates. Unrelated same-URL registrations survive, while a duplicate
+  // cannot become the next fallback and replay credentials already rejected.
+  for (const targetKey of [key, ...legacyOAuthRenameKeys(vault, definition, key)]) {
+    const candidate = isVaultEntry(vault.entries[targetKey]) ? vault.entries[targetKey] : undefined;
+    if (candidate?.tokens && resolved?.tokens && sameOAuthTokenValue(candidate.tokens, resolved.tokens)) {
+      tokenSnapshots.set(targetKey, candidate.tokens);
+    }
+    if (
+      candidate?.clientInfo &&
+      resolved?.clientInfo &&
+      sameOAuthClientValue(candidate.clientInfo, resolved.clientInfo)
+    ) {
+      clientSnapshots.set(targetKey, candidate.clientInfo);
+    }
+  }
+  return {
+    entry: externalVaultEntry(resolved),
+    tokenSnapshots,
+    clientSnapshots,
+  };
+}
+
+function resolveVaultEntry(vault: VaultFile, definition: ServerDefinition): VaultEntry | undefined {
   const key = vaultKeyForDefinition(definition);
   const exact = isVaultEntry(vault.entries[key]) ? vault.entries[key] : undefined;
   const fallback = findSameUrlCredentials(vault, definition, key, exact);
@@ -101,6 +151,17 @@ export async function loadVaultEntry(definition: ServerDefinition): Promise<Vaul
     ...exact,
     tokens: exact.tokens ?? fallback.tokens,
     clientInfo: exact.clientInfo ?? (exact.tokens ? undefined : fallback.clientInfo),
+  };
+}
+
+function externalVaultEntry(entry: VaultEntry | undefined): VaultEntry | undefined {
+  if (!entry) {
+    return entry;
+  }
+  return {
+    ...entry,
+    ...(entry.tokens ? { tokens: withHiddenOAuthTokenGeneration(entry.tokens) } : {}),
+    ...(entry.clientInfo ? { clientInfo: withHiddenOAuthClientGeneration(entry.clientInfo) } : {}),
   };
 }
 
@@ -193,45 +254,68 @@ export async function saveVaultEntry(definition: ServerDefinition, patch: Partia
     vault.entries[key] = {
       ...current,
       ...patch,
+      ...(patch.tokens ? { tokens: withOAuthTokenGeneration(patch.tokens) } : {}),
       clientInfo:
-        patch.clientInfo ?? current.clientInfo ?? (patch.tokens && !current.tokens ? fallback.clientInfo : undefined),
+        (patch.clientInfo ? withOAuthClientGeneration(patch.clientInfo) : undefined) ??
+        current.clientInfo ??
+        (patch.tokens && !current.tokens ? fallback.clientInfo : undefined),
       updatedAt: new Date().toISOString(),
     };
     await writeVault(vault);
   });
 }
 
-function tokensMatch(tokens: OAuthTokens | undefined, expected: OAuthTokens): boolean {
-  return (
-    tokens !== undefined &&
-    tokens.access_token === expected.access_token &&
-    tokens.refresh_token === expected.refresh_token
-  );
+function tokensMatch(tokens: OAuthTokens | undefined, expected: OAuthTokens | undefined): boolean {
+  return expected !== undefined && sameOAuthTokenGeneration(tokens, expected);
 }
 
-// Atomically clears tokens only where they still match `expected`. A concurrent
-// refresh winner's newer tokens are left untouched because the comparison
-// happens under the same file lock every vault write takes.
+// Atomically clears the rejected token and, when supplied, only the dynamic
+// client registration that refresh used. A concurrent refresh generation or
+// interactive auth registration is left untouched under the vault write lock.
 //
 // readTokens() sources tokens from the exact entry, or — when the exact entry
 // has none — inherits them from a same-URL legacy rename entry (see
-// loadVaultEntry). Both are compare-and-cleared so an invalid_grant refresh
-// token can never be reread and replayed from the inherited source, while any
-// inherited client info survives for re-auth.
-export async function clearVaultTokensIfMatching(definition: ServerDefinition, expected: OAuthTokens): Promise<void> {
+// loadVaultEntry). Both are compare-and-cleared so a rejected refresh token can
+// never be reread and replayed from the inherited source. State and verifier
+// values are intentionally outside refresh recovery.
+export async function clearVaultTokensIfMatching(
+  definition: ServerDefinition,
+  expectedTokens?: OAuthTokens,
+  expectedClientInfo?: OAuthClientInformationMixed,
+  tokenSnapshots?: ReadonlyMap<string, OAuthTokens>,
+  clientSnapshots?: ReadonlyMap<string, OAuthClientInformationMixed>
+): Promise<void> {
   const key = vaultKeyForDefinition(definition);
   await withFileLock(getOAuthVaultPath(), async () => {
     const { vault, needsRepair } = await readVaultState();
-    const existing = isVaultEntry(vault.entries[key]) ? vault.entries[key] : undefined;
-    const fallback = findSameUrlCredentials(vault, definition, key, existing);
+    const exact = isVaultEntry(vault.entries[key]) ? vault.entries[key] : undefined;
+    const fallbackKeys = findSameUrlCredentials(vault, definition, key, exact).sourceKeys;
+    const targetKeys =
+      tokenSnapshots || clientSnapshots
+        ? [...new Set([...(tokenSnapshots?.keys() ?? []), ...(clientSnapshots?.keys() ?? [])])]
+        : [key, ...fallbackKeys];
     let mutated = false;
-    for (const targetKey of [key, ...fallback.sourceKeys]) {
+    for (const targetKey of targetKeys) {
       const entry = isVaultEntry(vault.entries[targetKey]) ? vault.entries[targetKey] : undefined;
-      if (!entry || !tokensMatch(entry.tokens, expected)) {
+      if (!entry) {
         continue;
       }
       const updated: VaultEntry = { ...entry };
-      delete updated.tokens;
+      let entryMutated = false;
+      const tokenSnapshot = tokenSnapshots ? tokenSnapshots.get(targetKey) : expectedTokens;
+      const clientSnapshot = clientSnapshots ? clientSnapshots.get(targetKey) : expectedClientInfo;
+      const ownTokensRejected = tokensMatch(entry.tokens, tokenSnapshot);
+      if (ownTokensRejected) {
+        delete updated.tokens;
+        entryMutated = true;
+      }
+      if (clientSnapshot && sameOAuthClientGeneration(updated.clientInfo, clientSnapshot)) {
+        delete updated.clientInfo;
+        entryMutated = true;
+      }
+      if (!entryMutated) {
+        continue;
+      }
       updated.updatedAt = new Date().toISOString();
       vault.entries[targetKey] = updated;
       mutated = true;

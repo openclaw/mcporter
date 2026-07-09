@@ -3,6 +3,8 @@ node_modules
 .DS_Store
 dist
 dist-bun
+dist-release
+.release-stage.*
 *.bun-build
 # Release archives
 mcporter-*.tgz*
@@ -17,6 +19,7 @@ yarn-error.log*
 
 # Env
 .env
+.mac-release.env
 
 # TypeScript build artifacts
 *.tsbuildinfo
