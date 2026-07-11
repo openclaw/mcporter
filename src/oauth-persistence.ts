@@ -396,12 +396,9 @@ class CompositePersistence implements OAuthPersistence {
   }
 
   async readTokens(): Promise<OAuthTokens | undefined> {
-    const results = await Promise.all(this.stores.map((store) => store.readTokens()));
-    this.recoveryTokenSnapshots.clear();
-    this.stores.forEach((store, index) => this.recoveryTokenSnapshots.set(store, results[index]));
-    const sourceIndex = results.findIndex((tokens) => tokens !== undefined);
-    this.recoveryTokenSource = sourceIndex >= 0 ? this.stores[sourceIndex] : undefined;
-    return sourceIndex >= 0 ? results[sourceIndex] : undefined;
+    const result = await this.readRecoveryValues((store) => store.readTokens(), this.recoveryTokenSnapshots);
+    this.recoveryTokenSource = result.source;
+    return result.value;
   }
 
   async saveTokens(tokens: OAuthTokens): Promise<void> {
@@ -439,12 +436,37 @@ class CompositePersistence implements OAuthPersistence {
   }
 
   async readClientInfo(): Promise<OAuthClientInformationMixed | undefined> {
-    const results = await Promise.all(this.stores.map((store) => store.readClientInfo()));
-    this.recoveryClientSnapshots.clear();
-    this.stores.forEach((store, index) => this.recoveryClientSnapshots.set(store, results[index]));
-    const sourceIndex = results.findIndex((clientInfo) => clientInfo !== undefined);
-    this.recoveryClientSource = sourceIndex >= 0 ? this.stores[sourceIndex] : undefined;
-    return sourceIndex >= 0 ? results[sourceIndex] : undefined;
+    const result = await this.readRecoveryValues((store) => store.readClientInfo(), this.recoveryClientSnapshots);
+    this.recoveryClientSource = result.source;
+    return result.value;
+  }
+
+  private async readRecoveryValues<T>(
+    read: (store: OAuthPersistence) => Promise<T | undefined>,
+    snapshots: Map<OAuthPersistence, T | undefined>
+  ): Promise<{ value: T | undefined; source: OAuthPersistence | undefined }> {
+    const results = await Promise.allSettled(this.stores.map((store) => read(store)));
+    snapshots.clear();
+    let value: T | undefined;
+    let source: OAuthPersistence | undefined;
+    for (const [index, result] of results.entries()) {
+      const store = this.stores[index]!;
+      if (result.status === 'rejected') {
+        // Preserve ordered fallback semantics: a lower-priority store cannot
+        // invalidate an already-readable primary cache, while failures before
+        // the first usable value still surface.
+        if (!source) {
+          throw result.reason;
+        }
+        continue;
+      }
+      snapshots.set(store, result.value);
+      if (!source && result.value !== undefined) {
+        source = store;
+        value = result.value;
+      }
+    }
+    return { value, source };
   }
 
   async saveClientInfo(info: OAuthClientInformationMixed): Promise<void> {
