@@ -123,6 +123,42 @@ describe('oauth persistence', () => {
     expect(entry?.tokens?.access_token).toBe('new-token');
   });
 
+  it.runIf(process.platform !== 'win32')(
+    'keeps an explicit token cache usable when the lower-priority vault is unreadable',
+    async () => {
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-cache-vault-unreadable-'));
+      tempRoots.push(tmp);
+      homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+      hasSpy = true;
+      process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+      const cacheDir = path.join(tmp, 'cache');
+      await fs.mkdir(cacheDir, { recursive: true });
+      await fs.writeFile(
+        path.join(cacheDir, 'tokens.json'),
+        JSON.stringify({ access_token: 'from-cache', token_type: 'Bearer' })
+      );
+      await fs.writeFile(path.join(cacheDir, 'client.json'), JSON.stringify({ client_id: 'cache-client' }));
+
+      const vaultPath = path.join(tmp, 'data', 'mcporter', 'credentials.json');
+      await fs.mkdir(path.dirname(vaultPath), { recursive: true });
+      await fs.writeFile(vaultPath, JSON.stringify({ version: 1, entries: {} }), 'utf8');
+
+      try {
+        await fs.chmod(vaultPath, 0o000);
+        const persistence = await buildOAuthPersistence(mkDef('service', cacheDir));
+
+        await expect(persistence.readTokens()).resolves.toEqual({
+          access_token: 'from-cache',
+          token_type: 'Bearer',
+        });
+        await expect(persistence.readClientInfo()).resolves.toEqual({ client_id: 'cache-client' });
+      } finally {
+        await fs.chmod(vaultPath, 0o600).catch(() => {});
+      }
+    }
+  );
+
   it('migrates legacy per-server cache into the vault', async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-'));
     tempRoots.push(tmp);
