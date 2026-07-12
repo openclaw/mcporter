@@ -1,13 +1,13 @@
 # MCPorter 🧳 - Call MCPs from TypeScript or as CLI
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/steipete/mcporter/main/mcporter.png" alt="MCPorter header banner" width="1100">
+  <img src="https://raw.githubusercontent.com/openclaw/mcporter/main/mcporter.png" alt="MCPorter header banner" width="1100">
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/mcporter"><img src="https://img.shields.io/npm/v/mcporter?style=for-the-badge&logo=npm&logoColor=white" alt="npm version"></a>
-  <a href="https://github.com/steipete/mcporter/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/steipete/mcporter/ci.yml?branch=main&style=for-the-badge&label=tests" alt="CI Status"></a>
-  <a href="https://github.com/steipete/mcporter"><img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=for-the-badge" alt="Platforms"></a>
+  <a href="https://github.com/openclaw/mcporter/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/openclaw/mcporter/ci.yml?branch=main&style=for-the-badge&label=tests" alt="CI Status"></a>
+  <a href="https://github.com/openclaw/mcporter"><img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-blue?style=for-the-badge" alt="Platforms"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="MIT License"></a>
 </p>
 
