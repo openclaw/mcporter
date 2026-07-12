@@ -4,7 +4,7 @@ summary: 'Five-minute walk through listing MCP servers, calling a tool, and emit
 
 # Quickstart
 
-This walkthrough uses the public Context7 server so you can follow the tool examples without existing MCP configuration. Add it with `mcporter config add context7 https://mcp.context7.com/mcp` if it is not already discovered from Cursor, Claude Code/Desktop, Codex, Windsurf, OpenCode, or VS Code. See [Configuration](config.md) for more options and the full schema.
+This walkthrough uses the public Context7 server so you can follow the tool examples without existing MCP configuration. Add it with `npx mcporter config add context7 https://mcp.context7.com/mcp` if it is not already discovered from Cursor, Claude Code/Desktop, Codex, Windsurf, OpenCode, or VS Code. See [Configuration](config.md) for more options and the full schema.
 
 ## 1. List the servers mcporter sees
 
