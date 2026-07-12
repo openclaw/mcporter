@@ -4,7 +4,7 @@ summary: 'Five-minute walk through listing MCP servers, calling a tool, and emit
 
 # Quickstart
 
-This walkthrough assumes you already have an MCP server configured in Cursor, Claude Code/Desktop, Codex, Windsurf, OpenCode, or VS Code. If not, copy [`config/mcporter.example.json`](https://github.com/steipete/mcporter/blob/main/config/mcporter.example.json) into `~/.mcporter/mcporter.json` and edit it — see [Configuration](config.md) for the full schema.
+This walkthrough uses the public Context7 server so you can follow the tool examples without existing MCP configuration. Add it with `npx mcporter config add context7 https://mcp.context7.com/mcp` if it is not already discovered from Cursor, Claude Code/Desktop, Codex, Windsurf, OpenCode, or VS Code. See [Configuration](config.md) for more options and the full schema.
 
 ## 1. List the servers mcporter sees
 
@@ -17,7 +17,7 @@ You get one row per server with auth status, transport type, and tool count. Add
 ## 2. Inspect a single server
 
 ```bash
-npx mcporter list linear
+npx mcporter list context7
 ```
 
 Single-server output reads like a TypeScript header file: dimmed `/** … */` doc comments above each `function name(...)` signature, with optional parameters summarised so the screen stays scannable. Add flags to drill in:
@@ -34,22 +34,21 @@ Single-server output reads like a TypeScript header file: dimmed `/** … */` do
 
 ```bash
 # Colon-delimited flags (shell-friendly).
-npx mcporter call linear.create_comment issueId:ENG-123 body:'Looks good!'
+npx mcporter call context7.resolve-library-id query:'React hooks docs' libraryName:react
 
 # Function-call style copy/pasted from `mcporter list`.
-npx mcporter call 'linear.create_comment(issueId: "ENG-123", body: "Looks good!")'
-
-# Anything after `--` is a literal positional value.
-npx mcporter call docs.fetch -- --raw-string-with-leading-dashes
+npx mcporter call 'context7.resolve-library-id(query: "React hooks docs", libraryName: "react")'
 ```
 
 Pick the output format with `--output text|markdown|json|raw`. Use `--save-images <dir>` to persist binary content blocks. See [CLI reference](cli-reference.md) for the full flag list.
 
-## 4. Read MCP resources
+## 4. Read MCP resources (optional)
+
+Context7 exposes tools but not resources. If another configured server exposes resources, list or read them with:
 
 ```bash
-npx mcporter resource docs                          # list resources
-npx mcporter resource docs file:///path/to/spec.md  # read a resource
+npx mcporter resource my-resource-server                          # list resources
+npx mcporter resource my-resource-server file:///path/to/spec.md  # read a resource
 ```
 
 Output formatting is shared with `mcporter call` (`--output`, `--json`, `--raw`).
@@ -59,8 +58,8 @@ Output formatting is shared with `mcporter call` (`--output`, `--json`, `--raw`)
 When you want to share a tool with someone who shouldn't have to learn `mcporter call`:
 
 ```bash
-npx mcporter generate-cli linear --bundle dist/linear.js
-node dist/linear.js create-comment --issue-id ENG-123 --body 'Looks good!'
+npx mcporter generate-cli context7 --runtime node --bundler rolldown --bundle dist/context7.js
+node dist/context7.js resolve-library-id --query 'React hooks docs' --library-name react
 ```
 
 Add `--compile <path>` for a Bun-compiled binary, or `--include-tools a,b,c` to ship a subset. Full details in [CLI generator](cli-generator.md).
@@ -68,7 +67,7 @@ Add `--compile <path>` for a Bun-compiled binary, or `--include-tools a,b,c` to 
 ## 6. Emit typed clients for agents
 
 ```bash
-npx mcporter emit-ts linear --mode client --out src/linear-client.ts
+npx mcporter emit-ts context7 --mode client --out src/context7-client.ts
 ```
 
 You get a `.d.ts` interface and a `createServerProxy()`-backed factory. Calls return `CallResult` objects with `.text()`, `.markdown()`, `.json()`, `.images()`, `.content()` helpers — see [Tool calling](tool-calling.md) for the proxy API and [emit-ts](emit-ts.md) for the generator.

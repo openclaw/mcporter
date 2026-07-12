@@ -388,5 +388,5 @@
   "required": ["mcpServers"],
   "additionalProperties": false,
   "description": "mcporter configuration file schema",
-  "$id": "https://raw.githubusercontent.com/steipete/mcporter/main/mcporter.schema.json"
+  "$id": "https://raw.githubusercontent.com/openclaw/mcporter/main/mcporter.schema.json"
 }
