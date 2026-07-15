@@ -49,7 +49,7 @@ should contain only `@AGENTS.md`.
 
 - Keep README/docs in sync with behavior changes.
 - Keep portfolio-level routing and ownership facts in
-  `home-agent-config/.openclaw/wiki/main/knowledge/entities/mcporter-repo.md`; keep this
+  `~/Developer/GitHub/LDMB123/home-agent-config/.openclaw/wiki/main/knowledge/entities/mcporter-repo.md`; keep this
   repo focused on product, CLI, release, and test documentation.
 - LLM Wiki work routes through
   `~/Developer/GitHub/LDMB123/home-agent-config/.openclaw/wiki/main/WIKI.md`;
