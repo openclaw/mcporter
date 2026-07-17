@@ -48,7 +48,7 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
 - Useful flags:
   - `--server`, `--tool` – alternate way to target a tool.
   - `--` – stop flag parsing so remaining tokens stay literal positional values.
-  - `--timeout <ms>` – override call timeout (defaults to `CALL_TIMEOUT_MS`).
+  - `--timeout <ms>` – override call timeout (defaults to `MCPORTER_CALL_TIMEOUT`, or 60 s).
   - `--output text|markdown|json|raw` – choose how to render the `CallResult`.
   - `--save-images <dir>` – persist image content blocks to files under the specified directory.
   - `--raw-strings` – disable numeric coercion for flag-style and positional values.
