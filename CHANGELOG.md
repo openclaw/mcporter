@@ -2,6 +2,10 @@
 
 ## [0.12.4] - Unreleased
 
+### CLI
+
+- Correct the documented call timeout to 60 seconds and distinguish its `MCPORTER_CALL_TIMEOUT` and `--timeout` overrides from the 30-second list timeout. (PR #230, thanks @KrasimirKralev)
+
 ### OAuth
 
 - Recover rotating refresh tokens after transient OAuth refresh failures without clearing a concurrently persisted winner, and clear only the exact rejected token on `invalid_grant`. (PR #227, thanks @feniix)
