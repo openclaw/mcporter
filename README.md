@@ -34,11 +34,15 @@ flags for scripts, such as `mcporter call --output json`.
 
 ## Docs
 
+- [Product vision](VISION.md)
 - [Docs home](docs/index.md)
+- [Runtime overview](docs/mcp.md)
 - [Install](docs/install.md)
 - [Quickstart](docs/quickstart.md)
+- [Migration guide](docs/migration.md)
 - [Configuration](docs/config.md)
 - [CLI reference](docs/cli-reference.md)
+- [Agent shortcuts](docs/shortcuts.md)
 - [Ad-hoc connections](docs/adhoc.md)
 - [Known issues](docs/known-issues.md)
 - [Tool calling](docs/tool-calling.md)
@@ -47,8 +51,10 @@ flags for scripts, such as `mcporter call --output json`.
 - [Typed clients](docs/emit-ts.md)
 - [Agent skills](docs/agent-skills.md)
 - [Daemon](docs/daemon.md)
+- [Logging and diagnostics](docs/logging.md)
 - [Record/replay](docs/record-replay.md)
 - [Manual testing](docs/manual-testing.md)
+- [Live integration tests](docs/livetests.md)
 - [Release](docs/RELEASE.md)
 
 Portfolio routing and ownership notes live in the LDMB123 tracked wiki:

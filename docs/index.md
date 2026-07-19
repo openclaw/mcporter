@@ -62,10 +62,15 @@ A _porter_ carries luggage between trains. mcporter does the same for MCP server
 
 ## Where to next
 
+- [Runtime overview](mcp.md) — the runtime, CLI entry points, and reusable helpers.
 - [Install](install.md) — npm, npx, Homebrew, or the standalone Bun-compiled binary.
 - [Quickstart](quickstart.md) — your first list/call/resource in five minutes.
+- [Migration guide](migration.md) — replace legacy `pnpm mcp:*` wrappers with mcporter.
 - [Configuration](config.md) — `mcporter.json`, imports, env interpolation, OAuth.
 - [CLI reference](cli-reference.md) — every subcommand and flag.
+- [Agent shortcuts](shortcuts.md) — compact discovery and help commands for agents.
 - [Ad-hoc connections](adhoc.md) — point at any MCP endpoint without editing config.
+- [Logging and diagnostics](logging.md) — persistent daemon logs and focused tracing.
+- [Live integration tests](livetests.md) — opt-in validation against hosted MCP servers.
 - [Known issues](known-issues.md) — hosted OAuth quirks, provider limitations, and upstream gaps.
 - [Agent skills](agent-skills.md) — exposing servers to agents the right way.
