@@ -128,7 +128,26 @@ function createHttpTransportOptions(
   };
 }
 
-function resolveHttpFetchOverride(definition: ServerDefinition): typeof nodeHttp1Fetch | undefined {
+/**
+ * Hosts that must use the `node-http1` fetch implementation instead of the global
+ * (undici-backed) `fetch`.
+ *
+ * Streamable HTTP servers may hold the standalone `GET` SSE stream open indefinitely
+ * without emitting any bytes — a spec-legal idle server-to-client notification channel.
+ * Under undici that open response occupies the connection for its origin, and every
+ * subsequent same-origin request queues behind it forever, so `tools/list` and all tool
+ * calls hang until they time out. The block is origin-scoped: requests to other origins
+ * from the same process are unaffected, and it reproduces whether or not the SSE body is
+ * actually read. Raising `connections` or enabling `allowH2` on a shared dispatcher does
+ * not help; only an entirely separate connection pool does. `nodeHttp1Fetch` gives each
+ * request its own `node:http` connection, which sidesteps the shared pool.
+ *
+ * Users can always set `httpFetch` explicitly per server; this list only covers hosts
+ * known to exhibit the hang so they work without configuration.
+ */
+const NODE_HTTP1_FETCH_HOSTS: ReadonlySet<string> = new Set(['api.sunsama.com', 'mcp.paddle.com']);
+
+export function resolveHttpFetchOverride(definition: ServerDefinition): typeof nodeHttp1Fetch | undefined {
   if (definition.command.kind !== 'http') {
     return undefined;
   }
@@ -138,7 +157,7 @@ function resolveHttpFetchOverride(definition: ServerDefinition): typeof nodeHttp
   if (definition.httpFetch === 'node-http1') {
     return nodeHttp1Fetch;
   }
-  if (definition.command.url.hostname.toLowerCase() === 'api.sunsama.com') {
+  if (NODE_HTTP1_FETCH_HOSTS.has(definition.command.url.hostname.toLowerCase())) {
     return nodeHttp1Fetch;
   }
   return undefined;
