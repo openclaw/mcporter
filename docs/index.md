@@ -62,15 +62,50 @@ A _porter_ carries luggage between trains. mcporter does the same for MCP server
 
 ## Where to next
 
+Getting started:
+
 - [Runtime overview](mcp.md) — the runtime, CLI entry points, and reusable helpers.
+- [Architecture](spec.md) — runtime, proxy, and generation design notes.
 - [Install](install.md) — npm, npx, Homebrew, or the standalone Bun-compiled binary.
 - [Quickstart](quickstart.md) — your first list/call/resource in five minutes.
 - [Migration guide](migration.md) — replace legacy `pnpm mcp:*` wrappers with mcporter.
+- [Local dev](local.md) — run mcporter directly from the repo without npx.
+
+Configuration:
+
 - [Configuration](config.md) — `mcporter.json`, imports, env interpolation, OAuth.
+- [Import reference](import.md) — external config formats and discovery paths.
+
+Calling tools:
+
 - [CLI reference](cli-reference.md) — every subcommand and flag.
 - [Agent shortcuts](shortcuts.md) — compact discovery and help commands for agents.
+- [Call syntax](call-syntax.md) — function-call and flag argument styles.
+- [Call auto-correction](call-heuristic.md) — typo heuristics and suggestions.
+- [Tool calling](tool-calling.md) — the `createServerProxy()` API and `CallResult` helpers.
 - [Ad-hoc connections](adhoc.md) — point at any MCP endpoint without editing config.
+
+Generation:
+
+- [Generated CLIs](cli-generator.md) — standalone CLI generation, bundling, and regeneration.
+- [Typed clients](emit-ts.md) — emit `.d.ts` types or typed client factories.
+
+Hosting & diagnostics:
+
+- [Daemon](daemon.md) — keep-alive daemon, `mcporter serve`, and agent isolation.
 - [Logging and diagnostics](logging.md) — persistent daemon logs and focused tracing.
+- [Record/replay](record-replay.md) — capture and replay MCP JSON-RPC traffic.
+- [Hang debugging](hang-debug.md) — diagnose commands that never exit.
+- [Manual testing](manual-testing.md) — tmux-based recipe for real-server checks.
+- [tmux](tmux.md) — wrap long-running commands in tmux sessions.
+- [Windows & WSL](windows.md) — NTFS/WSL tips for pnpm and test flows.
+
+Testing & release:
+
 - [Live integration tests](livetests.md) — opt-in validation against hosted MCP servers.
 - [Known issues](known-issues.md) — hosted OAuth quirks, provider limitations, and upstream gaps.
+- [Release](RELEASE.md) — versioning, artifacts, npm publish, GitHub release, and Homebrew tap.
+
+For agents:
+
 - [Agent skills](agent-skills.md) — exposing servers to agents the right way.
