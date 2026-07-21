@@ -143,6 +143,9 @@ function resolveHttpFetchOverride(definition: ServerDefinition): typeof nodeHttp
   if (NODE_HTTP1_FETCH_HOSTS.has(definition.command.url.hostname.toLowerCase())) {
     return nodeHttp1Fetch;
   }
+  if ('bun' in process.versions) {
+    return undefined;
+  }
   return sseIsolatedFetch;
 }
 

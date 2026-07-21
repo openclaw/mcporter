@@ -218,7 +218,8 @@ describeGenerateCli('generateCli', () => {
     } = await generateCli({
       serverRef: inline,
       runtime: 'bun',
-      timeoutMs: 5_000,
+      // Bun's first compiled invocation can spend several seconds initializing on loaded CI hosts.
+      timeoutMs: 10_000,
       minify: true,
       compile: expectedBinaryPath,
     });

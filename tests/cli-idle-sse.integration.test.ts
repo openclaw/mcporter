@@ -125,7 +125,7 @@ describe('idle standalone SSE CLI integration', () => {
             jsonrpc: '2.0',
             id: message.id,
             result: {
-              capabilities: {},
+              capabilities: { tools: {} },
               protocolVersion: '2025-11-25',
               serverInfo: { name: 'idle-sse-test', version: '1.0.0' },
             },
@@ -140,7 +140,7 @@ describe('idle standalone SSE CLI integration', () => {
       }
 
       if (message.method === 'tools/list') {
-        toolsListSawOpenSse = Boolean(idleResponse && !idleResponse.writableEnded);
+        toolsListSawOpenSse = Boolean(idleResponse && !idleResponse.writableEnded && !idleResponse.destroyed);
         response.writeHead(200, { 'content-type': 'application/json' });
         response.end(
           JSON.stringify({
