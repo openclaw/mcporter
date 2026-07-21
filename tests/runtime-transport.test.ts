@@ -325,6 +325,18 @@ describe('createClientContext (HTTP)', () => {
     await createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 });
   });
 
+  it('isolates the standalone SSE channel from the default fetch pool', async () => {
+    const definition = stubHttpDefinition('https://example.com/mcp');
+
+    vi.spyOn(Client.prototype, 'connect').mockImplementationOnce(async (transport) => {
+      expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
+      const fetchOverride = (transport as { _fetch?: unknown })._fetch;
+      expect(fetchOverride).toEqual(expect.any(Function));
+    });
+
+    await createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 });
+  });
+
   it('uses the HTTP/1.1 fetch compatibility path for Sunsama by default', async () => {
     const definition = stubHttpDefinition('https://api.sunsama.com/mcp');
 
@@ -340,6 +352,21 @@ describe('createClientContext (HTTP)', () => {
   it('honors explicit default fetch mode for Sunsama', async () => {
     const definition: ServerDefinition = {
       ...stubHttpDefinition('https://api.sunsama.com/mcp'),
+      httpFetch: 'default',
+    };
+
+    vi.spyOn(Client.prototype, 'connect').mockImplementationOnce(async (transport) => {
+      expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
+      const fetchOverride = (transport as { _fetch?: unknown })._fetch;
+      expect(fetchOverride).toBeUndefined();
+    });
+
+    await createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 });
+  });
+
+  it('honors explicit default fetch mode for other HTTP servers', async () => {
+    const definition: ServerDefinition = {
+      ...stubHttpDefinition('https://example.com/mcp'),
       httpFetch: 'default',
     };
 

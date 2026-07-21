@@ -12,6 +12,24 @@ export const nodeHttp1Fetch: FetchLike = async (input, init = {}) => {
   return nodeHttp1FetchWithRedirects(input, init, 0);
 };
 
+/**
+ * Keep the optional, long-lived SSE receive channel off the fetch implementation
+ * used for ordinary MCP requests. Some fetch stacks can otherwise let an idle GET
+ * monopolize the origin pool and indefinitely queue later POST requests.
+ */
+export function createSseIsolatedFetch(defaultFetch: FetchLike): FetchLike {
+  return (input, init = {}) => {
+    const method = (init.method ?? 'GET').toUpperCase();
+    const acceptsSse = new Headers(init.headers).get('accept')?.toLowerCase().includes('text/event-stream') ?? false;
+    if (method === 'GET' && acceptsSse) {
+      return nodeHttp1Fetch(input, init);
+    }
+    return defaultFetch(input, init);
+  };
+}
+
+export const sseIsolatedFetch = createSseIsolatedFetch((input, init) => fetch(input, init));
+
 async function nodeHttp1FetchWithRedirects(
   input: string | URL,
   init: RequestInit,

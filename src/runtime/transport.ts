@@ -13,7 +13,7 @@ import { readCachedAccessToken } from '../oauth-persistence.js';
 import { materializeHeaders } from '../runtime-header-utils.js';
 import { isUnauthorizedError, maybeEnableOAuth } from '../runtime-oauth-support.js';
 import { closeTransportAndWait } from '../runtime-process-utils.js';
-import { nodeHttp1Fetch } from './node-http-fetch.js';
+import { nodeHttp1Fetch, sseIsolatedFetch } from './node-http-fetch.js';
 import {
   connectWithAuth,
   isOAuthFlowError,
@@ -128,26 +128,9 @@ function createHttpTransportOptions(
   };
 }
 
-/**
- * Hosts that must use the `node-http1` fetch implementation instead of the global
- * (undici-backed) `fetch`.
- *
- * Streamable HTTP servers may hold the standalone `GET` SSE stream open indefinitely
- * without emitting any bytes — a spec-legal idle server-to-client notification channel.
- * Under undici that open response occupies the connection for its origin, and every
- * subsequent same-origin request queues behind it forever, so `tools/list` and all tool
- * calls hang until they time out. The block is origin-scoped: requests to other origins
- * from the same process are unaffected, and it reproduces whether or not the SSE body is
- * actually read. Raising `connections` or enabling `allowH2` on a shared dispatcher does
- * not help; only an entirely separate connection pool does. `nodeHttp1Fetch` gives each
- * request its own `node:http` connection, which sidesteps the shared pool.
- *
- * Users can always set `httpFetch` explicitly per server; this list only covers hosts
- * known to exhibit the hang so they work without configuration.
- */
-const NODE_HTTP1_FETCH_HOSTS: ReadonlySet<string> = new Set(['api.sunsama.com', 'mcp.paddle.com']);
+const NODE_HTTP1_FETCH_HOSTS: ReadonlySet<string> = new Set(['api.sunsama.com']);
 
-export function resolveHttpFetchOverride(definition: ServerDefinition): typeof nodeHttp1Fetch | undefined {
+function resolveHttpFetchOverride(definition: ServerDefinition): typeof nodeHttp1Fetch | undefined {
   if (definition.command.kind !== 'http') {
     return undefined;
   }
@@ -160,7 +143,7 @@ export function resolveHttpFetchOverride(definition: ServerDefinition): typeof n
   if (NODE_HTTP1_FETCH_HOSTS.has(definition.command.url.hostname.toLowerCase())) {
     return nodeHttp1Fetch;
   }
-  return undefined;
+  return sseIsolatedFetch;
 }
 
 async function closeOAuthSession(oauthSession?: OAuthSession): Promise<void> {
