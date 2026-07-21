@@ -19,6 +19,10 @@
 
 - Isolate OAuth callback and session tests behind temporary HOME and XDG roots, with a regression sentinel proving ambient credentials stay untouched.
 
+### Tooling / Dependencies
+
+- Refresh compatible Rolldown, Oxlint, Oxfmt, tsx, and TypeScript-linting dependencies while retaining the Vitest-compatible Vite 8.1.4 peer line.
+
 ## [0.12.3] - 2026-07-01
 
 ### CLI
