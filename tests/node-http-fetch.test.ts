@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { afterEach, describe, expect, it } from 'vitest';
-import { nodeHttp1Fetch } from '../src/runtime/node-http-fetch.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createSseIsolatedFetch, nodeHttp1Fetch } from '../src/runtime/node-http-fetch.js';
 
 let cleanup: (() => Promise<void>) | undefined;
 
@@ -11,6 +11,28 @@ afterEach(async () => {
 });
 
 describe('nodeHttp1Fetch', () => {
+  it('isolates only event-stream GET requests from the default fetch', async () => {
+    const { baseUrl, close } = await serve((_request, response) => {
+      response.writeHead(200, { 'content-type': 'text/plain' });
+      response.end('isolated');
+    });
+    cleanup = close;
+    const defaultFetch = vi.fn(async () => new Response('default'));
+    const isolatedFetch = createSseIsolatedFetch(defaultFetch);
+
+    const postResponse = await isolatedFetch(baseUrl, {
+      method: 'POST',
+      headers: { accept: 'application/json, text/event-stream' },
+    });
+    const jsonGetResponse = await isolatedFetch(baseUrl, { headers: { accept: 'application/json' } });
+    const sseGetResponse = await isolatedFetch(baseUrl, { headers: { accept: 'text/event-stream' } });
+
+    expect(await postResponse.text()).toBe('default');
+    expect(await jsonGetResponse.text()).toBe('default');
+    expect(await sseGetResponse.text()).toBe('isolated');
+    expect(defaultFetch).toHaveBeenCalledTimes(2);
+  });
+
   it('follows redirects by default', async () => {
     const { baseUrl, close } = await serve((request, response) => {
       if (request.url === '/start') {

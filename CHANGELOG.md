@@ -5,6 +5,7 @@
 ### CLI
 
 - Correct the documented call timeout to 60 seconds and distinguish its `MCPORTER_CALL_TIMEOUT` and `--timeout` overrides from the 30-second list timeout. (PR #230, thanks @KrasimirKralev)
+- Isolate long-lived SSE receive streams from ordinary HTTP requests so byte-idle servers cannot stall tool listing and calls. (PR #234, thanks @umutkeltek)
 
 ### OAuth
 

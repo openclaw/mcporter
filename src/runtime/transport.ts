@@ -13,7 +13,7 @@ import { readCachedAccessToken } from '../oauth-persistence.js';
 import { materializeHeaders } from '../runtime-header-utils.js';
 import { isUnauthorizedError, maybeEnableOAuth } from '../runtime-oauth-support.js';
 import { closeTransportAndWait } from '../runtime-process-utils.js';
-import { nodeHttp1Fetch } from './node-http-fetch.js';
+import { nodeHttp1Fetch, sseIsolatedFetch } from './node-http-fetch.js';
 import {
   connectWithAuth,
   isOAuthFlowError,
@@ -128,6 +128,8 @@ function createHttpTransportOptions(
   };
 }
 
+const NODE_HTTP1_FETCH_HOSTS: ReadonlySet<string> = new Set(['api.sunsama.com']);
+
 function resolveHttpFetchOverride(definition: ServerDefinition): typeof nodeHttp1Fetch | undefined {
   if (definition.command.kind !== 'http') {
     return undefined;
@@ -138,10 +140,13 @@ function resolveHttpFetchOverride(definition: ServerDefinition): typeof nodeHttp
   if (definition.httpFetch === 'node-http1') {
     return nodeHttp1Fetch;
   }
-  if (definition.command.url.hostname.toLowerCase() === 'api.sunsama.com') {
+  if (NODE_HTTP1_FETCH_HOSTS.has(definition.command.url.hostname.toLowerCase())) {
     return nodeHttp1Fetch;
   }
-  return undefined;
+  if ('bun' in process.versions) {
+    return undefined;
+  }
+  return sseIsolatedFetch;
 }
 
 async function closeOAuthSession(oauthSession?: OAuthSession): Promise<void> {

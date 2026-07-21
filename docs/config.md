@@ -168,7 +168,9 @@ Use `--scope home|project` with `mcporter config add` to pick the write target e
 
 ## HTTP Compatibility
 
-HTTP MCP servers normally use Node's built-in `fetch` through the upstream MCP SDK. If a provider rejects that stack but accepts plain Node `https.request` traffic, set `httpFetch: "node-http1"` on the server entry to force an HTTP/1.1 fetch implementation for Streamable HTTP and SSE POST requests:
+HTTP MCP servers normally use Node's built-in `fetch` for request/response traffic. MCPorter's optional long-lived SSE receive channel uses a separate HTTP/1.1 connection so an idle stream cannot occupy the request pool and stall later tool calls. Set `httpFetch: "default"` to opt out of that isolation and use the built-in fetch for every request.
+
+If a provider rejects the built-in stack entirely but accepts plain Node `https.request` traffic, set `httpFetch: "node-http1"` on the server entry to force an HTTP/1.1 fetch implementation for all Streamable HTTP and SSE requests:
 
 ```jsonc
 {
@@ -182,7 +184,7 @@ HTTP MCP servers normally use Node's built-in `fetch` through the upstream MCP S
 }
 ```
 
-The Sunsama endpoint is auto-detected and uses this compatibility path by default.
+The Sunsama endpoint is auto-detected and uses the all-request compatibility path by default.
 
 ## JSON Schema for IDE Support
 
