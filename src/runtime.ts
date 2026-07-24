@@ -61,6 +61,13 @@ export interface ListToolsOptions {
    * headless callers that need cached-token-only behavior.
    */
   readonly disableOAuth?: boolean;
+  /**
+   * Per-request timeout (ms) forwarded to the MCP client so listings don't hit
+   * the SDK's default 60s cap. Required for `auth`, where the interactive OAuth
+   * browser flow runs inside the `tools/list` request and routinely exceeds 60s.
+   * Mirrors {@link CallOptions.timeoutMs}.
+   */
+  readonly timeoutMs?: number;
 }
 
 export type ListResourcesOptions = Partial<ListResourcesRequest['params']> & {
@@ -263,9 +270,17 @@ class McpRuntime implements Runtime {
     let closeError: unknown;
     const tools: ServerToolInfo[] = [];
     try {
+      const timeoutMs = normalizeTimeout(options.timeoutMs);
       let cursor: string | undefined;
       do {
-        const response = await context.client.listTools(cursor ? { cursor } : undefined);
+        // Forward the requested timeout to the MCP client so listings -- and the
+        // interactive OAuth flow that listTools can trigger during `auth` -- don't
+        // hit the SDK's default 60s cap. Mirrors the callTool timeout forwarding.
+        const listPromise = context.client.listTools(
+          cursor ? { cursor } : undefined,
+          timeoutMs ? { timeout: timeoutMs, resetTimeoutOnProgress: true, maxTotalTimeout: timeoutMs } : undefined,
+        );
+        const response = timeoutMs ? await raceWithTimeout(listPromise, timeoutMs) : await listPromise;
         tools.push(
           ...(response.tools ?? []).map((tool) => ({
             name: tool.name,
