@@ -1,3 +1,4 @@
+import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import net from 'node:net';
@@ -6,6 +7,7 @@ import { loadDaemonConfig, type ServerDefinition } from '../config.js';
 import { readJsonFile, withFileLock, writeJsonFile } from '../fs-json.js';
 import { isKeepAliveServer } from '../lifecycle.js';
 import { createRuntime, type Runtime } from '../runtime.js';
+import { OAuthTimeoutError } from '../runtime/oauth.js';
 import { collectConfigLayers, statConfigMtime } from './config-layers.js';
 import { hashDaemonDefinitions } from './definition-hash.js';
 import {
@@ -17,6 +19,7 @@ import {
   shouldLogServer,
 } from './log-context.js';
 import {
+  DAEMON_OPERATION_TIMEOUT_CODE,
   DAEMON_PROTOCOL_VERSION,
   type CallToolParams,
   type CloseServerParams,
@@ -525,6 +528,18 @@ function normalizeDaemonDisableOAuth(value: boolean | undefined): boolean {
   return value === true;
 }
 
+function daemonRuntimeErrorCode(error: unknown): string {
+  const errorCode = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
+  if (
+    error instanceof OAuthTimeoutError ||
+    errorCode === ErrorCode.RequestTimeout ||
+    (error instanceof Error && error.message === 'Timeout')
+  ) {
+    return DAEMON_OPERATION_TIMEOUT_CODE;
+  }
+  return 'runtime_error';
+}
+
 async function processRequest(
   rawPayload: string,
   runtime: Runtime,
@@ -734,7 +749,7 @@ async function processRequest(
     }
   } catch (error) {
     return {
-      response: buildErrorResponse(id, 'runtime_error', error),
+      response: buildErrorResponse(id, daemonRuntimeErrorCode(error), error),
       shouldShutdown: false,
     };
   }

@@ -283,4 +283,26 @@ describe('createKeepAliveRuntime', () => {
     expect(daemon.callTool).toHaveBeenCalledTimes(1);
     expect(daemon.closeServer).not.toHaveBeenCalled();
   });
+
+  it('does not restart or retry daemon listTools operation timeouts', async () => {
+    const runtime = new FakeRuntime(definitions);
+    const timeoutError = Object.assign(new Error("OAuth authorization for 'alpha' timed out after 5s; aborting."), {
+      code: 'operation_timeout',
+    });
+    const daemon = {
+      callTool: vi.fn(),
+      closeServer: vi.fn().mockResolvedValue(undefined),
+      listTools: vi.fn().mockRejectedValue(timeoutError),
+      listResources: vi.fn(),
+      readResource: vi.fn(),
+    };
+    const keepAliveRuntime = createKeepAliveRuntime(runtime as unknown as Runtime, {
+      daemonClient: daemon as never,
+      keepAliveServers: new Set(['alpha']),
+    });
+
+    await expect(keepAliveRuntime.listTools('alpha', { timeoutMs: 5_000 })).rejects.toThrow('timed out');
+    expect(daemon.listTools).toHaveBeenCalledTimes(1);
+    expect(daemon.closeServer).not.toHaveBeenCalled();
+  });
 });

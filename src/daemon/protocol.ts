@@ -1,4 +1,5 @@
 export const DAEMON_PROTOCOL_VERSION = 2;
+export const DAEMON_OPERATION_TIMEOUT_CODE = 'operation_timeout';
 
 export type DaemonRequestMethod =
   | 'callTool'

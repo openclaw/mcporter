@@ -13,6 +13,7 @@ import {
 } from '../src/daemon/host.js';
 import type { DaemonRequest } from '../src/daemon/protocol.js';
 import type { Runtime } from '../src/runtime.js';
+import { OAuthTimeoutError } from '../src/runtime/oauth.js';
 
 describe('daemon host request handling', () => {
   const metadata = {
@@ -155,6 +156,28 @@ describe('daemon host request handling', () => {
       disableOAuth: false,
     });
   });
+
+  it('marks OAuth listTools timeouts as non-retryable operation errors', async () => {
+    const runtime = createRuntimeDouble();
+    vi.mocked(runtime.listTools).mockRejectedValue(new OAuthTimeoutError('oauth', 5_000));
+
+    const result = await __testProcessRequest(
+      '',
+      runtime as unknown as Runtime,
+      createManagedServers(),
+      new Map(),
+      metadata,
+      logContext,
+      {
+        id: 'list-timeout',
+        method: 'listTools',
+        params: { server: 'oauth', timeoutMs: 5_000 },
+      }
+    );
+
+    expect(result.response.ok).toBe(false);
+    expect(result.response.error?.code).toBe('operation_timeout');
+  });
 });
 
 const describeUnixSocket = process.platform === 'win32' ? describe.skip : describe;
@@ -291,7 +314,10 @@ describe('daemon artifact cleanup', () => {
   });
 });
 
-function createRuntimeDouble(): Pick<Runtime, 'callTool' | 'listTools'> {
+function createRuntimeDouble(): {
+  callTool: ReturnType<typeof vi.fn>;
+  listTools: ReturnType<typeof vi.fn>;
+} {
   return {
     callTool: vi.fn().mockResolvedValue({ ok: true }),
     listTools: vi.fn().mockResolvedValue([]),
