@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DAEMON_PROTOCOL_VERSION } from '../src/daemon/protocol.js';
 import { makeShortTempDir } from './fixtures/test-helpers.js';
 
 const sentMethods: string[] = [];
@@ -16,6 +17,9 @@ class MockSocket extends EventEmitter {
   write(data: string, cb?: (err?: Error | null) => void): boolean {
     const payload = JSON.parse(data.toString());
     sentMethods.push(payload.method);
+    if (payload.method === 'stop') {
+      activeStatusPid = findNonRunningPid();
+    }
     const response = buildResponse(payload.method, payload.id);
     queueMicrotask(() => {
       this.emit('data', JSON.stringify(response));
@@ -41,6 +45,7 @@ function buildResponse(method: string, id: string) {
       ok: true,
       result: {
         pid: activeStatusPid,
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
         startedAt: Date.now(),
         configPath: activeConfigPath,
         configMtimeMs: activeConfigMtime,
@@ -93,6 +98,7 @@ describe('DaemonClient config freshness', () => {
           JSON.stringify(
             {
               pid: process.pid,
+              protocolVersion: DAEMON_PROTOCOL_VERSION,
               socketPath: options.socketPath,
               configPath: options.configPath,
               startedAt: Date.now(),
@@ -225,6 +231,7 @@ describe('DaemonClient config freshness', () => {
       JSON.stringify(
         {
           pid: process.pid,
+          protocolVersion: DAEMON_PROTOCOL_VERSION,
           socketPath,
           configPath,
           startedAt: Date.now() - 10_000,
@@ -244,6 +251,43 @@ describe('DaemonClient config freshness', () => {
     expect(sentMethods).toEqual(['status', 'listTools']);
     expect(sentMethods).not.toContain('stop');
     expect(launchDaemonDetached).not.toHaveBeenCalled();
+  });
+
+  it('restarts a daemon whose metadata predates the current protocol', async () => {
+    const tmpDir = await makeShortTempDir('daemon-protocol-stale');
+    process.env.MCPORTER_DAEMON_DIR = tmpDir;
+
+    const configPath = path.join(tmpDir, 'config.json');
+    await fs.writeFile(configPath, JSON.stringify({ mcpServers: {} }), 'utf8');
+    const stat = await fs.stat(configPath);
+    const { metadataPath, socketPath } = resolveDaemonPaths(configPath);
+    activeConfigPath = configPath;
+    activeSocketPath = socketPath;
+    activeConfigMtime = stat.mtimeMs;
+    activeStatusPid = process.pid;
+    activeLayers = [{ path: configPath, mtimeMs: stat.mtimeMs }];
+
+    await fs.mkdir(path.dirname(metadataPath), { recursive: true });
+    await fs.writeFile(
+      metadataPath,
+      JSON.stringify({
+        pid: process.pid,
+        socketPath,
+        configPath,
+        startedAt: Date.now() - 10_000,
+        logPath: null,
+        configMtimeMs: stat.mtimeMs,
+        configLayers: activeLayers,
+      }),
+      'utf8'
+    );
+
+    const client = new DaemonClient({ configPath, configExplicit: true, rootDir: tmpDir });
+    await client.listTools({ server: 'playwright' });
+
+    expect(sentMethods).toContain('stop');
+    expect(launchDaemonDetached).toHaveBeenCalledTimes(1);
+    expect(sentMethods).toContain('listTools');
   });
 });
 

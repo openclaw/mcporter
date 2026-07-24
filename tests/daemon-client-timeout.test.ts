@@ -2,15 +2,20 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DAEMON_PROTOCOL_VERSION } from '../src/daemon/protocol.js';
 import { makeShortTempDir } from './fixtures/test-helpers.js';
 
 const timeoutRecords: Array<{ method: string; timeout: number }> = [];
 
 class MockSocket extends EventEmitter {
   currentTimeout = 0;
+  private timeoutHandle?: NodeJS.Timeout;
 
-  setTimeout(ms: number): this {
+  setTimeout(ms: number, callback?: () => void): this {
     this.currentTimeout = ms;
+    if (enforceSocketTimeout && callback) {
+      this.timeoutHandle = setTimeout(callback, ms);
+    }
     return this;
   }
 
@@ -19,6 +24,9 @@ class MockSocket extends EventEmitter {
     timeoutRecords.push({ method: payload.method, timeout: this.currentTimeout });
     const response = buildResponse(payload.method, payload.id);
     setTimeout(() => {
+      if (this.timeoutHandle) {
+        clearTimeout(this.timeoutHandle);
+      }
       this.emit('data', JSON.stringify(response));
       this.emit('end');
     }, responseDelayMs);
@@ -31,12 +39,19 @@ class MockSocket extends EventEmitter {
     return this;
   }
 
-  destroy(): this {
+  destroy(error?: Error): this {
+    if (this.timeoutHandle) {
+      clearTimeout(this.timeoutHandle);
+    }
+    if (error) {
+      queueMicrotask(() => this.emit('error', error));
+    }
     return this;
   }
 }
 
 let responseDelayMs = 5;
+let enforceSocketTimeout = false;
 let activeConfigPath = path.resolve('mcporter.config.json');
 let activeSocketPath = '';
 const createConnection = vi.fn(() => {
@@ -67,6 +82,7 @@ function buildResponse(method: string, id: string) {
       ok: true,
       result: {
         pid: process.pid,
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
         startedAt: Date.now(),
         configPath: activeConfigPath,
         socketPath: activeSocketPath,
@@ -85,6 +101,7 @@ describe('DaemonClient timeouts', () => {
   beforeEach(async () => {
     timeoutRecords.length = 0;
     responseDelayMs = 5;
+    enforceSocketTimeout = false;
     previousDaemonTimeout = process.env.MCPORTER_DAEMON_TIMEOUT_MS;
     previousDaemonDir = process.env.MCPORTER_DAEMON_DIR;
     tmpDaemonDir = await makeShortTempDir('daemon-timeout');
@@ -142,6 +159,30 @@ describe('DaemonClient timeouts', () => {
     expect(callRecord?.timeout).toBe(12_345);
   });
 
+  it('honors per-listTools timeout overrides', async () => {
+    const configPath = 'mcporter.config.json';
+    await writeFreshMetadata(configPath);
+    const client = new DaemonClient({ configPath, configExplicit: true });
+    await client.listTools({ server: 'foo', timeoutMs: 300_000 });
+    const statusRecord = timeoutRecords.find((entry) => entry.method === 'status');
+    const listRecord = timeoutRecords.find((entry) => entry.method === 'listTools');
+    expect(statusRecord?.timeout).toBe(305_000);
+    expect(listRecord?.timeout).toBe(305_000);
+  });
+
+  it('keeps the daemon transport open beyond the listTools operation deadline', async () => {
+    responseDelayMs = 40;
+    enforceSocketTimeout = true;
+    const configPath = 'mcporter.config.json';
+    await writeFreshMetadata(configPath);
+    const client = new DaemonClient({ configPath, configExplicit: true });
+
+    await expect(client.listTools({ server: 'foo', timeoutMs: 20 })).resolves.toEqual({ ok: true });
+
+    const listRecord = timeoutRecords.find((entry) => entry.method === 'listTools');
+    expect(listRecord?.timeout).toBe(5_020);
+  });
+
   it('clamps daemon status preflight timeout for tiny per-call timeouts', async () => {
     const configPath = 'mcporter.config.json';
     await writeFreshMetadata(configPath);
@@ -163,6 +204,7 @@ async function writeFreshMetadata(configPath: string): Promise<void> {
     paths.metadataPath,
     JSON.stringify({
       pid: process.pid,
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
       socketPath: paths.socketPath,
       configPath,
       configLayers: [{ path: activeConfigPath, mtimeMs: null }],

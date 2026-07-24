@@ -84,6 +84,7 @@ export interface ReadResourceOptions {
 
 export interface ConnectOptions {
   readonly maxOAuthAttempts?: number;
+  readonly oauthTimeoutMs?: number;
   readonly skipCache?: boolean;
   readonly allowCachedAuth?: boolean;
   readonly oauthSessionOptions?: OAuthSessionOptions;
@@ -260,17 +261,18 @@ class McpRuntime implements Runtime {
       true
     );
     const useLegacyNoAuthorize = !autoAuthorize && disableOAuth !== true;
+    const timeoutMs = normalizeTimeout(options.timeoutMs);
     const context = await this.connect(server, {
       maxOAuthAttempts: useLegacyNoAuthorize ? 0 : undefined,
       skipCache: useLegacyNoAuthorize,
       allowCachedAuth,
       oauthSessionOptions: options.oauthSessionOptions,
       disableOAuth,
+      oauthTimeoutMs: timeoutMs,
     });
     let closeError: unknown;
     const tools: ServerToolInfo[] = [];
     try {
-      const timeoutMs = normalizeTimeout(options.timeoutMs);
       let cursor: string | undefined;
       do {
         // Forward the requested timeout to the MCP client so listings -- and the
@@ -278,7 +280,7 @@ class McpRuntime implements Runtime {
         // hit the SDK's default 60s cap. Mirrors the callTool timeout forwarding.
         const listPromise = context.client.listTools(
           cursor ? { cursor } : undefined,
-          timeoutMs ? { timeout: timeoutMs, resetTimeoutOnProgress: true, maxTotalTimeout: timeoutMs } : undefined,
+          timeoutMs ? { timeout: timeoutMs, resetTimeoutOnProgress: true, maxTotalTimeout: timeoutMs } : undefined
         );
         const response = timeoutMs ? await raceWithTimeout(listPromise, timeoutMs) : await listPromise;
         tools.push(
@@ -595,7 +597,7 @@ class McpRuntime implements Runtime {
     let connectionDefinition = definition;
     let contextPromise = createClientContext(definition, this.logger, this.clientInfo, {
       maxOAuthAttempts: options.maxOAuthAttempts,
-      oauthTimeoutMs: this.oauthTimeoutMs ?? OAUTH_CODE_TIMEOUT_MS,
+      oauthTimeoutMs: options.oauthTimeoutMs ?? this.oauthTimeoutMs ?? OAUTH_CODE_TIMEOUT_MS,
       onDefinitionPromoted: (promoted) => {
         if (
           this.serverGeneration(normalized) === generation &&

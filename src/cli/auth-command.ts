@@ -17,12 +17,17 @@ type Runtime = Awaited<ReturnType<typeof createRuntime>>;
 
 type BrowserSuppression = 'default' | 'no-browser';
 
+export interface AuthCommandOptions {
+  readonly oauthTimeoutMs?: number;
+}
+
 const TRUE_VALUES = new Set(['1', 'true', 'yes']);
 const FALSE_VALUES = new Set(['0', 'false', 'no']);
 
-export async function handleAuth(runtime: Runtime, args: string[]): Promise<void> {
+export async function handleAuth(runtime: Runtime, args: string[], options: AuthCommandOptions = {}): Promise<void> {
   const browserSuppression = consumeBrowserSuppression(args, process.env);
   const noBrowser = browserSuppression === 'no-browser';
+  const oauthTimeoutMs = options.oauthTimeoutMs ?? resolveOAuthTimeoutFromEnv();
   let authorizationOutputEmitted = false;
   const markAuthorizationOutputEmitted = () => {
     authorizationOutputEmitted = true;
@@ -89,7 +94,7 @@ export async function handleAuth(runtime: Runtime, args: string[]): Promise<void
           // request. Let it ride for as long as we're willing to wait for the
           // authorization code (MCPORTER_OAUTH_TIMEOUT_MS, default 300s) instead
           // of being killed by the SDK's 60s request cap.
-          timeoutMs: resolveOAuthTimeoutFromEnv(),
+          timeoutMs: oauthTimeoutMs,
           ...(noBrowser
             ? {
                 oauthSessionOptions: buildNoBrowserOAuthOptions(format, markAuthorizationOutputEmitted),

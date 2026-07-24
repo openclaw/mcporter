@@ -106,13 +106,14 @@ describe('createKeepAliveRuntime', () => {
       disableOAuth: undefined,
     });
 
-    await keepAliveRuntime.listTools('alpha', { includeSchema: true });
+    await keepAliveRuntime.listTools('alpha', { includeSchema: true, timeoutMs: 5_000 });
     expect(daemon.listTools).toHaveBeenCalledWith({
       server: 'alpha',
       includeSchema: true,
       autoAuthorize: undefined,
       allowCachedAuth: true,
       disableOAuth: undefined,
+      timeoutMs: 5_000,
     });
 
     await keepAliveRuntime.listTools('alpha', { allowCachedAuth: false });

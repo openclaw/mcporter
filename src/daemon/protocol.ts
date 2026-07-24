@@ -1,3 +1,5 @@
+export const DAEMON_PROTOCOL_VERSION = 2;
+
 export type DaemonRequestMethod =
   | 'callTool'
   | 'listTools'
@@ -37,6 +39,7 @@ export interface ListToolsParams {
   readonly autoAuthorize?: boolean;
   readonly allowCachedAuth?: boolean;
   readonly disableOAuth?: boolean;
+  readonly timeoutMs?: number;
 }
 
 export interface ListResourcesParams {
@@ -59,6 +62,7 @@ export interface CloseServerParams {
 
 export interface StatusResult {
   readonly pid: number;
+  readonly protocolVersion: number;
   readonly startedAt: number;
   readonly configPath: string;
   readonly configMtimeMs?: number | null;

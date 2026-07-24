@@ -60,7 +60,7 @@ describe('daemon host request handling', () => {
     await __testProcessRequest('', runtime as unknown as Runtime, managedServers, new Map(), metadata, logContext, {
       id: 'list',
       method: 'listTools',
-      params: { server: 'oauth', includeSchema: true },
+      params: { server: 'oauth', includeSchema: true, timeoutMs: 300_000 },
     });
 
     expect(runtime.listTools).toHaveBeenCalledWith('oauth', {
@@ -68,6 +68,7 @@ describe('daemon host request handling', () => {
       autoAuthorize: undefined,
       allowCachedAuth: true,
       disableOAuth: false,
+      timeoutMs: 300_000,
     });
   });
 

@@ -35,10 +35,11 @@ describe('runtime.listTools request timeout forwarding', () => {
   it('forwards timeoutMs to the MCP client so listings (and OAuth during auth) avoid the 60s SDK cap', async () => {
     const runtime = await createRuntime({ servers: definitions });
     const listTools = vi.fn().mockResolvedValue({ tools: [] });
-    vi.spyOn(runtime, 'connect').mockResolvedValue(fakeListToolsContext(listTools));
+    const connect = vi.spyOn(runtime, 'connect').mockResolvedValue(fakeListToolsContext(listTools));
 
     await runtime.listTools('alpha', { timeoutMs: 5_000 });
 
+    expect(connect).toHaveBeenCalledWith('alpha', expect.objectContaining({ oauthTimeoutMs: 5_000 }));
     expect(listTools).toHaveBeenCalledWith(undefined, {
       timeout: 5_000,
       resetTimeoutOnProgress: true,
@@ -53,6 +54,17 @@ describe('runtime.listTools request timeout forwarding', () => {
 
     await runtime.listTools('alpha');
 
+    expect(listTools).toHaveBeenCalledWith(undefined, undefined);
+  });
+
+  it('normalizes invalid timeoutMs before OAuth connection setup', async () => {
+    const runtime = await createRuntime({ servers: definitions });
+    const listTools = vi.fn().mockResolvedValue({ tools: [] });
+    const connect = vi.spyOn(runtime, 'connect').mockResolvedValue(fakeListToolsContext(listTools));
+
+    await runtime.listTools('alpha', { timeoutMs: 0 });
+
+    expect(connect).toHaveBeenCalledWith('alpha', expect.objectContaining({ oauthTimeoutMs: undefined }));
     expect(listTools).toHaveBeenCalledWith(undefined, undefined);
   });
 });
