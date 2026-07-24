@@ -1,3 +1,4 @@
+import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import net from 'node:net';
@@ -6,6 +7,7 @@ import { loadDaemonConfig, type ServerDefinition } from '../config.js';
 import { readJsonFile, withFileLock, writeJsonFile } from '../fs-json.js';
 import { isKeepAliveServer } from '../lifecycle.js';
 import { createRuntime, type Runtime } from '../runtime.js';
+import { OAuthTimeoutError } from '../runtime/oauth.js';
 import { collectConfigLayers, statConfigMtime } from './config-layers.js';
 import { hashDaemonDefinitions } from './definition-hash.js';
 import {
@@ -16,15 +18,17 @@ import {
   logEvent,
   shouldLogServer,
 } from './log-context.js';
-import type {
-  CallToolParams,
-  CloseServerParams,
-  DaemonRequest,
-  DaemonResponse,
-  ListResourcesParams,
-  ListToolsParams,
-  ReadResourceParams,
-  StatusResult,
+import {
+  DAEMON_OPERATION_TIMEOUT_CODE,
+  DAEMON_PROTOCOL_VERSION,
+  type CallToolParams,
+  type CloseServerParams,
+  type DaemonRequest,
+  type DaemonResponse,
+  type ListResourcesParams,
+  type ListToolsParams,
+  type ReadResourceParams,
+  type StatusResult,
 } from './protocol.js';
 import {
   buildErrorResponse,
@@ -163,6 +167,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
           configPath: options.configPath,
           configLayers,
           socketPath: options.socketPath,
+          protocolVersion: DAEMON_PROTOCOL_VERSION,
           startedAt,
           logPath: options.logPath ?? null,
           configMtimeMs,
@@ -213,6 +218,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
     });
     await writeJsonFile(options.metadataPath, {
       pid: process.pid,
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
       socketPath: options.socketPath,
       configPath: options.configPath,
       configLayers,
@@ -268,6 +274,7 @@ function metadataFromStatus(
   fallbackConfigLayers: Array<{ path: string; mtimeMs: number | null }>
 ): {
   pid: number;
+  protocolVersion: number;
   socketPath: string;
   configPath: string;
   configLayers?: StatusResult['configLayers'];
@@ -278,6 +285,7 @@ function metadataFromStatus(
 } {
   return {
     pid: status.pid,
+    protocolVersion: status.protocolVersion,
     socketPath: status.socketPath,
     configPath: status.configPath,
     configLayers: status.configLayers && status.configLayers.length > 0 ? status.configLayers : fallbackConfigLayers,
@@ -295,6 +303,9 @@ function daemonConfigMatches(
   currentConfigMtimeMs: number | null,
   currentDefinitionHash: string
 ): boolean {
+  if (live.protocolVersion !== DAEMON_PROTOCOL_VERSION) {
+    return false;
+  }
   if (live.definitionHash !== currentDefinitionHash) {
     return false;
   }
@@ -483,6 +494,7 @@ async function handleSocketRequest(
     configLayers: Array<{ path: string; mtimeMs: number | null }>;
     configMtimeMs: number | null;
     socketPath: string;
+    protocolVersion: number;
     startedAt: number;
     logPath: string | null;
     definitionHash?: string;
@@ -516,6 +528,18 @@ function normalizeDaemonDisableOAuth(value: boolean | undefined): boolean {
   return value === true;
 }
 
+function daemonRuntimeErrorCode(error: unknown): string {
+  const errorCode = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
+  if (
+    error instanceof OAuthTimeoutError ||
+    errorCode === ErrorCode.RequestTimeout ||
+    (error instanceof Error && error.message === 'Timeout')
+  ) {
+    return DAEMON_OPERATION_TIMEOUT_CODE;
+  }
+  return 'runtime_error';
+}
+
 async function processRequest(
   rawPayload: string,
   runtime: Runtime,
@@ -526,6 +550,7 @@ async function processRequest(
     configLayers: Array<{ path: string; mtimeMs: number | null }>;
     configMtimeMs: number | null;
     socketPath: string;
+    protocolVersion: number;
     startedAt: number;
     logPath: string | null;
     definitionHash?: string;
@@ -596,6 +621,7 @@ async function processRequest(
             autoAuthorize: resolveDaemonListToolsAutoAuthorize(params, definition),
             allowCachedAuth: params.allowCachedAuth ?? true,
             disableOAuth: normalizeDaemonDisableOAuth(params.disableOAuth),
+            timeoutMs: params.timeoutMs,
           });
           markActivity(params.server, activity);
           if (loggable) {
@@ -689,6 +715,7 @@ async function processRequest(
       case 'status': {
         const result: StatusResult = {
           pid: process.pid,
+          protocolVersion: metadata.protocolVersion,
           startedAt: metadata.startedAt,
           configPath: metadata.configPath,
           configLayers: metadata.configLayers,
@@ -722,7 +749,7 @@ async function processRequest(
     }
   } catch (error) {
     return {
-      response: buildErrorResponse(id, 'runtime_error', error),
+      response: buildErrorResponse(id, daemonRuntimeErrorCode(error), error),
       shouldShutdown: false,
     };
   }
@@ -748,6 +775,7 @@ export async function __testProcessRequest(
     configLayers: Array<{ path: string; mtimeMs: number | null }>;
     configMtimeMs: number | null;
     socketPath: string;
+    protocolVersion?: number;
     startedAt: number;
     logPath: string | null;
     definitionHash?: string;
@@ -755,5 +783,13 @@ export async function __testProcessRequest(
   logContext: LogContext,
   preParsedRequest?: DaemonRequest
 ): Promise<{ response: DaemonResponse; shouldShutdown: boolean }> {
-  return await processRequest(rawPayload, runtime, managedServers, activity, metadata, logContext, preParsedRequest);
+  return await processRequest(
+    rawPayload,
+    runtime,
+    managedServers,
+    activity,
+    { ...metadata, protocolVersion: metadata.protocolVersion ?? DAEMON_PROTOCOL_VERSION },
+    logContext,
+    preParsedRequest
+  );
 }

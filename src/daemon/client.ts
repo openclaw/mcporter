@@ -5,6 +5,7 @@ import path from 'node:path';
 import { listConfigLayerPaths } from '../config/path-discovery.js';
 import { withFileLock } from '../fs-json.js';
 import { getDaemonMetadataPath, getDaemonSocketPath } from './paths.js';
+import { DAEMON_PROTOCOL_VERSION } from './protocol.js';
 import type {
   CallToolParams,
   CloseServerParams,
@@ -24,6 +25,7 @@ export interface DaemonClientOptions {
 }
 
 const DEFAULT_DAEMON_TIMEOUT_MS = 30_000;
+const DAEMON_OPERATION_TIMEOUT_GRACE_MS = 5_000;
 const MIN_DAEMON_STATUS_TIMEOUT_MS = 1_000;
 
 export interface DaemonPaths {
@@ -34,6 +36,7 @@ export interface DaemonPaths {
 
 interface DaemonMetadata {
   readonly pid: number;
+  readonly protocolVersion?: number;
   readonly socketPath: string;
   readonly configPath: string;
   readonly configMtimeMs?: number | null;
@@ -69,7 +72,7 @@ export class DaemonClient {
   }
 
   async listTools(params: ListToolsParams): Promise<unknown> {
-    return this.invoke('listTools', params);
+    return this.invoke('listTools', params, withDaemonTransportGrace(params.timeoutMs));
   }
 
   async listResources(params: ListResourcesParams): Promise<unknown> {
@@ -232,6 +235,9 @@ export class DaemonClient {
     if (!metadata) {
       return 'missing';
     }
+    if (metadata.protocolVersion !== DAEMON_PROTOCOL_VERSION) {
+      return 'stale';
+    }
     const currentLayers = normalizeLayers(await collectConfigLayers(this.options));
     const metadataLayers = normalizeLayers(
       metadata.configLayers ?? [{ path: metadata.configPath, mtimeMs: metadata.configMtimeMs ?? null }]
@@ -368,6 +374,13 @@ function resolveDaemonStatusTimeout(override?: number): number | undefined {
     return undefined;
   }
   return Math.max(override, MIN_DAEMON_STATUS_TIMEOUT_MS);
+}
+
+function withDaemonTransportGrace(timeoutMs?: number): number | undefined {
+  if (typeof timeoutMs !== 'number' || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return timeoutMs;
+  }
+  return timeoutMs + DAEMON_OPERATION_TIMEOUT_GRACE_MS;
 }
 
 async function statConfigMtime(configPath: string): Promise<number | null> {

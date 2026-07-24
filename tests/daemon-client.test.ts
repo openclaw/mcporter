@@ -4,6 +4,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { DaemonClient, resolveDaemonPaths } from '../src/daemon/client.js';
+import { DAEMON_PROTOCOL_VERSION } from '../src/daemon/protocol.js';
 import { makeShortTempDir } from './fixtures/test-helpers.js';
 
 describe('daemon client', () => {
@@ -107,6 +108,7 @@ describe('daemon client', () => {
       metadataPath,
       JSON.stringify({
         pid: process.pid,
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
         socketPath,
         configPath,
         configLayers: [{ path: configPath, mtimeMs: configStats.mtimeMs }],
@@ -125,6 +127,7 @@ describe('daemon client', () => {
           request.method === 'status'
             ? {
                 pid: process.pid,
+                protocolVersion: DAEMON_PROTOCOL_VERSION,
                 startedAt: Date.now(),
                 configPath,
                 configLayers: [{ path: configPath, mtimeMs: configStats.mtimeMs }],

@@ -325,7 +325,7 @@ export async function runCli(argv: string[]): Promise<void> {
         return;
       }
       const { handleAuth: importedHandleAuth } = await import('./cli/auth-command.js');
-      await importedHandleAuth(runtime, resolvedArgs);
+      await importedHandleAuth(runtime, resolvedArgs, { oauthTimeoutMs: runtimeOptionsWithPath.oauthTimeoutMs });
       return;
     }
 
@@ -441,7 +441,7 @@ async function invokeAuthCommand(runtimeOptions: RuntimeOptions, args: string[])
   ]);
   const runtime = await createRuntime(runtimeOptions);
   try {
-    await importedHandleAuth(runtime, args);
+    await importedHandleAuth(runtime, args, { oauthTimeoutMs: runtimeOptions.oauthTimeoutMs });
   } finally {
     await runtime.close().catch(() => {});
   }
@@ -630,6 +630,7 @@ function createDaemonOnlyRuntime(daemonClient: import('./daemon/client.js').Daem
         autoAuthorize: options?.autoAuthorize,
         allowCachedAuth: options?.allowCachedAuth,
         disableOAuth: options?.disableOAuth,
+        timeoutMs: options?.timeoutMs,
       })) as Awaited<ReturnType<Runtime['listTools']>>,
     callTool: (server, toolName, options) =>
       daemonClient.callTool({

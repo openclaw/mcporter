@@ -61,6 +61,13 @@ export interface ListToolsOptions {
    * headless callers that need cached-token-only behavior.
    */
   readonly disableOAuth?: boolean;
+  /**
+   * Per-request timeout (ms) forwarded to the MCP client so listings don't hit
+   * the SDK's default 60s cap. Required for `auth`, where the interactive OAuth
+   * browser flow runs inside the `tools/list` request and routinely exceeds 60s.
+   * Mirrors {@link CallOptions.timeoutMs}.
+   */
+  readonly timeoutMs?: number;
 }
 
 export type ListResourcesOptions = Partial<ListResourcesRequest['params']> & {
@@ -77,6 +84,7 @@ export interface ReadResourceOptions {
 
 export interface ConnectOptions {
   readonly maxOAuthAttempts?: number;
+  readonly oauthTimeoutMs?: number;
   readonly skipCache?: boolean;
   readonly allowCachedAuth?: boolean;
   readonly oauthSessionOptions?: OAuthSessionOptions;
@@ -253,19 +261,28 @@ class McpRuntime implements Runtime {
       true
     );
     const useLegacyNoAuthorize = !autoAuthorize && disableOAuth !== true;
+    const timeoutMs = normalizeTimeout(options.timeoutMs);
     const context = await this.connect(server, {
       maxOAuthAttempts: useLegacyNoAuthorize ? 0 : undefined,
       skipCache: useLegacyNoAuthorize,
       allowCachedAuth,
       oauthSessionOptions: options.oauthSessionOptions,
       disableOAuth,
+      oauthTimeoutMs: timeoutMs,
     });
     let closeError: unknown;
     const tools: ServerToolInfo[] = [];
     try {
       let cursor: string | undefined;
       do {
-        const response = await context.client.listTools(cursor ? { cursor } : undefined);
+        // Forward the requested timeout to the MCP client so listings -- and the
+        // interactive OAuth flow that listTools can trigger during `auth` -- don't
+        // hit the SDK's default 60s cap. Mirrors the callTool timeout forwarding.
+        const listPromise = context.client.listTools(
+          cursor ? { cursor } : undefined,
+          timeoutMs ? { timeout: timeoutMs, resetTimeoutOnProgress: true, maxTotalTimeout: timeoutMs } : undefined
+        );
+        const response = timeoutMs ? await raceWithTimeout(listPromise, timeoutMs) : await listPromise;
         tools.push(
           ...(response.tools ?? []).map((tool) => ({
             name: tool.name,
@@ -580,7 +597,7 @@ class McpRuntime implements Runtime {
     let connectionDefinition = definition;
     let contextPromise = createClientContext(definition, this.logger, this.clientInfo, {
       maxOAuthAttempts: options.maxOAuthAttempts,
-      oauthTimeoutMs: this.oauthTimeoutMs ?? OAUTH_CODE_TIMEOUT_MS,
+      oauthTimeoutMs: options.oauthTimeoutMs ?? this.oauthTimeoutMs ?? OAUTH_CODE_TIMEOUT_MS,
       onDefinitionPromoted: (promoted) => {
         if (
           this.serverGeneration(normalized) === generation &&

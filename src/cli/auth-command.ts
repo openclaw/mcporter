@@ -4,7 +4,7 @@ import type { OAuthAuthorizationRequest, OAuthSessionOptions } from '../oauth.js
 import { analyzeConnectionError } from '../error-classifier.js';
 import { clearOAuthCaches } from '../oauth-persistence.js';
 import type { createRuntime } from '../runtime.js';
-import { isOAuthFlowError } from '../runtime/oauth.js';
+import { isOAuthFlowError, resolveOAuthTimeoutFromEnv } from '../runtime/oauth.js';
 import type { EphemeralServerSpec } from './adhoc-server.js';
 import { extractEphemeralServerFlags } from './ephemeral-flags.js';
 import { persistPreparedEphemeralServer, prepareEphemeralServerTarget } from './ephemeral-target.js';
@@ -17,12 +17,17 @@ type Runtime = Awaited<ReturnType<typeof createRuntime>>;
 
 type BrowserSuppression = 'default' | 'no-browser';
 
+export interface AuthCommandOptions {
+  readonly oauthTimeoutMs?: number;
+}
+
 const TRUE_VALUES = new Set(['1', 'true', 'yes']);
 const FALSE_VALUES = new Set(['0', 'false', 'no']);
 
-export async function handleAuth(runtime: Runtime, args: string[]): Promise<void> {
+export async function handleAuth(runtime: Runtime, args: string[], options: AuthCommandOptions = {}): Promise<void> {
   const browserSuppression = consumeBrowserSuppression(args, process.env);
   const noBrowser = browserSuppression === 'no-browser';
+  const oauthTimeoutMs = options.oauthTimeoutMs ?? resolveOAuthTimeoutFromEnv();
   let authorizationOutputEmitted = false;
   const markAuthorizationOutputEmitted = () => {
     authorizationOutputEmitted = true;
@@ -85,6 +90,11 @@ export async function handleAuth(runtime: Runtime, args: string[]): Promise<void
       const tools = await withInfoLogsSuppressed(noBrowser, () =>
         runtime.listTools(target, {
           autoAuthorize: true,
+          // The interactive OAuth browser flow runs inside this listTools
+          // request. Let it ride for as long as we're willing to wait for the
+          // authorization code (MCPORTER_OAUTH_TIMEOUT_MS, default 300s) instead
+          // of being killed by the SDK's 60s request cap.
+          timeoutMs: oauthTimeoutMs,
           ...(noBrowser
             ? {
                 oauthSessionOptions: buildNoBrowserOAuthOptions(format, markAuthorizationOutputEmitted),

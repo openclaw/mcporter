@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DAEMON_PROTOCOL_VERSION } from '../src/daemon/protocol.js';
 import { makeShortTempDir } from './fixtures/test-helpers.js';
 
 const launchDaemonDetached = vi.hoisted(() => vi.fn());
@@ -68,6 +69,7 @@ describe('DaemonClient lifecycle reconciliation', () => {
       metadataPath,
       JSON.stringify({
         pid: process.pid,
+        protocolVersion: DAEMON_PROTOCOL_VERSION,
         socketPath,
         configPath,
         configLayers: [{ path: configPath, mtimeMs: (await fs.stat(configPath)).mtimeMs }],
@@ -147,6 +149,7 @@ async function startMockDaemon(
     options.metadataPath,
     JSON.stringify({
       pid,
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
       socketPath: options.socketPath,
       configPath: options.configPath,
       configLayers: [{ path: options.configPath, mtimeMs: stat.mtimeMs }],
@@ -189,6 +192,7 @@ async function startStatusServer(
         request.method === 'status'
           ? {
               pid,
+              protocolVersion: DAEMON_PROTOCOL_VERSION,
               startedAt: Date.now(),
               configPath,
               socketPath,

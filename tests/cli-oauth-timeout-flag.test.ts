@@ -52,6 +52,47 @@ describe('mcporter --oauth-timeout flag', () => {
     createRuntimeSpy.mockRestore();
   });
 
+  it('uses the override for the auth listTools request timeout', async () => {
+    const definition = {
+      name: 'fake',
+      description: 'Fake HTTP server',
+      command: { kind: 'http' as const, url: new URL('https://example.com/mcp') },
+    };
+    const listToolsSpy = vi.fn(async () => []);
+    const runtimeStub: Runtime = {
+      listServers: vi.fn(() => [definition.name]),
+      getDefinitions: vi.fn(() => [definition]),
+      getDefinition: vi.fn(() => definition),
+      registerDefinition: vi.fn(),
+      listTools: listToolsSpy,
+      callTool: vi.fn(),
+      listResources: vi.fn(),
+      readResource: vi.fn(),
+      connect: vi.fn(),
+      close: vi.fn(async () => {}),
+    };
+    const runtimeModule = await import('../src/runtime.js');
+    const createRuntimeSpy = vi.spyOn(runtimeModule, 'createRuntime').mockResolvedValue(runtimeStub);
+    const { runCli } = await import('../src/cli.js');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const previousNoForce = process.env.MCPORTER_NO_FORCE_EXIT;
+    process.env.MCPORTER_NO_FORCE_EXIT = '1';
+
+    try {
+      await runCli(['--oauth-timeout', '600000', 'auth', 'fake']);
+    } finally {
+      process.env.MCPORTER_NO_FORCE_EXIT = previousNoForce;
+    }
+
+    expect(listToolsSpy).toHaveBeenCalledWith(
+      'fake',
+      expect.objectContaining({ autoAuthorize: true, timeoutMs: 600_000 })
+    );
+
+    logSpy.mockRestore();
+    createRuntimeSpy.mockRestore();
+  });
+
   it('rejects malformed --oauth-timeout values', async () => {
     const { runCli } = await import('../src/cli.js');
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
