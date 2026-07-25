@@ -125,18 +125,45 @@ Conceptual wrapper pseudocode (not a built-in mcporter API):
 
 ```ts
 const operation = normalize({ server, tool, arguments });
-const decision = await gateway.evaluate(operation);
+let decision;
+let outcome = 'evaluation_failed';
+let result;
+let failure;
 
-if (decision.action === 'block') throw new Error(decision.reason);
-if (decision.action === 'approve' && !(await approvals.confirm(decision))) {
-  throw new Error('Approval declined');
+try {
+  decision = await gateway.evaluate(operation);
+
+  if (decision.action === 'block') {
+    outcome = 'blocked';
+    failure = 'policy_block';
+    throw new Error(decision.reason);
+  }
+
+  if (decision.action === 'approve' && !(await approvals.confirm(decision))) {
+    outcome = 'approval_declined';
+    failure = 'approval_declined';
+    throw new Error('Approval declined');
+  }
+
+  try {
+    result = await generatedCli.call(tool, arguments);
+    outcome = 'succeeded';
+    return result;
+  } catch (error) {
+    outcome = 'execution_failed';
+    failure = classifyError(error);
+    throw error;
+  }
+} catch (error) {
+  failure ??= classifyError(error);
+  throw error;
+} finally {
+  await audit.append(redact({ operation, decision, outcome, result, failure }));
 }
-
-const result = await generatedCli.call(tool, arguments);
-await audit.append(redact({ operation, decision, result }));
-return result;
 ```
 
+The `finally` path records a redacted outcome for blocked requests, declined
+approvals, policy-evaluation failures, execution failures, and successful calls.
 The wrapper governs only calls routed through it. Direct execution of the
 generated artifact bypasses that policy boundary.
 
