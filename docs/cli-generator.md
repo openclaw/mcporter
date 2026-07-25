@@ -106,6 +106,40 @@ npx mcporter generate-cli --command "npx -y chrome-devtools-mcp@latest"
 - `mcporter generate-cli --from <artifact>` replays the stored invocation against the latest mcporter build. `--server`, `--runtime`, `--timeout`, `--minify/--no-minify`, `--bundle`, `--compile`, `--output`, and `--dry-run` let you override specific pieces of the stored metadata when necessary.
 - Because the metadata lives inside the artifact, any template, bundle, or compiled binary can be refreshed after a generator upgrade without juggling sidecar files.
 
+## Policy boundary for generated CLIs
+
+A generated CLI or typed client can be invoked independently of the MCP client
+that originally configured the server. It therefore does not automatically
+inherit that client's approval prompts, tool-call policies, or audit trail.
+
+Use `--include-tools` to reduce the generated surface, but do not treat a static
+tool list as dynamic authorization. Deployments that need per-call policy should
+route the generated command through an external wrapper or policy gateway that:
+
+1. normalizes the server, tool name, and arguments;
+2. evaluates current policy and requests approval when required;
+3. blocks the call or invokes the generated CLI; and
+4. persists a redacted decision and result record.
+
+Conceptual wrapper pseudocode (not a built-in mcporter API):
+
+```ts
+const operation = normalize({ server, tool, arguments });
+const decision = await gateway.evaluate(operation);
+
+if (decision.action === 'block') throw new Error(decision.reason);
+if (decision.action === 'approve' && !(await approvals.confirm(decision))) {
+  throw new Error('Approval declined');
+}
+
+const result = await generatedCli.call(tool, arguments);
+await audit.append(redact({ operation, decision, result }));
+return result;
+```
+
+The wrapper governs only calls routed through it. Direct execution of the
+generated artifact bypasses that policy boundary.
+
 ## Status
 
 - ✅ `generate-cli` subcommand implemented with schema-aware proxy generation.
