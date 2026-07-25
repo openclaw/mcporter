@@ -60,7 +60,9 @@ Preserve JSON-RPC methods, request order, IDs, and parameter shapes so strict
 replay still exercises the intended behavior.
 
 Prefer fixtures recorded from a synthetic MCP server. Never commit the raw
-capture, and review the redacted NDJSON as text before sharing it. A useful
-regression test runs the wrapper against `mcporter replay`, asserts the expected
-policy decision and tool result, and confirms that the fixture contains none of
-the original sensitive values.
+capture, and review the redacted NDJSON as text before sharing it. Applications
+that use the [external policy wrapper described in the generated CLI
+guidance](./cli-generator.md#policy-boundary-for-generated-clis) can optionally
+run that application-owned wrapper against `mcporter replay`, assert the
+expected policy decision and tool result, and confirm that the fixture contains
+none of the original sensitive values.
