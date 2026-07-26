@@ -166,8 +166,11 @@ describe('DaemonClient timeouts', () => {
     await client.listTools({ server: 'foo', timeoutMs: 300_000 });
     const statusRecord = timeoutRecords.find((entry) => entry.method === 'status');
     const listRecord = timeoutRecords.find((entry) => entry.method === 'listTools');
-    expect(statusRecord?.timeout).toBe(305_000);
-    expect(listRecord?.timeout).toBe(305_000);
+    // The status probe uses the raw caller deadline; the listTools socket
+    // deadline covers both the OAuth code wait inside connect() and the
+    // follow-up SDK tools/list request, plus a small round-trip grace.
+    expect(statusRecord?.timeout).toBe(300_000);
+    expect(listRecord?.timeout).toBe(605_000);
   });
 
   it('keeps the daemon transport open beyond the listTools operation deadline', async () => {
@@ -180,7 +183,16 @@ describe('DaemonClient timeouts', () => {
     await expect(client.listTools({ server: 'foo', timeoutMs: 20 })).resolves.toEqual({ ok: true });
 
     const listRecord = timeoutRecords.find((entry) => entry.method === 'listTools');
-    expect(listRecord?.timeout).toBe(5_020);
+    expect(listRecord?.timeout).toBe(5_040);
+  });
+
+  it('leaves callTool operation socket budget unchanged when only listTools budgets OAuth', async () => {
+    const configPath = 'mcporter.config.json';
+    await writeFreshMetadata(configPath);
+    const client = new DaemonClient({ configPath, configExplicit: true });
+    await client.callTool({ server: 'foo', tool: 'bar', timeoutMs: 12_345 });
+    const callRecord = timeoutRecords.find((entry) => entry.method === 'callTool');
+    expect(callRecord?.timeout).toBe(12_345);
   });
 
   it('clamps daemon status preflight timeout for tiny per-call timeouts', async () => {

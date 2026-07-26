@@ -72,7 +72,7 @@ export class DaemonClient {
   }
 
   async listTools(params: ListToolsParams): Promise<unknown> {
-    return this.invoke('listTools', params, withDaemonTransportGrace(params.timeoutMs));
+    return this.invoke('listTools', params, params.timeoutMs);
   }
 
   async listResources(params: ListResourcesParams): Promise<unknown> {
@@ -104,12 +104,13 @@ export class DaemonClient {
 
   private async invoke<T = unknown>(method: DaemonRequestMethod, params: unknown, timeoutMs?: number): Promise<T> {
     await this.ensureDaemon(timeoutMs);
+    const operationBudget = resolveOperationSocketBudget(method, timeoutMs);
     try {
-      return (await this.sendRequest<T>(method, params, timeoutMs)) as T;
+      return (await this.sendRequest<T>(method, params, operationBudget)) as T;
     } catch (error) {
       if (isTransportError(error)) {
         await this.restartDaemon();
-        return (await this.sendRequest<T>(method, params, timeoutMs)) as T;
+        return (await this.sendRequest<T>(method, params, operationBudget)) as T;
       }
       throw error;
     }
@@ -376,11 +377,20 @@ function resolveDaemonStatusTimeout(override?: number): number | undefined {
   return Math.max(override, MIN_DAEMON_STATUS_TIMEOUT_MS);
 }
 
-function withDaemonTransportGrace(timeoutMs?: number): number | undefined {
+function resolveOperationSocketBudget(method: DaemonRequestMethod, timeoutMs?: number): number | undefined {
   if (typeof timeoutMs !== 'number' || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     return timeoutMs;
   }
-  return timeoutMs + DAEMON_OPERATION_TIMEOUT_GRACE_MS;
+  if (method === 'listTools') {
+    // The daemon host runs a full `runtime.listTools`, which itself waits up
+    // to `timeoutMs` for an OAuth authorization code during `connect()` and
+    // then another `timeoutMs` for the SDK `tools/list` request. Size the
+    // socket deadline for both sequential phases plus a small round-trip
+    // grace so the transport doesn't expire mid-flight and trigger a
+    // duplicate OAuth attempt on retry.
+    return 2 * timeoutMs + DAEMON_OPERATION_TIMEOUT_GRACE_MS;
+  }
+  return timeoutMs;
 }
 
 async function statConfigMtime(configPath: string): Promise<number | null> {
