@@ -29,6 +29,7 @@ import {
   getOAuthVaultPath,
   loadVaultEntry,
   loadVaultEntryForRecovery,
+  reconcileVaultServerUrl,
   saveVaultEntry,
 } from './oauth-vault.js';
 import { legacyMcporterDir } from './paths.js';
@@ -168,15 +169,19 @@ class DirectoryPersistence implements OAuthPersistence {
   private readonly clientInfoPath: string;
   private readonly codeVerifierPath: string;
   private readonly statePath: string;
+  private readonly serverUrlPath: string;
 
   constructor(
     private readonly root: string,
-    private readonly logger?: Logger
+    private readonly logger?: Logger,
+    private readonly serverUrl?: string,
+    private readonly skipUrlMarkerWhenMissing = false
   ) {
     this.tokenPath = path.join(root, 'tokens.json');
     this.clientInfoPath = path.join(root, 'client.json');
     this.codeVerifierPath = path.join(root, 'code_verifier.txt');
     this.statePath = path.join(root, 'state.txt');
+    this.serverUrlPath = path.join(root, 'server_url.txt');
   }
 
   describe(): string {
@@ -187,12 +192,51 @@ class DirectoryPersistence implements OAuthPersistence {
     await fs.mkdir(this.root, { recursive: true });
   }
 
+  private async reconcileServerUrl(): Promise<void> {
+    if (!this.serverUrl) {
+      return;
+    }
+    const serverUrl = this.serverUrl;
+    if (this.skipUrlMarkerWhenMissing) {
+      try {
+        await fs.access(this.root);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          return;
+        }
+        throw error;
+      }
+    }
+    await this.ensureDir();
+    await withFileLock(this.tokenPath, async () => {
+      let previousUrl: string | undefined;
+      try {
+        previousUrl = (await fs.readFile(this.serverUrlPath, 'utf8')).trim();
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          throw error;
+        }
+      }
+      if (previousUrl === serverUrl) {
+        return;
+      }
+      // Keep the marker after invalidation so A -> B -> A cannot revive A's
+      // old directory-backed credentials.
+      if (previousUrl !== undefined) {
+        await this.clearFiles('all');
+      }
+      await writeTextFileAtomic(this.serverUrlPath, serverUrl);
+    });
+  }
+
   async readTokens(): Promise<OAuthTokens | undefined> {
+    await this.reconcileServerUrl();
     const tokens = await this.readJsonOrUndefined<OAuthTokens>(this.tokenPath);
     return tokens ? withHiddenOAuthTokenGeneration(tokens) : undefined;
   }
 
   async saveTokens(tokens: OAuthTokens): Promise<void> {
+    await this.reconcileServerUrl();
     await this.ensureDir();
     // Locked so clearRejectedCredentials cannot compare-then-unlink across a
     // concurrent write.
@@ -206,6 +250,7 @@ class DirectoryPersistence implements OAuthPersistence {
     expectedTokens?: OAuthTokens,
     expectedClientInfo?: OAuthClientInformationMixed
   ): Promise<void> {
+    await this.reconcileServerUrl();
     await withFileLock(this.tokenPath, async () => {
       if (expectedTokens) {
         const current = await this.readJsonOrUndefined<OAuthTokens>(this.tokenPath);
@@ -233,11 +278,13 @@ class DirectoryPersistence implements OAuthPersistence {
   }
 
   async readClientInfo(): Promise<OAuthClientInformationMixed | undefined> {
+    await this.reconcileServerUrl();
     const info = await this.readJsonOrUndefined<OAuthClientInformationMixed>(this.clientInfoPath);
     return info ? withHiddenOAuthClientGeneration(info) : undefined;
   }
 
   async saveClientInfo(info: OAuthClientInformationMixed): Promise<void> {
+    await this.reconcileServerUrl();
     await this.ensureDir();
     await withFileLock(this.tokenPath, async () => {
       await writeJsonFile(this.clientInfoPath, withOAuthClientGeneration(info));
@@ -245,6 +292,7 @@ class DirectoryPersistence implements OAuthPersistence {
   }
 
   async readCodeVerifier(): Promise<string | undefined> {
+    await this.reconcileServerUrl();
     try {
       return (await fs.readFile(this.codeVerifierPath, 'utf8')).trim();
     } catch (error) {
@@ -256,11 +304,13 @@ class DirectoryPersistence implements OAuthPersistence {
   }
 
   async saveCodeVerifier(value: string): Promise<void> {
+    await this.reconcileServerUrl();
     await this.ensureDir();
     await writeTextFileAtomic(this.codeVerifierPath, value);
   }
 
   async readState(): Promise<string | undefined> {
+    await this.reconcileServerUrl();
     // Deliberately NOT corrupt-tolerant: a corrupt OAuth state must fail the
     // flow closed. Returning undefined here would skip the CSRF state check on
     // the authorization callback (see oauth.ts), so only the credential caches
@@ -287,11 +337,17 @@ class DirectoryPersistence implements OAuthPersistence {
   }
 
   async saveState(value: string): Promise<void> {
+    await this.reconcileServerUrl();
     await this.ensureDir();
     await writeJsonFile(this.statePath, value);
   }
 
   async clear(scope: OAuthClearScope): Promise<void> {
+    await this.reconcileServerUrl();
+    await this.clearFiles(scope);
+  }
+
+  private async clearFiles(scope: OAuthClearScope): Promise<void> {
     const files: string[] = [];
     if (scope === 'all' || scope === 'tokens') {
       files.push(this.tokenPath);
@@ -329,43 +385,56 @@ class VaultPersistence implements OAuthPersistence {
     return `${getOAuthVaultPath()} (vault)`;
   }
 
+  private async reconcileServerUrl(): Promise<void> {
+    await reconcileVaultServerUrl(this.definition);
+  }
+
   async readTokens(): Promise<OAuthTokens | undefined> {
+    await this.reconcileServerUrl();
     const recovery = await loadVaultEntryForRecovery(this.definition);
     this.tokenSnapshots = recovery.tokenSnapshots;
     return recovery.entry?.tokens;
   }
 
   async saveTokens(tokens: OAuthTokens): Promise<void> {
+    await this.reconcileServerUrl();
     await saveVaultEntry(this.definition, { tokens: prepareStoredTokens(tokens) });
   }
 
   async readClientInfo(): Promise<OAuthClientInformationMixed | undefined> {
+    await this.reconcileServerUrl();
     const recovery = await loadVaultEntryForRecovery(this.definition);
     this.clientSnapshots = recovery.clientSnapshots;
     return recovery.entry?.clientInfo;
   }
 
   async saveClientInfo(info: OAuthClientInformationMixed): Promise<void> {
+    await this.reconcileServerUrl();
     await saveVaultEntry(this.definition, { clientInfo: info });
   }
 
   async readCodeVerifier(): Promise<string | undefined> {
+    await this.reconcileServerUrl();
     return (await loadVaultEntry(this.definition))?.codeVerifier;
   }
 
   async saveCodeVerifier(value: string): Promise<void> {
+    await this.reconcileServerUrl();
     await saveVaultEntry(this.definition, { codeVerifier: value });
   }
 
   async readState(): Promise<string | undefined> {
+    await this.reconcileServerUrl();
     return (await loadVaultEntry(this.definition))?.state;
   }
 
   async saveState(value: string): Promise<void> {
+    await this.reconcileServerUrl();
     await saveVaultEntry(this.definition, { state: value });
   }
 
   async clear(scope: OAuthClearScope): Promise<void> {
+    await this.reconcileServerUrl();
     await clearVaultEntry(this.definition, scope);
   }
 
@@ -373,6 +442,7 @@ class VaultPersistence implements OAuthPersistence {
     expectedTokens?: OAuthTokens,
     expectedClientInfo?: OAuthClientInformationMixed
   ): Promise<void> {
+    await this.reconcileServerUrl();
     await clearVaultTokensIfMatching(
       this.definition,
       expectedTokens,
@@ -510,15 +580,16 @@ class CompositePersistence implements OAuthPersistence {
 export async function buildOAuthPersistence(definition: ServerDefinition, logger?: Logger): Promise<OAuthPersistence> {
   const vault = new VaultPersistence(definition);
   const stores: OAuthPersistence[] = [vault];
+  const serverUrl = definition.command.kind === 'http' ? definition.command.url.toString() : undefined;
 
   if (definition.tokenCacheDir) {
-    stores.unshift(new DirectoryPersistence(definition.tokenCacheDir, logger));
+    stores.unshift(new DirectoryPersistence(definition.tokenCacheDir, logger, serverUrl));
   }
 
   // Migrate legacy default per-server cache (~/.mcporter/<name>) into the vault if present.
   const legacyDir = path.join(legacyMcporterDir(), definition.name);
   if (!definition.tokenCacheDir && legacyDir) {
-    const legacy = new DirectoryPersistence(legacyDir, logger);
+    const legacy = new DirectoryPersistence(legacyDir, logger, serverUrl, true);
     const legacyTokens = await legacy.readTokens();
     const legacyClient = await legacy.readClientInfo();
     const legacyVerifier = await legacy.readCodeVerifier();

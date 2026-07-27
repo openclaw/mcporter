@@ -28,6 +28,11 @@ const mkDef = (name: string, tokenCacheDir?: string): ServerDefinition => ({
   tokenCacheDir,
 });
 
+const withUrl = (definition: ServerDefinition, url: string): ServerDefinition => ({
+  ...definition,
+  command: { kind: 'http', url: new URL(url) },
+});
+
 describe('oauth persistence', () => {
   const originalEnv = { ...process.env };
   const tempRoots: string[] = [];
@@ -121,6 +126,68 @@ describe('oauth persistence', () => {
     expect(cacheTokens?.access_token).toBe('new-token');
     const entry = await loadVaultEntry(definition);
     expect(entry?.tokens?.access_token).toBe('new-token');
+  });
+
+  it('preserves cached OAuth state when the configured server URL is unchanged', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-url-same-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const definition = mkDef('supabase', path.join(tmp, 'cache'));
+    const initial = await buildOAuthPersistence(definition);
+    await initial.saveTokens({ access_token: 'token-a', token_type: 'Bearer' });
+    await initial.saveClientInfo({ client_id: 'client-a' });
+    await initial.saveCodeVerifier('verifier-a');
+    await initial.saveState('state-a');
+
+    const unchanged = await buildOAuthPersistence(withUrl(definition, 'https://example.com/mcp'));
+    await expect(unchanged.readTokens()).resolves.toMatchObject({ access_token: 'token-a' });
+    await expect(unchanged.readClientInfo()).resolves.toMatchObject({ client_id: 'client-a' });
+    await expect(unchanged.readCodeVerifier()).resolves.toBe('verifier-a');
+    await expect(unchanged.readState()).resolves.toBe('state-a');
+  });
+
+  it('invalidates cached OAuth state when the configured server URL changes', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-url-change-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const original = mkDef('supabase', path.join(tmp, 'cache'));
+    const initial = await buildOAuthPersistence(original);
+    await initial.saveTokens({ access_token: 'token-a', token_type: 'Bearer' });
+    await initial.saveClientInfo({ client_id: 'client-a' });
+    await initial.saveCodeVerifier('verifier-a');
+    await initial.saveState('state-a');
+
+    const changed = await buildOAuthPersistence(withUrl(original, 'https://other.example.com/mcp'));
+    await expect(changed.readTokens()).resolves.toBeUndefined();
+    await expect(changed.readClientInfo()).resolves.toBeUndefined();
+    await expect(changed.readCodeVerifier()).resolves.toBeUndefined();
+    await expect(changed.readState()).resolves.toBeUndefined();
+  });
+
+  it('does not restore cached OAuth state when a changed server URL is reverted', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-url-revert-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const original = mkDef('supabase', path.join(tmp, 'cache'));
+    const initial = await buildOAuthPersistence(original);
+    await initial.saveTokens({ access_token: 'token-a', token_type: 'Bearer' });
+    await initial.saveClientInfo({ client_id: 'client-a' });
+
+    const changed = await buildOAuthPersistence(withUrl(original, 'https://other.example.com/mcp'));
+    await expect(changed.readTokens()).resolves.toBeUndefined();
+
+    const reverted = await buildOAuthPersistence(original);
+    await expect(reverted.readTokens()).resolves.toBeUndefined();
+    await expect(reverted.readClientInfo()).resolves.toBeUndefined();
   });
 
   it.runIf(process.platform !== 'win32')(

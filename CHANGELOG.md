@@ -10,6 +10,7 @@
 ### OAuth
 
 - Recover rotating refresh tokens after transient OAuth refresh failures without clearing a concurrently persisted winner, and clear only the exact rejected token on `invalid_grant`. (PR #227, thanks @feniix)
+- Treat a configured server URL change as a new OAuth trust boundary, clearing cached credentials permanently even if the URL is later reverted. (Issue #231, thanks @sourman)
 
 ### Distribution
 

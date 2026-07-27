@@ -30,6 +30,7 @@ export interface VaultEntry {
 interface VaultFile {
   version: 1;
   entries: Record<VaultKey, VaultEntry>;
+  serverUrls?: Record<string, string>;
 }
 
 interface VaultReadState {
@@ -94,6 +95,56 @@ export function vaultKeyForDefinition(definition: ServerDefinition): VaultKey {
   };
   const hash = crypto.createHash('sha256').update(JSON.stringify(descriptor)).digest('hex').slice(0, 16);
   return `${definition.name}|${hash}`;
+}
+
+// A configured name is the user's stable identity for an MCP server. Its URL
+// is therefore a trust boundary: changing it must retire every credential that
+// could otherwise become reachable again if the URL is later reverted.
+export async function reconcileVaultServerUrl(definition: ServerDefinition): Promise<void> {
+  if (definition.command.kind !== 'http') {
+    return;
+  }
+  const serverUrl = definition.command.url.toString();
+  await withFileLock(getOAuthVaultPath(), async () => {
+    const { vault, needsRepair } = await readVaultState();
+    const serverUrls = stringRecord(vault.serverUrls);
+    const previousUrl = serverUrls[definition.name];
+    const namedEntryUrls = Object.values(vault.entries)
+      .filter((entry) => isVaultEntry(entry) && entry.serverName === definition.name)
+      .flatMap((entry) => (typeof entry.serverUrl === 'string' ? [entry.serverUrl] : []));
+    const urlChanged =
+      (previousUrl !== undefined && previousUrl !== serverUrl) || namedEntryUrls.some((url) => url !== serverUrl);
+
+    if (urlChanged) {
+      const invalidatedUrls = new Set([serverUrl, previousUrl, ...namedEntryUrls].filter((url) => url !== undefined));
+      for (const [key, entry] of Object.entries(vault.entries)) {
+        if (
+          isVaultEntry(entry) &&
+          (entry.serverName === definition.name ||
+            (isLegacyOAuthRenameCandidate(definition, entry) &&
+              entry.serverUrl !== undefined &&
+              invalidatedUrls.has(entry.serverUrl)))
+        ) {
+          delete vault.entries[key];
+        }
+      }
+    }
+
+    if (previousUrl === serverUrl && !urlChanged && !needsRepair) {
+      return;
+    }
+    vault.serverUrls = { ...serverUrls, [definition.name]: serverUrl };
+    await writeVault(vault);
+  });
+}
+
+function stringRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+  );
 }
 
 export async function loadVaultEntry(definition: ServerDefinition): Promise<VaultEntry | undefined> {
