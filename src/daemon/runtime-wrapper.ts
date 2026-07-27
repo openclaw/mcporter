@@ -10,6 +10,7 @@ import type {
   Runtime,
 } from '../runtime.js';
 import type { DaemonClient } from './client.js';
+import { DAEMON_OPERATION_TIMEOUT_CODE } from './protocol.js';
 
 interface KeepAliveRuntimeOptions {
   readonly daemonClient: DaemonClient | null;
@@ -69,6 +70,7 @@ class KeepAliveRuntime implements Runtime {
           autoAuthorize: options?.autoAuthorize,
           allowCachedAuth: options?.allowCachedAuth ?? true,
           disableOAuth: options?.disableOAuth,
+          timeoutMs: options?.timeoutMs,
         })
       )) as Awaited<ReturnType<Runtime['listTools']>>;
     }
@@ -176,6 +178,9 @@ const NON_FATAL_CODES = new Set([ErrorCode.InvalidRequest, ErrorCode.MethodNotFo
 
 function shouldRestartDaemonServer(error: unknown): boolean {
   if (!error) {
+    return false;
+  }
+  if (typeof error === 'object' && (error as { code?: unknown }).code === DAEMON_OPERATION_TIMEOUT_CODE) {
     return false;
   }
   if (error instanceof McpError) {

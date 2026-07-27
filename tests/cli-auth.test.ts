@@ -32,18 +32,24 @@ describe('mcporter auth ad-hoc support', () => {
     const { handleAuth } = await cliModulePromise;
     const { runtime, listTools } = createRuntimeDouble();
 
-    await handleAuth(runtime, ['--http-url', 'https://mcp.deepwiki.com/sse']);
+    await handleAuth(runtime, ['--http-url', 'https://mcp.deepwiki.com/sse'], { oauthTimeoutMs: 300_000 });
 
-    expect(listTools).toHaveBeenCalledWith('mcp-deepwiki-com-sse', { autoAuthorize: true });
+    expect(listTools).toHaveBeenCalledWith('mcp-deepwiki-com-sse', {
+      autoAuthorize: true,
+      timeoutMs: 300_000,
+    });
   });
 
   it('accepts bare URLs as the auth target', async () => {
     const { handleAuth } = await cliModulePromise;
     const { runtime, listTools } = createRuntimeDouble();
 
-    await handleAuth(runtime, ['https://mcp.supabase.com/mcp']);
+    await handleAuth(runtime, ['https://mcp.supabase.com/mcp'], { oauthTimeoutMs: 300_000 });
 
-    expect(listTools).toHaveBeenCalledWith('mcp-supabase-com-mcp', { autoAuthorize: true });
+    expect(listTools).toHaveBeenCalledWith('mcp-supabase-com-mcp', {
+      autoAuthorize: true,
+      timeoutMs: 300_000,
+    });
   });
 
   it('reuses configured servers when auth target is a URL', async () => {
@@ -62,9 +68,9 @@ describe('mcporter auth ad-hoc support', () => {
       getDefinition: () => definition,
     } as unknown as Awaited<ReturnType<(typeof import('../src/runtime.js'))['createRuntime']>>;
 
-    await handleAuth(runtime, ['https://mcp.vercel.com']);
+    await handleAuth(runtime, ['https://mcp.vercel.com'], { oauthTimeoutMs: 300_000 });
 
-    expect(listTools).toHaveBeenCalledWith('vercel', { autoAuthorize: true });
+    expect(listTools).toHaveBeenCalledWith('vercel', { autoAuthorize: true, timeoutMs: 300_000 });
     expect(registerDefinition).not.toHaveBeenCalled();
   });
 

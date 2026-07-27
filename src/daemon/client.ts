@@ -5,6 +5,7 @@ import path from 'node:path';
 import { listConfigLayerPaths } from '../config/path-discovery.js';
 import { withFileLock } from '../fs-json.js';
 import { getDaemonMetadataPath, getDaemonSocketPath } from './paths.js';
+import { DAEMON_PROTOCOL_VERSION } from './protocol.js';
 import type {
   CallToolParams,
   CloseServerParams,
@@ -34,6 +35,7 @@ export interface DaemonPaths {
 
 interface DaemonMetadata {
   readonly pid: number;
+  readonly protocolVersion?: number;
   readonly socketPath: string;
   readonly configPath: string;
   readonly configMtimeMs?: number | null;
@@ -69,7 +71,7 @@ export class DaemonClient {
   }
 
   async listTools(params: ListToolsParams): Promise<unknown> {
-    return this.invoke('listTools', params);
+    return this.invoke('listTools', params, params.timeoutMs);
   }
 
   async listResources(params: ListResourcesParams): Promise<unknown> {
@@ -231,6 +233,9 @@ export class DaemonClient {
     metadata ??= await readDaemonMetadata(this.metadataPath);
     if (!metadata) {
       return 'missing';
+    }
+    if (metadata.protocolVersion !== DAEMON_PROTOCOL_VERSION) {
+      return 'stale';
     }
     const currentLayers = normalizeLayers(await collectConfigLayers(this.options));
     const metadataLayers = normalizeLayers(
