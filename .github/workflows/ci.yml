@@ -15,6 +15,38 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  packaged-runtime-node-22:
+    name: packaged runtime (node 22.19)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      # Development uses Node 24; this job separately proves that the artifact
+      # produced by that toolchain runs at the published runtime floor.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - run: corepack enable
+      - run: corepack prepare pnpm@10.33.2 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: mkdir -p /tmp/mcporter-node22 && pnpm pack --pack-destination /tmp/mcporter-node22
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.19.0
+
+      - name: Install and exercise the packaged runtime
+        shell: bash
+        run: |
+          cd /tmp/mcporter-node22
+          npm init -y
+          npm install --engine-strict ./mcporter-*.tgz
+          node --input-type=module -e "await import('mcporter')"
+          ./node_modules/.bin/mcporter --help
+
   build:
     name: build (${{ matrix.os }})
     timeout-minutes: 15

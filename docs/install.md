@@ -29,7 +29,7 @@ Or add it to a project:
 pnpm add mcporter        # or: npm install mcporter / bun add mcporter
 ```
 
-mcporter targets Node 24+ and works under Bun. The package exposes both an importable runtime (`createRuntime`, `callOnce`, `createServerProxy`) and the `mcporter` CLI binary.
+mcporter targets Node 22.19+ and works under Bun. Development and release builds use Node 24. The package exposes both an importable runtime (`createRuntime`, `callOnce`, `createServerProxy`) and the `mcporter` CLI binary.
 
 ## Homebrew
 
