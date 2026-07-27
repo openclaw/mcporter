@@ -57,6 +57,20 @@ describe('runtime.listTools request timeout forwarding', () => {
     expect(listTools).toHaveBeenCalledWith(undefined, undefined);
   });
 
+  it('walks every cursor page but refuses to page forever on a repeated cursor', async () => {
+    const runtime = await createRuntime({ servers: definitions });
+    const listTools = vi
+      .fn()
+      .mockResolvedValueOnce({ tools: [{ name: 'a' }], nextCursor: 'page-2' })
+      .mockResolvedValueOnce({ tools: [{ name: 'b' }], nextCursor: 'page-3' })
+      .mockResolvedValue({ tools: [{ name: 'c' }], nextCursor: 'page-2' });
+    vi.spyOn(runtime, 'connect').mockResolvedValue(fakeListToolsContext(listTools));
+
+    await expect(runtime.listTools('alpha')).rejects.toThrow(/repeated tools\/list cursor 'page-2'/);
+    // Three pages walked, then the cycle is caught instead of spinning.
+    expect(listTools).toHaveBeenCalledTimes(3);
+  });
+
   it('normalizes invalid timeoutMs before OAuth connection setup', async () => {
     const runtime = await createRuntime({ servers: definitions });
     const listTools = vi.fn().mockResolvedValue({ tools: [] });

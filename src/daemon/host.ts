@@ -1,3 +1,4 @@
+import { DEFAULT_REQUEST_TIMEOUT_MSEC } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -7,7 +8,8 @@ import { loadDaemonConfig, type ServerDefinition } from '../config.js';
 import { readJsonFile, withFileLock, writeJsonFile } from '../fs-json.js';
 import { isKeepAliveServer } from '../lifecycle.js';
 import { createRuntime, type Runtime } from '../runtime.js';
-import { OAuthTimeoutError } from '../runtime/oauth.js';
+import { OAuthTimeoutError, resolveOAuthTimeoutFromEnv } from '../runtime/oauth.js';
+import { raceWithTimeout } from '../runtime/utils.js';
 import { collectConfigLayers, statConfigMtime } from './config-layers.js';
 import { hashDaemonDefinitions } from './definition-hash.js';
 import {
@@ -20,9 +22,14 @@ import {
 } from './log-context.js';
 import {
   DAEMON_OPERATION_TIMEOUT_CODE,
+  DAEMON_PROGRESS_INTERVAL_MS,
   DAEMON_PROTOCOL_VERSION,
+  DaemonFrameDecoder,
+  encodeDaemonFrame,
+  isDaemonProgressFrame,
   type CallToolParams,
   type CloseServerParams,
+  type DaemonFrame,
   type DaemonRequest,
   type DaemonResponse,
   type ListResourcesParams,
@@ -362,7 +369,8 @@ async function sendDaemonStop(socketPath: string): Promise<boolean> {
       params: {},
     };
     const socket = net.createConnection(socketPath);
-    let buffer = '';
+    const decoder = new DaemonFrameDecoder();
+    let response: DaemonResponse<boolean> | undefined;
     let settled = false;
     const finish = (result: boolean): void => {
       if (settled) {
@@ -378,15 +386,11 @@ async function sendDaemonStop(socketPath: string): Promise<boolean> {
       socket.write(JSON.stringify(request));
     });
     socket.on('data', (chunk) => {
-      buffer += chunk.toString();
+      response = lastResponseFrame(decoder.push(chunk.toString())) ?? response;
     });
     socket.once('end', () => {
-      try {
-        const response = JSON.parse(buffer.trim()) as DaemonResponse<boolean>;
-        finish(response.ok);
-      } catch {
-        finish(false);
-      }
+      response = lastResponseFrame(decoder.flush()) ?? response;
+      finish(response?.ok === true);
     });
     socket.once('error', () => finish(false));
   });
@@ -396,6 +400,16 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function lastResponseFrame<T>(frames: DaemonFrame[]): DaemonResponse<T> | undefined {
+  let response: DaemonResponse<T> | undefined;
+  for (const frame of frames) {
+    if (!isDaemonProgressFrame(frame)) {
+      response = frame as DaemonResponse<T>;
+    }
+  }
+  return response;
 }
 
 function isProcessAlive(pid: number): boolean {
@@ -413,7 +427,7 @@ function isProcessAlive(pid: number): boolean {
 async function probeDaemonStatus(socketPath: string): Promise<StatusResult | null> {
   return await new Promise<StatusResult | null>((resolve) => {
     const probe = net.createConnection(socketPath);
-    let buffer = '';
+    const decoder = new DaemonFrameDecoder();
     let settled = false;
     const finish = (status: StatusResult | null): void => {
       if (settled) {
@@ -424,26 +438,21 @@ async function probeDaemonStatus(socketPath: string): Promise<StatusResult | nul
       probe.destroy();
       resolve(status);
     };
-    const parse = (): StatusResult | null => {
-      try {
-        const response = JSON.parse(buffer.trim()) as DaemonResponse<StatusResult>;
-        return response.ok && response.result ? response.result : null;
-      } catch {
-        return null;
-      }
+    const statusFrom = (frames: DaemonFrame[]): StatusResult | null => {
+      const response = lastResponseFrame<StatusResult>(frames);
+      return response?.ok && response.result ? response.result : null;
     };
     probe.setTimeout(DAEMON_PROBE_TIMEOUT_MS, () => finish(null));
     probe.once('connect', () => {
       probe.write(JSON.stringify({ id: randomUUID(), method: 'status', params: {} } satisfies DaemonRequest));
     });
     probe.on('data', (chunk) => {
-      buffer += chunk.toString();
-      const status = parse();
+      const status = statusFrom(decoder.push(chunk.toString()));
       if (status) {
         finish(status);
       }
     });
-    probe.once('end', () => finish(parse()));
+    probe.once('end', () => finish(statusFrom(decoder.flush())));
     probe.once('error', () => finish(null));
   });
 }
@@ -503,16 +512,27 @@ async function handleSocketRequest(
   shutdown: () => Promise<void>,
   preParsedRequest?: DaemonRequest
 ): Promise<void> {
-  const { response, shouldShutdown } = await processRequest(
-    rawPayload,
-    runtime,
-    managedServers,
-    activity,
-    metadata,
-    logContext,
-    preParsedRequest
+  const stopProgress = startProgressFrames(
+    socket,
+    preParsedRequest?.id ?? 'unknown',
+    preParsedRequest?.progressIntervalMs
   );
-  socket.write(JSON.stringify(response), () => {
+  let response: DaemonResponse;
+  let shouldShutdown: boolean;
+  try {
+    ({ response, shouldShutdown } = await processRequest(
+      rawPayload,
+      runtime,
+      managedServers,
+      activity,
+      metadata,
+      logContext,
+      preParsedRequest
+    ));
+  } finally {
+    stopProgress();
+  }
+  socket.write(encodeDaemonFrame(response), () => {
     socket.end(() => {
       if (shouldShutdown) {
         void shutdown();
@@ -521,11 +541,61 @@ async function handleSocketRequest(
   });
 }
 
+/**
+ * Emits progress frames until the request settles. The client resets its idle
+ * deadline on each frame, so a long multi-phase operation -- an OAuth code wait
+ * plus any number of paginated `tools/list` pages -- never expires the socket
+ * mid-flight and never triggers a duplicate attempt on retry. Silence still
+ * means a wedged daemon.
+ *
+ * The first frame goes out immediately: the caller armed its deadline before the
+ * request reached us, so waiting a full interval would burn part of a short
+ * budget on dispatch latency alone.
+ */
+function startProgressFrames(socket: net.Socket, id: string, requestedIntervalMs?: number): () => void {
+  const intervalMs =
+    requestedIntervalMs && requestedIntervalMs > 0
+      ? Math.min(requestedIntervalMs, DAEMON_PROGRESS_INTERVAL_MS)
+      : DAEMON_PROGRESS_INTERVAL_MS;
+  const emit = (): void => {
+    if (socket.destroyed || socket.writableEnded) {
+      return;
+    }
+    socket.write(encodeDaemonFrame({ type: 'progress', id }));
+  };
+  emit();
+  const timer = setInterval(emit, intervalMs);
+  timer.unref();
+  return () => clearInterval(timer);
+}
+
 function normalizeDaemonDisableOAuth(value: boolean | undefined): boolean {
   // Daemon messages are independent requests. Omission means the caller did
   // not request OAuth suppression, so a previous --no-oauth pooled transport
   // must not make later ordinary calls inherit the no-OAuth posture.
   return value === true;
+}
+
+/**
+ * Absolute ceiling for a daemon operation that runs a *fixed* number of phases:
+ * at most one `connect()` -- which may include an interactive OAuth code wait --
+ * plus one MCP request. The ceiling is the sum of the deadlines the daemon
+ * already applies to those phases, not a guess about how long work should take,
+ * so it can only fire once every real deadline has been blown.
+ *
+ * It exists so progress frames can never keep a caller waiting on a server that
+ * accepts a request and never answers: the caller gets a non-retryable
+ * `operation_timeout` instead of an indefinite wait or a daemon restart.
+ *
+ * `listTools` is deliberately excluded -- its page count is data-dependent, so it
+ * is bounded per page instead, plus a repeated-cursor guard in the runtime.
+ */
+function operationCeilingMs(requestTimeoutMs?: number): number {
+  const requestPhase =
+    requestTimeoutMs && Number.isFinite(requestTimeoutMs) && requestTimeoutMs > 0
+      ? requestTimeoutMs
+      : DEFAULT_REQUEST_TIMEOUT_MSEC;
+  return resolveOAuthTimeoutFromEnv() + requestPhase;
 }
 
 function daemonRuntimeErrorCode(error: unknown): string {
@@ -589,11 +659,14 @@ async function processRequest(
           logEvent(logContext, `callTool start server=${params.server} tool=${params.tool}`);
         }
         try {
-          const result = await runtime.callTool(params.server, params.tool, {
-            args: params.args ?? {},
-            timeoutMs: params.timeoutMs,
-            disableOAuth: normalizeDaemonDisableOAuth(params.disableOAuth),
-          });
+          const result = await raceWithTimeout(
+            runtime.callTool(params.server, params.tool, {
+              args: params.args ?? {},
+              timeoutMs: params.timeoutMs,
+              disableOAuth: normalizeDaemonDisableOAuth(params.disableOAuth),
+            }),
+            operationCeilingMs(params.timeoutMs)
+          );
           markActivity(params.server, activity);
           if (loggable) {
             logEvent(logContext, `callTool success server=${params.server} tool=${params.tool}`);
@@ -644,11 +717,14 @@ async function processRequest(
           logEvent(logContext, `listResources start server=${params.server}`);
         }
         try {
-          const result = await runtime.listResources(params.server, {
-            ...params.params,
-            allowCachedAuth: params.allowCachedAuth,
-            disableOAuth: normalizeDaemonDisableOAuth(params.disableOAuth),
-          });
+          const result = await raceWithTimeout(
+            runtime.listResources(params.server, {
+              ...params.params,
+              allowCachedAuth: params.allowCachedAuth,
+              disableOAuth: normalizeDaemonDisableOAuth(params.disableOAuth),
+            }),
+            operationCeilingMs()
+          );
           markActivity(params.server, activity);
           if (loggable) {
             logEvent(logContext, `listResources success server=${params.server}`);
@@ -670,10 +746,13 @@ async function processRequest(
           logEvent(logContext, `readResource start server=${params.server} uri=${params.uri}`);
         }
         try {
-          const result = await runtime.readResource(params.server, params.uri, {
-            allowCachedAuth: params.allowCachedAuth,
-            disableOAuth: normalizeDaemonDisableOAuth(params.disableOAuth),
-          });
+          const result = await raceWithTimeout(
+            runtime.readResource(params.server, params.uri, {
+              allowCachedAuth: params.allowCachedAuth,
+              disableOAuth: normalizeDaemonDisableOAuth(params.disableOAuth),
+            }),
+            operationCeilingMs()
+          );
           markActivity(params.server, activity);
           if (loggable) {
             logEvent(logContext, `readResource success server=${params.server}`);
@@ -695,7 +774,7 @@ async function processRequest(
           logEvent(logContext, `closeServer start server=${params.server}`);
         }
         try {
-          await runtime.close(params.server);
+          await raceWithTimeout(runtime.close(params.server), operationCeilingMs());
           activity.set(params.server, { connected: false });
           if (loggable) {
             logEvent(logContext, `closeServer success server=${params.server}`);
@@ -791,5 +870,37 @@ export async function __testProcessRequest(
     { ...metadata, protocolVersion: metadata.protocolVersion ?? DAEMON_PROTOCOL_VERSION },
     logContext,
     preParsedRequest
+  );
+}
+
+/**
+ * Serves a single request on `socket` through the real host path -- progress
+ * frames included -- so transport tests exercise the shipping framing instead of
+ * a hand-rolled stand-in.
+ */
+export async function __testHandleSocketRequest(
+  socket: net.Socket,
+  request: DaemonRequest,
+  runtime: Runtime,
+  managedServers: Map<string, ServerDefinition>,
+  metadata: {
+    configPath: string;
+    configLayers: Array<{ path: string; mtimeMs: number | null }>;
+    configMtimeMs: number | null;
+    socketPath: string;
+    startedAt: number;
+    logPath: string | null;
+  }
+): Promise<void> {
+  await handleSocketRequest(
+    JSON.stringify(request),
+    socket,
+    runtime,
+    managedServers,
+    new Map(),
+    { ...metadata, protocolVersion: DAEMON_PROTOCOL_VERSION },
+    createLogContext({ enabled: false, logAllServers: false, servers: new Set() }),
+    async () => {},
+    request
   );
 }

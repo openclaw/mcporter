@@ -274,6 +274,10 @@ class McpRuntime implements Runtime {
     const tools: ServerToolInfo[] = [];
     try {
       let cursor: string | undefined;
+      // A server that repeats a cursor never terminates the walk. Every other
+      // phase here is bounded (the OAuth wait and each page carry a deadline),
+      // so this is the one way `listTools` could run forever.
+      const seenCursors = new Set<string>();
       do {
         // Forward the requested timeout to the MCP client so listings -- and the
         // interactive OAuth flow that listTools can trigger during `auth` -- don't
@@ -292,6 +296,12 @@ class McpRuntime implements Runtime {
           }))
         );
         cursor = response.nextCursor ?? undefined;
+        if (cursor !== undefined) {
+          if (seenCursors.has(cursor)) {
+            throw new Error(`Server '${server}' repeated tools/list cursor '${cursor}'; refusing to page forever.`);
+          }
+          seenCursors.add(cursor);
+        }
       } while (cursor);
     } catch (error) {
       // Keep-alive STDIO transports often die when Chrome closes; drop the cached client
