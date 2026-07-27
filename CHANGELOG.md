@@ -9,6 +9,7 @@
 
 ### OAuth
 
+- Launch Windows OAuth browser open via separate `cmd /c start` argv elements so quote-bearing authorization URLs cannot break out of shell quoting. (thanks @SebTardif)
 - Recover rotating refresh tokens after transient OAuth refresh failures without clearing a concurrently persisted winner, and clear only the exact rejected token on `invalid_grant`. (PR #227, thanks @feniix)
 
 ### Distribution
@@ -53,6 +54,7 @@
 
 ### OAuth
 
+- Launch Windows OAuth browser open via separate `cmd /c start` argv elements so quote-bearing authorization URLs cannot break out of shell quoting. (thanks @SebTardif)
 - Treat corrupt cached OAuth tokens and client metadata as missing so connections can re-authenticate, while keeping corrupt callback state data fail-closed. (Issue #207, thanks @KrasimirKralev)
 
 ### Tooling / Dependencies
@@ -63,6 +65,7 @@
 
 ### OAuth
 
+- Launch Windows OAuth browser open via separate `cmd /c start` argv elements so quote-bearing authorization URLs cannot break out of shell quoting. (thanks @SebTardif)
 - Add cache-friendly `disableOAuth` support across headless runtime, CLI, daemon, proxy, and `callOnce` paths so callers can suppress interactive OAuth without losing connection reuse. (Issues #197, #199, #201, thanks @feniix)
 - Recover cleanly from renamed OAuth server entries, invalid refresh tokens, and stale dynamic client registrations without reusing unrelated same-URL credentials.
 - Prevent concurrent OAuth vault updates from briefly exposing empty lock files and losing credential entries under load.
@@ -125,6 +128,7 @@
 
 ### OAuth
 
+- Launch Windows OAuth browser open via separate `cmd /c start` argv elements so quote-bearing authorization URLs cannot break out of shell quoting. (thanks @SebTardif)
 - Add headless OAuth login support via `--no-browser`, `--browser none`, and `MCPORTER_OAUTH_NO_BROWSER`, emitting parseable authorization URLs for remote auth flows. (PR #171 / issue #169, thanks @feniix)
 - Proactively complete OAuth for configured HTTP servers that allow unauthenticated `initialize`/`listTools` but require credentials for tool calls, and close the local callback server promptly after browser authorization. (PR #159, thanks @Spacefish)
 - Refresh expired cached OAuth access tokens during non-interactive `mcporter list` without opening a browser or clearing cached credentials when refresh fails. (Issue #166, thanks @chrisabad)

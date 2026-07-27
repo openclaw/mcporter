@@ -51,10 +51,12 @@ function openExternal(url: string, platform: NodeJS.Platform = process.platform,
       const child = launch('open', [url], { stdio, detached: true });
       child.unref();
     } else if (platform === 'win32') {
-      const child = launch('cmd', ['/s', '/c', `start "" "${url}"`], {
+      // Pass the URL as a separate argv element so Node quotes it.
+      // Never use windowsVerbatimArguments with a single shell string —
+      // quote-bearing OAuth URLs could break out of `start` quoting.
+      const child = launch('cmd', ['/c', 'start', '""', url], {
         stdio,
         detached: true,
-        windowsVerbatimArguments: true,
       });
       child.unref();
     } else {
