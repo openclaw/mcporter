@@ -51,12 +51,13 @@ function openExternal(url: string, platform: NodeJS.Platform = process.platform,
       const child = launch('open', [url], { stdio, detached: true });
       child.unref();
     } else if (platform === 'win32') {
-      // Pass the URL as a separate argv element so Node quotes it.
-      // Never use windowsVerbatimArguments with a single shell string —
-      // quote-bearing OAuth URLs could break out of `start` quoting.
-      const child = launch('cmd', ['/c', 'start', '""', url], {
+      // Shell-free: do not pass the OAuth URL through cmd.exe. Command metacharacters
+      // such as `&` in query strings are still parsed by cmd even when argv is split.
+      // rundll32 FileProtocolHandler treats the URL as a document path, not command text.
+      const child = launch('rundll32', ['url.dll,FileProtocolHandler', url], {
         stdio,
         detached: true,
+        windowsHide: true,
       });
       child.unref();
     } else {
