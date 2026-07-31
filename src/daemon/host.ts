@@ -136,6 +136,11 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
       }
     })();
   }, daemonIdleWatcherInterval(daemonConfig.idleTimeoutMs));
+  // Snapshotted by the `status` response so a client that decides the daemon is
+  // stale can wait for the in-flight count to drop to zero before stopping it.
+  // Reading the counter at response time -- not at request acceptance -- means
+  // the snapshot reflects work the host has actually committed to.
+  const readActiveDaemonRequests = (): number => activeDaemonRequests;
   idleWatcher.unref();
 
   logEvent(logContext, 'Daemon host started.');
@@ -179,6 +184,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
           logPath: options.logPath ?? null,
           configMtimeMs,
           definitionHash,
+          readActiveDaemonRequests,
         },
         logContext,
         shutdown,
@@ -507,6 +513,7 @@ async function handleSocketRequest(
     startedAt: number;
     logPath: string | null;
     definitionHash?: string;
+    readActiveDaemonRequests: () => number;
   },
   logContext: LogContext,
   shutdown: () => Promise<void>,
@@ -624,6 +631,7 @@ async function processRequest(
     startedAt: number;
     logPath: string | null;
     definitionHash?: string;
+    readActiveDaemonRequests: () => number;
   },
   logContext: LogContext,
   preParsedRequest?: DaemonRequest
@@ -802,6 +810,12 @@ async function processRequest(
           definitionHash: metadata.definitionHash,
           socketPath: metadata.socketPath,
           logPath: metadata.logPath ?? undefined,
+          // Read at response time so a status probe after a long OAuth wait
+          // reports the in-flight count as the client will see it, not the
+          // count at request acceptance. Clients coordinate replacement on
+          // this number; understating it would re-open the
+          // mid-request-stop regression.
+          activeRequests: metadata.readActiveDaemonRequests(),
           servers: Array.from(managedServers.values()).map((def) => {
             const entry = activity.get(def.name);
             return {
@@ -858,6 +872,7 @@ export async function __testProcessRequest(
     startedAt: number;
     logPath: string | null;
     definitionHash?: string;
+    readActiveDaemonRequests?: () => number;
   },
   logContext: LogContext,
   preParsedRequest?: DaemonRequest
@@ -867,7 +882,11 @@ export async function __testProcessRequest(
     runtime,
     managedServers,
     activity,
-    { ...metadata, protocolVersion: metadata.protocolVersion ?? DAEMON_PROTOCOL_VERSION },
+    {
+      ...metadata,
+      protocolVersion: metadata.protocolVersion ?? DAEMON_PROTOCOL_VERSION,
+      readActiveDaemonRequests: metadata.readActiveDaemonRequests ?? ((): number => 0),
+    },
     logContext,
     preParsedRequest
   );
@@ -890,6 +909,7 @@ export async function __testHandleSocketRequest(
     socketPath: string;
     startedAt: number;
     logPath: string | null;
+    readActiveDaemonRequests?: () => number;
   }
 ): Promise<void> {
   await handleSocketRequest(
@@ -898,7 +918,11 @@ export async function __testHandleSocketRequest(
     runtime,
     managedServers,
     new Map(),
-    { ...metadata, protocolVersion: DAEMON_PROTOCOL_VERSION },
+    {
+      ...metadata,
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      readActiveDaemonRequests: metadata.readActiveDaemonRequests ?? ((): number => 0),
+    },
     createLogContext({ enabled: false, logAllServers: false, servers: new Set() }),
     async () => {},
     request

@@ -31,6 +31,27 @@ export interface DaemonClientOptions {
 
 const DEFAULT_DAEMON_TIMEOUT_MS = 30_000;
 const MIN_DAEMON_STATUS_TIMEOUT_MS = 1_000;
+// How long a client is willing to wait for a shared daemon it has decided to
+// replace to finish its in-flight work before the replacement is abandoned.
+// Capped so an upgraded client never blocks the calling command indefinitely
+// waiting on another process; the cap is also the only knob for v1 daemons,
+// which do not advertise `activeRequests` and so look busy by definition.
+// Overridable through `MCPORTER_DAEMON_DRAIN_TIMEOUT_MS` for tests that need
+// to exercise the refusal branch without waiting the full default.
+const DEFAULT_DAEMON_DRAIN_TIMEOUT_MS = 60_000;
+const DAEMON_DRAIN_POLL_MS = 100;
+
+function resolveDrainTimeoutMs(): number {
+  const raw = process.env.MCPORTER_DAEMON_DRAIN_TIMEOUT_MS;
+  if (!raw) {
+    return DEFAULT_DAEMON_DRAIN_TIMEOUT_MS;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_DAEMON_DRAIN_TIMEOUT_MS;
+  }
+  return parsed;
+}
 
 export interface DaemonPaths {
   readonly key: string;
@@ -149,10 +170,62 @@ export class DaemonClient {
       if (options.reason === 'stale-config' && currentStatus && (await this.checkConfigState()) === 'fresh') {
         return;
       }
+      // Codex / ClawSweeper P1: an upgraded client must not stop a daemon that
+      // another client is currently waiting on. Wait for the in-flight count to
+      // reach zero before issuing `stop`; bail out (do not replace) if the
+      // daemon is still busy past the drain timeout, so the busy client keeps
+      // its daemon and the caller fails loud rather than silently replaying.
+      if (currentStatus && currentStatus.pid === options.expectedPid) {
+        const drainTimeoutMs = resolveDrainTimeoutMs();
+        const drained = await this.waitForDaemonIdle(currentStatus, drainTimeoutMs);
+        if (!drained) {
+          throw new Error(
+            `Shared daemon pid=${currentStatus.pid} is still busy after ${drainTimeoutMs}ms; refusing to replace it.`
+          );
+        }
+      }
       await this.stop().catch(() => {});
       await this.waitForStopped();
       await this.launchDaemonAndWait();
     });
+  }
+
+  /**
+   * Polls the live daemon's status until its `activeRequests` counter reads
+   * zero. Resolves `true` once the daemon is idle, `false` if the timeout
+   * expires, and `false` if the daemon disappears mid-wait so the caller
+   * falls through to the normal replacement path.
+   *
+   * A daemon that does not advertise `activeRequests` (pre-v2) is treated as
+   * permanently busy -- the only safe read of "is this daemon still serving
+   * a v1 request?" is to wait long enough for that request to finish, which
+   * is exactly the drain we are trying to guarantee.
+   */
+  private async waitForDaemonIdle(seedStatus: StatusResult, timeoutMs: number): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    let status: StatusResult | null = seedStatus;
+    while (Date.now() < deadline) {
+      if (!status) {
+        return true;
+      }
+      const active = status.activeRequests;
+      if (active === undefined) {
+        // Pre-v2 daemon: keep waiting. The drain timeout bounds the wait, so a
+        // stuck v1 daemon eventually falls through to the refusal branch and
+        // is left running rather than killed mid-request.
+        await delay(DAEMON_DRAIN_POLL_MS);
+      } else if (active <= 0) {
+        return true;
+      } else {
+        await delay(DAEMON_DRAIN_POLL_MS);
+      }
+      status = await this.readVerifiedStatus();
+      if (status && status.pid !== seedStatus.pid) {
+        // Another client already replaced it; nothing to drain.
+        return true;
+      }
+    }
+    return false;
   }
 
   private async startDaemon(options: { preflightTimeoutMs?: number } = {}): Promise<void> {

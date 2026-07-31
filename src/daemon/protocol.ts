@@ -172,4 +172,13 @@ export interface StatusResult {
     readonly connected: boolean;
     readonly lastUsedAt?: number;
   }>;
+  /**
+   * Number of in-flight daemon requests when the status was answered. Absent on
+   * pre-v2 daemons; clients that need to coordinate a replacement must treat
+   * `undefined` as "unknown, assume busy" and wait before stopping the daemon.
+   * Without this signal an upgraded client can stop a live v1 daemon mid-OAuth
+   * or mid-paginated `tools/list` and force the very replay this protocol was
+   * introduced to prevent.
+   */
+  readonly activeRequests?: number;
 }
