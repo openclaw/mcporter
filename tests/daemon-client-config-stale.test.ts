@@ -398,6 +398,61 @@ describe('DaemonClient config freshness', () => {
     expect(sentMethods).toContain('listTools');
   });
 
+  it('does not stop a peer fresh daemon if it replaced the busy one before the drain starts', async () => {
+    // ClawSweeper P1, second race: the metadata says the old (busy) daemon is
+    // running, but a peer has *already* replaced it by the time the upgrading
+    // client enters restartDaemon. The on-disk metadata is stale, so the
+    // config-freshness check alone does not stop the upgrading client from
+    // issuing `stop` against the peer's fresh daemon. The fix is an explicit
+    // pid-mismatch short-circuit: never stop a daemon that is not the one
+    // the metadata named.
+    const tmpDir = await makeShortTempDir('daemon-already-replaced');
+    process.env.MCPORTER_DAEMON_DIR = tmpDir;
+
+    const configPath = path.join(tmpDir, 'config.json');
+    await fs.writeFile(configPath, JSON.stringify({ mcpServers: {} }), 'utf8');
+    const stat = await fs.stat(configPath);
+    const originalPid = process.pid;
+    const replacementPid = findNonRunningPid();
+    const { metadataPath, socketPath } = resolveDaemonPaths(configPath);
+    activeConfigPath = configPath;
+    activeSocketPath = socketPath;
+    activeConfigMtime = stat.mtimeMs;
+    // The peer won the race: the live daemon is already the fresh one. The
+    // metadata still names the original (busy) PID because the upgrading
+    // client has not yet observed the swap.
+    activeStatusPid = replacementPid;
+    activeLayers = [{ path: configPath, mtimeMs: stat.mtimeMs }];
+
+    await fs.mkdir(path.dirname(metadataPath), { recursive: true });
+    await fs.writeFile(
+      metadataPath,
+      JSON.stringify({
+        pid: originalPid,
+        protocolVersion: DAEMON_PROTOCOL_VERSION - 1,
+        socketPath,
+        configPath,
+        startedAt: Date.now() - 10_000,
+        logPath: null,
+        configMtimeMs: stat.mtimeMs,
+        configLayers: activeLayers,
+      }),
+      'utf8'
+    );
+
+    const client = new DaemonClient({ configPath, configExplicit: true, rootDir: tmpDir });
+    await client.listTools({ server: 'playwright' });
+
+    // The peer's fresh daemon must not have received `stop` -- that is the
+    // regression the pid-mismatch short-circuit exists to prevent. The
+    // upgrading client is now using the peer's daemon; if its config does
+    // not match the upgrading client's, that is the peer's problem to
+    // resolve, not the upgrading client's to escalate by killing them.
+    expect(sentMethods).not.toContain('stop');
+    expect(launchDaemonDetached).not.toHaveBeenCalled();
+    expect(sentMethods).toContain('listTools');
+  });
+
   it('does not stop a peer fresh daemon if it replaces the busy one mid-drain', async () => {
     const tmpDir = await makeShortTempDir('daemon-busy-replaced');
     process.env.MCPORTER_DAEMON_DIR = tmpDir;

@@ -163,15 +163,16 @@ export class DaemonClient {
       // would silently return null on a pid mismatch and the busy-daemon
       // regression would slip past us.
       const liveStatus = await this.probeLiveStatus();
-      if (
-        liveStatus &&
-        options.expectedPid !== undefined &&
-        liveStatus.pid !== options.expectedPid &&
-        (await this.checkConfigState()) === 'fresh'
-      ) {
+      if (options.reason === 'stale-config' && liveStatus && (await this.checkConfigState()) === 'fresh') {
         return;
       }
-      if (options.reason === 'stale-config' && liveStatus && (await this.checkConfigState()) === 'fresh') {
+      // If the daemon has already been replaced by another client (PID
+      // mismatch before the drain even starts), the replacement is theirs to
+      // own -- stopping it would kill their in-flight request. The config
+      // check above is not enough: the peer may not have rewritten the
+      // metadata yet, so `checkConfigState` can still report `stale` and the
+      // condition would fall through to `stop()`.
+      if (liveStatus && options.expectedPid !== undefined && liveStatus.pid !== options.expectedPid) {
         return;
       }
       // Codex / ClawSweeper P1: an upgraded client must not stop a daemon that
