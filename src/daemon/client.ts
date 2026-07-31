@@ -158,16 +158,20 @@ export class DaemonClient {
 
   private async restartDaemon(options: { reason?: 'stale-config'; expectedPid?: number } = {}): Promise<void> {
     await this.startingWithLock(async () => {
-      const currentStatus = await this.readVerifiedStatus();
+      // Probe the daemon without the pid-match filter so the drain check
+      // below can see whether the daemon is actually busy. `readVerifiedStatus`
+      // would silently return null on a pid mismatch and the busy-daemon
+      // regression would slip past us.
+      const liveStatus = await this.probeLiveStatus();
       if (
-        currentStatus &&
+        liveStatus &&
         options.expectedPid !== undefined &&
-        currentStatus.pid !== options.expectedPid &&
+        liveStatus.pid !== options.expectedPid &&
         (await this.checkConfigState()) === 'fresh'
       ) {
         return;
       }
-      if (options.reason === 'stale-config' && currentStatus && (await this.checkConfigState()) === 'fresh') {
+      if (options.reason === 'stale-config' && liveStatus && (await this.checkConfigState()) === 'fresh') {
         return;
       }
       // Codex / ClawSweeper P1: an upgraded client must not stop a daemon that
@@ -175,13 +179,19 @@ export class DaemonClient {
       // reach zero before issuing `stop`; bail out (do not replace) if the
       // daemon is still busy past the drain timeout, so the busy client keeps
       // its daemon and the caller fails loud rather than silently replaying.
-      if (currentStatus && currentStatus.pid === options.expectedPid) {
+      if (liveStatus && options.expectedPid !== undefined && liveStatus.pid === options.expectedPid) {
         const drainTimeoutMs = resolveDrainTimeoutMs();
-        const drained = await this.waitForDaemonIdle(currentStatus, drainTimeoutMs);
-        if (!drained) {
+        const drainResult = await this.waitForDaemonIdle(liveStatus, drainTimeoutMs);
+        if (!drainResult.drained) {
           throw new Error(
-            `Shared daemon pid=${currentStatus.pid} is still busy after ${drainTimeoutMs}ms; refusing to replace it.`
+            `Shared daemon pid=${liveStatus.pid} is still busy after ${drainTimeoutMs}ms; refusing to replace it.`
           );
+        }
+        // If another client replaced the daemon during the drain, do not stop
+        // their fresh daemon -- that is exactly the regression the drain was
+        // added to prevent.
+        if (drainResult.replacedByPeer) {
+          return;
         }
       }
       await this.stop().catch(() => {});
@@ -191,41 +201,74 @@ export class DaemonClient {
   }
 
   /**
+   * Sends a raw `status` probe without the pid-match filter that
+   * `readVerifiedStatus` applies. Needed by callers that want to decide
+   * between acting on the current daemon, a peer's fresh daemon, and a
+   * missing daemon -- the verified variant collapses all three into null and
+   * loses the signal.
+   */
+  private async probeLiveStatus(timeoutMs?: number): Promise<StatusResult | null> {
+    const metadata = await readDaemonMetadata(this.metadataPath);
+    if (!metadata || metadata.socketPath !== this.socketPath || !isProcessRunning(metadata.pid)) {
+      return null;
+    }
+    try {
+      return (await this.sendRequest<StatusResult>('status', {}, timeoutMs)) as StatusResult;
+    } catch (error) {
+      if (isTransportError(error)) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Polls the live daemon's status until its `activeRequests` counter reads
-   * zero. Resolves `true` once the daemon is idle, `false` if the timeout
-   * expires, and `false` if the daemon disappears mid-wait so the caller
-   * falls through to the normal replacement path.
+   * zero. Returns both whether the drain condition was met AND whether the
+   * daemon got swapped out by another client mid-wait -- those are different
+   * outcomes that the caller needs to distinguish (a replaced daemon is
+   * "drained" but must not be stopped).
+   *
+   * `drained` is `true` once the daemon is idle, OR the daemon is gone (status
+   * probe fails), OR the daemon was replaced by another client (different
+   * pid). `drained` is `false` only if the timeout expires with the original
+   * daemon still advertising in-flight work. `replacedByPeer` is `true` only
+   * when a fresh daemon answered a status poll while we were waiting.
    *
    * A daemon that does not advertise `activeRequests` (pre-v2) is treated as
    * permanently busy -- the only safe read of "is this daemon still serving
    * a v1 request?" is to wait long enough for that request to finish, which
    * is exactly the drain we are trying to guarantee.
    */
-  private async waitForDaemonIdle(seedStatus: StatusResult, timeoutMs: number): Promise<boolean> {
+  private async waitForDaemonIdle(
+    seedStatus: StatusResult,
+    timeoutMs: number
+  ): Promise<{ drained: boolean; replacedByPeer: boolean }> {
     const deadline = Date.now() + timeoutMs;
     let status: StatusResult | null = seedStatus;
+    let lastSeenPid: number | null = seedStatus.pid;
     while (Date.now() < deadline) {
       if (!status) {
-        return true;
+        return { drained: true, replacedByPeer: false };
       }
       const active = status.activeRequests;
       if (active === undefined) {
-        // Pre-v2 daemon: keep waiting. The drain timeout bounds the wait, so a
-        // stuck v1 daemon eventually falls through to the refusal branch and
-        // is left running rather than killed mid-request.
         await delay(DAEMON_DRAIN_POLL_MS);
       } else if (active <= 0) {
-        return true;
+        return { drained: true, replacedByPeer: lastSeenPid !== seedStatus.pid };
       } else {
         await delay(DAEMON_DRAIN_POLL_MS);
       }
-      status = await this.readVerifiedStatus();
-      if (status && status.pid !== seedStatus.pid) {
-        // Another client already replaced it; nothing to drain.
-        return true;
+      try {
+        status = await this.sendRequest<StatusResult>('status', {});
+      } catch {
+        return { drained: true, replacedByPeer: false };
+      }
+      if (status) {
+        lastSeenPid = status.pid;
       }
     }
-    return false;
+    return { drained: false, replacedByPeer: lastSeenPid !== seedStatus.pid };
   }
 
   private async startDaemon(options: { preflightTimeoutMs?: number } = {}): Promise<void> {

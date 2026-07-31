@@ -13,6 +13,11 @@ let createConnection: ReturnType<typeof vi.fn>;
 // upgrading client is still draining -- the very window the new wait-for-idle
 // logic was introduced to cover.
 let drainAfterFirstStatusPoll = false;
+// When set, the first `status` poll after the drain has resolved swaps the
+// fake daemon's reported pid to a fresh one. Models another client winning
+// the race to replace the busy daemon during the drain window.
+let replacementPidAfterDrain: number | null = null;
+let statusPollCount = 0;
 
 class MockSocket extends EventEmitter {
   setTimeout(): this {
@@ -25,12 +30,30 @@ class MockSocket extends EventEmitter {
     if (payload.method === 'stop') {
       activeStatusPid = findNonRunningPid();
     }
-    if (payload.method === 'status' && drainAfterFirstStatusPoll && activeRequests > 0) {
-      // Simulate a shared daemon whose in-flight request finishes after the
-      // upgrading client has noticed the staleness but before the drain
-      // timeout. The next status poll must see `activeRequests: 0` so the
-      // replacement is allowed to proceed.
-      activeRequests = 0;
+    if (payload.method === 'status') {
+      statusPollCount += 1;
+      // Defer the drain to the SECOND status poll so the first poll still
+      // reports the busy daemon -- otherwise probeLiveStatus would see
+      // `activeRequests: 0` up front and the drain check would be skipped.
+      if (drainAfterFirstStatusPoll && activeRequests > 0 && statusPollCount >= 2) {
+        // Simulate a shared daemon whose in-flight request finishes after the
+        // upgrading client has noticed the staleness but before the drain
+        // timeout. The next status poll must see `activeRequests: 0` so the
+        // replacement is allowed to proceed.
+        activeRequests = 0;
+      }
+      // Simulate another client replacing the daemon during the drain. The
+      // swap happens on the same poll the drain resolves so the upgrading
+      // client observes the busy daemon, then the replacement -- the
+      // sequence the drain check was added to handle.
+      if (
+        replacementPidAfterDrain !== null &&
+        activeRequests === 0 &&
+        statusPollCount >= 2 &&
+        activeStatusPid !== replacementPidAfterDrain
+      ) {
+        activeStatusPid = replacementPidAfterDrain;
+      }
     }
     const response = buildResponse(payload.method, payload.id);
     queueMicrotask(() => {
@@ -112,6 +135,8 @@ describe('DaemonClient config freshness', () => {
     activeLayers = [];
     activeRequests = 0;
     drainAfterFirstStatusPoll = false;
+    replacementPidAfterDrain = null;
+    statusPollCount = 0;
     launchDaemonDetached.mockClear();
     launchDaemonDetached.mockImplementation(
       (options: { metadataPath: string; socketPath: string; configPath: string }) => {
@@ -370,6 +395,57 @@ describe('DaemonClient config freshness', () => {
     // the drained counter.
     expect(activeRequests).toBe(0);
     expect(launchDaemonDetached).toHaveBeenCalledTimes(1);
+    expect(sentMethods).toContain('listTools');
+  });
+
+  it('does not stop a peer fresh daemon if it replaces the busy one mid-drain', async () => {
+    const tmpDir = await makeShortTempDir('daemon-busy-replaced');
+    process.env.MCPORTER_DAEMON_DIR = tmpDir;
+
+    const configPath = path.join(tmpDir, 'config.json');
+    await fs.writeFile(configPath, JSON.stringify({ mcpServers: {} }), 'utf8');
+    const stat = await fs.stat(configPath);
+    const originalPid = process.pid;
+    const replacementPid = findNonRunningPid();
+    const { metadataPath, socketPath } = resolveDaemonPaths(configPath);
+    activeConfigPath = configPath;
+    activeSocketPath = socketPath;
+    activeConfigMtime = stat.mtimeMs;
+    activeStatusPid = originalPid;
+    activeLayers = [{ path: configPath, mtimeMs: stat.mtimeMs }];
+    // The busy peer drains to idle on the first poll, then another client
+    // races in and replaces the daemon before our post-drain re-check runs.
+    activeRequests = 1;
+    drainAfterFirstStatusPoll = true;
+    replacementPidAfterDrain = replacementPid;
+
+    await fs.mkdir(path.dirname(metadataPath), { recursive: true });
+    await fs.writeFile(
+      metadataPath,
+      JSON.stringify({
+        pid: originalPid,
+        protocolVersion: DAEMON_PROTOCOL_VERSION - 1,
+        socketPath,
+        configPath,
+        startedAt: Date.now() - 10_000,
+        logPath: null,
+        configMtimeMs: stat.mtimeMs,
+        configLayers: activeLayers,
+      }),
+      'utf8'
+    );
+
+    const client = new DaemonClient({ configPath, configExplicit: true, rootDir: tmpDir });
+    await client.listTools({ server: 'playwright' });
+
+    // The peer's fresh daemon must not have received `stop` -- only the
+    // request that the upgrading client actually wanted to make. Killing the
+    // replacement would be the same regression the drain was added to stop.
+    expect(sentMethods).not.toContain('stop');
+    // The replacing pid appeared in the status poll, proving the upgrade
+    // window was actually exercised.
+    expect(activeStatusPid).toBe(replacementPid);
+    expect(launchDaemonDetached).not.toHaveBeenCalled();
     expect(sentMethods).toContain('listTools');
   });
 
