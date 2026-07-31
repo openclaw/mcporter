@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { DEFAULT_REQUEST_TIMEOUT_MSEC } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerDefinition } from '../src/config.js';
 import {
@@ -180,6 +181,118 @@ describe('daemon host request handling', () => {
   });
 });
 
+describe('operation ceiling for fixed-phase daemon methods', () => {
+  const metadata = {
+    configPath: '/tmp/config.json',
+    configLayers: [],
+    configMtimeMs: Date.now(),
+    socketPath: '/tmp/socket',
+    startedAt: Date.now(),
+    logPath: null,
+  };
+  const logContext = { enabled: false, logAllServers: false, servers: new Set<string>() };
+  const managedServers = createManagedServers();
+
+  let previousOAuthTimeout: string | undefined;
+
+  beforeEach(() => {
+    previousOAuthTimeout = process.env.MCPORTER_OAUTH_TIMEOUT_MS;
+  });
+
+  afterEach(() => {
+    if (previousOAuthTimeout === undefined) {
+      delete process.env.MCPORTER_OAUTH_TIMEOUT_MS;
+    } else {
+      process.env.MCPORTER_OAUTH_TIMEOUT_MS = previousOAuthTimeout;
+    }
+  });
+
+  it('fires the operation ceiling for callTool when the SDK never answers', async () => {
+    // Codex P1: a keep-alive server that accepts callTool but never responds used to
+    // ride progress frames forever. The ceiling is OAuth timeout + the caller
+    // deadline; the SDK's own timeout is the floor either way, so a wedged call
+    // becomes a non-retryable `operation_timeout` instead of an indefinite wait.
+    process.env.MCPORTER_OAUTH_TIMEOUT_MS = '50';
+    vi.useFakeTimers();
+    try {
+      const runtime = {
+        callTool: vi.fn().mockImplementation(neverResolving),
+        listTools: vi.fn(),
+        listResources: vi.fn(),
+        readResource: vi.fn(),
+        close: vi.fn().mockResolvedValue(undefined),
+      } as unknown as Runtime;
+
+      const promise = __testProcessRequest('', runtime, managedServers, new Map(), metadata, logContext, {
+        id: 'call',
+        method: 'callTool',
+        params: { server: 'oauth', tool: 'ping', timeoutMs: 5_000 },
+      });
+      const expectation = expect(promise).resolves.toMatchObject({
+        response: { ok: false, error: { code: 'operation_timeout' } },
+      });
+      await vi.advanceTimersByTimeAsync(DEFAULT_REQUEST_TIMEOUT_MSEC + 5_000 + 50);
+      await expectation;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('fires the operation ceiling for listResources when the SDK never answers', async () => {
+    process.env.MCPORTER_OAUTH_TIMEOUT_MS = '50';
+    vi.useFakeTimers();
+    try {
+      const runtime = {
+        callTool: vi.fn(),
+        listTools: vi.fn(),
+        listResources: vi.fn().mockImplementation(neverResolving),
+        readResource: vi.fn(),
+        close: vi.fn().mockResolvedValue(undefined),
+      } as unknown as Runtime;
+
+      const promise = __testProcessRequest('', runtime, managedServers, new Map(), metadata, logContext, {
+        id: 'resources',
+        method: 'listResources',
+        params: { server: 'oauth' },
+      });
+      const expectation = expect(promise).resolves.toMatchObject({
+        response: { ok: false, error: { code: 'operation_timeout' } },
+      });
+      await vi.advanceTimersByTimeAsync(DEFAULT_REQUEST_TIMEOUT_MSEC + 50);
+      await expectation;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('fires the operation ceiling for readResource when the SDK never answers', async () => {
+    process.env.MCPORTER_OAUTH_TIMEOUT_MS = '50';
+    vi.useFakeTimers();
+    try {
+      const runtime = {
+        callTool: vi.fn(),
+        listTools: vi.fn(),
+        listResources: vi.fn(),
+        readResource: vi.fn().mockImplementation(neverResolving),
+        close: vi.fn().mockResolvedValue(undefined),
+      } as unknown as Runtime;
+
+      const promise = __testProcessRequest('', runtime, managedServers, new Map(), metadata, logContext, {
+        id: 'resource',
+        method: 'readResource',
+        params: { server: 'oauth', uri: 'file://missing' },
+      });
+      const expectation = expect(promise).resolves.toMatchObject({
+        response: { ok: false, error: { code: 'operation_timeout' } },
+      });
+      await vi.advanceTimersByTimeAsync(DEFAULT_REQUEST_TIMEOUT_MSEC + 50);
+      await expectation;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 const describeUnixSocket = process.platform === 'win32' ? describe.skip : describe;
 
 describeUnixSocket('isDaemonResponding', () => {
@@ -323,6 +436,8 @@ function createRuntimeDouble(): {
     listTools: vi.fn().mockResolvedValue([]),
   };
 }
+
+const neverResolving = (): Promise<never> => new Promise(() => {});
 
 function createManagedServers(): Map<string, ServerDefinition> {
   return new Map([

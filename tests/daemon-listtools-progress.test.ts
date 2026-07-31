@@ -131,6 +131,27 @@ describe('daemon listTools progress frames', () => {
     expect(launchDaemonDetached).not.toHaveBeenCalled();
   });
 
+  it('emits the first progress frame before any cadence interval can elapse', async () => {
+    // Codex P2: the host used to wait a full cadence before the first frame, which
+    // would have expired a sub-250ms deadline before any proof of life arrived.
+    // The first frame is now written synchronously on dispatch, so a deadline
+    // smaller than the default cadence still keeps the request alive.
+    const shortTimeoutMs = 30;
+    const listTools = vi.fn(async (): Promise<ServerToolInfo[]> => {
+      // Run well past the deadline so the test would deadlock without an
+      // immediate first frame -- a stalled socket cannot be rescued by cadence.
+      await delay(shortTimeoutMs * 5);
+      return [{ name: 'alpha' }];
+    });
+    daemon = await serveDaemon(tmpDir, listTools);
+    const client = new DaemonClient({ configPath: daemon.configPath, configExplicit: true, rootDir: tmpDir });
+
+    await client.listTools({ server: 'oauth', timeoutMs: shortTimeoutMs });
+
+    expect(listTools).toHaveBeenCalledTimes(1);
+    expect(launchDaemonDetached).not.toHaveBeenCalled();
+  });
+
   it('still trips the socket deadline when the daemon stops sending progress frames', async () => {
     // A wedged daemon accepts the request and then goes quiet. Silence is the one
     // signal the client still treats as a dead transport.
