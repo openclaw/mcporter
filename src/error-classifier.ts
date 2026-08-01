@@ -11,11 +11,15 @@ export interface ConnectionIssue {
 }
 
 const AUTH_STATUSES = new Set([401, 403]);
-// 401 only counts as an auth signal when it stands alone as a token, so ports, durations,
-// hostnames, and request ids ("127.0.0.1:14012", "4010ms", "abc401def", "request_401_id")
-// are not read as one. The keywords stay substring matches because OAuth error codes embed
-// them with underscores ("unauthorized_client", "invalid_token_hint").
-const AUTH_TOKEN_PATTERNS = [/(?<![0-9a-z_])401(?![0-9a-z_])/i, /unauthorized/, /invalid_token/, /forbidden/];
+// Keywords are unambiguous auth signals, so they outrank offline patterns: a rejected token is
+// often reported alongside transport wording ("Access token expired; connection timed out").
+// They stay substring matches because OAuth error codes embed them with underscores
+// ("unauthorized_client", "invalid_token_hint").
+const KEYWORD_AUTH_PATTERNS = [/unauthorized/, /invalid_token/, /forbidden/];
+// A bare 401 is ambiguous, so it only applies once transport failures are ruled out, and only
+// when it stands alone as a token. Ports, durations, hostnames, and request ids
+// ("127.0.0.1:14012", "4010ms", "abc401def", "request_401_id") are therefore not read as one.
+const NUMERIC_AUTH_PATTERNS = [/(?<![0-9a-z_])401(?![0-9a-z_])/i];
 const OFFLINE_PATTERNS = [
   'fetch failed',
   'econnrefused',
@@ -63,10 +67,13 @@ export function analyzeConnectionError(error: unknown): ConnectionIssue {
       return { kind: 'http', rawMessage, statusCode };
     }
   }
+  if (matchesAny(KEYWORD_AUTH_PATTERNS, normalized)) {
+    return { kind: 'auth', rawMessage, statusCode };
+  }
   if (OFFLINE_PATTERNS.some((pattern) => normalized.includes(pattern))) {
     return { kind: 'offline', rawMessage };
   }
-  if (containsAuthToken(normalized)) {
+  if (matchesAny(NUMERIC_AUTH_PATTERNS, normalized)) {
     return { kind: 'auth', rawMessage, statusCode };
   }
   return { kind: 'other', rawMessage };
@@ -136,8 +143,8 @@ function extractStatusCode(message: string): number | undefined {
   return undefined;
 }
 
-function containsAuthToken(normalizedMessage: string): boolean {
-  return AUTH_TOKEN_PATTERNS.some((pattern) => pattern.test(normalizedMessage));
+function matchesAny(patterns: readonly RegExp[], normalizedMessage: string): boolean {
+  return patterns.some((pattern) => pattern.test(normalizedMessage));
 }
 
 function extractStdioExit(message: string): { stdioExitCode?: number; stdioSignal?: string } | undefined {

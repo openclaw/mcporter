@@ -116,6 +116,25 @@ describe('analyzeConnectionError', () => {
     });
   });
 
+  describe('keyword auth signals outrank offline transport patterns', () => {
+    it('classifies an expired-token payload as auth even when it mentions a timeout', () => {
+      const issue = analyzeConnectionError(
+        new Error('{"error":"invalid_token","error_description":"Access token expired; connection timed out"}')
+      );
+      expect(issue.kind).toBe('auth');
+    });
+
+    it('classifies an unauthorized stream disconnect as auth rather than offline', () => {
+      const issue = analyzeConnectionError(new Error('SSE stream disconnected: Unauthorized, connection closed'));
+      expect(issue.kind).toBe('auth');
+    });
+
+    it('keeps a bare 401 subordinate to offline patterns', () => {
+      const issue = analyzeConnectionError(new Error('fetch failed: connect ECONNREFUSED 127.0.0.1:401'));
+      expect(issue.kind).toBe('offline');
+    });
+  });
+
   describe('known status codes take precedence over message keywords', () => {
     it('classifies code=404 as http when the message also mentions unauthorized', () => {
       const err = Object.assign(new Error('Not Found: /unauthorized'), {
