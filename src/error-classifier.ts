@@ -11,6 +11,9 @@ export interface ConnectionIssue {
 }
 
 const AUTH_STATUSES = new Set([401, 403]);
+// Word-bounded so digits embedded in ports, durations, hostnames, or request ids
+// ("127.0.0.1:14012", "4010ms", "request 8401f2") are not read as an auth signal.
+const AUTH_TOKEN_PATTERNS = [/\b401\b/, /\bunauthorized\b/, /\binvalid_token\b/, /\bforbidden\b/];
 const OFFLINE_PATTERNS = [
   'fetch failed',
   'econnrefused',
@@ -50,14 +53,19 @@ export function analyzeConnectionError(error: unknown): ConnectionIssue {
   const errorCode = extractErrorCode(error);
   const statusCode = errorCode ?? extractStatusCode(rawMessage);
   const normalized = rawMessage.toLowerCase();
-  if (AUTH_STATUSES.has(statusCode ?? -1) || containsAuthToken(normalized)) {
-    return { kind: 'auth', rawMessage, statusCode };
-  }
-  if (statusCode && statusCode >= 400) {
-    return { kind: 'http', rawMessage, statusCode };
+  if (statusCode !== undefined) {
+    if (AUTH_STATUSES.has(statusCode)) {
+      return { kind: 'auth', rawMessage, statusCode };
+    }
+    if (statusCode >= 400) {
+      return { kind: 'http', rawMessage, statusCode };
+    }
   }
   if (OFFLINE_PATTERNS.some((pattern) => normalized.includes(pattern))) {
     return { kind: 'offline', rawMessage };
+  }
+  if (containsAuthToken(normalized)) {
+    return { kind: 'auth', rawMessage, statusCode };
   }
   return { kind: 'other', rawMessage };
 }
@@ -127,12 +135,7 @@ function extractStatusCode(message: string): number | undefined {
 }
 
 function containsAuthToken(normalizedMessage: string): boolean {
-  return (
-    normalizedMessage.includes('401') ||
-    normalizedMessage.includes('unauthorized') ||
-    normalizedMessage.includes('invalid_token') ||
-    normalizedMessage.includes('forbidden')
-  );
+  return AUTH_TOKEN_PATTERNS.some((pattern) => pattern.test(normalizedMessage));
 }
 
 function extractStdioExit(message: string): { stdioExitCode?: number; stdioSignal?: string } | undefined {
