@@ -145,5 +145,13 @@ describe('analyzeConnectionError', () => {
       const issue = analyzeConnectionError(new Error('OAuth rejected the request: invalid_token'));
       expect(issue.kind).toBe('auth');
     });
+
+    it.each(['unauthorized_client', 'invalid_token_hint', 'invalid_token'] as const)(
+      'classifies the status-less OAuth error code %s as auth',
+      (code) => {
+        const issue = analyzeConnectionError(new Error(`OAuth error response: {"error":"${code}"}`));
+        expect(issue.kind).toBe('auth');
+      }
+    );
   });
 });

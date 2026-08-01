@@ -11,9 +11,11 @@ export interface ConnectionIssue {
 }
 
 const AUTH_STATUSES = new Set([401, 403]);
-// Word-bounded so digits embedded in ports, durations, hostnames, or request ids
-// ("127.0.0.1:14012", "4010ms", "request 8401f2") are not read as an auth signal.
-const AUTH_TOKEN_PATTERNS = [/\b401\b/, /\bunauthorized\b/, /\binvalid_token\b/, /\bforbidden\b/];
+// 401 must not be surrounded by other digits, so ports, durations, hostnames, and request
+// ids ("127.0.0.1:14012", "4010ms", "request 8401f2") are not read as an auth signal. The
+// keywords stay substring matches because OAuth error codes embed them with underscores
+// ("unauthorized_client", "invalid_token_hint").
+const AUTH_TOKEN_PATTERNS = [/(?<!\d)401(?!\d)/, /unauthorized/, /invalid_token/, /forbidden/];
 const OFFLINE_PATTERNS = [
   'fetch failed',
   'econnrefused',
