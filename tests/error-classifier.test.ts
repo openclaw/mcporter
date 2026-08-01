@@ -104,6 +104,16 @@ describe('analyzeConnectionError', () => {
       const issue = analyzeConnectionError(new Error('Error POSTing to endpoint: request 8401f2 failed'));
       expect(issue.kind).not.toBe('auth');
     });
+
+    it('does not treat a letter-embedded 401 as auth', () => {
+      const issue = analyzeConnectionError(new Error('Error POSTing to endpoint: request abc401def failed'));
+      expect(issue.kind).toBe('other');
+    });
+
+    it('does not treat an underscore-delimited 401 as auth', () => {
+      const issue = analyzeConnectionError(new Error('Error POSTing to endpoint: request_401_id failed'));
+      expect(issue.kind).toBe('other');
+    });
   });
 
   describe('known status codes take precedence over message keywords', () => {
