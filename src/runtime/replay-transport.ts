@@ -215,10 +215,7 @@ function paramsMatch(method: string, expected: unknown, actual: unknown): boolea
   if (method !== 'initialize') {
     return isDeepStrictEqual(normalizedExpected, normalizedActual);
   }
-  return isDeepStrictEqual(
-    normalizeInitializeParams(normalizedExpected),
-    normalizeInitializeParams(normalizedActual)
-  );
+  return isDeepStrictEqual(normalizeInitializeParams(normalizedExpected), normalizeInitializeParams(normalizedActual));
 }
 
 function normalizeClientIdentityMeta(params: unknown): unknown {
