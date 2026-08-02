@@ -4,6 +4,7 @@ import type { Logger } from './logging.js';
 
 export interface CloseTransportAndWaitOptions {
   readonly throwOnCloseError?: boolean;
+  readonly close?: () => Promise<void>;
 }
 
 // closeTransportAndWait closes transports and ensures backing processes exit cleanly.
@@ -13,26 +14,33 @@ export async function closeTransportAndWait(
   options: CloseTransportAndWaitOptions = {}
 ): Promise<void> {
   const pidBeforeClose = getTransportPid(transport);
+  const targetsBeforeClose = pidBeforeClose ? await collectProcessTreePids(pidBeforeClose) : [];
   let closeError: unknown;
-  try {
-    await transport.close();
-  } catch (error) {
-    if (options.throwOnCloseError) {
+  let closeSettled = false;
+  const closePromise = (options.close ?? (() => transport.close()))()
+    .catch((error: unknown) => {
       closeError = error;
-    } else {
-      logger.warn(`Failed to close transport cleanly: ${(error as Error).message}`);
+      if (!options.throwOnCloseError) {
+        logger.warn(`Failed to close transport cleanly: ${(error as Error).message}`);
+      }
+    })
+    .finally(() => {
+      closeSettled = true;
+    });
+
+  if (pidBeforeClose) {
+    destroyTransportStreams(transport);
+    await ensureProcessTreeTerminated(logger, pidBeforeClose, targetsBeforeClose);
+    if (!closeSettled) {
+      await Promise.race([closePromise, delay(100)]);
     }
+  } else {
+    await closePromise;
   }
 
-  if (closeError) {
+  if (closeError && options.throwOnCloseError) {
     throw closeError;
   }
-
-  if (!pidBeforeClose) {
-    return;
-  }
-
-  await ensureProcessTerminated(logger, pidBeforeClose);
 }
 
 function getTransportPid(transport: Transport & { pid?: number | null }): number | null {
@@ -45,10 +53,6 @@ function getTransportPid(transport: Transport & { pid?: number | null }): number
   return null;
 }
 
-async function ensureProcessTerminated(logger: Logger, pid: number): Promise<void> {
-  await ensureProcessTreeTerminated(logger, pid);
-}
-
 function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -58,29 +62,45 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-async function ensureProcessTreeTerminated(logger: Logger, rootPid: number): Promise<void> {
-  if (!isProcessAlive(rootPid)) {
-    return;
-  }
-
-  let targets = await collectProcessTreePids(rootPid);
-  if (await waitForTreeExit(targets, 300)) {
+async function ensureProcessTreeTerminated(
+  logger: Logger,
+  rootPid: number,
+  capturedTargets: readonly number[] = []
+): Promise<void> {
+  let targets = uniquePids([...capturedTargets, ...(await collectProcessTreePids(rootPid))]);
+  if (targets.length === 0 || (await waitForTreeExit(targets, 700))) {
     return;
   }
 
   await sendSignalToTargets(targets, 'SIGTERM');
-  targets = await collectProcessTreePids(rootPid);
+  targets = uniquePids([...targets, ...(await collectProcessTreePids(rootPid))]);
   if (await waitForTreeExit(targets, 700)) {
     return;
   }
 
-  targets = await collectProcessTreePids(rootPid);
+  targets = uniquePids([...targets, ...(await collectProcessTreePids(rootPid))]);
   await sendSignalToTargets(targets, 'SIGKILL');
   if (await waitForTreeExit(targets, 500)) {
     return;
   }
 
   logger.warn(`Process tree rooted at pid=${rootPid} did not exit after SIGKILL.`);
+}
+
+function uniquePids(pids: readonly number[]): number[] {
+  return [...new Set(pids.filter((pid) => Number.isInteger(pid) && pid > 0))];
+}
+
+function destroyTransportStreams(transport: Transport): void {
+  const candidate = transport as Transport & Record<'stdin' | 'stdout' | 'stderr', unknown>;
+  for (const key of ['stdin', 'stdout', 'stderr'] as const) {
+    try {
+      const stream = candidate[key] as { destroy?: () => void } | null | undefined;
+      stream?.destroy?.();
+    } catch {
+      // Best-effort cleanup for public stream surfaces exposed by the transport.
+    }
+  }
 }
 
 async function sendSignalToTargets(pids: number[], signal: NodeJS.Signals): Promise<void> {
@@ -229,10 +249,5 @@ async function waitForTreeExit(pids: number[], durationMs: number): Promise<bool
 }
 
 function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    if (typeof (timer as { unref?: () => void }).unref === 'function') {
-      (timer as { unref?: () => void }).unref?.();
-    }
-  });
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

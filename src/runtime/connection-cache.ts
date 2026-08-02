@@ -431,16 +431,12 @@ export class RuntimeConnectionCache {
     let closeError: unknown;
 
     try {
-      await context.client.close();
-    } catch (error) {
-      if (propagateReplayCloseErrors) {
-        closeError ??= error;
-      }
-    }
-
-    try {
       await closeTransportAndWait(this.logger, context.transport, {
         throwOnCloseError: propagateReplayCloseErrors,
+        close: async () => {
+          await context.client.close();
+          await context.transport.close();
+        },
       });
     } catch (error) {
       if (propagateReplayCloseErrors) {
