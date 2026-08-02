@@ -98,14 +98,15 @@ function createClient(
 async function createReplayClientContext(
   definition: ServerDefinition,
   replayPath: string,
-  clientInfo: { name: string; version: string }
+  clientInfo: { name: string; version: string },
+  elicitationHandler?: ElicitationHandler
 ): Promise<ClientContext> {
   const transport = new ReplayTransport({ recordPath: replayPath, server: definition.name });
   // Pre-v2 captures start with initialize. Skip a probe those recordings
   // cannot satisfy; captures containing server/discover replay normally.
   const client = createClient(definition, clientInfo, {
     forceLegacy: transport.requiresLegacyNegotiation,
-    elicitationHandler: createNonInteractiveElicitationResponder().handler,
+    elicitationHandler: elicitationHandler ?? createNonInteractiveElicitationResponder().handler,
   });
   await client.connect(transport);
   return { client, transport, definition, oauthSession: undefined };
@@ -163,7 +164,7 @@ export async function createClientContext(
   options: CreateClientContextOptions = {}
 ): Promise<ClientContext> {
   if (options.replayPath && shouldUseModeForServer(definition, process.env.MCPORTER_REPLAY_SERVER)) {
-    return createReplayClientContext(definition, options.replayPath, clientInfo);
+    return createReplayClientContext(definition, options.replayPath, clientInfo, options.elicitationHandler);
   }
   const activeDefinition = await applyCachedAuthIfAvailable(definition, logger, options.allowCachedAuth);
 

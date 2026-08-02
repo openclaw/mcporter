@@ -198,9 +198,7 @@ class McpRuntime implements Runtime {
       oauthTimeoutMs: options.oauthTimeoutMs ?? OAUTH_CODE_TIMEOUT_MS,
       recordPath,
       replayPath,
-      elicitationHandler: replayPath
-        ? defaultResponder.handler
-        : (options.elicitationHandler ?? defaultResponder.handler),
+      elicitationHandler: options.elicitationHandler ?? defaultResponder.handler,
     });
   }
 

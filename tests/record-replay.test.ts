@@ -1,13 +1,19 @@
 import fs from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import type { Transport, TransportSendOptions } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { describe, expect, it, vi } from 'vitest';
+import type { ServerDefinition } from '../src/config.js';
 import { createRuntime, MCPORTER_VERSION } from '../src/runtime.js';
 import { RecordTransport, type RecordedMessage } from '../src/runtime/record-transport.js';
 import { ReplayTransport } from '../src/runtime/replay-transport.js';
+
+const TSX_CLI = createRequire(import.meta.url).resolve('tsx/cli');
+const MODERN_FIXTURE = fileURLToPath(new URL('./servers/modern/server.ts', import.meta.url));
 
 class StubTransport implements Transport {
   onclose?: Transport['onclose'];
@@ -450,6 +456,66 @@ describe('record/replay transports', () => {
       await fs.rm(tempHome, { recursive: true, force: true });
     }
   });
+
+  it('replays an accepted modern MRTR recording with the caller elicitation handler', async () => {
+    const tempHome = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-replay-mrtr-'));
+    const session = 'accepted-mrtr';
+    const definition: ServerDefinition = {
+      name: 'modern',
+      command: {
+        kind: 'stdio',
+        command: process.execPath,
+        args: [TSX_CLI, MODERN_FIXTURE, '--stdio'],
+        cwd: process.cwd(),
+      },
+      source: { kind: 'local', path: MODERN_FIXTURE },
+    };
+    const acceptingHandler = vi.fn(async () => ({
+      action: 'accept' as const,
+      content: { confirm: true },
+    }));
+    const originalEnvironment = {
+      HOME: process.env.HOME,
+      USERPROFILE: process.env.USERPROFILE,
+      MCPORTER_RECORD: process.env.MCPORTER_RECORD,
+      MCPORTER_REPLAY: process.env.MCPORTER_REPLAY,
+    };
+
+    process.env.HOME = tempHome;
+    process.env.USERPROFILE = tempHome;
+    process.env.MCPORTER_RECORD = session;
+    delete process.env.MCPORTER_REPLAY;
+
+    try {
+      const recordingRuntime = await createRuntime({ servers: [definition], elicitationHandler: acceptingHandler });
+      try {
+        await expect(
+          recordingRuntime.callTool('modern', 'confirm_delete', { args: { target: 'recorded-item' } })
+        ).resolves.toMatchObject({ content: [{ type: 'text', text: 'deleted recorded-item' }] });
+      } finally {
+        await recordingRuntime.close();
+      }
+
+      delete process.env.MCPORTER_RECORD;
+      process.env.MCPORTER_REPLAY = session;
+      const replayRuntime = await createRuntime({ servers: [definition], elicitationHandler: acceptingHandler });
+      try {
+        await expect(
+          replayRuntime.callTool('modern', 'confirm_delete', { args: { target: 'recorded-item' } })
+        ).resolves.toMatchObject({ content: [{ type: 'text', text: 'deleted recorded-item' }] });
+      } finally {
+        await replayRuntime.close();
+      }
+
+      expect(acceptingHandler).toHaveBeenCalledTimes(2);
+    } finally {
+      for (const [key, value] of Object.entries(originalEnvironment)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      await fs.rm(tempHome, { recursive: true, force: true });
+    }
+  }, 15_000);
 
   it('keeps multi-server streams separated by metadata server', async () => {
     const recordPath = await writeRecording([

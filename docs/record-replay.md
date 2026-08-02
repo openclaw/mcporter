@@ -53,6 +53,8 @@ This makes recordings useful as reproducible bug fixtures: a replay either follo
 
 Recordings made against modern servers include the initial `server/discover` probe. Replay matches that probe by method because its negotiation metadata can vary between client versions. Older recordings whose first request is `initialize` are automatically replayed in legacy negotiation mode.
 
+Programmatic runtimes replay elicitation with the caller-supplied handler. When a recording accepted an elicitation request, provide a handler that makes the same decision so the strict retry request matches the capture; without one, headless replay keeps the normal non-interactive decline behavior.
+
 ## Safe regression fixtures
 
 Recording is not automatic redaction. Before using a capture as a regression

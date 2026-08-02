@@ -13,6 +13,7 @@
 - Recover legacy stdio servers that exit on modern discovery by retrying initialization once with a fresh legacy-mode process.
 - Use the SDK's 60-second stdio discovery timeout for slow-starting modern servers, configurable with `MCPORTER_STDIO_PROBE_TIMEOUT_MS`.
 - Preserve transport capabilities and request metadata through recording wrappers so modern HTTP cancellation remains stream-based.
+- Replay accepted modern elicitation rounds with the caller's handler instead of unconditionally declining them.
 
 ### Config
 
