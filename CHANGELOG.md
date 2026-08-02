@@ -28,7 +28,7 @@
 ### OAuth
 
 - Validate RFC 9207 authorization-response issuers before redeeming callback codes, with server-specific mismatch errors.
-- Bind persisted tokens and client registrations to their authorization-server issuer while accepting legacy unstamped records once and stamping them on the next successful save.
+- Bind persisted tokens and client registrations to their authorization-server issuer across interactive and silent refresh flows, discarding mismatches before credentials are transmitted and stamping successful refreshes.
 
 ### TypeScript API
 

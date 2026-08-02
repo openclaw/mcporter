@@ -851,6 +851,83 @@ describe('oauth persistence', () => {
     expect(persisted?.expires_at).toBeGreaterThan(Math.floor(Date.now() / 1000));
   });
 
+  it('rejects issuer-mismatched silent refresh credentials without transmitting the refresh token', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-refresh-issuer-mismatch-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+
+    const cacheDir = path.join(tmp, 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-secret-a',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+        issuer: 'https://issuer-a.example',
+      })
+    );
+    await fs.writeFile(
+      path.join(cacheDir, 'client.json'),
+      JSON.stringify({ client_id: 'client-a', issuer: 'https://issuer-a.example' })
+    );
+    authMocks.discoverOAuthServerInfo.mockResolvedValue({
+      authorizationServerUrl: 'https://issuer-b.example',
+      authorizationServerMetadata: { token_endpoint: 'https://issuer-b.example/token' },
+    });
+
+    const definition = mkDef('issuer-bound-service', cacheDir);
+    await expect(readCachedAccessToken(definition)).rejects.toThrow(
+      /issuer-bound-service.*expected https:\/\/issuer-a\.example.*received https:\/\/issuer-b\.example/i
+    );
+
+    expect(authMocks.refreshAuthorization).not.toHaveBeenCalled();
+    await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toBeUndefined();
+    await expect(readJsonFile(path.join(cacheDir, 'client.json'))).resolves.toBeUndefined();
+  });
+
+  it('stamps refreshed OAuth tokens with the discovered issuer', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-refresh-issuer-stamp-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+
+    const cacheDir = path.join(tmp, 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'refresh-123',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+        issuer: 'https://auth.example.com',
+      })
+    );
+    await fs.writeFile(
+      path.join(cacheDir, 'client.json'),
+      JSON.stringify({ client_id: 'client-123', issuer: 'https://auth.example.com' })
+    );
+    authMocks.discoverOAuthServerInfo.mockResolvedValue({
+      authorizationServerUrl: 'https://auth.example.com',
+      authorizationServerMetadata: { token_endpoint: 'https://auth.example.com/token' },
+    });
+    authMocks.refreshAuthorization.mockResolvedValue({
+      access_token: 'fresh-token',
+      token_type: 'Bearer',
+      refresh_token: 'refresh-456',
+      expires_in: 3600,
+    });
+
+    await expect(readCachedAccessToken(mkDef('issuer-stamp-service', cacheDir))).resolves.toBe('fresh-token');
+    await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toMatchObject({
+      access_token: 'fresh-token',
+      issuer: 'https://auth.example.com',
+    });
+  });
+
   it('omits OAuth resource during silent refresh when protected-resource metadata is absent', async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-refresh-no-resource-'));
     tempRoots.push(tmp);

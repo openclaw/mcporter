@@ -3,6 +3,8 @@ import type {
   OAuthClientInformationMixed,
   OAuthProtectedResourceMetadata,
   OAuthTokens,
+  StoredOAuthClientInformation,
+  StoredOAuthTokens,
 } from '@modelcontextprotocol/client';
 import {
   checkResourceAllowed,
@@ -17,15 +19,17 @@ import { clearLegacyOAuthArtifacts } from './oauth-persistence-stores.js';
 import type { OAuthPersistence } from './oauth-persistence.js';
 import { sameOAuthTokenGeneration } from './oauth-token-generation.js';
 
-type StoredOAuthTokens = OAuthTokens & {
+type CachedOAuthTokens = OAuthTokens & {
   expires_at?: number;
   expiresAt?: number;
 };
 
 const TOKEN_EXPIRY_SKEW_SECONDS = 60;
 
+class OAuthIssuerMismatchError extends Error {}
+
 function tokenExpirySeconds(tokens: OAuthTokens): number | undefined {
-  const stored = tokens as StoredOAuthTokens;
+  const stored = tokens as CachedOAuthTokens;
   for (const candidate of [stored.expires_at, stored.expiresAt]) {
     if (typeof candidate === 'number' && Number.isFinite(candidate)) {
       return candidate;
@@ -63,6 +67,31 @@ function resourceForRefresh(
     );
   }
   return new URL(resourceMetadata.resource);
+}
+
+function normalizedIssuer(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value.length === 0) {
+    return undefined;
+  }
+  return value.endsWith('/') ? value.slice(0, -1) : value;
+}
+
+async function assertRefreshIssuerBinding(
+  definition: ServerDefinition,
+  persistence: OAuthPersistence,
+  tokens: StoredOAuthTokens,
+  clientInformation: StoredOAuthClientInformation,
+  receivedIssuer: string
+): Promise<void> {
+  const expectedIssuer = normalizedIssuer(tokens.issuer) ?? normalizedIssuer(clientInformation.issuer);
+  if (!expectedIssuer || expectedIssuer === normalizedIssuer(receivedIssuer)) {
+    return;
+  }
+  await Promise.all([persistence.clear('tokens'), persistence.clear('client')]);
+  throw new OAuthIssuerMismatchError(
+    `OAuth issuer changed for '${definition.name}': expected ${expectedIssuer}, received ${receivedIssuer}. ` +
+      `Discarded cached credentials; run 'mcporter auth ${definition.name}' to reauthorize.`
+  );
 }
 
 function unrecoverableOAuthRefreshCode(error: unknown): string | undefined {
@@ -141,6 +170,13 @@ export async function readCachedAccessTokenWithPersistence(
       return tokens.access_token;
     }
     const serverInfo = await discoverOAuthServerInfo(definition.command.url);
+    await assertRefreshIssuerBinding(
+      definition,
+      persistence,
+      tokens,
+      clientInformation,
+      serverInfo.authorizationServerUrl
+    );
     const resource = resourceForRefresh(definition.command.url, serverInfo.resourceMetadata);
     const refreshed = await refreshAuthorization(serverInfo.authorizationServerUrl, {
       metadata: serverInfo.authorizationServerMetadata,
@@ -148,7 +184,7 @@ export async function readCachedAccessTokenWithPersistence(
       refreshToken: tokens.refresh_token,
       ...(resource ? { resource } : {}),
     });
-    await persistence.saveTokens(refreshed);
+    await persistence.saveTokens({ ...refreshed, issuer: serverInfo.authorizationServerUrl });
     logger?.debug?.(`Refreshed cached OAuth access token for '${definition.name}' (non-interactive).`);
     return refreshed.access_token;
   } catch (error) {
@@ -157,6 +193,9 @@ export async function readCachedAccessTokenWithPersistence(
         error instanceof Error ? error.message : String(error)
       }`
     );
+    if (error instanceof OAuthIssuerMismatchError) {
+      throw error;
+    }
     const unrecoverableCode = unrecoverableOAuthRefreshCode(error);
     if (unrecoverableCode) {
       return await recoverFromUnrecoverableRefresh(
