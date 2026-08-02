@@ -1,6 +1,7 @@
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { ServerDefinition } from '../config.js';
 import { isKeepAliveServer } from '../lifecycle.js';
+import { isUnauthorizedError } from '../runtime-oauth-support.js';
 import type {
   CallOptions,
   ConnectOptions,
@@ -176,6 +177,11 @@ const NON_FATAL_CODES = new Set([ErrorCode.InvalidRequest, ErrorCode.MethodNotFo
 
 function shouldRestartDaemonServer(error: unknown): boolean {
   if (!error) {
+    return false;
+  }
+  // Restarting cannot repair a missing or rejected credential, and replaying the
+  // operation re-enters interactive authorization, duplicating prompts (issue #247).
+  if (isUnauthorizedError(error)) {
     return false;
   }
   if (error instanceof McpError) {

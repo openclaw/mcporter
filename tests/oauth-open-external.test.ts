@@ -51,7 +51,7 @@ describe('openExternal', () => {
 
     __oauthInternals.openExternal(url, 'win32', launch as unknown as typeof import('node:child_process').spawn);
 
-    const [exe, args] = launch.mock.calls[0] as [string, string[]];
+    const [exe, args] = launch.mock.calls[0] as unknown as [string, string[]];
     expect(exe).toBe('rundll32');
     expect(args).toEqual(['url.dll,FileProtocolHandler', url]);
     // Must not use cmd /c start (command-interpreter boundary).

@@ -282,4 +282,23 @@ describe('createKeepAliveRuntime', () => {
     expect(daemon.callTool).toHaveBeenCalledTimes(1);
     expect(daemon.closeServer).not.toHaveBeenCalled();
   });
+
+  it('does not restart or replay daemon operations after unauthorized errors', async () => {
+    const runtime = new FakeRuntime(definitions);
+    const daemon = {
+      callTool: vi.fn().mockRejectedValue(new Error('HTTP 401 Unauthorized')),
+      closeServer: vi.fn().mockResolvedValue(undefined),
+      listTools: vi.fn(),
+      listResources: vi.fn(),
+      readResource: vi.fn(),
+    };
+    const keepAliveRuntime = createKeepAliveRuntime(runtime as unknown as Runtime, {
+      daemonClient: daemon as never,
+      keepAliveServers: new Set(['alpha']),
+    });
+
+    await expect(keepAliveRuntime.callTool('alpha', 'ping', {})).rejects.toThrow(/unauthorized/i);
+    expect(daemon.callTool).toHaveBeenCalledTimes(1);
+    expect(daemon.closeServer).not.toHaveBeenCalled();
+  });
 });

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import os from 'node:os';
@@ -33,6 +34,12 @@ const requestStatus = (target: URL): Promise<number> =>
     req.on('error', reject);
     req.end();
   });
+
+const authorizationUrlFor = (verifier: string) => {
+  const url = new URL('https://auth.example.com/authorize');
+  url.searchParams.set('code_challenge', createHash('sha256').update(verifier).digest('base64url'));
+  return url;
+};
 
 describe('FileOAuthClientProvider session lifecycle', () => {
   const tempDirs: string[] = [];
@@ -349,6 +356,65 @@ describe('FileOAuthClientProvider session lifecycle', () => {
       await (session.provider as StatefulProvider).state();
       await expect(fs.access(isolatedHome.vaultPath)).resolves.toBeUndefined();
       await isolatedHome.assertAmbientVaultUntouched();
+    } finally {
+      await session.close();
+    }
+  });
+
+  it('serializes overlapping interactive authorizations into one completable transaction', async () => {
+    const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+    tempDirs.push(tokenCacheDir);
+    const definition: ServerDefinition = {
+      name: 'test-oauth-singleflight',
+      description: 'Test OAuth server',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'oauth',
+      tokenCacheDir,
+    };
+    const prompts: URL[] = [];
+    const session = await createOAuthSession(
+      definition,
+      { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      {
+        suppressBrowserLaunch: true,
+        onAuthorizationUrl: ({ authorizationUrl }) => {
+          prompts.push(new URL(authorizationUrl));
+        },
+      }
+    );
+    const provider = session.provider;
+
+    try {
+      // Two SDK auth() flows interleave: both save their verifier before either redirects.
+      await provider.saveCodeVerifier?.('verifier-first');
+      await provider.saveCodeVerifier?.('verifier-second');
+      await provider.redirectToAuthorization(authorizationUrlFor('verifier-first'));
+      await provider.redirectToAuthorization(authorizationUrlFor('verifier-second'));
+
+      // Only the first flow prompts, and the persisted verifier matches its challenge.
+      expect(prompts).toHaveLength(1);
+      await expect(provider.codeVerifier?.()).resolves.toBe('verifier-first');
+
+      // A verifier saved while the transaction is pending must not clobber it.
+      await provider.saveCodeVerifier?.('verifier-late');
+      await expect(provider.codeVerifier?.()).resolves.toBe('verifier-first');
+
+      // Completing the callback ends the transaction; the next flow prompts normally.
+      const state = await (session.provider as StatefulProvider).state();
+      const callback = new URL((session.provider as StatefulProvider).redirectUrl.toString());
+      callback.searchParams.set('code', 'auth-code');
+      callback.searchParams.set('state', state);
+      const waitPromise = session.waitForAuthorizationCode();
+      expect(await requestStatus(callback)).toBe(200);
+      await expect(waitPromise).resolves.toBe('auth-code');
+
+      await provider.saveCodeVerifier?.('verifier-next');
+      await provider.redirectToAuthorization(authorizationUrlFor('verifier-next'));
+      expect(prompts).toHaveLength(2);
+      await expect(provider.codeVerifier?.()).resolves.toBe('verifier-next');
+      const trailingWait = session.waitForAuthorizationCode();
+      await session.close();
+      await expect(trailingWait).rejects.toThrow(/closed before receiving authorization code/i);
     } finally {
       await session.close();
     }

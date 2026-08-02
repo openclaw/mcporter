@@ -5,6 +5,7 @@
 ### OAuth
 
 - Open the Windows OAuth browser via shell-free `rundll32 url.dll,FileProtocolHandler` instead of a `cmd.exe` command string, so quote- or ampersand-bearing authorization URLs cannot run shell side effects. (PR #242, thanks @SebTardif)
+- Serialize interactive OAuth authorization per provider/session: concurrent 401s (background SSE reconnect plus a bridged request) now join one pending PKCE transaction instead of opening duplicate prompts, and keep-alive daemons no longer restart and replay operations on auth failures. (Issue #247, thanks @mkaput)
 
 ### CLI
 

@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { URL } from 'node:url';
 import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
@@ -15,6 +15,9 @@ import { buildOAuthPersistence } from './oauth-persistence.js';
 
 const CALLBACK_HOST = '127.0.0.1';
 const CALLBACK_PATH = '/callback';
+// Mirrors DEFAULT_OAUTH_CODE_TIMEOUT_MS in src/runtime/oauth.ts: a pending interactive
+// authorization older than this is treated as abandoned so a later request can prompt again.
+const INTERACTIVE_AUTHORIZATION_TTL_MS = 300_000;
 
 export interface OAuthAuthorizationRequest {
   authorizationUrl: string;
@@ -82,6 +85,11 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   private redirectUrlValue: URL;
   private authorizationDeferred: Deferred<string> | null = null;
   private authorizationRedirectStarted = false;
+  // One interactive authorization transaction per provider: concurrent SDK auth() flows
+  // (background GET reconnect + bridged POST both hitting 401) must not each open a
+  // prompt, because only one persisted PKCE verifier can complete (issue #247).
+  private interactiveAuthorization: { challenge: string | null; claimedAt: number } | null = null;
+  private readonly pendingVerifiersByChallenge = new Map<string, string>();
   private server?: http.Server;
 
   private constructor(
@@ -206,6 +214,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
           res.end('<html><body><h1>Authorization failed</h1><p>Invalid OAuth state</p></body></html>');
           this.authorizationDeferred?.reject(new Error('Invalid OAuth state'));
           this.authorizationDeferred = null;
+          this.clearInteractiveAuthorization();
           return;
         }
         if (code) {
@@ -215,21 +224,25 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
           res.end('<html><body><h1>Authorization successful</h1><p>You can return to the CLI.</p></body></html>');
           this.authorizationDeferred?.resolve(code);
           this.authorizationDeferred = null;
+          this.clearInteractiveAuthorization();
         } else if (error) {
           res.statusCode = 400;
           res.setHeader('Content-Type', 'text/html');
           res.end(`<html><body><h1>Authorization failed</h1><p>${error}</p></body></html>`);
           this.authorizationDeferred?.reject(new Error(`OAuth error: ${error}`));
           this.authorizationDeferred = null;
+          this.clearInteractiveAuthorization();
         } else {
           res.statusCode = 400;
           res.end('Missing authorization code');
           this.authorizationDeferred?.reject(new Error('Missing authorization code'));
           this.authorizationDeferred = null;
+          this.clearInteractiveAuthorization();
         }
       } catch (error) {
         this.authorizationDeferred?.reject(error);
         this.authorizationDeferred = null;
+        this.clearInteractiveAuthorization();
       }
     });
   }
@@ -276,6 +289,27 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {
     this.authorizationRedirectStarted = true;
     this.ensureAuthorizationDeferred();
+    const challenge = authorizationUrl.searchParams.get('code_challenge');
+    if (this.hasActiveInteractiveAuthorization()) {
+      // Join the in-flight transaction: drop this flow's redirect (and its unclaimed
+      // verifier) so exactly one completable prompt exists for this provider.
+      if (challenge) {
+        this.pendingVerifiersByChallenge.delete(challenge);
+      }
+      this.logger.info(`Authorization already pending for ${this.definition.name}; suppressing duplicate prompt.`);
+      return;
+    }
+    // Claim synchronously, before any await, so a concurrent redirect sees the claim.
+    this.interactiveAuthorization = { challenge, claimedAt: Date.now() };
+    const claimedVerifier = challenge ? this.pendingVerifiersByChallenge.get(challenge) : undefined;
+    if (challenge) {
+      this.pendingVerifiersByChallenge.delete(challenge);
+    }
+    if (claimedVerifier) {
+      // Re-persist the claimed flow's verifier: a concurrent flow may have saved its own
+      // between this flow's saveCodeVerifier and this claim.
+      await this.persistence.saveCodeVerifier(claimedVerifier);
+    }
     const request = {
       authorizationUrl: authorizationUrl.toString(),
       redirectUrl: this.redirectUrlValue.toString(),
@@ -294,6 +328,13 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   }
 
   async saveCodeVerifier(codeVerifier: string): Promise<void> {
+    // Remember every verifier by its S256 challenge so redirectToAuthorization can
+    // re-persist the one belonging to the flow that wins the interactive claim.
+    this.pendingVerifiersByChallenge.set(challengeForVerifier(codeVerifier), codeVerifier);
+    if (this.hasActiveInteractiveAuthorization()) {
+      // A concurrent flow owns the pending prompt; don't clobber its persisted verifier.
+      return;
+    }
     await this.persistence.saveCodeVerifier(codeVerifier);
   }
 
@@ -307,6 +348,10 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
 
   // invalidateCredentials removes cached files to force the next OAuth flow.
   async invalidateCredentials(scope: 'all' | 'client' | 'tokens' | 'verifier'): Promise<void> {
+    if (scope === 'all' || scope === 'verifier') {
+      // The pending transaction's verifier is gone; let the next flow claim a new prompt.
+      this.clearInteractiveAuthorization();
+    }
     await this.persistence.clear(scope);
   }
 
@@ -322,6 +367,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       // If the CLI is tearing down mid-flow, reject the pending wait promise so runtime shutdown isn't blocked.
       this.authorizationDeferred.reject(new Error('OAuth session closed before receiving authorization code.'));
       this.authorizationDeferred = null;
+      this.clearInteractiveAuthorization();
     }
     if (!this.server) {
       return;
@@ -339,6 +385,23 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       this.authorizationDeferred = createDeferred<string>();
     }
     return this.authorizationDeferred;
+  }
+
+  private hasActiveInteractiveAuthorization(): boolean {
+    if (!this.interactiveAuthorization) {
+      return false;
+    }
+    if (Date.now() - this.interactiveAuthorization.claimedAt > INTERACTIVE_AUTHORIZATION_TTL_MS) {
+      // The prompt outlived the authorization-code timeout; treat it as abandoned.
+      this.interactiveAuthorization = null;
+      return false;
+    }
+    return true;
+  }
+
+  private clearInteractiveAuthorization(): void {
+    this.interactiveAuthorization = null;
+    this.pendingVerifiersByChallenge.clear();
   }
 }
 
@@ -372,6 +435,10 @@ export interface OAuthLogger {
   info(message: string): void;
   warn(message: string): void;
   error(message: string, error?: unknown): void;
+}
+
+function challengeForVerifier(verifier: string): string {
+  return createHash('sha256').update(verifier).digest('base64url');
 }
 
 function firstRedirectUri(client: OAuthClientInformationMixed | undefined): string | undefined {
