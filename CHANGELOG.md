@@ -22,6 +22,7 @@
 ### Tooling / Dependencies
 
 - Migrate mcporter runtime and serve bridges to the MCP TypeScript SDK v2 client/server packages while retaining SDK v1 as a legacy test fixture.
+- Add committed MCP 2025-11-25 and 2026-07-28 fixture servers with end-to-end CLI and bridge coverage over stdio and Streamable HTTP.
 
 ## [0.12.4] - 2026-08-02
 
