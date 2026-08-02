@@ -7,6 +7,7 @@ import {
   StreamableHTTPClientTransport,
 } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -54,6 +55,7 @@ import {
 } from './helpers/runtime-test-helpers.js';
 
 const logger = createLogger();
+const STDIO_NEGOTIATION_FIXTURE = fileURLToPath(new URL('./servers/stdio-negotiation.mjs', import.meta.url));
 
 beforeEach(() => {
   resetLogger(logger);
@@ -665,5 +667,43 @@ describe('createClientContext (HTTP)', () => {
     expect(createOAuthSessionSpy).toHaveBeenCalledTimes(1);
     expect(clientConnect).toHaveBeenCalledTimes(1);
     await context.transport.close();
+  });
+});
+
+describe('createClientContext (stdio negotiation)', () => {
+  function stdioDefinition(mode: 'legacy-exit' | 'modern'): ServerDefinition {
+    return {
+      name: `stdio-${mode}`,
+      command: {
+        kind: 'stdio',
+        command: process.execPath,
+        args: [STDIO_NEGOTIATION_FIXTURE, mode],
+        cwd: process.cwd(),
+      },
+    };
+  }
+
+  it('retries with a fresh legacy process when the discovery probe kills the first process', async () => {
+    const context = await createClientContext(stdioDefinition('legacy-exit'), logger, clientInfo);
+    try {
+      expect(context.client.getProtocolEra()).toBe('legacy');
+      await expect(context.client.listTools()).resolves.toMatchObject({
+        tools: [expect.objectContaining({ name: 'legacy_ping' })],
+      });
+    } finally {
+      await context.client.close();
+    }
+  });
+
+  it('keeps a modern stdio server on the discovered modern connection', async () => {
+    const context = await createClientContext(stdioDefinition('modern'), logger, clientInfo);
+    try {
+      expect(context.client.getProtocolEra()).toBe('modern');
+      await expect(context.client.listTools()).resolves.toMatchObject({
+        tools: [expect.objectContaining({ name: 'modern_ping' })],
+      });
+    } finally {
+      await context.client.close();
+    }
   });
 });

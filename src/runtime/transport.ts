@@ -1,4 +1,10 @@
-import { Client, type ClientOptions, type Transport, type VersionNegotiationMode } from '@modelcontextprotocol/client';
+import {
+  Client,
+  type ClientOptions,
+  SdkErrorCode,
+  type Transport,
+  type VersionNegotiationMode,
+} from '@modelcontextprotocol/client';
 import { applyChromeDevtoolsCompat } from '../chrome-devtools-compat.js';
 import { rewriteChromeDevtoolsArgsForRelay } from '../chrome-devtools-relay.js';
 import type { ServerDefinition } from '../config.js';
@@ -51,6 +57,16 @@ function resolveNegotiationMode(definition: ServerDefinition): VersionNegotiatio
     default:
       return 'auto';
   }
+}
+
+function shouldRetryStdioAsLegacy(error: unknown, definition: ServerDefinition): boolean {
+  return (
+    resolveNegotiationMode(definition) === 'auto' &&
+    !!error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    error.code === SdkErrorCode.EraNegotiationFailed
+  );
 }
 
 function createClient(
@@ -146,12 +162,32 @@ export async function createClientContext(
 
   return withEnvOverrides(activeDefinition.env, async () => {
     if (activeDefinition.command.kind === 'stdio') {
-      return createStdioClientContext(
-        createClient(activeDefinition, clientInfo, { stdio: true, elicitationHandler: options.elicitationHandler }),
-        activeDefinition as ServerDefinition & { command: Extract<ServerDefinition['command'], { kind: 'stdio' }> },
-        logger,
-        options
-      );
+      const stdioDefinition = activeDefinition as ServerDefinition & {
+        command: Extract<ServerDefinition['command'], { kind: 'stdio' }>;
+      };
+      try {
+        return await createStdioClientContext(
+          createClient(stdioDefinition, clientInfo, { stdio: true, elicitationHandler: options.elicitationHandler }),
+          stdioDefinition,
+          logger,
+          options
+        );
+      } catch (error) {
+        if (!shouldRetryStdioAsLegacy(error, stdioDefinition)) throw error;
+        logger.info(
+          `Retrying '${stdioDefinition.name}' in legacy mode after its stdio process exited during version negotiation.`
+        );
+        return createStdioClientContext(
+          createClient(stdioDefinition, clientInfo, {
+            stdio: true,
+            forceLegacy: true,
+            elicitationHandler: options.elicitationHandler,
+          }),
+          stdioDefinition,
+          logger,
+          options
+        );
+      }
     }
     const httpClientFactory: HttpClientFactory = {
       create: (httpDefinition) =>
