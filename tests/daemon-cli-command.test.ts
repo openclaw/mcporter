@@ -109,4 +109,123 @@ describe('daemon CLI restart', () => {
       rootDir: undefined,
     });
   });
+
+  it('prints help, rejects unknown commands, and stops directly', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await handleDaemonCli([], { configPath: '/tmp/config.json' });
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('Usage: mcporter daemon'));
+      await expect(handleDaemonCli(['unknown'], { configPath: '/tmp/config.json' })).rejects.toThrow(
+        "Unknown daemon subcommand 'unknown'"
+      );
+      await handleDaemonCli(['stop'], { configPath: '/tmp/config.json' });
+      expect(stopMock).toHaveBeenCalledOnce();
+      expect(log).toHaveBeenCalledWith('Daemon stopped (if it was running).');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('renders stopped, empty, and active status details', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      statusMock.mockResolvedValueOnce(null);
+      await handleDaemonCli(['status'], { configPath: '/tmp/config.json' });
+      expect(log).toHaveBeenCalledWith('Daemon is not running.');
+
+      statusMock.mockResolvedValueOnce({
+        pid: 7,
+        socketPath: '/tmp/socket',
+        logPath: '/tmp/daemon.log',
+        servers: [],
+      });
+      await handleDaemonCli(['status'], { configPath: '/tmp/config.json' });
+      expect(log).toHaveBeenCalledWith('Log file: /tmp/daemon.log');
+      expect(log).toHaveBeenCalledWith('No keep-alive servers registered.');
+
+      statusMock.mockResolvedValueOnce({
+        pid: 8,
+        socketPath: '/tmp/socket',
+        servers: [
+          { name: 'active', connected: true, lastUsedAt: 0 },
+          { name: 'idle', connected: false, lastUsedAt: Date.UTC(2026, 0, 2) },
+        ],
+      });
+      await handleDaemonCli(['status'], { configPath: '/tmp/config.json' });
+      expect(log).toHaveBeenCalledWith('- active: connected');
+      expect(log).toHaveBeenCalledWith('- idle: idle (last used 2026-01-02T00:00:00.000Z)');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('does not launch when no keep-alive definitions exist', async () => {
+    isKeepAliveServerMock.mockReturnValue(false);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await handleDaemonCli(['start'], {
+        configPath: '/tmp/config.json',
+        configExplicit: true,
+        rootDir: '/tmp/root',
+      });
+      expect(createRuntimeMock).toHaveBeenCalledWith({ configPath: '/tmp/config.json', rootDir: '/tmp/root' });
+      expect(launchDaemonDetachedMock).not.toHaveBeenCalled();
+      expect(log).toHaveBeenCalledWith('No MCP servers are configured for keep-alive; daemon not started.');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('runs foreground with parsed server logging options', async () => {
+    await handleDaemonCli(['start', '--foreground', '--log-servers', ' alpha, beta,alpha '], {
+      configPath: '/tmp/config.json',
+      configExplicit: true,
+      rootDir: '/tmp/root',
+    });
+
+    expect(mkdirMock).toHaveBeenCalled();
+    expect(runDaemonHostMock).toHaveBeenCalledWith({
+      socketPath: '/tmp/socket',
+      metadataPath: '/tmp/meta',
+      configPath: '/tmp/config.json',
+      configExplicit: true,
+      rootDir: '/tmp/root',
+      logPath: '/tmp/mock-daemon.log',
+      logServers: new Set(['alpha', 'beta']),
+      logAllServers: false,
+    });
+    expect(launchDaemonDetachedMock).not.toHaveBeenCalled();
+  });
+
+  it('reports an already running daemon without launching another', async () => {
+    statusMock.mockResolvedValue({ pid: 99, servers: [], socketPath: '/tmp/socket' });
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await handleDaemonCli(['start'], { configPath: '/tmp/config.json' });
+      expect(launchDaemonDetachedMock).not.toHaveBeenCalled();
+      expect(log).toHaveBeenCalledWith('Daemon already running (pid 99).');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('forwards an explicit log file and reports successful background startup', async () => {
+    statusMock.mockResolvedValueOnce(null).mockResolvedValueOnce({ pid: 10, servers: [], socketPath: '/tmp/socket' });
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await handleDaemonCli(['start', '--log-file', './daemon.log'], { configPath: '/tmp/config.json' });
+      expect(launchDaemonDetachedMock).toHaveBeenCalledWith(
+        expect.objectContaining({ extraArgs: ['--log-file', expect.stringMatching(/daemon\.log$/u)] })
+      );
+      expect(log).toHaveBeenCalledWith('Daemon started for 1 server(s).');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('rejects value flags without values', async () => {
+    await expect(handleDaemonCli(['start', '--log-file'], { configPath: '/tmp/config.json' })).rejects.toThrow(
+      "Flag '--log-file' requires a value"
+    );
+  });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CommandSpec } from '../src/config-schema.js';
-import { resolveLifecycle } from '../src/lifecycle.js';
+import { canonicalKeepAliveName, isKeepAliveServer, keepAliveIdleTimeout, resolveLifecycle } from '../src/lifecycle.js';
 
 const CHROME_COMMAND: CommandSpec = {
   kind: 'stdio',
@@ -54,5 +54,38 @@ describe('resolveLifecycle', () => {
   it('honors explicit ephemeral lifecycle for CloudBase MCP commands', () => {
     const lifecycle = resolveLifecycle('cloudbase', 'ephemeral', CLOUDBASE_NPX_COMMAND);
     expect(lifecycle?.mode).toBe('ephemeral');
+  });
+
+  it('coerces explicit lifecycle objects and ignores invalid idle timeouts', () => {
+    expect(resolveLifecycle('custom', { mode: 'keep-alive', idleTimeoutMs: 1250.9 }, CLOUDBASE_NPX_COMMAND)).toEqual({
+      mode: 'keep-alive',
+      idleTimeoutMs: 1250,
+    });
+    expect(resolveLifecycle('custom', { mode: 'keep-alive', idleTimeoutMs: -1 }, CLOUDBASE_NPX_COMMAND)).toEqual({
+      mode: 'keep-alive',
+    });
+    expect(resolveLifecycle('custom', { mode: 'ephemeral' }, CLOUDBASE_NPX_COMMAND)).toEqual({ mode: 'ephemeral' });
+    expect(
+      resolveLifecycle('custom', 'invalid' as never, { kind: 'http', url: new URL('https://example.com') })
+    ).toBeUndefined();
+  });
+
+  it('identifies canonical commands and exposes keep-alive predicates', () => {
+    expect(canonicalKeepAliveName({ kind: 'http', url: new URL('https://example.com') })).toBeUndefined();
+    expect(canonicalKeepAliveName(CLOUDBASE_NPX_COMMAND)).toBe('cloudbase');
+    expect(isKeepAliveServer(undefined)).toBe(false);
+    expect(isKeepAliveServer({ name: 'x', command: CLOUDBASE_NPX_COMMAND, lifecycle: { mode: 'keep-alive' } })).toBe(
+      true
+    );
+    expect(
+      keepAliveIdleTimeout({
+        name: 'x',
+        command: CLOUDBASE_NPX_COMMAND,
+        lifecycle: { mode: 'keep-alive', idleTimeoutMs: 500 },
+      })
+    ).toBe(500);
+    expect(
+      keepAliveIdleTimeout({ name: 'x', command: CLOUDBASE_NPX_COMMAND, lifecycle: { mode: 'ephemeral' } })
+    ).toBeUndefined();
   });
 });

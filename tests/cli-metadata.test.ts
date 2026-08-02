@@ -47,6 +47,32 @@ describe('readCliMetadata', () => {
       }
     }
   });
+
+  it('falls back to a legacy sidecar when the artifact cannot be executed', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-metadata-sidecar-'));
+    const artifact = path.join(tempDir, 'missing-artifact');
+    await fs.writeFile(metadataPathForArtifact(artifact), JSON.stringify(metadataPayload('legacy')), 'utf8');
+    try {
+      await expect(readCliMetadata(artifact)).resolves.toMatchObject({ server: { name: 'legacy' } });
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves sidecar parse errors instead of masking them with the embedded error', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-metadata-invalid-'));
+    const artifact = path.join(tempDir, 'missing-artifact');
+    await fs.writeFile(metadataPathForArtifact(artifact), '{ invalid json', 'utf8');
+    try {
+      await expect(readCliMetadata(artifact)).rejects.toThrow(/JSON|position|property/u);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports executable inspection failures with stderr and exit code', async () => {
+    await expect(readCliMetadata(process.execPath)).rejects.toThrow(/Failed to inspect CLI artifact[\s\S]*exit code/u);
+  });
 });
 
 function metadataPayload(name: string) {

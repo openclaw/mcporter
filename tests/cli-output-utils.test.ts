@@ -1,6 +1,11 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { printCallOutput } from '../src/cli/output-utils.js';
+import { printCallOutput, tailLogIfRequested } from '../src/cli/output-utils.js';
 import { createCallResult } from '../src/result-utils.js';
+
+function demo() {}
 
 describe('printCallOutput format selection', () => {
   it.each([
@@ -222,6 +227,75 @@ describe('printCallOutput raw output', () => {
       expect(logged).toContain("leaf: 'done'");
     } finally {
       log.mockRestore();
+    }
+  });
+
+  it.each([
+    [null, 'null'],
+    [undefined, 'undefined'],
+    [12n, '12'],
+    [Symbol.for('demo'), 'Symbol(demo)'],
+    [demo, 'function demo() {}'],
+  ])('prints primitive raw value %s explicitly', (raw, expected) => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      printCallOutput(createCallResult(raw), raw, 'raw');
+      expect(log).toHaveBeenCalledWith(expected);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('falls back from an unserializable JSON candidate to readable raw output', () => {
+    const circular: { self?: unknown } = {};
+    circular.self = circular;
+    const wrapped = {
+      json: () => circular,
+      markdown: () => null,
+      text: () => null,
+    } as unknown as ReturnType<typeof createCallResult>;
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      printCallOutput(wrapped, { fallback: true }, 'auto');
+      expect(String(log.mock.calls[0]?.[0])).toContain('self: [Circular');
+    } finally {
+      log.mockRestore();
+    }
+  });
+});
+
+describe('tailLogIfRequested', () => {
+  it('prints only the final twenty lines from recognized absolute log paths', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-tail-log-'));
+    const logPath = path.join(dir, 'server.log');
+    await fs.writeFile(logPath, Array.from({ length: 25 }, (_, index) => `line-${index + 1}`).join('\n'));
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      tailLogIfRequested({ logFile: logPath }, true);
+      expect(log).toHaveBeenCalledWith(`--- tail ${logPath} ---`);
+      expect(log).not.toHaveBeenCalledWith('line-5');
+      expect(log).toHaveBeenCalledWith('line-6');
+      expect(log).toHaveBeenCalledWith('line-25');
+    } finally {
+      log.mockRestore();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('ignores disabled and non-object inputs and warns for unsafe, missing, or unreadable paths', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-tail-errors-'));
+    const missing = path.join(dir, 'missing.log');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      tailLogIfRequested({ logPath: missing }, false);
+      tailLogIfRequested(null, true);
+      tailLogIfRequested({ logPath: 'relative.log', logfile: missing, logFile: dir }, true);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Refusing to tail non-absolute log path'));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Log path not found'));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Failed to read log file'));
+    } finally {
+      warn.mockRestore();
+      await fs.rm(dir, { recursive: true, force: true });
     }
   });
 });

@@ -10,9 +10,12 @@ import {
   cleanupDaemonArtifactsIfOwned,
   isDaemonResponding,
   metadataMatches,
+  runDaemonHost,
 } from '../src/daemon/host.js';
-import type { DaemonRequest } from '../src/daemon/protocol.js';
+import type { DaemonRequest, DaemonResponse, StatusResult } from '../src/daemon/protocol.js';
 import type { Runtime } from '../src/runtime.js';
+
+const describeUnixSocket = process.platform === 'win32' ? describe.skip : describe;
 
 describe('daemon host request handling', () => {
   const metadata = {
@@ -154,9 +157,266 @@ describe('daemon host request handling', () => {
       disableOAuth: false,
     });
   });
+
+  it('dispatches resource, close, status, stop, and malformed requests with observable state', async () => {
+    const runtime = createFullRuntimeDouble();
+    const managedServers = createManagedServers();
+    const activity = new Map([['oauth', { connected: false }]]);
+
+    const listed = await __testProcessRequest(
+      JSON.stringify({
+        id: 'resources',
+        method: 'listResources',
+        params: { server: 'oauth', params: { cursor: 'next' }, allowCachedAuth: false, disableOAuth: true },
+      }),
+      runtime as unknown as Runtime,
+      managedServers,
+      activity,
+      metadata,
+      logContext
+    );
+    expect(listed.response).toMatchObject({ id: 'resources', ok: true, result: { resources: ['one'] } });
+    expect(runtime.listResources).toHaveBeenCalledWith('oauth', {
+      cursor: 'next',
+      allowCachedAuth: false,
+      disableOAuth: true,
+    });
+
+    const read = await __testProcessRequest(
+      '',
+      runtime as unknown as Runtime,
+      managedServers,
+      activity,
+      metadata,
+      logContext,
+      {
+        id: 'read',
+        method: 'readResource',
+        params: { server: 'oauth', uri: 'memo://one', allowCachedAuth: true },
+      }
+    );
+    expect(read.response.result).toEqual({ contents: [{ uri: 'memo://one', text: 'value' }] });
+    expect(runtime.readResource).toHaveBeenCalledWith('oauth', 'memo://one', {
+      allowCachedAuth: true,
+      disableOAuth: false,
+    });
+    expect(activity.get('oauth')).toMatchObject({ connected: true, lastUsedAt: expect.any(Number) });
+
+    const status = await __testProcessRequest(
+      '',
+      runtime as unknown as Runtime,
+      managedServers,
+      activity,
+      metadata,
+      logContext,
+      {
+        id: 'status',
+        method: 'status',
+        params: {},
+      }
+    );
+    expect(status.response.result).toMatchObject({
+      configPath: metadata.configPath,
+      socketPath: metadata.socketPath,
+      servers: expect.arrayContaining([
+        expect.objectContaining({ name: 'oauth', connected: true, lastUsedAt: expect.any(Number) }),
+        expect.objectContaining({ name: 'local', connected: false }),
+      ]),
+    });
+
+    const closed = await __testProcessRequest(
+      '',
+      runtime as unknown as Runtime,
+      managedServers,
+      activity,
+      metadata,
+      logContext,
+      {
+        id: 'close',
+        method: 'closeServer',
+        params: { server: 'oauth' },
+      }
+    );
+    expect(closed.response).toMatchObject({ id: 'close', ok: true, result: true });
+    expect(runtime.close).toHaveBeenCalledWith('oauth');
+    expect(activity.get('oauth')).toEqual({ connected: false });
+
+    const stopped = await __testProcessRequest(
+      '',
+      runtime as unknown as Runtime,
+      managedServers,
+      activity,
+      metadata,
+      logContext,
+      {
+        id: 'stop',
+        method: 'stop',
+        params: {},
+      }
+    );
+    expect(stopped).toMatchObject({ response: { id: 'stop', ok: true }, shouldShutdown: true });
+
+    const empty = await __testProcessRequest(
+      '',
+      runtime as unknown as Runtime,
+      managedServers,
+      activity,
+      metadata,
+      logContext
+    );
+    const invalid = await __testProcessRequest(
+      '{bad',
+      runtime as unknown as Runtime,
+      managedServers,
+      activity,
+      metadata,
+      logContext
+    );
+    const unknown = await __testProcessRequest(
+      JSON.stringify({ id: 'mystery', method: 'mystery', params: {} }),
+      runtime as unknown as Runtime,
+      managedServers,
+      activity,
+      metadata,
+      logContext
+    );
+    expect(empty.response.error?.code).toBe('empty_request');
+    expect(invalid.response.error?.code).toBe('invalid_json');
+    expect(unknown.response.error?.code).toBe('unknown_method');
+  });
+
+  it('maps unmanaged servers and runtime failures to daemon errors and records log context', async () => {
+    const runtime = createFullRuntimeDouble();
+    runtime.callTool.mockRejectedValue(new Error('tool exploded'));
+    runtime.listTools.mockRejectedValue('list exploded');
+    const managedServers = createManagedServers();
+    const logged = { enabled: true, logAllServers: false, servers: new Set(['oauth']) };
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      const tool = await __testProcessRequest(
+        '',
+        runtime as unknown as Runtime,
+        managedServers,
+        new Map(),
+        metadata,
+        logged,
+        {
+          id: 'tool-error',
+          method: 'callTool',
+          params: { server: 'oauth', tool: 'fail' },
+        }
+      );
+      const list = await __testProcessRequest(
+        '',
+        runtime as unknown as Runtime,
+        managedServers,
+        new Map(),
+        metadata,
+        logged,
+        {
+          id: 'list-error',
+          method: 'listTools',
+          params: { server: 'oauth' },
+        }
+      );
+      const unmanaged = await __testProcessRequest(
+        '',
+        runtime as unknown as Runtime,
+        managedServers,
+        new Map(),
+        metadata,
+        logged,
+        {
+          id: 'unmanaged',
+          method: 'readResource',
+          params: { server: 'missing', uri: 'memo://one' },
+        }
+      );
+
+      expect(tool.response).toMatchObject({ ok: false, error: { code: 'runtime_error', message: 'tool exploded' } });
+      expect(list.response).toMatchObject({ ok: false, error: { code: 'runtime_error', message: 'list exploded' } });
+      expect(unmanaged.response.error?.message).toContain("Server 'missing' is not managed");
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('callTool start server=oauth tool=fail'));
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('callTool error server=oauth tool=fail'));
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('listTools error server=oauth'));
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
 });
 
-const describeUnixSocket = process.platform === 'win32' ? describe.skip : describe;
+describeUnixSocket('runDaemonHost lifecycle', () => {
+  it('claims a socket, serves split status requests, repairs metadata, and stops cleanly', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-host-lifecycle-'));
+    const configPath = path.join(dir, 'mcporter.json');
+    const metadataPath = path.join(dir, 'daemon.json');
+    const socketPath = path.join(dir, 'daemon.sock');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          local: { command: 'node', args: ['unused-server.js'], lifecycle: 'keep-alive' },
+        },
+      }),
+      'utf8'
+    );
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    const originalSignals = new Map(
+      (['SIGINT', 'SIGTERM', 'SIGQUIT'] as const).map((signal) => [signal, new Set(process.listeners(signal))])
+    );
+
+    try {
+      await runDaemonHost({ socketPath, metadataPath, configPath, configExplicit: true, rootDir: dir });
+      const metadataFile = JSON.parse(await fs.readFile(metadataPath, 'utf8')) as {
+        pid: number;
+        socketPath: string;
+        definitionHash: string;
+      };
+      expect(metadataFile).toMatchObject({ pid: process.pid, socketPath });
+      expect(metadataFile.definitionHash).toMatch(/^[a-f0-9]+$/u);
+
+      const status = await requestDaemon<StatusResult>(
+        socketPath,
+        {
+          id: 'status',
+          method: 'status',
+          params: {},
+        },
+        true
+      );
+      expect(status).toMatchObject({
+        id: 'status',
+        ok: true,
+        result: {
+          pid: process.pid,
+          socketPath,
+          configPath,
+          servers: [{ name: 'local', connected: false }],
+        },
+      });
+
+      await fs.rm(metadataPath, { force: true });
+      await runDaemonHost({ socketPath, metadataPath, configPath, configExplicit: true, rootDir: dir });
+      expect(exitSpy).toHaveBeenCalledWith(0);
+      expect(JSON.parse(await fs.readFile(metadataPath, 'utf8'))).toMatchObject({ pid: process.pid, socketPath });
+
+      const stopped = await requestDaemon<boolean>(socketPath, { id: 'stop', method: 'stop', params: {} });
+      expect(stopped).toMatchObject({ id: 'stop', ok: true, result: true });
+      await waitForMissing(metadataPath);
+      expect(exitSpy).toHaveBeenCalledWith(0);
+    } finally {
+      exitSpy.mockRestore();
+      for (const signal of ['SIGINT', 'SIGTERM', 'SIGQUIT'] as const) {
+        const originals = originalSignals.get(signal)!;
+        for (const listener of process.listeners(signal)) {
+          if (!originals.has(listener)) process.removeListener(signal, listener);
+        }
+      }
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});
 
 describeUnixSocket('isDaemonResponding', () => {
   const servers: net.Server[] = [];
@@ -297,6 +557,16 @@ function createRuntimeDouble(): Pick<Runtime, 'callTool' | 'listTools'> {
   };
 }
 
+function createFullRuntimeDouble() {
+  return {
+    callTool: vi.fn().mockResolvedValue({ ok: true }),
+    listTools: vi.fn().mockResolvedValue([]),
+    listResources: vi.fn().mockResolvedValue({ resources: ['one'] }),
+    readResource: vi.fn().mockResolvedValue({ contents: [{ uri: 'memo://one', text: 'value' }] }),
+    close: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 function createManagedServers(): Map<string, ServerDefinition> {
   return new Map([
     [
@@ -322,4 +592,38 @@ function statusServer(result: Record<string, unknown>): net.Server {
   return net.createServer((socket) => {
     socket.on('data', () => socket.end(JSON.stringify({ id: '1', ok: true, result })));
   });
+}
+
+async function requestDaemon<T>(socketPath: string, request: DaemonRequest, split = false): Promise<DaemonResponse<T>> {
+  return await new Promise((resolve, reject) => {
+    const socket = net.createConnection(socketPath);
+    let response = '';
+    socket.once('connect', () => {
+      const payload = JSON.stringify(request);
+      if (split) {
+        const midpoint = Math.floor(payload.length / 2);
+        socket.write(payload.slice(0, midpoint));
+        setImmediate(() => socket.write(payload.slice(midpoint)));
+      } else {
+        socket.write(payload);
+      }
+    });
+    socket.on('data', (chunk) => {
+      response += chunk.toString();
+    });
+    socket.once('end', () => resolve(JSON.parse(response) as DaemonResponse<T>));
+    socket.once('error', reject);
+  });
+}
+
+async function waitForMissing(filePath: string): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      await fs.access(filePath);
+    } catch {
+      return;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Timed out waiting for ${filePath} to be removed.`);
 }
