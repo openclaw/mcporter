@@ -198,6 +198,42 @@ describe('record/replay transports', () => {
     ]);
   });
 
+  it('replays inbound progress notifications before the recorded response', async () => {
+    const recordPath = await writeRecording([
+      send('linear', 1, 'tools/call', { name: 'long_task', arguments: {} }),
+      recvNotification('linear', 'notifications/progress', {
+        progressToken: 'task-1',
+        progress: 1,
+        total: 1,
+      }),
+      recv('linear', 1, { content: [{ type: 'text', text: 'done' }] }),
+    ]);
+    const transport = new ReplayTransport({ recordPath, server: 'linear' });
+    const received: JSONRPCMessage[] = [];
+    transport.onmessage = (message) => received.push(message);
+
+    await transport.send({
+      jsonrpc: '2.0',
+      id: 99,
+      method: 'tools/call',
+      params: { name: 'long_task', arguments: {} },
+    });
+    await Promise.resolve();
+
+    expect(received).toEqual([
+      {
+        jsonrpc: '2.0',
+        method: 'notifications/progress',
+        params: { progressToken: 'task-1', progress: 1, total: 1 },
+      },
+      {
+        jsonrpc: '2.0',
+        id: 99,
+        result: { content: [{ type: 'text', text: 'done' }] },
+      },
+    ]);
+  });
+
   it('detects legacy recordings and matches server/discover probes by method', async () => {
     const legacyPath = await writeRecording([
       send('linear', 1, 'initialize', { protocolVersion: '2025-11-25' }),
@@ -618,5 +654,14 @@ function notification(server: string, method: string): RecordedMessage {
     jsonrpc: '2.0',
     method,
     _meta: { dir: 'send', server, ts: '2026-05-16T00:00:00.000Z' },
+  } as RecordedMessage;
+}
+
+function recvNotification(server: string, method: string, params: unknown): RecordedMessage {
+  return {
+    jsonrpc: '2.0',
+    method,
+    params,
+    _meta: { dir: 'recv', server, ts: '2026-05-16T00:00:00.000Z' },
   } as RecordedMessage;
 }

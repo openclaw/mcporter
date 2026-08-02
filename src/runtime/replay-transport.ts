@@ -12,7 +12,9 @@ interface ExpectedSend {
   readonly method: string;
   readonly params?: unknown;
   readonly expectsResponse: boolean;
-  readonly response?: JSONRPCMessage;
+  response?: JSONRPCMessage;
+  notificationsBeforeResponse?: JSONRPCMessage[];
+  notificationsAfterResponse?: JSONRPCMessage[];
 }
 
 type JsonRpcRecord = Record<string, unknown>;
@@ -55,7 +57,14 @@ export class ReplayTransport implements Transport {
         adaptInitializeResponse(request.method, expected.response, request.params),
         request.id
       );
-      queueMicrotask(() => this.onmessage?.(response));
+      const inbound = [
+        ...(expected.notificationsBeforeResponse ?? []),
+        response,
+        ...(expected.notificationsAfterResponse ?? []),
+      ];
+      queueMicrotask(() => {
+        for (const inboundMessage of inbound) this.onmessage?.(inboundMessage);
+      });
     }
   }
 
@@ -97,6 +106,8 @@ function readRecordedMessages(recordPath: string): RecordedMessage[] {
 function buildReplayQueue(messages: RecordedMessage[], server: string): ExpectedSend[] {
   const pendingRequests = new Map<string, ExpectedSend>();
   const expected: ExpectedSend[] = [];
+  let bufferedNotifications: JSONRPCMessage[] = [];
+  let lastResponse: ExpectedSend | undefined;
 
   for (const entry of messages) {
     if (entry._meta?.server !== server) {
@@ -123,6 +134,10 @@ function buildReplayQueue(messages: RecordedMessage[], server: string): Expected
       continue;
     }
     if (entry._meta.dir === 'recv') {
+      if (isInboundNotification(clean)) {
+        bufferedNotifications.push(clean);
+        continue;
+      }
       const responseId = responseIdOf(clean);
       if (responseId === undefined) {
         continue;
@@ -130,12 +145,24 @@ function buildReplayQueue(messages: RecordedMessage[], server: string): Expected
       const pending = pendingRequests.get(String(responseId));
       if (pending) {
         pendingRequests.delete(String(responseId));
-        (pending as { response?: JSONRPCMessage }).response = clean;
+        pending.notificationsBeforeResponse = bufferedNotifications;
+        bufferedNotifications = [];
+        pending.response = clean;
+        lastResponse = pending;
       }
     }
   }
 
+  if (lastResponse && bufferedNotifications.length > 0) {
+    lastResponse.notificationsAfterResponse = bufferedNotifications;
+  }
+
   return expected.filter((entry) => !entry.expectsResponse || entry.response);
+}
+
+function isInboundNotification(message: JSONRPCMessage): boolean {
+  const record = message as JsonRpcRecord;
+  return typeof record.method === 'string' && !('id' in record);
 }
 
 function stripMeta(message: RecordedMessage): JSONRPCMessage {

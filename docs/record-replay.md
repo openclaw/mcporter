@@ -43,7 +43,7 @@ Each line is one JSON-RPC envelope with an added `_meta` object:
 {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"..."}]},"_meta":{"dir":"recv","server":"linear","ts":"2026-05-16T12:00:00.100Z"}}
 ```
 
-`_meta.dir` is `send`, `recv`, or `lifecycle`. Replay strips `_meta` before delivering a response. Lifecycle events such as transport start and close are recorded for diagnostics but ignored during replay.
+`_meta.dir` is `send`, `recv`, or `lifecycle`. Replay strips `_meta` before delivering responses and inbound notifications, preserving notification order around the recorded response. Lifecycle events such as transport start and close are recorded for diagnostics but ignored during replay.
 
 ## Deterministic matching
 
