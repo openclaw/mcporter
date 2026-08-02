@@ -19,6 +19,12 @@ interface ExpectedSend {
 
 type JsonRpcRecord = Record<string, unknown>;
 
+const CLIENT_IDENTITY_META_KEYS = [
+  'io.modelcontextprotocol/clientInfo',
+  'io.modelcontextprotocol/protocolVersion',
+  'io.modelcontextprotocol/clientCapabilities',
+] as const;
+
 export class ReplayTransport implements Transport {
   readonly hasPerRequestStream = undefined;
   onclose?: Transport['onclose'];
@@ -204,10 +210,26 @@ function paramsMatch(method: string, expected: unknown, actual: unknown): boolea
   if (method === 'server/discover') {
     return true;
   }
+  const normalizedExpected = normalizeClientIdentityMeta(expected);
+  const normalizedActual = normalizeClientIdentityMeta(actual);
   if (method !== 'initialize') {
-    return isDeepStrictEqual(expected, actual);
+    return isDeepStrictEqual(normalizedExpected, normalizedActual);
   }
-  return isDeepStrictEqual(normalizeInitializeParams(expected), normalizeInitializeParams(actual));
+  return isDeepStrictEqual(
+    normalizeInitializeParams(normalizedExpected),
+    normalizeInitializeParams(normalizedActual)
+  );
+}
+
+function normalizeClientIdentityMeta(params: unknown): unknown {
+  if (!isJsonRpcRecord(params) || !isJsonRpcRecord(params._meta)) {
+    return params;
+  }
+  const meta = { ...params._meta };
+  for (const key of CLIENT_IDENTITY_META_KEYS) {
+    delete meta[key];
+  }
+  return { ...params, _meta: meta };
 }
 
 function normalizeInitializeParams(params: unknown): unknown {

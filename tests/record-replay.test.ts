@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Client as ModernClient } from '@modelcontextprotocol/client';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import type { Transport, TransportSendOptions } from '@modelcontextprotocol/sdk/shared/transport.js';
@@ -261,6 +262,48 @@ describe('record/replay transports', () => {
     ]);
   });
 
+  it('detects legacy recordings and replays modern operations across client version drift', async () => {
+    const legacyPath = await writeRecording([
+      send('linear', 1, 'initialize', { protocolVersion: '2025-11-25' }),
+      recv('linear', 1, { protocolVersion: '2025-11-25', capabilities: {}, serverInfo: { name: 'legacy' } }),
+    ]);
+    expect(new ReplayTransport({ recordPath: legacyPath, server: 'linear' }).requiresLegacyNegotiation).toBe(true);
+
+    const modernPath = await writeRecording([
+      send('linear', 1, 'server/discover', {}),
+      recv('linear', 1, {
+        supportedVersions: ['2026-07-28'],
+        capabilities: { tools: {} },
+      }),
+      send('linear', 2, 'tools/list', {
+        _meta: {
+          'io.modelcontextprotocol/clientInfo': { name: 'mcporter', version: '0.12.4' },
+          'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+          'io.modelcontextprotocol/clientCapabilities': { elicitation: { form: {} } },
+        },
+      }),
+      recv('linear', 2, {
+        resultType: 'complete',
+        ttlMs: 1_000,
+        cacheScope: 'private',
+        tools: [{ name: 'recorded-tool', description: 'Replay fixture tool', inputSchema: { type: 'object' } }],
+      }),
+    ]);
+
+    const modern = new ReplayTransport({ recordPath: modernPath, server: 'linear' });
+    const replayClient = new ModernClient(
+      { name: 'mcporter', version: '0.12.5' },
+      {
+        capabilities: { elicitation: { form: {}, url: {} } },
+        versionNegotiation: { mode: { pin: '2026-07-28' } },
+      }
+    );
+    expect(modern.requiresLegacyNegotiation).toBe(false);
+    await replayClient.connect(modern);
+    expect((await replayClient.listTools()).tools.map((tool) => tool.name)).toContain('recorded-tool');
+    await replayClient.close();
+  });
+
   it('replays initialize recordings across protocol and client version drift', async () => {
     const recordPath = await writeRecording([
       send('linear', 1, 'initialize', {
@@ -280,6 +323,33 @@ describe('record/replay transports', () => {
 
     await expect(client.connect(transport)).resolves.toBeUndefined();
     await expect(client.close()).resolves.toBeUndefined();
+  });
+
+  it('keeps user-supplied modern request metadata strict during replay', async () => {
+    const recordPath = await writeRecording([
+      send('linear', 1, 'tools/list', {
+        _meta: {
+          'io.modelcontextprotocol/clientInfo': { name: 'mcporter', version: '0.12.4' },
+          traceId: 'recorded-trace',
+        },
+      }),
+      recv('linear', 1, { tools: [] }),
+    ]);
+    const transport = new ReplayTransport({ recordPath, server: 'linear' });
+
+    await expect(
+      transport.send({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/list',
+        params: {
+          _meta: {
+            'io.modelcontextprotocol/clientInfo': { name: 'mcporter', version: '0.12.5' },
+            traceId: 'different-trace',
+          },
+        },
+      } as JSONRPCMessage)
+    ).rejects.toThrow('Replay mismatch');
   });
 
   it('skips recorded requests that never received a response', async () => {
