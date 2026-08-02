@@ -55,6 +55,29 @@ describe('generate helpers', () => {
     ).toThrow(/Generated proxy method collision 'someTool'/);
   });
 
+  it('drops a repeated tool name instead of failing', () => {
+    // Observed in the wild: a server advertised the same tool twice, which made
+    // listing that server impossible.
+    const metadata = buildToolMetadataList([
+      { name: 'get_notifications', inputSchema: undefined, outputSchema: undefined },
+      { name: 'get_notifications', inputSchema: undefined, outputSchema: undefined },
+    ]);
+    expect(metadata).toHaveLength(1);
+    expect(metadata[0]?.tool.name).toBe('get_notifications');
+  });
+
+  it('skips ambiguous collisions when the caller opts out of throwing', () => {
+    const metadata = buildToolMetadataList(
+      [
+        { name: 'some-tool', inputSchema: undefined, outputSchema: undefined },
+        { name: 'some_tool', inputSchema: undefined, outputSchema: undefined },
+      ],
+      { onCollision: 'skip', sort: false }
+    );
+    expect(metadata).toHaveLength(1);
+    expect(metadata[0]?.tool.name).toBe('some-tool');
+  });
+
   it('extracts detailed option information', () => {
     const options = extractOptions(sampleTool);
     const first = options.find((option) => option.property === 'firstValue');

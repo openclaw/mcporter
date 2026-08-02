@@ -52,23 +52,32 @@ export function buildToolMetadata(tool: ServerToolInfo): ToolMetadata {
 
 export function buildToolMetadataList(
   tools: ServerToolInfo[],
-  options: { readonly sort?: boolean } = {}
+  options: { readonly sort?: boolean; readonly onCollision?: 'throw' | 'skip' } = {}
 ): ToolMetadata[] {
   const result = tools.map((tool) => buildToolMetadata(tool));
   if (options.sort !== false) {
     result.sort((left, right) => left.tool.name.localeCompare(right.tool.name));
   }
   const methods = new Map<string, string>();
+  const kept: ToolMetadata[] = [];
   for (const entry of result) {
     const previous = methods.get(entry.methodName);
-    if (previous) {
-      throw new Error(
-        `Generated proxy method collision '${entry.methodName}' for tools '${previous}' and '${entry.tool.name}'.`
-      );
+    if (previous !== undefined) {
+      // Servers in the wild re-advertise the same tool name; that is not a real
+      // conflict, so drop the repeat regardless of collision policy. Distinct
+      // names mapping to one method is ambiguous and still fails codegen.
+      if (previous === entry.tool.name) continue;
+      if (options.onCollision !== 'skip') {
+        throw new Error(
+          `Generated proxy method collision '${entry.methodName}' for tools '${previous}' and '${entry.tool.name}'.`
+        );
+      }
+      continue;
     }
     methods.set(entry.methodName, entry.tool.name);
+    kept.push(entry);
   }
-  return result;
+  return kept;
 }
 
 export function buildEmbeddedSchemaMap(tools: ToolMetadata[]): Record<string, unknown> {

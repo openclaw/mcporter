@@ -43,7 +43,9 @@ export async function loadToolMetadata(
   };
   const promise = runtime
     .listTools(serverName, listOptions)
-    .then((tools) => buildToolMetadataList(tools, { sort: false }))
+    // Listing and calling must survive a server whose tool names collide; only
+    // codegen needs to reject the ambiguity outright.
+    .then((tools) => buildToolMetadataList(tools, { sort: false, onCollision: 'skip' }))
     .catch((error) => {
       cache?.delete(key);
       throw error;
