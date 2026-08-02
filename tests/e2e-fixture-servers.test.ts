@@ -155,8 +155,9 @@ describe.each(transports)('modern MRTR and identity over %s', (transport) => {
     const definition = runtimeDefinition('modern', transport);
     const runtime = await createRuntime({
       servers: [definition],
-      elicitationHandler: async (request) => {
+      elicitationHandler: async (request, context) => {
         expect(request.params.message).toBe('Delete runtime-record?');
+        expect(context).toEqual({ server: 'fixture' });
         return { action: 'accept', content: { confirm: true } };
       },
     });

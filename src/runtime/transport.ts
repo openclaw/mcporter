@@ -91,7 +91,9 @@ function createClient(
     },
   };
   const client = new Client(clientInfo, clientOptions);
-  if (options.elicitationHandler) registerElicitationHandler(client, options.elicitationHandler);
+  if (options.elicitationHandler) {
+    registerElicitationHandler(client, options.elicitationHandler, { server: definition.name });
+  }
   return client;
 }
 

@@ -36,6 +36,7 @@ export type {
 } from './oauth.js';
 export { callOnce, createRuntime } from './runtime.js';
 export type {
+  ElicitationContext,
   ElicitationHandler,
   ElicitationResponder,
   InteractiveElicitationOptions,

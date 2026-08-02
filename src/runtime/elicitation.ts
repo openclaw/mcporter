@@ -7,7 +7,14 @@ import type {
   ElicitResult,
 } from '@modelcontextprotocol/client';
 
-export type ElicitationHandler = (request: ElicitRequest) => ElicitResult | Promise<ElicitResult>;
+export interface ElicitationContext {
+  readonly server: string;
+}
+
+export type ElicitationHandler = (
+  request: ElicitRequest,
+  context: ElicitationContext
+) => ElicitResult | Promise<ElicitResult>;
 
 export interface ElicitationResponder {
   readonly handler: ElicitationHandler;
@@ -20,7 +27,7 @@ export interface InteractiveElicitationOptions {
 }
 
 export interface NonInteractiveElicitationOptions {
-  readonly onDecline?: (request: ElicitRequest) => void;
+  readonly onDecline?: (request: ElicitRequest, context: ElicitationContext) => void;
 }
 
 type PrimitiveValue = string | number | boolean | string[];
@@ -36,8 +43,8 @@ export function createInteractiveElicitationResponder(
   let declined = false;
 
   return {
-    handler: async (request) => {
-      const result = await handleInteractiveRequest(request.params, input, output);
+    handler: async (request, context) => {
+      const result = await handleInteractiveRequest(request.params, context, input, output);
       if (result.action !== 'accept') declined = true;
       return result;
     },
@@ -50,27 +57,33 @@ export function createNonInteractiveElicitationResponder(
 ): ElicitationResponder {
   let declined = false;
   return {
-    handler: async (request) => {
+    handler: async (request, context) => {
       declined = true;
-      options.onDecline?.(request);
+      options.onDecline?.(request, context);
       return { action: 'decline' };
     },
     didDecline: () => declined,
   };
 }
 
-export function registerElicitationHandler(client: Client, handler: ElicitationHandler): void {
-  client.setRequestHandler('elicitation/create', async (request) => handler(request));
+export function registerElicitationHandler(
+  client: Client,
+  handler: ElicitationHandler,
+  context: ElicitationContext
+): void {
+  client.setRequestHandler('elicitation/create', async (request) => handler(request, context));
 }
 
 async function handleInteractiveRequest(
   params: ElicitRequest['params'],
+  context: ElicitationContext,
   input: NodeJS.ReadableStream,
   output: NodeJS.WritableStream
 ): Promise<ElicitResult> {
   const rl = readline.createInterface({ input, output, terminal: true });
   try {
-    writeLine(output, `\n${params.message}`);
+    writeLine(output, `\nServer '${sanitizeTerminalText(context.server)}' is requesting input:`);
+    writeLine(output, sanitizeTerminalText(params.message));
     if (params.mode === 'url') return await handleUrlRequest(rl, params, output);
     return await handleFormRequest(rl, params, output);
   } finally {
@@ -83,7 +96,7 @@ async function handleUrlRequest(
   params: ElicitRequestURLParams,
   output: NodeJS.WritableStream
 ): Promise<ElicitResult> {
-  writeLine(output, `\nOpen this URL to continue:\n${params.url}\n`);
+  writeLine(output, `\nOpen this URL to continue:\n${sanitizeTerminalText(params.url)}\n`);
   const answer = await ask(rl, 'Press Enter when you are done (Ctrl-C to decline): ');
   return answer === undefined ? { action: 'decline' } : { action: 'accept' };
 }
@@ -110,10 +123,11 @@ async function promptForField(
   schema: PrimitiveSchema,
   required: boolean
 ): Promise<{ kind: 'answer'; value?: PrimitiveValue } | { kind: 'decline' }> {
-  const label = schema.title ?? name;
-  if (schema.description) writeLine(output, schema.description);
+  const label = sanitizeTerminalText(schema.title ?? name);
+  if (schema.description) writeLine(output, sanitizeTerminalText(schema.description));
   const choices = enumChoices(schema);
-  if (choices.length > 0) writeLine(output, `  Choices: ${choices.join(', ')}`);
+  const displayChoices = choices.map(sanitizeTerminalText);
+  if (displayChoices.length > 0) writeLine(output, `  Choices: ${displayChoices.join(', ')}`);
   const defaultValue = 'default' in schema ? schema.default : undefined;
   const suffix = `${required ? ' (required)' : ''}${defaultValue !== undefined ? ` [${formatDefault(defaultValue)}]` : ''}: `;
 
@@ -139,6 +153,7 @@ function parsePrimitive(
   schema: PrimitiveSchema,
   choices: readonly string[]
 ): { ok: true; value: PrimitiveValue } | { ok: false; message: string } {
+  const displayChoices = choices.map(sanitizeTerminalText);
   if (schema.type === 'boolean') {
     const normalized = answer.toLowerCase();
     if (['true', 'yes', 'y', '1'].includes(normalized)) return { ok: true, value: true };
@@ -165,11 +180,11 @@ function parsePrimitive(
       .filter(Boolean);
     const invalid = values.find((value) => !choices.includes(value));
     return invalid
-      ? { ok: false, message: `Choose comma-separated values from: ${choices.join(', ')}.` }
+      ? { ok: false, message: `Choose comma-separated values from: ${displayChoices.join(', ')}.` }
       : { ok: true, value: values };
   }
   if (choices.length > 0 && !choices.includes(answer)) {
-    return { ok: false, message: `Choose one of: ${choices.join(', ')}.` };
+    return { ok: false, message: `Choose one of: ${displayChoices.join(', ')}.` };
   }
   if ('minLength' in schema && schema.minLength !== undefined && answer.length < schema.minLength) {
     return { ok: false, message: `Enter at least ${schema.minLength} characters.` };
@@ -211,7 +226,25 @@ function ask(rl: readline.Interface, prompt: string): Promise<string | undefined
 }
 
 function formatDefault(value: PrimitiveValue): string {
-  return Array.isArray(value) ? value.join(', ') : String(value);
+  return sanitizeTerminalText(Array.isArray(value) ? value.join(', ') : String(value));
+}
+
+const ANSI_ESCAPE_PATTERN =
+  // eslint-disable-next-line no-control-regex -- Terminal escape bytes are the exact untrusted input being removed.
+  /(?:\u001b\][^\u0007]*(?:\u0007|\u001b\\)|\u001b[P^_][\s\S]*?\u001b\\|(?:\u001b\[|\u009b)[0-?]*[ -/]*[@-~]|\u001b[@-_])/gu;
+
+export function sanitizeTerminalText(value: string): string {
+  const withoutEscapes = value.replace(ANSI_ESCAPE_PATTERN, '');
+  let withoutControls = '';
+  for (const character of withoutEscapes) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (character === '\r' || character === '\n' || character === '\t') {
+      withoutControls += ' ';
+    } else if (codePoint > 0x1f && (codePoint < 0x7f || codePoint > 0x9f)) {
+      withoutControls += character;
+    }
+  }
+  return withoutControls.replace(/ {2,}/gu, ' ').trim();
 }
 
 function writeLine(output: NodeJS.WritableStream, message: string): void {

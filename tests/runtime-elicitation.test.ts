@@ -1,9 +1,12 @@
 import { Client } from '@modelcontextprotocol/client';
+import type { ElicitRequest } from '@modelcontextprotocol/client';
 import { InMemoryTransport, inputRequired, inputResponse, McpServer } from '@modelcontextprotocol/server';
 import { InMemoryTransport as LegacyInMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer as LegacyMcpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { PassThrough, Writable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  createInteractiveElicitationResponder,
   createNonInteractiveElicitationResponder,
   type ElicitationHandler,
   NON_INTERACTIVE_ELICITATION_HINT,
@@ -19,9 +22,61 @@ afterEach(async () => {
 });
 
 describe('elicitation responder', () => {
+  it('attributes interactive form prompts and strips terminal control sequences from every display field', async () => {
+    const request = {
+      method: 'elicitation/create',
+      params: {
+        mode: 'form',
+        message: 'Confirm\u001b]52;c;Y2xpcGJvYXJk\u0007 request\nnow',
+        requestedSchema: {
+          type: 'object',
+          properties: {
+            target: {
+              type: 'string',
+              title: 'Tar\u001b[2Jget',
+              description: 'Des\u009b2Jcription',
+              enum: ['safe\u001b[31m-choice'],
+              default: 'safe\u001b[31m-choice',
+            },
+          },
+        },
+      },
+    } as ElicitRequest;
+
+    const output = await captureInteractivePrompt(request, '\n', 'lin\u001b[2Jear');
+
+    expect(output).toContain("Server 'linear' is requesting input:");
+    expect(output).toContain('Confirm request now');
+    expect(output).toContain('Description');
+    expect(output).toContain('Choices: safe-choice');
+    expect(output).toContain('Target [safe-choice]:');
+    expect(output).not.toContain('\u0007');
+    expect(output).not.toContain('\u001b');
+    expect(output).not.toContain('\u009b');
+  });
+
+  it('strips terminal control sequences from elicitation URLs', async () => {
+    const request = {
+      method: 'elicitation/create',
+      params: {
+        mode: 'url',
+        message: 'Authorize',
+        url: 'https://example.com/\u001b]52;c;c2VjcmV0\u0007continue',
+      },
+    } as ElicitRequest;
+
+    const output = await captureInteractivePrompt(request, '\n', 'linear');
+
+    expect(output).toContain('https://example.com/continue');
+    expect(output).not.toContain('\u0007');
+    expect(output).not.toContain('\u001b');
+    expect(output).not.toContain('\u009b');
+  });
+
   it('fulfils modern input_required results through the registered handler', async () => {
-    const scripted: ElicitationHandler = vi.fn(async (request) => {
+    const scripted: ElicitationHandler = vi.fn(async (request, context) => {
       expect(request.params).toMatchObject({ message: 'Where should this run?' });
+      expect(context).toEqual({ server: 'fixture' });
       return { action: 'accept' as const, content: { environment: 'staging', replicas: 2 } };
     });
     const client = createClient(scripted, 'legacy');
@@ -155,6 +210,24 @@ describe('elicitation responder', () => {
   });
 });
 
+async function captureInteractivePrompt(request: ElicitRequest, answer: string, server: string): Promise<string> {
+  const input = new PassThrough();
+  let outputText = '';
+  const output = new Writable({
+    write(chunk, _encoding, callback) {
+      outputText += String(chunk);
+      callback();
+    },
+  });
+  const responder = createInteractiveElicitationResponder({ input, output });
+  const pending = (
+    responder.handler as unknown as (request: ElicitRequest, context: { server: string }) => Promise<unknown>
+  )(request, { server });
+  input.end(answer);
+  await pending;
+  return outputText;
+}
+
 function createClient(handler: ElicitationHandler, mode: 'legacy'): Client {
   const client = new Client(
     { name: 'mcporter-elicitation-test', version: '1.0.0' },
@@ -163,7 +236,7 @@ function createClient(handler: ElicitationHandler, mode: 'legacy'): Client {
       versionNegotiation: { mode },
     }
   );
-  registerElicitationHandler(client, handler);
+  registerElicitationHandler(client, handler, { server: 'fixture' });
   return client;
 }
 
