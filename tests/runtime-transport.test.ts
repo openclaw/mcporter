@@ -115,7 +115,7 @@ describe('createClientContext (HTTP)', () => {
     expect(negotiation?.probe).toBeUndefined();
   });
 
-  it('caps in-place stdio probes at three seconds', async () => {
+  it('uses the SDK default timeout for in-place stdio probes', async () => {
     const definition: ServerDefinition = {
       name: 'stdio-auto',
       command: { kind: 'stdio', command: 'node', args: ['unused.js'], cwd: '/tmp' },
@@ -128,8 +128,29 @@ describe('createClientContext (HTTP)', () => {
         _versionNegotiation?: { probe?: { timeoutMs?: number } };
       }
     )._versionNegotiation;
-    expect(negotiation?.probe?.timeoutMs).toBe(3000);
+    expect(negotiation?.probe?.timeoutMs).toBe(60_000);
     expect(context.transport).toBeInstanceOf(StdioClientTransport);
+  });
+
+  it('accepts an environment override for the stdio probe timeout', async () => {
+    const definition: ServerDefinition = {
+      name: 'stdio-auto',
+      command: { kind: 'stdio', command: 'node', args: ['unused.js'], cwd: '/tmp' },
+    };
+    vi.stubEnv('MCPORTER_STDIO_PROBE_TIMEOUT_MS', '12345');
+    vi.spyOn(Client.prototype, 'connect').mockResolvedValueOnce(undefined);
+
+    try {
+      const context = await createClientContext(definition, logger, clientInfo);
+      const negotiation = (
+        context.client as unknown as {
+          _versionNegotiation?: { probe?: { timeoutMs?: number } };
+        }
+      )._versionNegotiation;
+      expect(negotiation?.probe?.timeoutMs).toBe(12_345);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('falls back to SSE when primary connect fails', async () => {
@@ -706,4 +727,26 @@ describe('createClientContext (stdio negotiation)', () => {
       await context.client.close();
     }
   });
+
+  it('waits longer than three seconds for a slow modern discovery response', async () => {
+    const baseDefinition = stdioDefinition('modern');
+    if (baseDefinition.command.kind !== 'stdio') throw new Error('Expected stdio fixture definition.');
+    const definition: ServerDefinition = {
+      ...baseDefinition,
+      command: {
+        ...baseDefinition.command,
+        args: [...(baseDefinition.command.args ?? []), '3200'],
+      },
+    };
+
+    const context = await createClientContext(definition, logger, clientInfo);
+    try {
+      expect(context.client.getProtocolEra()).toBe('modern');
+      await expect(context.client.listTools()).resolves.toMatchObject({
+        tools: [expect.objectContaining({ name: 'modern_ping' })],
+      });
+    } finally {
+      await context.client.close();
+    }
+  }, 10_000);
 });

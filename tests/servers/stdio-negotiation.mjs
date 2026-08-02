@@ -1,6 +1,7 @@
 import { createInterface } from 'node:readline';
 
 const mode = process.argv[2];
+const discoveryDelayMs = Number(process.argv[3] ?? 0);
 if (mode !== 'legacy-exit' && mode !== 'modern') {
   throw new Error("Expected negotiation fixture mode 'legacy-exit' or 'modern'.");
 }
@@ -16,10 +17,12 @@ input.on('line', (line) => {
     if (mode === 'legacy-exit') {
       process.exit(0);
     }
-    respond(message.id, {
-      supportedVersions: ['2026-07-28'],
-      capabilities: { tools: {} },
-    });
+    setTimeout(() => {
+      respond(message.id, {
+        supportedVersions: ['2026-07-28'],
+        capabilities: { tools: {} },
+      });
+    }, discoveryDelayMs);
     return;
   }
 

@@ -204,7 +204,7 @@ Helpful flags:
 
 > Tip: You can skip the verb entirely—`mcporter firecrawl` automatically runs `mcporter list firecrawl`, and dotted tokens like `mcporter linear.list_issues` dispatch to the call command (typo fixes included).
 
-Server listings default to a 30 s timeout, while calls default to 60 s. Override call timeouts with `MCPORTER_CALL_TIMEOUT` or `--timeout`, and list timeouts with `MCPORTER_LIST_TIMEOUT`. OAuth browser handshakes get a separate 5 minute grace period; pass `--oauth-timeout <ms>` (or export `MCPORTER_OAUTH_TIMEOUT_MS`) when you need the CLI to bail out faster while you diagnose stubborn auth flows.
+Server listings default to a 30 s timeout, while calls default to 60 s. Override call timeouts with `MCPORTER_CALL_TIMEOUT` or `--timeout`, and list timeouts with `MCPORTER_LIST_TIMEOUT`. Automatic stdio protocol discovery uses the SDK's 60 s timeout so slow-starting modern servers are not mistaken for legacy; set `MCPORTER_STDIO_PROBE_TIMEOUT_MS` to a positive integer when a different startup bound is needed. OAuth browser handshakes get a separate 5 minute grace period; pass `--oauth-timeout <ms>` (or export `MCPORTER_OAUTH_TIMEOUT_MS`) when you need the CLI to bail out faster while you diagnose stubborn auth flows.
 
 ### Try an MCP without editing config
 

@@ -1,6 +1,7 @@
 import {
   Client,
   type ClientOptions,
+  DEFAULT_REQUEST_TIMEOUT_MSEC,
   SdkErrorCode,
   type Transport,
   type VersionNegotiationMode,
@@ -46,7 +47,13 @@ const wrapRecordTransport: WrapRecordTransport = <TTransport extends Transport>(
 };
 
 const LIST_MAX_PAGES = 100;
-const STDIO_PROBE_TIMEOUT_MS = 3_000;
+
+function resolveStdioProbeTimeoutMs(): number {
+  const raw = process.env.MCPORTER_STDIO_PROBE_TIMEOUT_MS;
+  if (!raw || !/^[1-9]\d*$/.test(raw)) return DEFAULT_REQUEST_TIMEOUT_MSEC;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : DEFAULT_REQUEST_TIMEOUT_MSEC;
+}
 
 function resolveNegotiationMode(definition: ServerDefinition): VersionNegotiationMode {
   switch (definition.protocolVersion) {
@@ -80,7 +87,7 @@ function createClient(
     listMaxPages: LIST_MAX_PAGES,
     versionNegotiation: {
       mode,
-      ...(options.stdio && mode !== 'legacy' ? { probe: { timeoutMs: STDIO_PROBE_TIMEOUT_MS } } : {}),
+      ...(options.stdio && mode !== 'legacy' ? { probe: { timeoutMs: resolveStdioProbeTimeoutMs() } } : {}),
     },
   };
   const client = new Client(clientInfo, clientOptions);
