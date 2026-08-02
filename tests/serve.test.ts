@@ -145,6 +145,63 @@ describe('mcporter serve bridge', () => {
     await bridge.close();
   });
 
+  it('preserves and projects primitive tool outputs for legacy clients', async () => {
+    const runtime = primitiveOutputRuntime();
+    const bridge = createBridgeServer({ runtime, definitions, servers: ['alpha'] });
+    const client = new Client({ name: 'legacy-primitive-client', version: '1.0.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    try {
+      await Promise.all([bridge.connect(serverTransport), client.connect(clientTransport)]);
+      await expect(client.listTools()).resolves.toMatchObject({
+        tools: [
+          {
+            name: 'alpha__primitive',
+            outputSchema: {
+              type: 'object',
+              properties: { result: { type: 'number' } },
+              required: ['result'],
+            },
+          },
+        ],
+      });
+      await expect(client.callTool({ name: 'alpha__primitive', arguments: {} })).resolves.toMatchObject({
+        content: [{ type: 'text', text: '42' }],
+        structuredContent: { result: 42 },
+      });
+    } finally {
+      await client.close().catch(() => {});
+      await bridge.close().catch(() => {});
+    }
+  });
+
+  it('preserves and projects primitive tool outputs for modern clients', async () => {
+    const runtime = primitiveOutputRuntime();
+    const httpServer = await serveHttp({ runtime, definitions, servers: ['alpha'], port: 0 });
+    const address = httpServer.address();
+    if (!address || typeof address !== 'object') throw new Error('Expected a listening HTTP server.');
+    const client = new V2Client(
+      { name: 'modern-primitive-client', version: '1.0.0' },
+      { versionNegotiation: { mode: { pin: '2026-07-28' } } }
+    );
+    const transport = new V2StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${address.port}/mcp`));
+
+    try {
+      await client.connect(transport);
+      expect(client.getProtocolEra()).toBe('modern');
+      await expect(client.listTools()).resolves.toMatchObject({
+        tools: [{ name: 'alpha__primitive', outputSchema: { type: 'number' } }],
+      });
+      await expect(client.callTool({ name: 'alpha__primitive', arguments: {} })).resolves.toMatchObject({
+        content: [{ type: 'text', text: '42' }],
+        structuredContent: 42,
+      });
+    } finally {
+      await client.close().catch(() => {});
+      await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    }
+  });
+
   it('routes bridged keep-alive tool traffic through the daemon runtime wrapper', async () => {
     const baseRuntime = {
       listServers: () => definitions.map((definition) => definition.name),
@@ -441,3 +498,16 @@ describe('mcporter serve bridge', () => {
     }
   });
 });
+
+function primitiveOutputRuntime() {
+  return {
+    listTools: vi.fn().mockResolvedValue([
+      {
+        name: 'primitive',
+        inputSchema: { type: 'object', properties: {} },
+        outputSchema: { type: 'number' },
+      },
+    ]),
+    callTool: vi.fn().mockResolvedValue({ structuredContent: 42 }),
+  };
+}

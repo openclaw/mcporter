@@ -35,6 +35,13 @@ interface ServedServer {
   readonly definition: ServerDefinition;
 }
 
+interface RuntimeToolDefinition {
+  readonly name: string;
+  readonly description?: string;
+  readonly inputSchema?: unknown;
+  readonly outputSchema?: unknown;
+}
+
 const TOOL_SEPARATOR = '__';
 const DEFAULT_OBJECT_SCHEMA = { type: 'object' } as const;
 export const DEFAULT_SERVE_HTTP_HOST = '127.0.0.1';
@@ -130,26 +137,28 @@ export function createBridgeServer(options: ServeOptions): McpServer {
         : 'MCPorter bridge exposing daemon-managed MCP servers. Tool names are namespaced as server__tool.',
     }
   );
+  const advertisedOutputSchemas = new Map<string, Tool['outputSchema']>();
+  const listRuntimeTools = (serverName: string) =>
+    options.runtime.listTools(serverName, {
+      includeSchema: true,
+      autoAuthorize: true,
+    }) as Promise<RuntimeToolDefinition[]>;
 
   server.server.setRequestHandler('tools/list', async () => {
     const tools: Tool[] = [];
     for (const served of servedServers) {
-      const listed = (await options.runtime.listTools(served.name, {
-        includeSchema: true,
-        autoAuthorize: true,
-      })) as Array<{
-        name: string;
-        description?: string;
-        inputSchema?: unknown;
-        outputSchema?: unknown;
-      }>;
+      const listed = await listRuntimeTools(served.name);
 
       for (const tool of listed) {
+        const name = bare ? tool.name : encodeToolName(served.name, tool.name);
+        const outputSchema = normalizeOutputSchema(tool.outputSchema);
+        if (outputSchema) advertisedOutputSchemas.set(name, outputSchema);
+        else advertisedOutputSchemas.delete(name);
         tools.push({
-          name: bare ? tool.name : encodeToolName(served.name, tool.name),
+          name,
           description: bare ? tool.description : describeTool(served.name, tool.description),
           inputSchema: normalizeInputSchema(tool.inputSchema),
-          outputSchema: normalizeOutputSchema(tool.outputSchema),
+          outputSchema,
         });
       }
     }
@@ -166,7 +175,13 @@ export function createBridgeServer(options: ServeOptions): McpServer {
     const result = await options.runtime.callTool(target.server, target.tool, {
       args: request.params.arguments,
     });
-    return result as CallToolResult;
+    let outputSchema = advertisedOutputSchemas.get(request.params.name);
+    if (!outputSchema) {
+      const definition = (await listRuntimeTools(target.server)).find((tool) => tool.name === target.tool);
+      outputSchema = normalizeOutputSchema(definition?.outputSchema);
+      if (outputSchema) advertisedOutputSchemas.set(request.params.name, outputSchema);
+    }
+    return server.server.projectCallToolResult(result as CallToolResult, outputSchema);
   });
 
   return server;
@@ -292,15 +307,14 @@ function normalizeInputSchema(schema: unknown): Tool['inputSchema'] {
 }
 
 function normalizeOutputSchema(schema: unknown): Tool['outputSchema'] {
-  if (isObjectSchema(schema)) {
-    return schema;
-  }
-  return undefined;
+  return isSchemaRecord(schema) ? (schema as Tool['outputSchema']) : undefined;
 }
 
 function isObjectSchema(schema: unknown): schema is Tool['inputSchema'] {
-  if (!schema || typeof schema !== 'object') {
-    return false;
-  }
+  if (!isSchemaRecord(schema)) return false;
   return (schema as { type?: unknown }).type === 'object';
+}
+
+function isSchemaRecord(schema: unknown): schema is Record<string, unknown> {
+  return !!schema && typeof schema === 'object' && !Array.isArray(schema);
 }
