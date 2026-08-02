@@ -5,6 +5,7 @@
 ### CLI
 
 - Follow `resources/list` cursors automatically so paginated MCP resources are returned in full.
+- Raise Node's untouched Happy-Eyeballs connect-attempt timeout from 250 ms to 1500 ms while preserving explicit user overrides.
 - Keep replay recordings usable across MCP protocol-version and mcporter client-version changes.
 - Support MCP protocol revision 2026-07-28 with automatic modern/legacy negotiation while preserving legacy server compatibility.
 - Support interactive form and URL elicitation in terminals across legacy and 2026-07-28 multi-round-trip servers, with immediate declines and a terminal hint in headless contexts.

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { loadConfigSnapshot, type DaemonConfig, type ServerDefinition } from '../config.js';
 import { readJsonFile, withFileLock, writeJsonFile } from '../fs-json.js';
 import { isKeepAliveServer } from '../lifecycle.js';
+import { configureAutoSelectFamilyAttemptTimeout } from '../network-family-autoselection.js';
 import { isProcessRunning } from '../process-utils.js';
 import { createRuntime, type Runtime } from '../runtime.js';
 import { createNonInteractiveElicitationResponder } from '../runtime/elicitation.js';
@@ -51,6 +52,7 @@ interface DaemonHostOptions {
 }
 
 export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
+  configureAutoSelectFamilyAttemptTimeout();
   const configLayers = await collectConfigLayers({
     configPath: options.configExplicit ? options.configPath : undefined,
     rootDir: options.rootDir,

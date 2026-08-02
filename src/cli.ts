@@ -7,12 +7,15 @@ import { logError, logInfo } from './cli/logger-context.js';
 import { isRecordReplayModeActive, isReplayModeActive } from './cli/record-replay-env.js';
 import { DEBUG_HANG, dumpActiveHandles, terminateChildProcesses } from './cli/runtime-debug.js';
 import { resolveConfigPath } from './config/path-discovery.js';
+import { configureAutoSelectFamilyAttemptTimeout } from './network-family-autoselection.js';
 import type { Runtime, RuntimeOptions } from './runtime.js';
 import { createInteractiveElicitationResponder } from './runtime/elicitation.js';
 
 export { parseCallArguments } from './cli/call-arguments.js';
 export { extractListFlags } from './cli/list-flags.js';
 export { resolveCallTimeout } from './cli/timeouts.js';
+
+configureAutoSelectFamilyAttemptTimeout();
 
 const FORCE_EXIT_GRACE_MS = 50;
 const STDOUT_FLUSH_TIMEOUT_MS = 2000;
