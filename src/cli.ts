@@ -8,6 +8,7 @@ import { isRecordReplayModeActive, isReplayModeActive } from './cli/record-repla
 import { DEBUG_HANG, dumpActiveHandles, terminateChildProcesses } from './cli/runtime-debug.js';
 import { resolveConfigPath } from './config/path-discovery.js';
 import type { Runtime, RuntimeOptions } from './runtime.js';
+import { createInteractiveElicitationResponder } from './runtime/elicitation.js';
 
 export { parseCallArguments } from './cli/call-arguments.js';
 export { extractListFlags } from './cli/list-flags.js';
@@ -169,9 +170,14 @@ export async function runCli(argv: string[]): Promise<void> {
   const configPathResolved = configPath ?? configResolution.path;
   // Only pass configPath to runtime options if it was explicitly provided (via --config flag or env var).
   // If not explicit, let loadConfigLayers handle the default resolution to avoid ENOENT on missing config.
-  const runtimeOptionsWithPath = {
+  const interactiveElicitation =
+    process.stdin.isTTY && process.stderr.isTTY && !isReplayModeActive()
+      ? createInteractiveElicitationResponder()
+      : undefined;
+  const runtimeOptionsWithPath: RuntimeOptions = {
     ...runtimeOptions,
     configPath: configResolution.explicit ? configPathResolved : runtimeOptions.configPath,
+    ...(interactiveElicitation ? { elicitationHandler: interactiveElicitation.handler } : {}),
   };
 
   if (command === 'daemon') {

@@ -2,6 +2,7 @@ import { DaemonClient } from '../daemon/client.js';
 import { createKeepAliveRuntime } from '../daemon/runtime-wrapper.js';
 import { isKeepAliveServer } from '../lifecycle.js';
 import { createRuntime } from '../runtime.js';
+import { createNonInteractiveElicitationResponder } from '../runtime/elicitation.js';
 import { DEFAULT_SERVE_HTTP_HOST, selectServedServers, serveHttp, serveStdio } from '../serve.js';
 
 interface ServeCliOptions {
@@ -19,9 +20,17 @@ interface ParsedServeArgs {
 
 export async function handleServeCli(args: string[], options: ServeCliOptions): Promise<void> {
   const parsed = parseServeArgs(args);
+  const elicitation = createNonInteractiveElicitationResponder({
+    onDecline: () => {
+      console.error(
+        '[mcporter] Serve bridge declined upstream interactive input; downstream elicitation passthrough is not available.'
+      );
+    },
+  });
   const baseRuntime = await createRuntime({
     configPath: options.configExplicit ? options.configPath : undefined,
     rootDir: options.rootDir,
+    elicitationHandler: elicitation.handler,
   });
   const definitions = baseRuntime.getDefinitions();
 

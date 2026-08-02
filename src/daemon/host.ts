@@ -7,6 +7,7 @@ import { readJsonFile, withFileLock, writeJsonFile } from '../fs-json.js';
 import { isKeepAliveServer } from '../lifecycle.js';
 import { isProcessRunning } from '../process-utils.js';
 import { createRuntime, type Runtime } from '../runtime.js';
+import { createNonInteractiveElicitationResponder } from '../runtime/elicitation.js';
 import { collectConfigLayers, normalizeConfigLayers, statConfigMtime } from './config-layers.js';
 import { hashDaemonDefinitions } from './definition-hash.js';
 import {
@@ -241,9 +242,10 @@ export async function loadDaemonRuntimeState(options: {
   readonly rootDir?: string;
 }): Promise<{ daemonConfig: DaemonConfig; runtime: Runtime }> {
   const snapshot = await loadConfigSnapshot(options);
+  const elicitation = createNonInteractiveElicitationResponder();
   return {
     daemonConfig: snapshot.daemon,
-    runtime: await createRuntime({ servers: snapshot.servers }),
+    runtime: await createRuntime({ servers: snapshot.servers, elicitationHandler: elicitation.handler }),
   };
 }
 

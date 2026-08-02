@@ -2,6 +2,7 @@ import type { ServerDefinition } from '../config.js';
 import type { ConnectionInfo, RuntimeLogger, ConnectOptions } from '../runtime.js';
 import { closeTransportAndWait } from '../runtime-process-utils.js';
 import { shouldResetConnection } from './errors.js';
+import type { ElicitationHandler } from './elicitation.js';
 import { ReplayTransport } from './replay-transport.js';
 import { type ClientContext, createClientContext } from './transport.js';
 
@@ -19,6 +20,7 @@ export interface RuntimeConnectionCacheOptions {
   readonly oauthTimeoutMs: number;
   readonly recordPath?: string;
   readonly replayPath?: string;
+  readonly elicitationHandler: ElicitationHandler;
 }
 
 export class RuntimeConnectionCache {
@@ -306,6 +308,7 @@ export class RuntimeConnectionCache {
       disableOAuth,
       recordPath: this.recordPath,
       replayPath: this.replayPath,
+      elicitationHandler: this.options.elicitationHandler,
     }).then((context) => {
       this.lastConnectionInfo.set(normalized, connectionInfoFromClient(context.client));
       return context;

@@ -14,6 +14,11 @@ export type {
   ServerToolInfo,
 } from './runtime.js';
 export { callOnce, createRuntime } from './runtime.js';
+export type { ElicitationHandler, ElicitationResponder } from './runtime/elicitation.js';
+export {
+  createInteractiveElicitationResponder,
+  createNonInteractiveElicitationResponder,
+} from './runtime/elicitation.js';
 export type { GeneratedRuntimeContext } from './generated-daemon-runtime.js';
 export { createGeneratedKeepAliveRuntime } from './generated-daemon-runtime.js';
 export { handleDaemonCli } from './cli/daemon-command.js';

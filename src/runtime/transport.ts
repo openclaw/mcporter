@@ -6,6 +6,11 @@ import { resolveEnvValue, withEnvOverrides } from '../env.js';
 import type { Logger } from '../logging.js';
 import { closeTransportAndWait } from '../runtime-process-utils.js';
 import { applyCachedAuthIfAvailable } from './cached-auth.js';
+import {
+  createNonInteractiveElicitationResponder,
+  type ElicitationHandler,
+  registerElicitationHandler,
+} from './elicitation.js';
 import { createHttpClientContext } from './http-transport.js';
 import { RecordTransport } from './record-transport.js';
 import { ReplayTransport } from './replay-transport.js';
@@ -51,17 +56,20 @@ function resolveNegotiationMode(definition: ServerDefinition): VersionNegotiatio
 function createClient(
   definition: ServerDefinition,
   clientInfo: { name: string; version: string },
-  options: { stdio?: boolean; forceLegacy?: boolean } = {}
+  options: { stdio?: boolean; forceLegacy?: boolean; elicitationHandler?: ElicitationHandler } = {}
 ): Client {
   const mode = options.forceLegacy ? 'legacy' : resolveNegotiationMode(definition);
   const clientOptions: ClientOptions = {
+    capabilities: { elicitation: { form: {}, url: {} } },
     listMaxPages: LIST_MAX_PAGES,
     versionNegotiation: {
       mode,
       ...(options.stdio && mode !== 'legacy' ? { probe: { timeoutMs: STDIO_PROBE_TIMEOUT_MS } } : {}),
     },
   };
-  return new Client(clientInfo, clientOptions);
+  const client = new Client(clientInfo, clientOptions);
+  if (options.elicitationHandler) registerElicitationHandler(client, options.elicitationHandler);
+  return client;
 }
 
 async function createReplayClientContext(
@@ -72,7 +80,10 @@ async function createReplayClientContext(
   const transport = new ReplayTransport({ recordPath: replayPath, server: definition.name });
   // Pre-v2 captures start with initialize. Skip a probe those recordings
   // cannot satisfy; captures containing server/discover replay normally.
-  const client = createClient(definition, clientInfo, { forceLegacy: transport.requiresLegacyNegotiation });
+  const client = createClient(definition, clientInfo, {
+    forceLegacy: transport.requiresLegacyNegotiation,
+    elicitationHandler: createNonInteractiveElicitationResponder().handler,
+  });
   await client.connect(transport);
   return { client, transport, definition, oauthSession: undefined };
 }
@@ -136,14 +147,14 @@ export async function createClientContext(
   return withEnvOverrides(activeDefinition.env, async () => {
     if (activeDefinition.command.kind === 'stdio') {
       return createStdioClientContext(
-        createClient(activeDefinition, clientInfo, { stdio: true }),
+        createClient(activeDefinition, clientInfo, { stdio: true, elicitationHandler: options.elicitationHandler }),
         activeDefinition as ServerDefinition & { command: Extract<ServerDefinition['command'], { kind: 'stdio' }> },
         logger,
         options
       );
     }
     return createHttpClientContext(
-      createClient(activeDefinition, clientInfo),
+      createClient(activeDefinition, clientInfo, { elicitationHandler: options.elicitationHandler }),
       activeDefinition,
       logger,
       options,

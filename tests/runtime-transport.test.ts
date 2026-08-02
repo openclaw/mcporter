@@ -72,6 +72,24 @@ afterEach(() => {
 });
 
 describe('createClientContext (HTTP)', () => {
+  it('advertises both elicitation modes and registers the supplied handler', async () => {
+    const definition = stubHttpDefinition('https://example.com/mcp');
+    const elicitationHandler = vi.fn(async () => ({ action: 'decline' as const }));
+    vi.spyOn(Client.prototype, 'connect').mockResolvedValueOnce(undefined);
+
+    const context = await createClientContext(definition, logger, clientInfo, {
+      maxOAuthAttempts: 0,
+      elicitationHandler,
+    });
+    const internal = context.client as unknown as {
+      _capabilities: { elicitation?: unknown };
+      _getRequestHandler(method: string): unknown;
+    };
+
+    expect(internal._capabilities.elicitation).toEqual({ form: {}, url: {} });
+    expect(internal._getRequestHandler('elicitation/create')).toBeTypeOf('function');
+  });
+
   it.each([
     [undefined, 'auto'],
     ['auto', 'auto'],

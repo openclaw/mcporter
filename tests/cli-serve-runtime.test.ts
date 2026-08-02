@@ -67,6 +67,9 @@ describe('serve command runtime wiring', () => {
   it('wraps configured keep-alive servers with the daemon runtime before serving stdio', async () => {
     await handleServeCli(['--servers', 'alpha'], { configPath: '/tmp/config.json', configExplicit: true });
 
+    expect(createRuntimeMock).toHaveBeenCalledWith(
+      expect.objectContaining({ elicitationHandler: expect.any(Function) })
+    );
     expect(DaemonClientMock).toHaveBeenCalledWith({
       configPath: '/tmp/config.json',
       configExplicit: true,

@@ -2,16 +2,18 @@ import {
   type CallToolRequest,
   type ListResourcesRequest,
   type ReadResourceRequest,
-  SdkError,
-  SdkErrorCode,
   specTypeSchemas,
-  UrlElicitationRequiredError,
   type ProtocolEra,
 } from '@modelcontextprotocol/client';
 import { loadServerDefinitions, type ServerDefinition } from './config.js';
 import { createPrefixedConsoleLogger, type Logger, type LogLevel, resolveLogLevelFromEnv } from './logging.js';
 import type { OAuthSessionOptions } from './oauth.js';
 import { RuntimeConnectionCache } from './runtime/connection-cache.js';
+import {
+  createNonInteractiveElicitationResponder,
+  NON_INTERACTIVE_ELICITATION_HINT,
+  type ElicitationHandler,
+} from './runtime/elicitation.js';
 import { resolveOAuthTimeoutFromEnv } from './runtime/oauth.js';
 import { resolveRecordingPath } from './runtime/record-transport.js';
 import type { ClientContext } from './runtime/transport.js';
@@ -24,8 +26,6 @@ export { MCPORTER_VERSION } from './version.js';
 const PACKAGE_NAME = 'mcporter';
 const OAUTH_CODE_TIMEOUT_MS = resolveOAuthTimeoutFromEnv();
 const MAX_RESOURCE_LIST_PAGES = 100;
-const MRTR_UNSUPPORTED_MESSAGE =
-  'Tool requires interactive input (MRTR); mcporter does not support this yet — coming in a follow-up';
 
 export interface RuntimeOptions {
   readonly configPath?: string;
@@ -37,6 +37,7 @@ export interface RuntimeOptions {
   };
   readonly logger?: RuntimeLogger;
   readonly oauthTimeoutMs?: number;
+  readonly elicitationHandler?: ElicitationHandler;
 }
 
 export type RuntimeLogger = Logger;
@@ -183,12 +184,23 @@ class McpRuntime implements Runtime {
     }
     const recordPath = recordSession ? resolveRecordingPath(recordSession) : undefined;
     const replayPath = !recordSession && replaySession ? resolveRecordingPath(replaySession) : undefined;
+    let nonInteractiveHintPrinted = false;
+    const defaultResponder = createNonInteractiveElicitationResponder({
+      onDecline: () => {
+        if (nonInteractiveHintPrinted) return;
+        nonInteractiveHintPrinted = true;
+        this.logger.warn(NON_INTERACTIVE_ELICITATION_HINT);
+      },
+    });
     this.connectionCache = new RuntimeConnectionCache(this.definitions, {
       logger: this.logger,
       clientInfo,
       oauthTimeoutMs: options.oauthTimeoutMs ?? OAUTH_CODE_TIMEOUT_MS,
       recordPath,
       replayPath,
+      elicitationHandler: replayPath
+        ? defaultResponder.handler
+        : (options.elicitationHandler ?? defaultResponder.handler),
     });
   }
 
@@ -332,9 +344,6 @@ class McpRuntime implements Runtime {
       }
       return await raceWithTimeout(resultPromise, timeoutMs);
     } catch (error) {
-      if (isUnsupportedMrtrError(error)) {
-        throw new Error(MRTR_UNSUPPORTED_MESSAGE, { cause: error });
-      }
       // Runtime timeouts and transport crashes should tear down the cached connection so
       // the daemon (or direct runtime) can relaunch the MCP server on the next attempt.
       await this.resetConnectionOnError(server, error, context);
@@ -437,15 +446,6 @@ class McpRuntime implements Runtime {
   private async resetConnectionOnError(server: string, error: unknown, context?: ClientContext): Promise<void> {
     await this.connectionCache.resetConnectionOnError(server, error, context);
   }
-}
-
-function isUnsupportedMrtrError(error: unknown): boolean {
-  if (error instanceof UrlElicitationRequiredError) return true;
-  if (!(error instanceof SdkError)) return false;
-  if (error.code === SdkErrorCode.UnsupportedResultType) {
-    return (error.data as { resultType?: unknown } | undefined)?.resultType === 'input_required';
-  }
-  return error.code === SdkErrorCode.CapabilityNotSupported && error.message.startsWith('Cannot fulfil input request');
 }
 
 // createConsoleLogger produces the default runtime logger honoring MCPORTER_LOG_LEVEL.

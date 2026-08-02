@@ -1,6 +1,7 @@
 import type { Client, Transport } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from '../config.js';
 import type { OAuthSession, OAuthSessionOptions } from '../oauth.js';
+import type { ElicitationHandler } from './elicitation.js';
 
 export interface ClientContext {
   readonly client: Client;
@@ -18,6 +19,7 @@ export interface CreateClientContextOptions {
   readonly disableOAuth?: boolean;
   readonly recordPath?: string;
   readonly replayPath?: string;
+  readonly elicitationHandler?: ElicitationHandler;
 }
 
 export type WrapRecordTransport = <TTransport extends Transport>(
