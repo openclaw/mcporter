@@ -413,7 +413,36 @@ What MCPorter handles for you:
 - Stdio commands inherit the directory of the file that defined them (imports or local config).
 - Import precedence matches the array order; omit `imports` to use the default `["cursor", "claude-code", "claude-desktop", "codex", "windsurf", "opencode", "vscode"]`.
 - `chrome-devtools-mcp --autoConnect` receives a small compatibility patch while upstream auto-connect can hang on busy Chrome profiles; set `MCPORTER_DISABLE_CHROME_DEVTOOLS_COMPAT=1` to opt out.
-- When the [OpenClaw Chrome extension relay](https://docs.openclaw.ai/tools/chrome-extension/) is paired on this host, `chrome-devtools-mcp --autoConnect` is transparently rewritten to the relay's loopback CDP endpoint — driving the same signed-in Chrome with no "Allow remote debugging?" dialog at all. mcporter probes `http://127.0.0.1:18799` (override with `MCPORTER_CHROME_DEVTOOLS_RELAY_URL`, loopback only) and falls back to plain `--autoConnect` when the relay is down or unpaired; set `MCPORTER_DISABLE_CHROME_DEVTOOLS_RELAY=1` to opt out.
+- `chrome-devtools-mcp --autoConnect` also skips Chrome's per-session debugging prompt entirely when a browser-extension relay is paired — see [Chrome DevTools without the debugging prompt](#chrome-devtools-without-the-debugging-prompt).
+
+#### Chrome DevTools without the debugging prompt
+
+`chrome-devtools-mcp --autoConnect` attaches to your running Chrome through the
+remote-debugging handshake, and Chrome 144+ shows an **"Allow remote debugging?"
+dialog for every new session** — by design, with no way to persist approval. If
+that alert annoys you, there is a second path: a Chrome **extension** can expose
+the same signed-in browser over the extension debugger API, which never triggers
+the prompt. The only Chrome-side hint is a dismissible "…started debugging this
+browser" banner.
+
+mcporter supports this out of the box with the
+[OpenClaw Chrome extension relay](https://docs.openclaw.ai/tools/chrome-extension/):
+
+1. Install and pair the extension once (`openclaw browser extension path` /
+   `pair` — see the OpenClaw docs above).
+2. Keep your server config exactly as it is, with `--autoConnect`.
+
+When mcporter spawns `chrome-devtools-mcp`, it probes the relay
+(`http://127.0.0.1:18799`, override with `MCPORTER_CHROME_DEVTOOLS_RELAY_URL`,
+loopback only) and, if a paired relay answers, transparently rewrites
+`--autoConnect` into `--wsEndpoint ws://127.0.0.1:18799/cdp` plus the relay's
+host-local auth token. Same real Chrome profile, no dialog. Only tabs you share
+with the relay (the OpenClaw tab group) are reachable, and if the relay is down
+or unpaired mcporter falls back to plain `--autoConnect` — the dialog returns,
+but nothing breaks. Set `MCPORTER_DISABLE_CHROME_DEVTOOLS_RELAY=1` to opt out
+entirely. (The auto-detection is specific to the OpenClaw relay because mcporter
+reads its host-local auth secret; for any other CDP endpoint, configure
+`--wsEndpoint`/`--browserUrl` in the server args directly.)
 
 #### OAuth-protected servers
 
