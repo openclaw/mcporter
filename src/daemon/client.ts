@@ -324,6 +324,9 @@ export class DaemonClient {
       (parseError as NodeJS.ErrnoException).code = 'ECONNRESET';
       throw parseError;
     }
+    for (const notice of parsed.notices ?? []) {
+      console.warn(`[mcporter] ${notice}`);
+    }
     if (!parsed.ok) {
       const error = new Error(parsed.error?.message ?? 'Daemon error');
       (error as NodeJS.ErrnoException).code = parsed.error?.code;

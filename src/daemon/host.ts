@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import net from 'node:net';
@@ -8,7 +9,7 @@ import { isKeepAliveServer } from '../lifecycle.js';
 import { configureAutoSelectFamilyAttemptTimeout } from '../network-family-autoselection.js';
 import { isProcessRunning } from '../process-utils.js';
 import { createRuntime, type Runtime } from '../runtime.js';
-import { createNonInteractiveElicitationResponder } from '../runtime/elicitation.js';
+import { createNonInteractiveElicitationResponder, NON_INTERACTIVE_ELICITATION_HINT } from '../runtime/elicitation.js';
 import { collectConfigLayers, normalizeConfigLayers, statConfigMtime } from './config-layers.js';
 import { hashDaemonDefinitions } from './definition-hash.js';
 import {
@@ -50,6 +51,8 @@ interface DaemonHostOptions {
   readonly logServers?: Set<string>;
   readonly logAllServers?: boolean;
 }
+
+const daemonRequestNotices = new AsyncLocalStorage<Set<string>>();
 
 export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
   configureAutoSelectFamilyAttemptTimeout();
@@ -244,7 +247,9 @@ export async function loadDaemonRuntimeState(options: {
   readonly rootDir?: string;
 }): Promise<{ daemonConfig: DaemonConfig; runtime: Runtime }> {
   const snapshot = await loadConfigSnapshot(options);
-  const elicitation = createNonInteractiveElicitationResponder();
+  const elicitation = createNonInteractiveElicitationResponder({
+    onDecline: () => daemonRequestNotices.getStore()?.add(NON_INTERACTIVE_ELICITATION_HINT),
+  });
   return {
     daemonConfig: snapshot.daemon,
     runtime: await createRuntime({ servers: snapshot.servers, elicitationHandler: elicitation.handler }),
@@ -474,7 +479,7 @@ async function handleSocketRequest(
   shutdown: () => Promise<void>,
   preParsedRequest?: DaemonRequest
 ): Promise<void> {
-  const { response, shouldShutdown } = await processRequest(
+  const { response, shouldShutdown } = await processRequestWithNotices(
     rawPayload,
     runtime,
     managedServers,
@@ -497,6 +502,20 @@ function normalizeDaemonDisableOAuth(value: boolean | undefined): boolean {
   // not request OAuth suppression, so a previous --no-oauth pooled transport
   // must not make later ordinary calls inherit the no-OAuth posture.
   return value === true;
+}
+
+async function processRequestWithNotices(
+  ...args: Parameters<typeof processRequest>
+): Promise<Awaited<ReturnType<typeof processRequest>>> {
+  const notices = new Set<string>();
+  const processed = await daemonRequestNotices.run(notices, () => processRequest(...args));
+  if (notices.size === 0) {
+    return processed;
+  }
+  return {
+    ...processed,
+    response: { ...processed.response, notices: [...notices] },
+  };
 }
 
 async function processRequest(
@@ -738,5 +757,13 @@ export async function __testProcessRequest(
   logContext: LogContext,
   preParsedRequest?: DaemonRequest
 ): Promise<{ response: DaemonResponse; shouldShutdown: boolean }> {
-  return await processRequest(rawPayload, runtime, managedServers, activity, metadata, logContext, preParsedRequest);
+  return await processRequestWithNotices(
+    rawPayload,
+    runtime,
+    managedServers,
+    activity,
+    metadata,
+    logContext,
+    preParsedRequest
+  );
 }

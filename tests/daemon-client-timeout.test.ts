@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { NON_INTERACTIVE_ELICITATION_HINT } from '../src/runtime/elicitation.js';
 import { makeShortTempDir } from './fixtures/test-helpers.js';
 
 const timeoutRecords: Array<{ method: string; timeout: number }> = [];
@@ -37,6 +38,7 @@ class MockSocket extends EventEmitter {
 }
 
 let responseDelayMs = 5;
+let noticeOnCall = false;
 let activeConfigPath = path.resolve('mcporter.config.json');
 let activeSocketPath = '';
 const createConnection = vi.fn(() => {
@@ -78,6 +80,7 @@ function buildResponse(method: string, id: string) {
     id,
     ok: true,
     result: { ok: true },
+    ...(noticeOnCall ? { notices: [NON_INTERACTIVE_ELICITATION_HINT] } : {}),
   };
 }
 
@@ -85,6 +88,7 @@ describe('DaemonClient timeouts', () => {
   beforeEach(async () => {
     timeoutRecords.length = 0;
     responseDelayMs = 5;
+    noticeOnCall = false;
     previousDaemonTimeout = process.env.MCPORTER_DAEMON_TIMEOUT_MS;
     previousDaemonDir = process.env.MCPORTER_DAEMON_DIR;
     tmpDaemonDir = await makeShortTempDir('daemon-timeout');
@@ -151,6 +155,19 @@ describe('DaemonClient timeouts', () => {
     const callRecord = timeoutRecords.find((entry) => entry.method === 'callTool');
     expect(statusRecord?.timeout).toBe(1_000);
     expect(callRecord?.timeout).toBe(1);
+  });
+
+  it('surfaces daemon notices to the calling CLI process', async () => {
+    const configPath = 'mcporter.config.json';
+    await writeFreshMetadata(configPath);
+    noticeOnCall = true;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const client = new DaemonClient({ configPath, configExplicit: true });
+
+    await client.callTool({ server: 'foo', tool: 'bar' });
+
+    expect(warn).toHaveBeenCalledWith(`[mcporter] ${NON_INTERACTIVE_ELICITATION_HINT}`);
+    warn.mockRestore();
   });
 });
 

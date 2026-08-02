@@ -17,6 +17,7 @@ export interface DaemonResponse<T = unknown> {
   readonly id: string;
   readonly ok: boolean;
   readonly result?: T;
+  readonly notices?: readonly string[];
   readonly error?: {
     readonly message: string;
     readonly code?: string;
