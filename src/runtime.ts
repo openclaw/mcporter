@@ -15,6 +15,7 @@ export { MCPORTER_VERSION } from './version.js';
 
 const PACKAGE_NAME = 'mcporter';
 const OAUTH_CODE_TIMEOUT_MS = resolveOAuthTimeoutFromEnv();
+const MAX_RESOURCE_LIST_PAGES = 100;
 
 export interface RuntimeOptions {
   readonly configPath?: string;
@@ -341,7 +342,18 @@ class McpRuntime implements Runtime {
         disableOAuth: effectiveDisableOAuth,
       });
       const { client } = context;
-      return await client.listResources(params as ListResourcesRequest['params']);
+      const requestParams = params as NonNullable<ListResourcesRequest['params']>;
+      let response = await client.listResources(requestParams);
+      if (requestParams.cursor !== undefined) {
+        return response;
+      }
+
+      const resources = [...response.resources];
+      for (let page = 1; page < MAX_RESOURCE_LIST_PAGES && response.nextCursor; page += 1) {
+        response = await client.listResources({ ...requestParams, cursor: response.nextCursor });
+        resources.push(...response.resources);
+      }
+      return { ...response, resources };
     } catch (error) {
       // Fatal listResources errors usually mean the underlying transport has gone away.
       await this.resetConnectionOnError(server, error, context);

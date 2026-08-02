@@ -347,6 +347,96 @@ describe('mcporter composability', () => {
     }
   });
 
+  it('aggregates cursor-paginated resources when no cursor is provided', async () => {
+    mocks.listResourcesMock
+      .mockResolvedValueOnce({
+        resources: [{ uri: 'memo://one', name: 'One' }],
+        nextCursor: 'page-2',
+      })
+      .mockResolvedValueOnce({ resources: [{ uri: 'memo://two', name: 'Two' }] });
+    const runtime = await createRuntime({
+      servers: [
+        {
+          name: 'resources',
+          command: { kind: 'http' as const, url: new URL('https://resources.example.com/mcp') },
+        },
+      ],
+    });
+
+    try {
+      const result = (await runtime.listResources('resources')) as {
+        resources: Array<{ uri: string; name: string }>;
+      };
+
+      expect(result.resources).toEqual([
+        { uri: 'memo://one', name: 'One' },
+        { uri: 'memo://two', name: 'Two' },
+      ]);
+      expect(mocks.listResourcesMock).toHaveBeenNthCalledWith(1, {});
+      expect(mocks.listResourcesMock).toHaveBeenNthCalledWith(2, { cursor: 'page-2' });
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it('returns one resource page when the caller provides a cursor', async () => {
+    mocks.listResourcesMock.mockResolvedValueOnce({
+      resources: [{ uri: 'memo://two', name: 'Two' }],
+      nextCursor: 'page-3',
+    });
+    const runtime = await createRuntime({
+      servers: [
+        {
+          name: 'resources',
+          command: { kind: 'http' as const, url: new URL('https://resources.example.com/mcp') },
+        },
+      ],
+    });
+
+    try {
+      await expect(runtime.listResources('resources', { cursor: 'page-2' })).resolves.toEqual({
+        resources: [{ uri: 'memo://two', name: 'Two' }],
+        nextCursor: 'page-3',
+      });
+      expect(mocks.listResourcesMock).toHaveBeenCalledOnce();
+      expect(mocks.listResourcesMock).toHaveBeenCalledWith({ cursor: 'page-2' });
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it('caps automatic resource pagination at 100 pages and returns the partial result', async () => {
+    mocks.listResourcesMock.mockImplementation(async (params?: { cursor?: string }) => {
+      const page = params?.cursor ? Number(params.cursor.slice('page-'.length)) : 1;
+      return {
+        resources: [{ uri: `memo://${page}`, name: `Page ${page}` }],
+        nextCursor: `page-${page + 1}`,
+      };
+    });
+    const runtime = await createRuntime({
+      servers: [
+        {
+          name: 'resources',
+          command: { kind: 'http' as const, url: new URL('https://resources.example.com/mcp') },
+        },
+      ],
+    });
+
+    try {
+      const result = (await runtime.listResources('resources')) as {
+        resources: Array<{ uri: string; name: string }>;
+        nextCursor?: string;
+      };
+
+      expect(result.resources).toHaveLength(100);
+      expect(result.resources.at(-1)).toEqual({ uri: 'memo://100', name: 'Page 100' });
+      expect(result.nextCursor).toBe('page-101');
+      expect(mocks.listResourcesMock).toHaveBeenCalledTimes(100);
+    } finally {
+      await runtime.close();
+    }
+  });
+
   it('uses disableOAuth on cold callTool/listTools helper connections', async () => {
     const runtime = await createRuntime({
       servers: [

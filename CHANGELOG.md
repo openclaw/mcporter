@@ -2,6 +2,10 @@
 
 ## [0.12.5] - Unreleased
 
+### CLI
+
+- Follow `resources/list` cursors automatically so paginated MCP resources are returned in full.
+
 ## [0.12.4] - 2026-08-02
 
 ### CLI
