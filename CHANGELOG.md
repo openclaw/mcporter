@@ -4,6 +4,7 @@
 
 ### CLI
 
+- Route `chrome-devtools-mcp --autoConnect` through a paired OpenClaw Chrome-extension relay when one is live on this host, eliminating Chrome's per-session "Allow remote debugging?" dialog; falls back to plain auto-connect otherwise (`MCPORTER_DISABLE_CHROME_DEVTOOLS_RELAY=1` to opt out).
 - Correct the documented call timeout to 60 seconds and distinguish its `MCPORTER_CALL_TIMEOUT` and `--timeout` overrides from the 30-second list timeout. (PR #230, thanks @KrasimirKralev)
 - Isolate long-lived SSE receive streams from ordinary HTTP requests so byte-idle servers cannot stall tool listing and calls. (PR #234, thanks @umutkeltek)
 

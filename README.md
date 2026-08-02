@@ -413,6 +413,7 @@ What MCPorter handles for you:
 - Stdio commands inherit the directory of the file that defined them (imports or local config).
 - Import precedence matches the array order; omit `imports` to use the default `["cursor", "claude-code", "claude-desktop", "codex", "windsurf", "opencode", "vscode"]`.
 - `chrome-devtools-mcp --autoConnect` receives a small compatibility patch while upstream auto-connect can hang on busy Chrome profiles; set `MCPORTER_DISABLE_CHROME_DEVTOOLS_COMPAT=1` to opt out.
+- When the [OpenClaw Chrome extension relay](https://docs.openclaw.ai/tools/chrome-extension/) is paired on this host, `chrome-devtools-mcp --autoConnect` is transparently rewritten to the relay's loopback CDP endpoint — driving the same signed-in Chrome with no "Allow remote debugging?" dialog at all. mcporter probes `http://127.0.0.1:18799` (override with `MCPORTER_CHROME_DEVTOOLS_RELAY_URL`, loopback only) and falls back to plain `--autoConnect` when the relay is down or unpaired; set `MCPORTER_DISABLE_CHROME_DEVTOOLS_RELAY=1` to opt out.
 
 #### OAuth-protected servers
 

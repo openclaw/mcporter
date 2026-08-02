@@ -4,6 +4,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { applyChromeDevtoolsCompat } from '../chrome-devtools-compat.js';
+import { rewriteChromeDevtoolsArgsForRelay } from '../chrome-devtools-relay.js';
 import type { ServerDefinition } from '../config.js';
 import { resolveEnvValue, withEnvOverrides } from '../env.js';
 import { analyzeConnectionError } from '../error-classifier.js';
@@ -320,7 +321,12 @@ async function createStdioClientContext(
       ? { ...process.env, ...resolvedEnvOverrides }
       : { ...process.env };
   const command = resolveCommandArgument(definition.command.command);
-  const commandArgs = resolveCommandArguments(definition.command.args);
+  const resolvedArgs = resolveCommandArguments(definition.command.args);
+  const relay = await rewriteChromeDevtoolsArgsForRelay(command, resolvedArgs, mergedEnv as NodeJS.ProcessEnv);
+  if (relay.applied) {
+    logger.info(`Routing chrome-devtools-mcp through the OpenClaw extension relay at ${relay.endpoint} (no dialog).`);
+  }
+  const commandArgs = [...relay.args];
   const compat = applyChromeDevtoolsCompat(mergedEnv as Record<string, string>, command, commandArgs);
   if (compat.applied) {
     logger.info(`Injecting chrome-devtools-mcp --autoConnect compatibility patch from ${compat.patchPath}.`);
