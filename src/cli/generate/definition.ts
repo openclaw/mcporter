@@ -184,9 +184,10 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
   const description = typeof def.description === 'string' ? def.description : undefined;
   const env = toStringRecord(def.env);
   const auth = typeof def.auth === 'string' ? def.auth : undefined;
-  const tokenCacheDir = typeof def.tokenCacheDir === 'string' ? def.tokenCacheDir : undefined;
-  const clientName = typeof def.clientName === 'string' ? def.clientName : undefined;
   const record = def as Record<string, unknown>;
+  const tokenCacheDir = stringFromAliases(record, 'tokenCacheDir', 'token_cache_dir');
+  const clientName = stringFromAliases(record, 'clientName', 'client_name');
+  const protocolVersion = getProtocolVersion(record.protocolVersion ?? record.protocol_version);
   const oauthClientId = stringFromAliases(record, 'oauthClientId', 'oauth_client_id');
   const oauthClientSecret = stringFromAliases(record, 'oauthClientSecret', 'oauth_client_secret');
   const oauthClientSecretEnv = stringFromAliases(record, 'oauthClientSecretEnv', 'oauth_client_secret_env');
@@ -195,9 +196,9 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
     'oauthTokenEndpointAuthMethod',
     'oauth_token_endpoint_auth_method'
   );
-  const oauthRedirectUrl = typeof def.oauthRedirectUrl === 'string' ? def.oauthRedirectUrl : undefined;
+  const oauthRedirectUrl = stringFromAliases(record, 'oauthRedirectUrl', 'oauth_redirect_url');
   const oauthClientMetadataUrl = stringFromAliases(record, 'oauthClientMetadataUrl', 'oauth_client_metadata_url');
-  const oauthScope = typeof def.oauthScope === 'string' ? def.oauthScope : undefined;
+  const oauthScope = stringFromAliases(record, 'oauthScope', 'oauth_scope');
   const refresh = getRefresh(record.refresh);
   const httpFetch = normalizeHttpFetch(stringFromAliases(record, 'httpFetch', 'http_fetch'));
   const headers = toStringRecord((def as Record<string, unknown>).headers);
@@ -216,6 +217,7 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
     auth,
     tokenCacheDir,
     clientName,
+    protocolVersion,
     oauthClientId,
     oauthClientSecret,
     oauthClientSecretEnv,
@@ -404,6 +406,10 @@ function getRefresh(value: unknown): RefreshableBearerOptions | undefined {
 
 function normalizeHttpFetch(value: string | undefined): ServerDefinition['httpFetch'] | undefined {
   return value === 'default' || value === 'node-http1' ? value : undefined;
+}
+
+function getProtocolVersion(value: unknown): ServerDefinition['protocolVersion'] | undefined {
+  return value === 'auto' || value === 'legacy' || value === '2026-07-28' ? value : undefined;
 }
 
 function stringFromAliases(record: Record<string, unknown>, ...keys: string[]): string | undefined {

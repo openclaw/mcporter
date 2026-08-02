@@ -24,10 +24,12 @@ export interface SerializedServerDefinition {
   readonly auth?: string;
   readonly tokenCacheDir?: string;
   readonly clientName?: string;
+  readonly protocolVersion?: ServerDefinition['protocolVersion'];
   readonly oauthClientId?: string;
   readonly oauthClientSecretEnv?: string;
   readonly oauthTokenEndpointAuthMethod?: string;
   readonly oauthRedirectUrl?: string;
+  readonly oauthClientMetadataUrl?: string;
   readonly oauthScope?: string;
   readonly refresh?: ServerDefinition['refresh'];
   readonly httpFetch?: ServerDefinition['httpFetch'];

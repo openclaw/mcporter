@@ -127,6 +127,26 @@ describe('generate-cli runner internals', () => {
     expect(serializeDefinition(definition).refresh).toEqual(definition.refresh);
   });
 
+  it('preserves schema-supported definition aliases in generated CLI definitions', () => {
+    const definition = normalizeDefinition({
+      name: 'aliased',
+      command: 'https://example.com/mcp',
+      token_cache_dir: '/tmp/aliased-token-cache',
+      client_name: 'aliased-client',
+      oauth_redirect_url: 'http://127.0.0.1:3000/callback',
+      oauth_client_metadata_url: 'https://client.example.com/metadata.json',
+      oauth_scope: 'read write',
+    });
+
+    expect(serializeDefinition(definition)).toMatchObject({
+      tokenCacheDir: '/tmp/aliased-token-cache',
+      clientName: 'aliased-client',
+      oauthRedirectUrl: 'http://127.0.0.1:3000/callback',
+      oauthClientMetadataUrl: 'https://client.example.com/metadata.json',
+      oauthScope: 'read write',
+    });
+  });
+
   it('wraps single-token stdio commands when passed via --command', () => {
     const args = ['--command', './scripts/mcp-server.ts'];
     const parsed = parseGenerateFlags([...args]);
