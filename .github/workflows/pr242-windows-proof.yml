@@ -1,0 +1,91 @@
+name: PR 242 Windows live proof
+
+on:
+  push:
+    branches: [triage/pr242-windows-proof]
+
+permissions:
+  contents: read
+
+jobs:
+  native-browser-callback:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: e3b25fc65e568c62a3d284ecd11673f65d8c9fb2
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - run: corepack enable
+      - run: corepack prepare pnpm@10.33.2 --activate
+      - run: pnpm install --frozen-lockfile
+
+      - name: Open a real callback URL through the native Windows launcher
+        shell: pwsh
+        run: |
+          @'
+          import http from 'node:http';
+          import { __oauthInternals } from './src/oauth.ts';
+
+          let resolveRequest;
+          const requestReceived = new Promise((resolve) => {
+            resolveRequest = resolve;
+          });
+          const server = http.createServer((request, response) => {
+            response.writeHead(200, { 'Content-Type': 'text/plain', Connection: 'close' });
+            response.end('MCPorter Windows launcher proof complete.');
+            resolveRequest(request.url ?? '');
+          });
+
+          await new Promise((resolve, reject) => {
+            server.once('error', reject);
+            server.listen(0, '127.0.0.1', resolve);
+          });
+
+          try {
+            const address = server.address();
+            if (!address || typeof address === 'string') {
+              throw new Error('Expected a TCP callback listener');
+            }
+            const target = new URL(`http://127.0.0.1:${address.port}/callback`);
+            target.searchParams.set('quoted', '"value"');
+            target.searchParams.set('first', 'one');
+            target.searchParams.set('second', 'two');
+
+            __oauthInternals.openExternal(target.href);
+
+            const rawPath = await Promise.race([
+              requestReceived,
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Default browser did not reach the callback within 45 seconds')), 45_000)
+              ),
+            ]);
+            const observed = new URL(rawPath, target.origin);
+            const proof = {
+              platform: process.platform,
+              pathname: observed.pathname,
+              quoted: observed.searchParams.get('quoted'),
+              first: observed.searchParams.get('first'),
+              second: observed.searchParams.get('second'),
+            };
+            console.log(JSON.stringify(proof));
+            if (
+              proof.platform !== 'win32' ||
+              proof.pathname !== '/callback' ||
+              proof.quoted !== '"value"' ||
+              proof.first !== 'one' ||
+              proof.second !== 'two'
+            ) {
+              throw new Error(`Unexpected callback proof: ${JSON.stringify(proof)}`);
+            }
+          } finally {
+            await new Promise((resolve) => server.close(resolve));
+          }
+          '@ | Set-Content -Path "$env:RUNNER_TEMP\mcporter-pr242-proof.ts" -Encoding utf8
+
+          pnpm exec tsx "$env:RUNNER_TEMP\mcporter-pr242-proof.ts"
