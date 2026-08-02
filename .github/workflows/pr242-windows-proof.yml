@@ -32,6 +32,7 @@ jobs:
           import http from 'node:http';
           import { __oauthInternals } from './src/oauth.ts';
 
+          async function main() {
           let resolveRequest;
           const requestReceived = new Promise((resolve) => {
             resolveRequest = resolve;
@@ -86,6 +87,12 @@ jobs:
           } finally {
             await new Promise((resolve) => server.close(resolve));
           }
+          }
+
+          main().catch((error) => {
+            console.error(error);
+            process.exitCode = 1;
+          });
           '@ | Set-Content -Path "$env:RUNNER_TEMP\mcporter-pr242-proof.ts" -Encoding utf8
 
           pnpm exec tsx "$env:RUNNER_TEMP\mcporter-pr242-proof.ts"
