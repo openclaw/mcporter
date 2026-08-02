@@ -172,6 +172,20 @@ describe('record/replay transports', () => {
     expect(transport.hasPerRequestStream).toBeUndefined();
   });
 
+  it('forwards the OAuth authorization-response issuer through the recording wrapper', async () => {
+    const finishAuth = vi.fn(async (_code: string, _iss?: string) => {});
+    const inner = Object.assign(new StubTransport(), { finishAuth });
+    const transport = new RecordTransport({
+      inner,
+      recordPath: await tempRecordingPath(),
+      server: 'linear',
+    });
+
+    await transport.finishAuth?.('authorization-code', 'https://issuer.example');
+
+    expect(finishAuth).toHaveBeenCalledWith('authorization-code', 'https://issuer.example');
+  });
+
   it('replays matching requests by method and params using the active request id', async () => {
     const recordPath = await writeRecording([
       send('linear', 1, 'tools/call', { name: 'list_issues', arguments: { limit: 1 } }),
