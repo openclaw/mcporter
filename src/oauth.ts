@@ -110,7 +110,6 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     this.redirectUrlValue = redirectUrl;
     this.logger = logger;
     this.persistence = persistence;
-    validateClientMetadataUrl(definition.oauthClientMetadataUrl);
     this.metadata = {
       client_name: definition.clientName ?? `mcporter (${definition.name})`,
       redirect_uris: [this.redirectUrlValue.toString()],
@@ -134,6 +133,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     provider: PersistentOAuthClientProvider;
     close: () => Promise<void>;
   }> {
+    validateClientMetadataUrl(definition.oauthClientMetadataUrl);
     const persistence = await buildOAuthPersistence(definition, logger);
 
     const server = http.createServer();

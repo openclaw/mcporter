@@ -124,6 +124,41 @@ describe('FileOAuthClientProvider session lifecycle', () => {
     await session.close();
   });
 
+  it('does not leave a callback listener bound when CIMD configuration is invalid', async () => {
+    const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+    tempDirs.push(tokenCacheDir);
+    const definition: ServerDefinition = {
+      name: 'test-oauth-invalid-cimd',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'oauth',
+      tokenCacheDir,
+      oauthClientMetadataUrl: 'http://client.example.com/oauth/metadata.json',
+    };
+    const originalCreateServer = http.createServer.bind(http);
+    const createdServers: http.Server[] = [];
+    const createServerSpy = vi.spyOn(http, 'createServer').mockImplementation((...args) => {
+      const server = originalCreateServer(...args);
+      createdServers.push(server);
+      return server;
+    });
+
+    try {
+      await expect(createOAuthSession(definition, { info: vi.fn(), warn: vi.fn(), error: vi.fn() })).rejects.toThrow();
+      expect(createdServers.every((server) => !server.listening)).toBe(true);
+    } finally {
+      await Promise.all(
+        createdServers.map(
+          (server) =>
+            new Promise<void>((resolve) => {
+              if (!server.listening) return resolve();
+              server.close(() => resolve());
+            })
+        )
+      );
+      createServerSpy.mockRestore();
+    }
+  });
+
   it('round-trips discovery state and resolved URLs through the provider and vault', async () => {
     const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
     tempDirs.push(tokenCacheDir);

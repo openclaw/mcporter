@@ -31,6 +31,7 @@
 - Validate RFC 9207 authorization-response issuers before redeeming callback codes, with server-specific mismatch errors.
 - Bind persisted tokens and client registrations to their authorization-server issuer across interactive and silent refresh flows, discarding mismatches before credentials are transmitted and stamping successful refreshes.
 - Preserve RFC 9207 authorization-response issuer validation while OAuth traffic is wrapped in recording mode.
+- Reject invalid Client ID Metadata Document configuration before binding the loopback OAuth callback listener.
 
 ### TypeScript API
 
