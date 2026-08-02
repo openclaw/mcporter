@@ -33,4 +33,18 @@ describe('Happy-Eyeballs connect attempt timeout', () => {
     ).toBe(false);
     expect(defaults.setDefaultAutoSelectFamilyAttemptTimeout).not.toHaveBeenCalled();
   });
+
+  it.each([
+    "'--network-family-autoselection-attempt-timeout=250'",
+    '  "--network-family-autoselection-attempt-timeout=250"  ',
+    "--trace-warnings '--network-family-autoselection-attempt-timeout 250'",
+  ])('respects quoted NODE_OPTIONS overrides: %s', (nodeOptions) => {
+    const defaults = {
+      getDefaultAutoSelectFamilyAttemptTimeout: vi.fn(() => 250),
+      setDefaultAutoSelectFamilyAttemptTimeout: vi.fn(),
+    };
+
+    expect(configureAutoSelectFamilyAttemptTimeout(defaults, nodeOptions)).toBe(false);
+    expect(defaults.setDefaultAutoSelectFamilyAttemptTimeout).not.toHaveBeenCalled();
+  });
 });

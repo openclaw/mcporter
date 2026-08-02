@@ -23,5 +23,20 @@ export function configureAutoSelectFamilyAttemptTimeout(
 
 function hasExplicitNodeOption(nodeOptions: string | undefined): boolean {
   if (!nodeOptions) return false;
-  return new RegExp(`(?:^|\\s)${NODE_OPTION}(?:=|\\s|$)`).test(nodeOptions);
+  let offset = 0;
+  while (offset < nodeOptions.length) {
+    const index = nodeOptions.indexOf(NODE_OPTION, offset);
+    if (index === -1) return false;
+    const before = nodeOptions[index - 1];
+    const after = nodeOptions[index + NODE_OPTION.length];
+    if (isNodeOptionBoundary(before) && (after === '=' || isNodeOptionBoundary(after))) {
+      return true;
+    }
+    offset = index + NODE_OPTION.length;
+  }
+  return false;
+}
+
+function isNodeOptionBoundary(character: string | undefined): boolean {
+  return character === undefined || character === "'" || character === '"' || /\s/u.test(character);
 }

@@ -6,7 +6,7 @@
 
 - Keep listing and calling usable when a server advertises the same tool name twice or two names that map to one proxy method.
 - Follow `resources/list` cursors automatically so paginated MCP resources are returned in full.
-- Raise Node's untouched Happy-Eyeballs connect-attempt timeout from 250 ms to 1500 ms while preserving explicit user overrides.
+- Raise Node's untouched Happy-Eyeballs connect-attempt timeout from 250 ms to 1500 ms while preserving explicit user overrides, including quoted `NODE_OPTIONS` values.
 - Keep replay recordings usable across MCP protocol-version and mcporter client-version changes.
 - Preserve protocol-version pins and supported snake_case config aliases when generating or regenerating standalone CLIs.
 - Support MCP protocol revision 2026-07-28 with automatic modern/legacy negotiation while preserving legacy server compatibility.
