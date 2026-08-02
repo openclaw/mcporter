@@ -1,30 +1,45 @@
 import fs from 'node:fs/promises';
-import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprotocol/client';
+import type {
+  OAuthClientInformationMixed,
+  OAuthDiscoveryState,
+  OAuthTokens,
+  StoredOAuthClientInformation,
+  StoredOAuthTokens,
+} from '@modelcontextprotocol/client';
 import type { ServerDefinition } from './config.js';
 import type { Logger } from './logging.js';
 import { clearLegacyOAuthArtifacts, createOAuthPersistenceStores } from './oauth-persistence-stores.js';
 import { readCachedAccessTokenWithPersistence } from './oauth-token-refresh.js';
 
-export type OAuthClearScope = 'all' | 'client' | 'tokens' | 'verifier' | 'state';
+export type OAuthClearScope = 'all' | 'client' | 'tokens' | 'verifier' | 'state' | 'discovery';
 
 export interface OAuthPersistenceSnapshot {
-  readonly tokens?: OAuthTokens;
-  readonly clientInfo?: OAuthClientInformationMixed;
+  readonly tokens?: StoredOAuthTokens;
+  readonly clientInfo?: StoredOAuthClientInformation;
   readonly codeVerifier?: string;
   readonly state?: string;
+  readonly discoveryState?: OAuthDiscoveryState;
+  readonly authorizationServerUrl?: string;
+  readonly resourceUrl?: string;
 }
 
 export interface OAuthPersistence {
   describe(): string;
   readSnapshot(): Promise<OAuthPersistenceSnapshot>;
-  readTokens(): Promise<OAuthTokens | undefined>;
-  saveTokens(tokens: OAuthTokens): Promise<void>;
-  readClientInfo(): Promise<OAuthClientInformationMixed | undefined>;
-  saveClientInfo(info: OAuthClientInformationMixed): Promise<void>;
+  readTokens(): Promise<StoredOAuthTokens | undefined>;
+  saveTokens(tokens: StoredOAuthTokens): Promise<void>;
+  readClientInfo(): Promise<StoredOAuthClientInformation | undefined>;
+  saveClientInfo(info: StoredOAuthClientInformation): Promise<void>;
   readCodeVerifier(): Promise<string | undefined>;
   saveCodeVerifier(value: string): Promise<void>;
   readState(): Promise<string | undefined>;
   saveState(value: string): Promise<void>;
+  readDiscoveryState(): Promise<OAuthDiscoveryState | undefined>;
+  saveDiscoveryState(value: OAuthDiscoveryState): Promise<void>;
+  readAuthorizationServerUrl(): Promise<string | undefined>;
+  saveAuthorizationServerUrl(value: string): Promise<void>;
+  readResourceUrl(): Promise<string | undefined>;
+  saveResourceUrl(value: string): Promise<void>;
   clear(scope: OAuthClearScope): Promise<void>;
   // Clears a rejected token generation and, when supplied, only the exact
   // client registration used by that refresh. Concurrent auth state survives.

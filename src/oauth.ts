@@ -4,10 +4,13 @@ import http from 'node:http';
 import { URL } from 'node:url';
 import type {
   OAuthClientInformationMixed,
+  OAuthDiscoveryState,
   OAuthClientMetadata,
   OAuthClientProvider,
-  OAuthTokens,
+  StoredOAuthClientInformation,
+  StoredOAuthTokens,
 } from '@modelcontextprotocol/client';
+import { validateClientMetadataUrl } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from './config.js';
 import { buildStaticClientInformation } from './oauth-client-info.js';
 import type { OAuthPersistence } from './oauth-persistence.js';
@@ -22,6 +25,11 @@ const INTERACTIVE_AUTHORIZATION_TTL_MS = 300_000;
 export interface OAuthAuthorizationRequest {
   authorizationUrl: string;
   redirectUrl: string;
+}
+
+export interface OAuthAuthorizationResponse {
+  code: string;
+  iss?: string;
 }
 
 export interface OAuthSessionOptions {
@@ -83,7 +91,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   private readonly logger: OAuthLogger;
   private readonly persistence: OAuthPersistence;
   private redirectUrlValue: URL;
-  private authorizationDeferred: Deferred<string> | null = null;
+  private authorizationDeferred: Deferred<OAuthAuthorizationResponse> | null = null;
   private authorizationRedirectStarted = false;
   // One interactive authorization transaction per provider: concurrent SDK auth() flows
   // (background GET reconnect + bridged POST both hitting 401) must not each open a
@@ -102,6 +110,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     this.redirectUrlValue = redirectUrl;
     this.logger = logger;
     this.persistence = persistence;
+    validateClientMetadataUrl(definition.oauthClientMetadataUrl);
     this.metadata = {
       client_name: definition.clientName ?? `mcporter (${definition.name})`,
       redirect_uris: [this.redirectUrlValue.toString()],
@@ -207,6 +216,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
         const code = parsed.searchParams.get('code');
         const error = parsed.searchParams.get('error');
         const receivedState = parsed.searchParams.get('state');
+        const iss = parsed.searchParams.get('iss') ?? undefined;
         const expectedState = await this.persistence.readState();
         if (expectedState && receivedState !== expectedState) {
           res.statusCode = 400;
@@ -222,7 +232,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
           res.statusCode = 200;
           res.setHeader('Content-Type', 'text/html');
           res.end('<html><body><h1>Authorization successful</h1><p>You can return to the CLI.</p></body></html>');
-          this.authorizationDeferred?.resolve(code);
+          this.authorizationDeferred?.resolve({ code, iss });
           this.authorizationDeferred = null;
           this.clearInteractiveAuthorization();
         } else if (error) {
@@ -255,6 +265,10 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     return this.metadata;
   }
 
+  get clientMetadataUrl(): string | undefined {
+    return this.definition.oauthClientMetadataUrl;
+  }
+
   async state(): Promise<string> {
     const existing = await this.persistence.readState();
     if (existing) {
@@ -265,23 +279,35 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     return state;
   }
 
-  async clientInformation(): Promise<OAuthClientInformationMixed | undefined> {
+  async clientInformation(ctx?: { issuer: string }): Promise<StoredOAuthClientInformation | undefined> {
     const staticClient = buildStaticClientInformation(this.definition, { redirectUrl: this.redirectUrlValue });
     if (staticClient) {
-      return staticClient;
+      return { ...staticClient, ...(ctx ? { issuer: ctx.issuer } : {}) };
     }
-    return this.persistence.readClientInfo();
+    const stored = await this.persistence.readClientInfo();
+    if (ctx && stored?.issuer && !issuersMatch(stored.issuer, ctx.issuer)) {
+      await this.persistence.clear('client');
+      this.logger.info(`Discarded OAuth client registration for ${this.definition.name} after issuer changed.`);
+      return undefined;
+    }
+    return stored;
   }
 
-  async saveClientInformation(clientInformation: OAuthClientInformationMixed): Promise<void> {
+  async saveClientInformation(clientInformation: StoredOAuthClientInformation): Promise<void> {
     await this.persistence.saveClientInfo(clientInformation);
   }
 
-  async tokens(): Promise<OAuthTokens | undefined> {
-    return this.persistence.readTokens();
+  async tokens(ctx?: { issuer: string }): Promise<StoredOAuthTokens | undefined> {
+    const stored = await this.persistence.readTokens();
+    if (ctx && stored?.issuer && !issuersMatch(stored.issuer, ctx.issuer)) {
+      await this.persistence.clear('tokens');
+      this.logger.info(`Discarded OAuth tokens for ${this.definition.name} after issuer changed.`);
+      return undefined;
+    }
+    return stored;
   }
 
-  async saveTokens(tokens: OAuthTokens): Promise<void> {
+  async saveTokens(tokens: StoredOAuthTokens): Promise<void> {
     await this.persistence.saveTokens(tokens);
     this.logger.info(`Saved OAuth tokens for ${this.definition.name} (${this.persistence.describe()})`);
   }
@@ -347,7 +373,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   }
 
   // invalidateCredentials removes cached files to force the next OAuth flow.
-  async invalidateCredentials(scope: 'all' | 'client' | 'tokens' | 'verifier'): Promise<void> {
+  async invalidateCredentials(scope: 'all' | 'client' | 'tokens' | 'verifier' | 'discovery'): Promise<void> {
     if (scope === 'all' || scope === 'verifier') {
       // The pending transaction's verifier is gone; let the next flow claim a new prompt.
       this.clearInteractiveAuthorization();
@@ -355,9 +381,37 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     await this.persistence.clear(scope);
   }
 
+  async saveDiscoveryState(state: OAuthDiscoveryState): Promise<void> {
+    await this.persistence.saveDiscoveryState(state);
+  }
+
+  async discoveryState(): Promise<OAuthDiscoveryState | undefined> {
+    return this.persistence.readDiscoveryState();
+  }
+
+  async saveAuthorizationServerUrl(url: string): Promise<void> {
+    await this.persistence.saveAuthorizationServerUrl(url);
+  }
+
+  async authorizationServerUrl(): Promise<string | undefined> {
+    return this.persistence.readAuthorizationServerUrl();
+  }
+
+  async saveResourceUrl(url: string): Promise<void> {
+    await this.persistence.saveResourceUrl(url);
+  }
+
+  async resourceUrl(): Promise<string | undefined> {
+    return this.persistence.readResourceUrl();
+  }
+
   // waitForAuthorizationCode resolves once the local callback server captures a redirect.
   // The same deferred is shared with redirectToAuthorization so callback resolution is stable.
   async waitForAuthorizationCode(): Promise<string> {
+    return (await this.waitForAuthorizationResponse()).code;
+  }
+
+  async waitForAuthorizationResponse(): Promise<OAuthAuthorizationResponse> {
     return this.ensureAuthorizationDeferred().promise;
   }
 
@@ -380,9 +434,9 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     });
   }
 
-  private ensureAuthorizationDeferred(): Deferred<string> {
+  private ensureAuthorizationDeferred(): Deferred<OAuthAuthorizationResponse> {
     if (!this.authorizationDeferred) {
-      this.authorizationDeferred = createDeferred<string>();
+      this.authorizationDeferred = createDeferred<OAuthAuthorizationResponse>();
     }
     return this.authorizationDeferred;
   }
@@ -408,9 +462,11 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
 export interface OAuthSession {
   provider: OAuthClientProvider & {
     waitForAuthorizationCode: () => Promise<string>;
+    waitForAuthorizationResponse?: () => Promise<OAuthAuthorizationResponse>;
     hasAuthorizationRedirectStarted?: () => boolean;
   };
   waitForAuthorizationCode: () => Promise<string>;
+  waitForAuthorizationResponse?: () => Promise<OAuthAuthorizationResponse>;
   hasAuthorizationRedirectStarted?: () => boolean;
   close: () => Promise<void>;
 }
@@ -423,10 +479,12 @@ export async function createOAuthSession(
 ): Promise<OAuthSession> {
   const { provider, close } = await PersistentOAuthClientProvider.create(definition, logger, options);
   const waitForAuthorizationCode = () => provider.waitForAuthorizationCode();
+  const waitForAuthorizationResponse = () => provider.waitForAuthorizationResponse();
   const hasAuthorizationRedirectStarted = () => provider.hasAuthorizationRedirectStarted();
   return {
     provider,
     waitForAuthorizationCode,
+    waitForAuthorizationResponse,
     hasAuthorizationRedirectStarted,
     close,
   };
@@ -451,6 +509,14 @@ function firstRedirectUri(client: OAuthClientInformationMixed | undefined): stri
   }
   const [first] = redirectUris;
   return typeof first === 'string' ? first : undefined;
+}
+
+function issuersMatch(first: string, second: string): boolean {
+  return (
+    first === second ||
+    (first.endsWith('/') && first.slice(0, -1) === second) ||
+    (second.endsWith('/') && second.slice(0, -1) === first)
+  );
 }
 
 export const __oauthInternals = {

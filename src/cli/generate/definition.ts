@@ -196,6 +196,7 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
     'oauth_token_endpoint_auth_method'
   );
   const oauthRedirectUrl = typeof def.oauthRedirectUrl === 'string' ? def.oauthRedirectUrl : undefined;
+  const oauthClientMetadataUrl = stringFromAliases(record, 'oauthClientMetadataUrl', 'oauth_client_metadata_url');
   const oauthScope = typeof def.oauthScope === 'string' ? def.oauthScope : undefined;
   const refresh = getRefresh(record.refresh);
   const httpFetch = normalizeHttpFetch(stringFromAliases(record, 'httpFetch', 'http_fetch'));
@@ -220,6 +221,7 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
     oauthClientSecretEnv,
     oauthTokenEndpointAuthMethod,
     oauthRedirectUrl,
+    oauthClientMetadataUrl,
     oauthScope,
     oauthCommand,
     refresh,

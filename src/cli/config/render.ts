@@ -14,6 +14,7 @@ export type SerializedServerDefinition = {
   oauthClientSecretEnv?: string;
   oauthTokenEndpointAuthMethod?: string;
   oauthRedirectUrl?: string;
+  oauthClientMetadataUrl?: string;
   oauthScope?: string;
   refresh?: ServerDefinition['refresh'];
   httpFetch?: ServerDefinition['httpFetch'];

@@ -136,6 +136,8 @@ export const RawEntrySchema = z
       .describe('OAuth token endpoint auth method, e.g. client_secret_post'),
     oauthRedirectUrl: z.string().optional().describe('Custom OAuth redirect URL (camelCase)'),
     oauth_redirect_url: z.string().optional().describe('Custom OAuth redirect URL (snake_case)'),
+    oauthClientMetadataUrl: z.string().optional().describe('OAuth Client ID Metadata Document URL (camelCase)'),
+    oauth_client_metadata_url: z.string().optional().describe('OAuth Client ID Metadata Document URL (snake_case)'),
     oauthScope: z.string().optional().describe('OAuth scope override (camelCase)'),
     oauth_scope: z.string().optional().describe('OAuth scope override (snake_case)'),
     oauthCommand: z
@@ -265,6 +267,7 @@ export interface ServerDefinition {
   readonly oauthClientSecretEnv?: string;
   readonly oauthTokenEndpointAuthMethod?: string;
   readonly oauthRedirectUrl?: string;
+  readonly oauthClientMetadataUrl?: string;
   readonly oauthScope?: string;
   readonly oauthCommand?: {
     readonly args: string[];

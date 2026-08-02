@@ -4,8 +4,10 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { resolveClientMetadata } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from '../src/config.js';
 import { __oauthInternals, createOAuthSession } from '../src/oauth.js';
+import { loadVaultEntry } from '../src/oauth-vault.js';
 import { createIsolatedTestHome, type IsolatedTestHome } from './helpers/isolated-test-home.js';
 
 type StatefulProvider = {
@@ -102,6 +104,90 @@ describe('FileOAuthClientProvider session lifecycle', () => {
     expect((session.provider as { clientMetadata: { scope?: string } }).clientMetadata.scope).toBe(
       'openid email profile'
     );
+    await session.close();
+  });
+
+  it('surfaces CIMD config and lets the SDK derive native application_type', async () => {
+    const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+    tempDirs.push(tokenCacheDir);
+    const definition: ServerDefinition = {
+      name: 'test-oauth-cimd',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'oauth',
+      tokenCacheDir,
+      oauthClientMetadataUrl: 'https://client.example.com/oauth/metadata.json',
+    };
+    const session = await createOAuthSession(definition, { info: vi.fn(), warn: vi.fn(), error: vi.fn() });
+
+    expect(session.provider.clientMetadataUrl).toBe('https://client.example.com/oauth/metadata.json');
+    expect(resolveClientMetadata(session.provider).application_type).toBe('native');
+    await session.close();
+  });
+
+  it('round-trips discovery state and resolved URLs through the provider and vault', async () => {
+    const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+    tempDirs.push(tokenCacheDir);
+    const definition: ServerDefinition = {
+      name: 'test-oauth-discovery',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'oauth',
+      tokenCacheDir,
+    };
+    const session = await createOAuthSession(definition, { info: vi.fn(), warn: vi.fn(), error: vi.fn() });
+    const state = { authorizationServerUrl: 'https://auth.example.com' };
+
+    await session.provider.saveDiscoveryState?.(state);
+    await session.provider.saveAuthorizationServerUrl?.('https://auth.example.com');
+    await session.provider.saveResourceUrl?.('https://example.com/mcp');
+
+    await expect(session.provider.discoveryState?.()).resolves.toEqual(state);
+    await expect(session.provider.authorizationServerUrl?.()).resolves.toBe('https://auth.example.com');
+    await expect(session.provider.resourceUrl?.()).resolves.toBe('https://example.com/mcp');
+    await expect(loadVaultEntry(definition)).resolves.toMatchObject({
+      discoveryState: state,
+      authorizationServerUrl: 'https://auth.example.com',
+      resourceUrl: 'https://example.com/mcp',
+    });
+    await session.close();
+  });
+
+  it('discards issuer-mismatched credentials but accepts legacy unstamped records', async () => {
+    const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+    tempDirs.push(tokenCacheDir);
+    const definition: ServerDefinition = {
+      name: 'test-oauth-issuer-binding',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'oauth',
+      tokenCacheDir,
+    };
+    const session = await createOAuthSession(definition, { info: vi.fn(), warn: vi.fn(), error: vi.fn() });
+    await session.provider.saveTokens({
+      access_token: 'old-token',
+      token_type: 'Bearer',
+      issuer: 'https://old-issuer.example',
+    });
+    await session.provider.saveClientInformation?.({
+      client_id: 'old-client',
+      issuer: 'https://old-issuer.example',
+    });
+
+    await expect(session.provider.tokens({ issuer: 'https://new-issuer.example' })).resolves.toBeUndefined();
+    await expect(session.provider.clientInformation({ issuer: 'https://new-issuer.example' })).resolves.toBeUndefined();
+    await expect(fs.access(path.join(tokenCacheDir, 'tokens.json'))).rejects.toThrow();
+    await expect(fs.access(path.join(tokenCacheDir, 'client.json'))).rejects.toThrow();
+
+    await session.provider.saveTokens({ access_token: 'legacy-token', token_type: 'Bearer' });
+    await expect(session.provider.tokens({ issuer: 'https://new-issuer.example' })).resolves.toMatchObject({
+      access_token: 'legacy-token',
+    });
+    await session.provider.saveTokens({
+      access_token: 'stamped-token',
+      token_type: 'Bearer',
+      issuer: 'https://new-issuer.example',
+    });
+    await expect(session.provider.tokens({ issuer: 'https://new-issuer.example' })).resolves.toMatchObject({
+      issuer: 'https://new-issuer.example',
+    });
     await session.close();
   });
 

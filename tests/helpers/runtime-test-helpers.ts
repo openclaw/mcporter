@@ -66,16 +66,16 @@ export class MockTransport implements Transport {
   public readonly calls: string[] = [];
   public readonly close = vi.fn(async () => {});
 
-  constructor(private readonly finishAuthImpl?: (code: string) => Promise<void>) {}
+  constructor(private readonly finishAuthImpl?: (code: string, iss?: string) => Promise<void>) {}
 
   async start(): Promise<void> {}
 
   async send(_message: JSONRPCMessage, _options?: TransportSendOptions): Promise<void> {}
 
-  async finishAuth(code: string): Promise<void> {
+  async finishAuth(code: string, iss?: string): Promise<void> {
     this.calls.push(code);
     if (this.finishAuthImpl) {
-      await this.finishAuthImpl(code);
+      await this.finishAuthImpl(code, iss);
     }
   }
 }

@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprotocol/client';
+import type { OAuthClientInformationMixed, OAuthDiscoveryState, OAuthTokens } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from './config.js';
 import { readJsonFile, withFileLock, writeJsonFile, writeTextFileAtomic } from './fs-json.js';
 import type { Logger } from './logging.js';
@@ -55,6 +55,9 @@ export class DirectoryPersistence implements OAuthPersistence {
   private readonly codeVerifierPath: string;
   private readonly statePath: string;
   private readonly serverUrlPath: string;
+  private readonly discoveryStatePath: string;
+  private readonly authorizationServerUrlPath: string;
+  private readonly resourceUrlPath: string;
 
   constructor(
     private readonly root: string,
@@ -67,6 +70,9 @@ export class DirectoryPersistence implements OAuthPersistence {
     this.codeVerifierPath = path.join(root, 'code_verifier.txt');
     this.statePath = path.join(root, 'state.txt');
     this.serverUrlPath = path.join(root, 'server_url.txt');
+    this.discoveryStatePath = path.join(root, 'discovery.json');
+    this.authorizationServerUrlPath = path.join(root, 'authorization_server_url.txt');
+    this.resourceUrlPath = path.join(root, 'resource_url.txt');
   }
 
   describe(): string {
@@ -116,13 +122,17 @@ export class DirectoryPersistence implements OAuthPersistence {
 
   async readSnapshot(): Promise<OAuthPersistenceSnapshot> {
     await this.reconcileServerUrl();
-    const [tokens, clientInfo, codeVerifier, state] = await Promise.all([
-      this.readTokensAfterReconcile(),
-      this.readClientInfoAfterReconcile(),
-      this.readCodeVerifierAfterReconcile(),
-      this.readStateAfterReconcile(),
-    ]);
-    return { tokens, clientInfo, codeVerifier, state };
+    const [tokens, clientInfo, codeVerifier, state, discoveryState, authorizationServerUrl, resourceUrl] =
+      await Promise.all([
+        this.readTokensAfterReconcile(),
+        this.readClientInfoAfterReconcile(),
+        this.readCodeVerifierAfterReconcile(),
+        this.readStateAfterReconcile(),
+        this.readDiscoveryStateAfterReconcile(),
+        this.readTextAfterReconcile(this.authorizationServerUrlPath),
+        this.readTextAfterReconcile(this.resourceUrlPath),
+      ]);
+    return { tokens, clientInfo, codeVerifier, state, discoveryState, authorizationServerUrl, resourceUrl };
   }
 
   async readTokens(): Promise<OAuthTokens | undefined> {
@@ -253,6 +263,52 @@ export class DirectoryPersistence implements OAuthPersistence {
     await writeJsonFile(this.statePath, value);
   }
 
+  async readDiscoveryState(): Promise<OAuthDiscoveryState | undefined> {
+    await this.reconcileServerUrl();
+    return this.readDiscoveryStateAfterReconcile();
+  }
+
+  private async readDiscoveryStateAfterReconcile(): Promise<OAuthDiscoveryState | undefined> {
+    return readJsonFile<OAuthDiscoveryState>(this.discoveryStatePath);
+  }
+
+  async saveDiscoveryState(value: OAuthDiscoveryState): Promise<void> {
+    await this.reconcileServerUrl();
+    await this.ensureDir();
+    await writeJsonFile(this.discoveryStatePath, value);
+  }
+
+  async readAuthorizationServerUrl(): Promise<string | undefined> {
+    await this.reconcileServerUrl();
+    return this.readTextAfterReconcile(this.authorizationServerUrlPath);
+  }
+
+  async saveAuthorizationServerUrl(value: string): Promise<void> {
+    await this.reconcileServerUrl();
+    await this.ensureDir();
+    await writeTextFileAtomic(this.authorizationServerUrlPath, value);
+  }
+
+  async readResourceUrl(): Promise<string | undefined> {
+    await this.reconcileServerUrl();
+    return this.readTextAfterReconcile(this.resourceUrlPath);
+  }
+
+  async saveResourceUrl(value: string): Promise<void> {
+    await this.reconcileServerUrl();
+    await this.ensureDir();
+    await writeTextFileAtomic(this.resourceUrlPath, value);
+  }
+
+  private async readTextAfterReconcile(filePath: string): Promise<string | undefined> {
+    try {
+      return (await fs.readFile(filePath, 'utf8')).trim() || undefined;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      throw error;
+    }
+  }
+
   async clear(scope: OAuthClearScope): Promise<void> {
     await this.reconcileServerUrl();
     await this.clearFiles(scope);
@@ -271,6 +327,9 @@ export class DirectoryPersistence implements OAuthPersistence {
     }
     if (scope === 'all' || scope === 'state') {
       files.push(this.statePath);
+    }
+    if (scope === 'all' || scope === 'discovery') {
+      files.push(this.discoveryStatePath, this.authorizationServerUrlPath, this.resourceUrlPath);
     }
     await Promise.all(files.map((file) => this.unlinkIfPresent(file)));
   }
@@ -300,6 +359,9 @@ export class VaultPersistence implements OAuthPersistence {
       clientInfo: recovery.entry?.clientInfo,
       codeVerifier: recovery.entry?.codeVerifier,
       state: recovery.entry?.state,
+      discoveryState: recovery.entry?.discoveryState,
+      authorizationServerUrl: recovery.entry?.authorizationServerUrl,
+      resourceUrl: recovery.entry?.resourceUrl,
     };
   }
 
@@ -341,6 +403,33 @@ export class VaultPersistence implements OAuthPersistence {
   async saveState(value: string): Promise<void> {
     await this.reconcileServerUrl();
     await saveVaultEntry(this.definition, { state: value });
+  }
+
+  async readDiscoveryState(): Promise<OAuthDiscoveryState | undefined> {
+    return (await this.readSnapshot()).discoveryState;
+  }
+
+  async saveDiscoveryState(value: OAuthDiscoveryState): Promise<void> {
+    await this.reconcileServerUrl();
+    await saveVaultEntry(this.definition, { discoveryState: value });
+  }
+
+  async readAuthorizationServerUrl(): Promise<string | undefined> {
+    return (await this.readSnapshot()).authorizationServerUrl;
+  }
+
+  async saveAuthorizationServerUrl(value: string): Promise<void> {
+    await this.reconcileServerUrl();
+    await saveVaultEntry(this.definition, { authorizationServerUrl: value });
+  }
+
+  async readResourceUrl(): Promise<string | undefined> {
+    return (await this.readSnapshot()).resourceUrl;
+  }
+
+  async saveResourceUrl(value: string): Promise<void> {
+    await this.reconcileServerUrl();
+    await saveVaultEntry(this.definition, { resourceUrl: value });
   }
 
   async clear(scope: OAuthClearScope): Promise<void> {
@@ -393,6 +482,9 @@ export class CompositePersistence implements OAuthPersistence {
       clientInfo: clientInfo.value,
       codeVerifier: this.firstSnapshotValue(snapshots, 'codeVerifier').value,
       state: this.firstSnapshotValue(snapshots, 'state').value,
+      discoveryState: this.firstSnapshotValue(snapshots, 'discoveryState').value,
+      authorizationServerUrl: this.firstSnapshotValue(snapshots, 'authorizationServerUrl').value,
+      resourceUrl: this.firstSnapshotValue(snapshots, 'resourceUrl').value,
     };
   }
 
@@ -515,6 +607,38 @@ export class CompositePersistence implements OAuthPersistence {
     await Promise.all(this.stores.map((store) => store.saveState(value)));
   }
 
+  async readDiscoveryState(): Promise<OAuthDiscoveryState | undefined> {
+    return this.readFirst((store) => store.readDiscoveryState());
+  }
+
+  async saveDiscoveryState(value: OAuthDiscoveryState): Promise<void> {
+    await Promise.all(this.stores.map((store) => store.saveDiscoveryState(value)));
+  }
+
+  async readAuthorizationServerUrl(): Promise<string | undefined> {
+    return this.readFirst((store) => store.readAuthorizationServerUrl());
+  }
+
+  async saveAuthorizationServerUrl(value: string): Promise<void> {
+    await Promise.all(this.stores.map((store) => store.saveAuthorizationServerUrl(value)));
+  }
+
+  async readResourceUrl(): Promise<string | undefined> {
+    return this.readFirst((store) => store.readResourceUrl());
+  }
+
+  async saveResourceUrl(value: string): Promise<void> {
+    await Promise.all(this.stores.map((store) => store.saveResourceUrl(value)));
+  }
+
+  private async readFirst<T>(read: (store: OAuthPersistence) => Promise<T | undefined>): Promise<T | undefined> {
+    for (const store of this.stores) {
+      const value = await read(store);
+      if (value !== undefined) return value;
+    }
+    return undefined;
+  }
+
   async clear(scope: OAuthClearScope): Promise<void> {
     await Promise.all(this.stores.map((store) => store.clear(scope)));
   }
@@ -537,7 +661,15 @@ export async function createOAuthPersistenceStores(
   if (!definition.tokenCacheDir) {
     const legacy = new DirectoryPersistence(legacyDir, logger, serverUrl, true);
     const snapshot = await legacy.readSnapshot();
-    if (snapshot.tokens || snapshot.clientInfo || snapshot.codeVerifier || snapshot.state) {
+    if (
+      snapshot.tokens ||
+      snapshot.clientInfo ||
+      snapshot.codeVerifier ||
+      snapshot.state ||
+      snapshot.discoveryState ||
+      snapshot.authorizationServerUrl ||
+      snapshot.resourceUrl
+    ) {
       if (snapshot.tokens) {
         await vault.saveTokens(snapshot.tokens);
       }
@@ -549,6 +681,15 @@ export async function createOAuthPersistenceStores(
       }
       if (snapshot.state) {
         await vault.saveState(snapshot.state);
+      }
+      if (snapshot.discoveryState) {
+        await vault.saveDiscoveryState(snapshot.discoveryState);
+      }
+      if (snapshot.authorizationServerUrl) {
+        await vault.saveAuthorizationServerUrl(snapshot.authorizationServerUrl);
+      }
+      if (snapshot.resourceUrl) {
+        await vault.saveResourceUrl(snapshot.resourceUrl);
       }
       logger?.info?.(`Migrated legacy OAuth cache for '${definition.name}' into vault.`);
     }

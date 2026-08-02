@@ -33,6 +33,7 @@ export function normalizeServerEntry(
   const oauthTokenEndpointAuthMethod =
     raw.oauthTokenEndpointAuthMethod ?? raw.oauth_token_endpoint_auth_method ?? undefined;
   const oauthRedirectUrl = raw.oauthRedirectUrl ?? raw.oauth_redirect_url ?? undefined;
+  const oauthClientMetadataUrl = raw.oauthClientMetadataUrl ?? raw.oauth_client_metadata_url ?? undefined;
   const oauthScope = raw.oauthScope ?? raw.oauth_scope ?? undefined;
   const refresh = normalizeRefresh(raw.refresh);
   const httpFetch = normalizeHttpFetch(raw.httpFetch ?? raw.http_fetch);
@@ -86,6 +87,7 @@ export function normalizeServerEntry(
     oauthClientSecretEnv,
     oauthTokenEndpointAuthMethod,
     oauthRedirectUrl,
+    oauthClientMetadataUrl,
     oauthScope,
     oauthCommand: defaultedOauthCommand,
     refresh,

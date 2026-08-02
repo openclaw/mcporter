@@ -128,6 +128,33 @@ describe('oauth persistence', () => {
     expect(entry?.tokens?.access_token).toBe('new-token');
   });
 
+  it('round-trips discovery state and resolved URLs through directory and vault stores', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-discovery-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+    const definition = mkDef('discovery-service', path.join(tmp, 'cache'));
+    const persistence = await buildOAuthPersistence(definition);
+    const discoveryState = {
+      authorizationServerUrl: 'https://auth.example.com',
+      resourceMetadataUrl: 'https://example.com/.well-known/oauth-protected-resource',
+    };
+
+    await persistence.saveDiscoveryState(discoveryState);
+    await persistence.saveAuthorizationServerUrl('https://auth.example.com');
+    await persistence.saveResourceUrl('https://example.com/mcp');
+
+    await expect(persistence.readDiscoveryState()).resolves.toEqual(discoveryState);
+    await expect(persistence.readAuthorizationServerUrl()).resolves.toBe('https://auth.example.com');
+    await expect(persistence.readResourceUrl()).resolves.toBe('https://example.com/mcp');
+    const vaultEntry = await loadVaultEntry(definition);
+    expect(vaultEntry).toMatchObject({
+      discoveryState,
+      authorizationServerUrl: 'https://auth.example.com',
+      resourceUrl: 'https://example.com/mcp',
+    });
+  });
+
   it('preserves cached OAuth state when the configured server URL is unchanged', async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-url-same-'));
     tempRoots.push(tmp);
@@ -675,7 +702,7 @@ describe('oauth persistence', () => {
 
     await clearVaultEntry(mkDef('missing'), 'all');
 
-    expect(await readJsonFile(vaultPath)).toEqual({ version: 1, entries: {} });
+    expect(await readJsonFile(vaultPath)).toEqual({ version: 2, entries: {} });
     await expect(fs.access(`${vaultPath}.lock`)).rejects.toThrow();
   });
 

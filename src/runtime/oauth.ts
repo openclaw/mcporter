@@ -1,6 +1,12 @@
-import { auth as sdkAuth, type Client, type OAuthTokens, type Transport } from '@modelcontextprotocol/client';
+import {
+  auth as sdkAuth,
+  type Client,
+  IssuerMismatchError,
+  type OAuthTokens,
+  type Transport,
+} from '@modelcontextprotocol/client';
 import type { Logger } from '../logging.js';
-import type { OAuthSession } from '../oauth.js';
+import type { OAuthAuthorizationResponse, OAuthSession } from '../oauth.js';
 import { isUnauthorizedError } from '../runtime-oauth-support.js';
 
 export const DEFAULT_OAUTH_CODE_TIMEOUT_MS = 300_000;
@@ -11,7 +17,7 @@ const PROACTIVE_TOKEN_SKEW_SECONDS = 60;
 
 export interface OAuthCapableTransport extends Transport {
   close(): Promise<void>;
-  finishAuth?: (authorizationCode: string) => Promise<void>;
+  finishAuth?: (authorizationCode: string, iss?: string) => Promise<void>;
 }
 
 export interface ConnectWithAuthOptions {
@@ -218,7 +224,7 @@ async function completeAuthorizationChallenge(
   if (session.hasAuthorizationRedirectStarted?.() === false) {
     throw new OAuthAuthorizationNotStartedError(options.serverName ?? 'unknown', connectError);
   }
-  const code = await waitForAuthorizationCodeWithTimeout(
+  const response = await waitForAuthorizationResponseWithTimeout(
     session,
     logger,
     options.serverName,
@@ -228,7 +234,7 @@ async function completeAuthorizationChallenge(
     logger.warn('Transport does not support finishAuth; cannot complete OAuth flow automatically.');
     throw connectError;
   }
-  await transport.finishAuth(code);
+  await finishAuthorization(transport, response, options.serverName);
   if (!options.recreateTransport) {
     return transport;
   }
@@ -268,13 +274,13 @@ async function completeProactiveAuthorization(
     if (typeof transport.finishAuth !== 'function') {
       throw new Error('Transport does not support finishAuth; cannot complete OAuth flow automatically.');
     }
-    const code = await waitForAuthorizationCodeWithTimeout(
+    const response = await waitForAuthorizationResponseWithTimeout(
       session,
       logger,
       options.serverName,
       options.oauthTimeoutMs ?? DEFAULT_OAUTH_CODE_TIMEOUT_MS
     );
-    await transport.finishAuth(code);
+    await finishAuthorization(transport, response, options.serverName);
     await session.close().catch(() => {});
   } catch (error) {
     throw markOAuthFlowError(error);
@@ -309,6 +315,58 @@ export function waitForAuthorizationCodeWithTimeout(
       }
     );
   });
+}
+
+export function waitForAuthorizationResponseWithTimeout(
+  session: OAuthSession,
+  logger: Logger,
+  serverName?: string,
+  timeoutMs = DEFAULT_OAUTH_CODE_TIMEOUT_MS
+): Promise<OAuthAuthorizationResponse> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return readAuthorizationResponse(session);
+  }
+  const displayName = serverName ?? 'unknown';
+  return new Promise<OAuthAuthorizationResponse>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const error = new OAuthTimeoutError(displayName, timeoutMs);
+      logger.warn(error.message);
+      reject(error);
+    }, timeoutMs);
+    readAuthorizationResponse(session).then(
+      (response) => {
+        clearTimeout(timer);
+        resolve(response);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
+async function readAuthorizationResponse(session: OAuthSession): Promise<OAuthAuthorizationResponse> {
+  if (session.waitForAuthorizationResponse) return session.waitForAuthorizationResponse();
+  return { code: await session.waitForAuthorizationCode() };
+}
+
+async function finishAuthorization(
+  transport: OAuthCapableTransport,
+  response: OAuthAuthorizationResponse,
+  serverName?: string
+): Promise<void> {
+  try {
+    await transport.finishAuth?.(response.code, response.iss);
+  } catch (error) {
+    if (error instanceof IssuerMismatchError && error.kind === 'authorization_response') {
+      throw new Error(
+        `OAuth issuer validation failed for '${serverName ?? 'unknown'}': expected ${JSON.stringify(error.expected)}, got ${JSON.stringify(error.received)}; the authorization code was not redeemed.`,
+        { cause: error }
+      );
+    }
+    throw error;
+  }
 }
 
 export function parseOAuthTimeout(raw: string | undefined): number {

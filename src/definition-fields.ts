@@ -9,6 +9,7 @@ const SHARED_DEFINITION_FIELDS = [
   'oauthClientSecretEnv',
   'oauthTokenEndpointAuthMethod',
   'oauthRedirectUrl',
+  'oauthClientMetadataUrl',
   'oauthScope',
   'refresh',
   'httpFetch',

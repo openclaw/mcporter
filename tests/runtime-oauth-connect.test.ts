@@ -1,4 +1,4 @@
-import { type Client, UnauthorizedError } from '@modelcontextprotocol/client';
+import { type Client, UnauthorizedError, validateAuthorizationResponseIssuer } from '@modelcontextprotocol/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OAuthSession } from '../src/oauth.js';
 import {
@@ -365,6 +365,41 @@ describe('connectWithAuth', () => {
     resolveNextCode('oauth-code-123');
 
     await expect(promise).rejects.toSatisfy((error: unknown) => error === finishAuthError && isOAuthFlowError(error));
+  });
+
+  it('passes callback iss to SDK validation and never redeems a mismatched code', async () => {
+    const client = {
+      connect: vi.fn().mockRejectedValueOnce(new UnauthorizedError('auth needed')),
+    } as unknown as Client;
+    const redeem = vi.fn();
+    const transport = new MockTransport(async (_code, iss) => {
+      validateAuthorizationResponseIssuer({
+        iss,
+        expectedIssuer: 'https://expected.example',
+        issParameterSupported: true,
+      });
+      redeem();
+    });
+    const session = {
+      provider: {},
+      waitForAuthorizationCode: vi.fn(),
+      waitForAuthorizationResponse: vi.fn(async () => ({
+        code: 'should-not-redeem',
+        iss: 'https://unexpected.example',
+      })),
+      close: vi.fn(async () => {}),
+    } as unknown as OAuthSession;
+
+    await expect(
+      connectWithAuth(client, transport, session, createLogger(), {
+        serverName: 'issuer-test',
+        maxAttempts: 1,
+        oauthTimeoutMs: 5000,
+      })
+    ).rejects.toThrow(
+      'OAuth issuer validation failed for \'issuer-test\': expected "https://expected.example", got "https://unexpected.example"; the authorization code was not redeemed.'
+    );
+    expect(redeem).not.toHaveBeenCalled();
   });
 
   it('fails immediately when OAuth never produced an authorization URL', async () => {

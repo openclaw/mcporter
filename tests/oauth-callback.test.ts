@@ -100,6 +100,23 @@ describe('oauth callback handling', () => {
     await expect(wait).resolves.toBe('xyz');
   });
 
+  it('captures the RFC 9207 issuer with the authorization code', async () => {
+    const session = await createOAuthSession(makeDefinition(), logger);
+    cleanup = () => session.close();
+    const provider = session.provider as StatefulProvider;
+    const redirect = new URL(String(provider.redirectUrl));
+    redirect.hostname = '127.0.0.1';
+    const state = await provider.state();
+    const wait = session.waitForAuthorizationResponse!();
+    const okUrl = new URL(redirect);
+    okUrl.searchParams.set('code', 'issuer-code');
+    okUrl.searchParams.set('state', state);
+    okUrl.searchParams.set('iss', 'https://auth.example.com');
+
+    expect(await requestStatus(okUrl)).toBe(200);
+    await expect(wait).resolves.toEqual({ code: 'issuer-code', iss: 'https://auth.example.com' });
+  });
+
   it('rejects callbacks that omit state when expected state exists', async () => {
     const session = await createOAuthSession(makeDefinition(), logger);
     cleanup = () => session.close();

@@ -7,10 +7,17 @@
 - Follow `resources/list` cursors automatically so paginated MCP resources are returned in full.
 - Keep replay recordings usable across MCP protocol-version and mcporter client-version changes.
 - Support MCP protocol revision 2026-07-28 with automatic modern/legacy negotiation while preserving legacy server compatibility.
+- Support interactive form and URL elicitation in terminals across legacy and 2026-07-28 multi-round-trip servers, with immediate declines and a terminal hint in headless contexts.
 
 ### Config
 
 - Add per-server `protocolVersion` / `protocol_version` overrides for `auto`, `legacy`, and pinned `2026-07-28` connections.
+- Add per-server `oauthClientMetadataUrl` / `oauth_client_metadata_url` configuration for Client ID Metadata Documents, with SDK-managed DCR fallback.
+
+### OAuth
+
+- Validate RFC 9207 authorization-response issuers before redeeming callback codes, with server-specific mismatch errors.
+- Bind persisted tokens and client registrations to their authorization-server issuer while accepting legacy unstamped records once and stamping them on the next successful save.
 
 ### Tooling / Dependencies
 

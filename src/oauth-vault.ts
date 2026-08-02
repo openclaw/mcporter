@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
-import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprotocol/client';
+import type { OAuthClientInformationMixed, OAuthDiscoveryState, OAuthTokens } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from './config.js';
 import { readJsonFile, withFileLock, writeJsonFile } from './fs-json.js';
 import {
@@ -24,11 +24,14 @@ export interface VaultEntry {
   clientInfo?: OAuthClientInformationMixed;
   codeVerifier?: string;
   state?: string;
+  discoveryState?: OAuthDiscoveryState;
+  authorizationServerUrl?: string;
+  resourceUrl?: string;
   updatedAt: string;
 }
 
 interface VaultFile {
-  version: 1;
+  version: 1 | 2;
   entries: Record<VaultKey, VaultEntry>;
   serverUrls?: Record<string, string>;
 }
@@ -57,8 +60,16 @@ export function getOAuthVaultPath(): string {
 async function readVaultState(): Promise<VaultReadState> {
   try {
     const existing = await readJsonFile<VaultFile>(getOAuthVaultPath());
-    if (existing && existing.version === 1 && existing.entries && typeof existing.entries === 'object') {
-      return { vault: existing, needsRepair: false };
+    if (
+      existing &&
+      (existing.version === 1 || existing.version === 2) &&
+      existing.entries &&
+      typeof existing.entries === 'object'
+    ) {
+      return {
+        vault: { ...existing, version: 2 } as VaultFile,
+        needsRepair: existing.version !== 2,
+      };
     }
     if (existing !== undefined) {
       return { vault: emptyVault(), needsRepair: true };
@@ -77,7 +88,7 @@ async function readVault(): Promise<VaultFile> {
 }
 
 function emptyVault(): VaultFile {
-  return { version: 1, entries: {} };
+  return { version: 2, entries: {} };
 }
 
 async function writeVault(contents: VaultFile): Promise<void> {
@@ -379,7 +390,7 @@ export async function clearVaultTokensIfMatching(
 
 export async function clearVaultEntry(
   definition: ServerDefinition,
-  scope: 'all' | 'tokens' | 'client' | 'verifier' | 'state'
+  scope: 'all' | 'tokens' | 'client' | 'verifier' | 'state' | 'discovery'
 ): Promise<void> {
   const key = vaultKeyForDefinition(definition);
   await withFileLock(getOAuthVaultPath(), async () => {
@@ -408,6 +419,11 @@ export async function clearVaultEntry(
       }
       if (scope === 'state') {
         delete updated.state;
+      }
+      if (scope === 'discovery') {
+        delete updated.discoveryState;
+        delete updated.authorizationServerUrl;
+        delete updated.resourceUrl;
       }
       updated.updatedAt = new Date().toISOString();
       vault.entries[key] = updated;

@@ -153,6 +153,14 @@
             "description": "Custom OAuth redirect URL (snake_case)",
             "type": "string"
           },
+          "oauthClientMetadataUrl": {
+            "description": "OAuth Client ID Metadata Document URL (camelCase)",
+            "type": "string"
+          },
+          "oauth_client_metadata_url": {
+            "description": "OAuth Client ID Metadata Document URL (snake_case)",
+            "type": "string"
+          },
           "oauthScope": {
             "description": "OAuth scope override (camelCase)",
             "type": "string"

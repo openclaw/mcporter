@@ -125,6 +125,35 @@ describe('config normalization', () => {
     expect(snake?.oauthScope).toBe('email');
   });
 
+  it('normalizes OAuth client metadata URLs from camelCase and snake_case keys', async () => {
+    await fs.mkdir(TEMP_DIR, { recursive: true });
+    const configPath = path.join(TEMP_DIR, 'mcporter-oauth-client-metadata.json');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          camel: {
+            baseUrl: 'https://example.com/mcp',
+            oauthClientMetadataUrl: 'https://client.example.com/camel.json',
+          },
+          snake: {
+            baseUrl: 'https://example.com/mcp',
+            oauth_client_metadata_url: 'https://client.example.com/snake.json',
+          },
+        },
+      }),
+      'utf8'
+    );
+
+    const servers = await loadServerDefinitions({ configPath });
+    expect(servers.find((entry) => entry.name === 'camel')?.oauthClientMetadataUrl).toBe(
+      'https://client.example.com/camel.json'
+    );
+    expect(servers.find((entry) => entry.name === 'snake')?.oauthClientMetadataUrl).toBe(
+      'https://client.example.com/snake.json'
+    );
+  });
+
   it('normalizes HTTP fetch compatibility options', async () => {
     await fs.mkdir(TEMP_DIR, { recursive: true });
     const configPath = path.join(TEMP_DIR, 'mcporter-http-fetch.json');

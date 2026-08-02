@@ -21,6 +21,7 @@ describe('config render helpers', () => {
       oauthClientSecretEnv: 'OAUTH_SECRET',
       oauthTokenEndpointAuthMethod: 'client_secret_post',
       oauthRedirectUrl: 'https://example.com/callback',
+      oauthClientMetadataUrl: 'https://client.example.com/oauth.json',
       oauthScope: 'openid profile',
       refresh: {
         tokenEndpoint: 'https://auth.example.com/token',
@@ -44,6 +45,7 @@ describe('config render helpers', () => {
       oauthClientSecretEnv: 'OAUTH_SECRET',
       oauthTokenEndpointAuthMethod: 'client_secret_post',
       oauthRedirectUrl: 'https://example.com/callback',
+      oauthClientMetadataUrl: 'https://client.example.com/oauth.json',
       oauthScope: 'openid profile',
       refresh: {
         tokenEndpoint: 'https://auth.example.com/token',
