@@ -61,11 +61,11 @@ export async function serveStdio(options: ServeStdioOptions): Promise<void> {
 export async function serveHttp(options: ServeHttpOptions): Promise<http.Server> {
   const handlers = new Map<string, ReturnType<typeof createMcpHandler>>();
   let closing = false;
-  const handlerFor = (pathname: string, bridgeOptions: ServeOptions) => {
-    const existing = handlers.get(pathname);
+  const handlerFor = (key: string, bridgeOptions: ServeOptions) => {
+    const existing = handlers.get(key);
     if (existing) return existing;
     const handler = createMcpHandler(() => createBridgeServer(bridgeOptions));
-    handlers.set(pathname, handler);
+    handlers.set(key, handler);
     return handler;
   };
 
@@ -76,8 +76,10 @@ export async function serveHttp(options: ServeHttpOptions): Promise<http.Server>
     }
     const url = new URL(request.url ?? '/', `http://${DEFAULT_SERVE_HTTP_HOST}`);
     let bridgeOptions: ServeOptions;
+    let handlerKey: string;
     if (url.pathname === '/mcp') {
       bridgeOptions = options;
+      handlerKey = 'all';
     } else if (url.pathname.startsWith('/mcp/')) {
       let only: string;
       try {
@@ -92,11 +94,12 @@ export async function serveHttp(options: ServeHttpOptions): Promise<http.Server>
         return;
       }
       bridgeOptions = { ...options, servers: [only], bare: true };
+      handlerKey = `server:${only}`;
     } else {
       response.writeHead(404).end('Not found');
       return;
     }
-    const handler = handlerFor(url.pathname, bridgeOptions);
+    const handler = handlerFor(handlerKey, bridgeOptions);
     void handleNodeRequest(handler, request, response).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
       if (!response.headersSent) {
