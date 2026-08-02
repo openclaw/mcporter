@@ -6,6 +6,15 @@
 
 - Follow `resources/list` cursors automatically so paginated MCP resources are returned in full.
 - Keep replay recordings usable across MCP protocol-version and mcporter client-version changes.
+- Support MCP protocol revision 2026-07-28 with automatic modern/legacy negotiation while preserving legacy server compatibility.
+
+### Config
+
+- Add per-server `protocolVersion` / `protocol_version` overrides for `auto`, `legacy`, and pinned `2026-07-28` connections.
+
+### Tooling / Dependencies
+
+- Migrate mcporter runtime and serve bridges to the MCP TypeScript SDK v2 client/server packages while retaining SDK v1 as a legacy test fixture.
 
 ## [0.12.4] - 2026-08-02
 

@@ -51,6 +51,8 @@ Replay is strict. For each server, mcporter expects requests to arrive in the sa
 
 This makes recordings useful as reproducible bug fixtures: a replay either follows the captured MCP exchange exactly or fails at the first point where the workflow diverges.
 
+Recordings made against modern servers include the initial `server/discover` probe. Replay matches that probe by method because its negotiation metadata can vary between client versions. Older recordings whose first request is `initialize` are automatically replayed in legacy negotiation mode.
+
 ## Safe regression fixtures
 
 Recording is not automatic redaction. Before using a capture as a regression
