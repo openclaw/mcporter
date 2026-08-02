@@ -1,6 +1,4 @@
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import { Client, type ClientOptions, type Transport, type VersionNegotiationMode } from '@modelcontextprotocol/client';
 import { applyChromeDevtoolsCompat } from '../chrome-devtools-compat.js';
 import { rewriteChromeDevtoolsArgsForRelay } from '../chrome-devtools-relay.js';
 import type { ServerDefinition } from '../config.js';
@@ -11,6 +9,7 @@ import { applyCachedAuthIfAvailable } from './cached-auth.js';
 import { createHttpClientContext } from './http-transport.js';
 import { RecordTransport } from './record-transport.js';
 import { ReplayTransport } from './replay-transport.js';
+import { McporterStdioTransport } from './stdio-transport.js';
 import type { ClientContext, CreateClientContextOptions, WrapRecordTransport } from './transport-types.js';
 import { resolveCommandArgument, resolveCommandArguments } from './utils.js';
 
@@ -35,12 +34,45 @@ const wrapRecordTransport: WrapRecordTransport = <TTransport extends Transport>(
   }) as unknown as TTransport;
 };
 
-async function createReplayClientContext(
-  client: Client,
+const LIST_MAX_PAGES = 100;
+const STDIO_PROBE_TIMEOUT_MS = 3_000;
+
+function resolveNegotiationMode(definition: ServerDefinition): VersionNegotiationMode {
+  switch (definition.protocolVersion) {
+    case 'legacy':
+      return 'legacy';
+    case '2026-07-28':
+      return { pin: '2026-07-28' };
+    default:
+      return 'auto';
+  }
+}
+
+function createClient(
   definition: ServerDefinition,
-  replayPath: string
+  clientInfo: { name: string; version: string },
+  options: { stdio?: boolean; forceLegacy?: boolean } = {}
+): Client {
+  const mode = options.forceLegacy ? 'legacy' : resolveNegotiationMode(definition);
+  const clientOptions: ClientOptions = {
+    listMaxPages: LIST_MAX_PAGES,
+    versionNegotiation: {
+      mode,
+      ...(options.stdio && mode !== 'legacy' ? { probe: { timeoutMs: STDIO_PROBE_TIMEOUT_MS } } : {}),
+    },
+  };
+  return new Client(clientInfo, clientOptions);
+}
+
+async function createReplayClientContext(
+  definition: ServerDefinition,
+  replayPath: string,
+  clientInfo: { name: string; version: string }
 ): Promise<ClientContext> {
   const transport = new ReplayTransport({ recordPath: replayPath, server: definition.name });
+  // Pre-v2 captures start with initialize. Skip a probe those recordings
+  // cannot satisfy; captures containing server/discover replay normally.
+  const client = createClient(definition, clientInfo, { forceLegacy: transport.requiresLegacyNegotiation });
   await client.connect(transport);
   return { client, transport, definition, oauthSession: undefined };
 }
@@ -74,7 +106,7 @@ async function createStdioClientContext(
   if (compat.applied) {
     logger.info(`Injecting chrome-devtools-mcp --autoConnect compatibility patch from ${compat.patchPath}.`);
   }
-  const rawTransport = new StdioClientTransport({
+  const rawTransport = new McporterStdioTransport({
     command,
     args: commandArgs,
     cwd: definition.command.cwd,
@@ -96,21 +128,26 @@ export async function createClientContext(
   clientInfo: { name: string; version: string },
   options: CreateClientContextOptions = {}
 ): Promise<ClientContext> {
-  const client = new Client(clientInfo);
   if (options.replayPath && shouldUseModeForServer(definition, process.env.MCPORTER_REPLAY_SERVER)) {
-    return createReplayClientContext(client, definition, options.replayPath);
+    return createReplayClientContext(definition, options.replayPath, clientInfo);
   }
   const activeDefinition = await applyCachedAuthIfAvailable(definition, logger, options.allowCachedAuth);
 
   return withEnvOverrides(activeDefinition.env, async () => {
     if (activeDefinition.command.kind === 'stdio') {
       return createStdioClientContext(
-        client,
+        createClient(activeDefinition, clientInfo, { stdio: true }),
         activeDefinition as ServerDefinition & { command: Extract<ServerDefinition['command'], { kind: 'stdio' }> },
         logger,
         options
       );
     }
-    return createHttpClientContext(client, activeDefinition, logger, options, wrapRecordTransport);
+    return createHttpClientContext(
+      createClient(activeDefinition, clientInfo),
+      activeDefinition,
+      logger,
+      options,
+      wrapRecordTransport
+    );
   });
 }

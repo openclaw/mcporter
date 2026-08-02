@@ -1,5 +1,4 @@
-import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import type { Client, Transport } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from '../config.js';
 import type { OAuthSession, OAuthSessionOptions } from '../oauth.js';
 

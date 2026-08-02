@@ -159,6 +159,27 @@ describe('config normalization', () => {
     expect(servers.find((entry) => entry.name === 'defaulted')?.httpFetch).toBe('default');
   });
 
+  it('normalizes protocolVersion from camelCase and snake_case keys', async () => {
+    await fs.mkdir(TEMP_DIR, { recursive: true });
+    const configPath = path.join(TEMP_DIR, 'mcporter-protocol-version.json');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          automatic: { baseUrl: 'https://example.com/auto', protocolVersion: 'auto' },
+          legacy: { baseUrl: 'https://example.com/legacy', protocol_version: 'legacy' },
+          modern: { command: 'node', args: ['server.js'], protocolVersion: '2026-07-28' },
+        },
+      }),
+      'utf8'
+    );
+
+    const servers = await loadServerDefinitions({ configPath });
+    expect(servers.find((entry) => entry.name === 'automatic')?.protocolVersion).toBe('auto');
+    expect(servers.find((entry) => entry.name === 'legacy')?.protocolVersion).toBe('legacy');
+    expect(servers.find((entry) => entry.name === 'modern')?.protocolVersion).toBe('2026-07-28');
+  });
+
   it('loads daemon idle timeout from config layers', async () => {
     const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-idle-'));
     const configDir = path.join(rootDir, 'config');

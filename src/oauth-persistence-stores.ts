@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
+import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from './config.js';
 import { readJsonFile, withFileLock, writeJsonFile, writeTextFileAtomic } from './fs-json.js';
 import type { Logger } from './logging.js';

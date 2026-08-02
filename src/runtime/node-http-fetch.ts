@@ -2,7 +2,7 @@ import http from 'node:http';
 import https from 'node:https';
 import { Buffer } from 'node:buffer';
 import { Readable } from 'node:stream';
-import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js';
+import type { FetchLike } from '@modelcontextprotocol/client';
 
 const MAX_REDIRECTS = 20;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);

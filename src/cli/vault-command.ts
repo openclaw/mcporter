@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
+import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprotocol/client';
 import type { Runtime } from '../runtime.js';
 import { clearVaultEntry, getOAuthVaultPath, saveVaultEntry } from '../oauth-vault.js';
 import { CliUsageError } from './errors.js';

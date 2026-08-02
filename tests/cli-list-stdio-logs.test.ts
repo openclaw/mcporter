@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { handleList } from '../src/cli/list-command.js';
 import type { ServerDefinition } from '../src/config.js';
 import type { Runtime, ServerToolInfo } from '../src/runtime.js';
-import * as sdkPatches from '../src/sdk-patches.js';
+import * as stdioLogging from '../src/sdk-stdio-logging.js';
 
 function buildServerDefinition(name: string): ServerDefinition {
   return {
@@ -52,22 +52,22 @@ const originalCI = process.env.CI;
 describe('handleList STDIO log policy', () => {
   beforeEach(() => {
     process.env.CI = '1';
-    sdkPatches.setStdioLogMode('auto');
+    stdioLogging.setStdioLogMode('auto');
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     process.env.CI = originalCI;
-    sdkPatches.setStdioLogMode('auto');
+    stdioLogging.setStdioLogMode('auto');
   });
 
   it('silences STDIO stderr when listing all servers', async () => {
     const definitions = [buildServerDefinition('alpha'), buildServerDefinition('beta')];
     const { runtime, listTools } = createRuntime(definitions);
-    const setModeSpy = vi.spyOn(sdkPatches, 'setStdioLogMode');
-    const observedModes: sdkPatches.StdioLogMode[] = [];
+    const setModeSpy = vi.spyOn(stdioLogging, 'setStdioLogMode');
+    const observedModes: stdioLogging.StdioLogMode[] = [];
     listTools.mockImplementation(async (_name: string, _options?: unknown) => {
-      observedModes.push(sdkPatches.getStdioLogMode());
+      observedModes.push(stdioLogging.getStdioLogMode());
       return [
         {
           name: 'doctor',
@@ -95,7 +95,7 @@ describe('handleList STDIO log policy', () => {
   it('leaves STDIO stderr in auto mode for targeted listings', async () => {
     const definitions = [buildServerDefinition('alpha')];
     const { runtime } = createRuntime(definitions);
-    const setModeSpy = vi.spyOn(sdkPatches, 'setStdioLogMode');
+    const setModeSpy = vi.spyOn(stdioLogging, 'setStdioLogMode');
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {

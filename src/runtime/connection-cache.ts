@@ -1,5 +1,5 @@
 import type { ServerDefinition } from '../config.js';
-import type { RuntimeLogger, ConnectOptions } from '../runtime.js';
+import type { ConnectionInfo, RuntimeLogger, ConnectOptions } from '../runtime.js';
 import { closeTransportAndWait } from '../runtime-process-utils.js';
 import { shouldResetConnection } from './errors.js';
 import { ReplayTransport } from './replay-transport.js';
@@ -29,6 +29,7 @@ export class RuntimeConnectionCache {
   private readonly connectionSetupTails = new Map<string, Promise<void>>();
   private readonly serverGenerations = new Map<string, number>();
   private readonly retirementPromises = new Map<string, Set<Promise<void>>>();
+  private readonly lastConnectionInfo = new Map<string, ConnectionInfo>();
 
   public constructor(
     private readonly definitions: Map<string, ServerDefinition>,
@@ -57,6 +58,7 @@ export class RuntimeConnectionCache {
 
   public supersedeDefinition(server: string, replace: () => void): void {
     this.bumpServerGeneration(server);
+    this.lastConnectionInfo.delete(server.trim());
     replace();
     this.retireCachedEntriesForServer(server);
   }
@@ -75,6 +77,22 @@ export class RuntimeConnectionCache {
       return trimmed.length > 0 ? trimmed : undefined;
     } catch {
       return undefined;
+    }
+  }
+
+  public async getConnectionInfo(server: string): Promise<ConnectionInfo | undefined> {
+    const normalized = server.trim();
+    const active = this.activeClientForServer(server);
+    const fallbackEntries = active ? [] : this.cachedEntriesForServer(server);
+    const cached = active ?? (fallbackEntries.length === 1 ? fallbackEntries[0] : undefined);
+    if (!cached) return this.lastConnectionInfo.get(normalized);
+    try {
+      const { client } = await cached.promise;
+      const info = connectionInfoFromClient(client);
+      this.lastConnectionInfo.set(normalized, info);
+      return info;
+    } catch {
+      return this.lastConnectionInfo.get(normalized);
     }
   }
 
@@ -288,6 +306,9 @@ export class RuntimeConnectionCache {
       disableOAuth,
       recordPath: this.recordPath,
       replayPath: this.replayPath,
+    }).then((context) => {
+      this.lastConnectionInfo.set(normalized, connectionInfoFromClient(context.client));
+      return context;
     });
 
     if (useCache) {
@@ -590,4 +611,12 @@ export class RuntimeConnectionCache {
       allowCachedAuth === true ? 'cached-auth-on' : allowCachedAuth === false ? 'cached-auth-off' : 'cached-auth-unset';
     return `${server}\u0000oauth-disabled:${disableOAuth ? '1' : '0'}\u0000${cachedAuthKey}`;
   }
+}
+
+function connectionInfoFromClient(client: ClientContext['client']): ConnectionInfo {
+  return {
+    protocolVersion:
+      typeof client.getNegotiatedProtocolVersion === 'function' ? client.getNegotiatedProtocolVersion() : undefined,
+    era: typeof client.getProtocolEra === 'function' ? client.getProtocolEra() : undefined,
+  };
 }

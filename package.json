@@ -70,7 +70,8 @@
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
     "acorn": "^8.17.0",
     "commander": "^15.0.0",
     "es-toolkit": "^1.50.0",
@@ -80,6 +81,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@types/estree": "^1.0.9",
     "@types/express": "^5.0.6",
     "@types/node": "^26.1.1",

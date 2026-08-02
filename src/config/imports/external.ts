@@ -130,6 +130,10 @@ function convertExternalEntry(value: Record<string, unknown>): RawEntry | null {
   if (clientName) {
     result.clientName = clientName;
   }
+  const protocolVersion = asString(value.protocolVersion ?? value.protocol_version);
+  if (protocolVersion) {
+    result.protocolVersion = protocolVersion;
+  }
 
   const oauthClientId = asString(value.oauthClientId ?? value.oauth_client_id);
   if (oauthClientId) {

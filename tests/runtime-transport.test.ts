@@ -1,7 +1,11 @@
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import {
+  Client,
+  SdkErrorCode,
+  SdkHttpError,
+  SSEClientTransport,
+  StreamableHTTPClientTransport,
+} from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -68,6 +72,45 @@ afterEach(() => {
 });
 
 describe('createClientContext (HTTP)', () => {
+  it.each([
+    [undefined, 'auto'],
+    ['auto', 'auto'],
+    ['legacy', 'legacy'],
+    ['2026-07-28', { pin: '2026-07-28' }],
+  ] as const)('maps protocolVersion %s to the SDK negotiation mode', async (protocolVersion, expectedMode) => {
+    const definition: ServerDefinition = {
+      ...stubHttpDefinition('https://example.com/mcp'),
+      protocolVersion,
+    };
+    vi.spyOn(Client.prototype, 'connect').mockResolvedValueOnce(undefined);
+
+    const context = await createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 });
+    const negotiation = (
+      context.client as unknown as {
+        _versionNegotiation?: { mode?: unknown; probe?: { timeoutMs?: number } };
+      }
+    )._versionNegotiation;
+    expect(negotiation?.mode).toEqual(expectedMode);
+    expect(negotiation?.probe).toBeUndefined();
+  });
+
+  it('caps in-place stdio probes at three seconds', async () => {
+    const definition: ServerDefinition = {
+      name: 'stdio-auto',
+      command: { kind: 'stdio', command: 'node', args: ['unused.js'], cwd: '/tmp' },
+    };
+    vi.spyOn(Client.prototype, 'connect').mockResolvedValueOnce(undefined);
+
+    const context = await createClientContext(definition, logger, clientInfo);
+    const negotiation = (
+      context.client as unknown as {
+        _versionNegotiation?: { probe?: { timeoutMs?: number } };
+      }
+    )._versionNegotiation;
+    expect(negotiation?.probe?.timeoutMs).toBe(3000);
+    expect(context.transport).toBeInstanceOf(StdioClientTransport);
+  });
+
   it('falls back to SSE when primary connect fails', async () => {
     const definition = stubHttpDefinition('https://example.com/mcp');
 
@@ -116,7 +159,11 @@ describe('createClientContext (HTTP)', () => {
     mocks.connectWithAuth
       .mockImplementationOnce(async (_client, transport) => {
         expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
-        throw markPostAuthConnectError(new StreamableHTTPError(405, 'Failed to open SSE stream: Method Not Allowed'));
+        throw markPostAuthConnectError(
+          new SdkHttpError(SdkErrorCode.ClientHttpNotImplemented, 'Failed to open SSE stream: Method Not Allowed', {
+            status: 405,
+          })
+        );
       })
       .mockImplementationOnce(async (_client, transport) => {
         expect(transport).toBeInstanceOf(SSEClientTransport);
@@ -358,7 +405,7 @@ describe('createClientContext (HTTP)', () => {
     vi.spyOn(Client.prototype, 'connect').mockImplementationOnce(async (transport) => {
       expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
       const fetchOverride = (transport as { _fetch?: unknown })._fetch;
-      expect(fetchOverride).toBeUndefined();
+      expect(fetchOverride).toEqual(expect.any(Function));
     });
 
     await createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 });
@@ -373,7 +420,7 @@ describe('createClientContext (HTTP)', () => {
     vi.spyOn(Client.prototype, 'connect').mockImplementationOnce(async (transport) => {
       expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
       const fetchOverride = (transport as { _fetch?: unknown })._fetch;
-      expect(fetchOverride).toBeUndefined();
+      expect(fetchOverride).toEqual(expect.any(Function));
     });
 
     await createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 });

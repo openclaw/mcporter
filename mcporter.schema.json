@@ -103,6 +103,16 @@
             "description": "Client identifier for server telemetry (snake_case)",
             "type": "string"
           },
+          "protocolVersion": {
+            "description": "MCP protocol negotiation mode (camelCase)",
+            "type": "string",
+            "enum": ["auto", "legacy", "2026-07-28"]
+          },
+          "protocol_version": {
+            "description": "MCP protocol negotiation mode (snake_case)",
+            "type": "string",
+            "enum": ["auto", "legacy", "2026-07-28"]
+          },
           "oauthClientId": {
             "description": "Pre-registered OAuth client id (camelCase)",
             "type": "string"

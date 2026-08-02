@@ -1,4 +1,4 @@
-import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
+import { UnauthorizedError } from '@modelcontextprotocol/client';
 import { describe, expect, it } from 'vitest';
 import { analyzeConnectionError } from '../src/error-classifier.js';
 

@@ -98,14 +98,14 @@ describe('record/replay transports', () => {
     expect((await fs.stat(recordPath)).mode & 0o777).toBe(0o600);
   });
 
-  it('exposes wrapped stdio process metadata for cleanup helpers', async () => {
-    const child = { pid: 12345 } as unknown as import('node:child_process').ChildProcess;
+  it('preserves wrapped stdio public metadata for in-place negotiation', async () => {
+    const stderr = new EventTarget();
     const inner = new StubTransport() as StubTransport & {
       pid: number;
-      _process: import('node:child_process').ChildProcess;
+      stderr: EventTarget;
     };
     inner.pid = 12345;
-    inner._process = child;
+    inner.stderr = stderr;
 
     const transport = new RecordTransport({
       inner,
@@ -113,8 +113,9 @@ describe('record/replay transports', () => {
       server: 'linear',
     });
 
-    expect(transport.pid).toBe(12345);
-    expect(transport._process).toBe(child);
+    const stdioShaped = transport as RecordTransport & { pid: number; stderr: EventTarget };
+    expect(stdioShaped.pid).toBe(12345);
+    expect(stdioShaped.stderr).toBe(stderr);
   });
 
   it('replays matching requests by method and params using the active request id', async () => {
@@ -141,6 +142,33 @@ describe('record/replay transports', () => {
         id: 99,
         result: { content: [{ type: 'text', text: 'recorded' }] },
       },
+    ]);
+  });
+
+  it('detects legacy recordings and matches server/discover probes by method', async () => {
+    const legacyPath = await writeRecording([
+      send('linear', 1, 'initialize', { protocolVersion: '2025-11-25' }),
+      recv('linear', 1, { protocolVersion: '2025-11-25', capabilities: {}, serverInfo: { name: 'legacy' } }),
+    ]);
+    expect(new ReplayTransport({ recordPath: legacyPath, server: 'linear' }).requiresLegacyNegotiation).toBe(true);
+
+    const modernPath = await writeRecording([
+      send('linear', 1, 'server/discover', { requestedVersion: 'recorded' }),
+      recv('linear', 1, { supportedVersions: ['2026-07-28'], capabilities: {} }),
+    ]);
+    const modern = new ReplayTransport({ recordPath: modernPath, server: 'linear' });
+    const received: JSONRPCMessage[] = [];
+    modern.onmessage = (message) => received.push(message);
+    expect(modern.requiresLegacyNegotiation).toBe(false);
+    await modern.send({
+      jsonrpc: '2.0',
+      id: 99,
+      method: 'server/discover',
+      params: { requestedVersion: 'different', _meta: { client: 'new' } },
+    } as JSONRPCMessage);
+    await Promise.resolve();
+    expect(received).toEqual([
+      { jsonrpc: '2.0', id: 99, result: { supportedVersions: ['2026-07-28'], capabilities: {} } },
     ]);
   });
 

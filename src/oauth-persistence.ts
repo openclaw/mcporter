@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
+import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from './config.js';
 import type { Logger } from './logging.js';
 import { clearLegacyOAuthArtifacts, createOAuthPersistenceStores } from './oauth-persistence-stores.js';

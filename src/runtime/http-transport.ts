@@ -1,6 +1,10 @@
-import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
-import { StreamableHTTPClientTransport, StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import {
+  type Client,
+  type FetchLike,
+  SdkHttpError,
+  SSEClientTransport,
+  StreamableHTTPClientTransport,
+} from '@modelcontextprotocol/client';
 import type { ServerDefinition } from '../config.js';
 import { analyzeConnectionError } from '../error-classifier.js';
 import type { Logger } from '../logging.js';
@@ -22,6 +26,7 @@ interface ResolvedHttpTransportOptions {
   requestInit?: RequestInit;
   authProvider?: OAuthSession['provider'];
   fetch?: typeof nodeHttp1Fetch;
+  standaloneSseStarted: Promise<void>;
 }
 
 type HttpClientContextAttempt =
@@ -42,7 +47,7 @@ function extractTransportStatusCode(error: unknown): number | undefined {
 }
 
 function isLegacySseTransportMismatch(error: unknown): boolean {
-  if (error instanceof StreamableHTTPError) return error.code === 404 || error.code === 405;
+  if (error instanceof SdkHttpError) return error.status === 404 || error.status === 405;
   const directStatusCode = extractTransportStatusCode(error);
   if (directStatusCode === 404 || directStatusCode === 405) return true;
   const issue = analyzeConnectionError(error);
@@ -76,10 +81,36 @@ function createHttpTransportOptions(
   if (command.kind !== 'http') throw new Error(`Server '${definition.name}' is not configured for HTTP transport.`);
   const resolvedHeaders = materializeHeaders(command.headers, definition.name);
   const effectiveHeaders = shouldEstablishOAuth ? removeAuthorizationHeader(resolvedHeaders) : resolvedHeaders;
+  const trackedFetch = trackStandaloneSseFetch(resolveHttpFetchOverride(definition));
   return {
     requestInit: effectiveHeaders ? { headers: effectiveHeaders as HeadersInit } : undefined,
     authProvider: oauthSession?.provider,
-    fetch: resolveHttpFetchOverride(definition),
+    fetch: trackedFetch.fetch,
+    standaloneSseStarted: trackedFetch.started,
+  };
+}
+
+function trackStandaloneSseFetch(fetchOverride: FetchLike | undefined): {
+  fetch: FetchLike;
+  started: Promise<void>;
+} {
+  let markStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  const baseFetch: FetchLike = fetchOverride ?? ((input, init) => fetch(input, init));
+  return {
+    started,
+    fetch: async (input, init = {}) => {
+      const isStandaloneSse =
+        (init.method ?? 'GET').toUpperCase() === 'GET' &&
+        (new Headers(init.headers).get('accept')?.toLowerCase().includes('text/event-stream') ?? false);
+      try {
+        return await baseFetch(input, init);
+      } finally {
+        if (isStandaloneSse) markStarted();
+      }
+    },
   };
 }
 
@@ -210,6 +241,12 @@ async function connectPrimaryHttpTransport(
     oauthTimeoutMs: options.oauthTimeoutMs,
     recreateTransport: async () => createStreamableTransport(),
   });
+  // v2 starts the legacy standalone SSE receive channel asynchronously from
+  // notifications/initialized. Wait for its fetch to receive headers so
+  // callers cannot race their first request ahead of that channel.
+  if (typeof client.getProtocolEra === 'function' && client.getProtocolEra() === 'legacy') {
+    await transportOptions.standaloneSseStarted;
+  }
   return { client, transport, definition, oauthSession };
 }
 

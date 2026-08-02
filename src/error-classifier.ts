@@ -1,4 +1,4 @@
-import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
+import { SdkHttpError, SseError, UnauthorizedError } from '@modelcontextprotocol/client';
 
 export type ConnectionIssueKind = 'auth' | 'offline' | 'http' | 'stdio-exit' | 'other';
 
@@ -51,6 +51,20 @@ export function analyzeConnectionError(error: unknown): ConnectionIssue {
   const rawMessage = extractMessage(error);
   if (error instanceof UnauthorizedError) {
     return { kind: 'auth', rawMessage };
+  }
+  if (error instanceof SdkHttpError) {
+    return {
+      kind: AUTH_STATUSES.has(error.status) ? 'auth' : 'http',
+      rawMessage,
+      statusCode: error.status,
+    };
+  }
+  if (error instanceof SseError && typeof error.code === 'number') {
+    return {
+      kind: AUTH_STATUSES.has(error.code) ? 'auth' : 'http',
+      rawMessage,
+      statusCode: error.code,
+    };
   }
   const stdio = extractStdioExit(rawMessage);
   if (stdio) {

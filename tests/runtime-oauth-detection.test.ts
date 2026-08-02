@@ -1,4 +1,4 @@
-import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
+import { UnauthorizedError } from '@modelcontextprotocol/client';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ServerDefinition } from '../src/config.js';

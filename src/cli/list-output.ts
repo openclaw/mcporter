@@ -23,6 +23,8 @@ export interface ListJsonServerEntry {
   durationMs: number;
   description?: string;
   instructions?: string;
+  protocolVersion?: string;
+  era?: 'legacy' | 'modern';
   transport?: string;
   source?: ServerDefinition['source'];
   sources?: ServerDefinition['sources'];
@@ -184,7 +186,7 @@ export function summarizeStatusCounts(entries: ListJsonServerEntry[]): Record<St
 export function buildJsonListEntry(
   result: ListSummaryResult,
   timeoutSeconds: number,
-  options: { includeSchemas: boolean; includeSources?: boolean }
+  options: { includeSchemas: boolean; includeSources?: boolean; includeConnectionInfo?: boolean }
 ): ListJsonServerEntry {
   if (result.status === 'ok') {
     return {
@@ -195,6 +197,8 @@ export function buildJsonListEntry(
       transport: formatTransportSummary(result.server as ServerDefinition),
       source: result.server.source,
       sources: options.includeSources ? result.server.sources : undefined,
+      protocolVersion: options.includeConnectionInfo ? result.connectionInfo?.protocolVersion : undefined,
+      era: options.includeConnectionInfo ? result.connectionInfo?.era : undefined,
       tools: result.tools.map((tool) => ({
         name: tool.name,
         description: tool.description,

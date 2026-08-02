@@ -26,6 +26,7 @@ export function normalizeServerEntry(
   const auth = normalizeAuth(raw.auth);
   const tokenCacheDir = normalizePath(raw.tokenCacheDir ?? raw.token_cache_dir);
   const clientName = raw.clientName ?? raw.client_name;
+  const protocolVersion = raw.protocolVersion ?? raw.protocol_version;
   const oauthClientId = raw.oauthClientId ?? raw.oauth_client_id ?? undefined;
   const oauthClientSecret = raw.oauthClientSecret ?? raw.oauth_client_secret ?? undefined;
   const oauthClientSecretEnv = raw.oauthClientSecretEnv ?? raw.oauth_client_secret_env ?? undefined;
@@ -79,6 +80,7 @@ export function normalizeServerEntry(
     auth,
     tokenCacheDir,
     clientName,
+    protocolVersion,
     oauthClientId,
     oauthClientSecret,
     oauthClientSecretEnv,

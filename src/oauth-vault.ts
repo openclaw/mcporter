@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
-import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
+import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from './config.js';
 import { readJsonFile, withFileLock, writeJsonFile } from './fs-json.js';
 import {

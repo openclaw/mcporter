@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
-import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
-import type { Transport, TransportSendOptions } from '@modelcontextprotocol/sdk/shared/transport.js';
+import type { JSONRPCMessage, Transport, TransportSendOptions } from '@modelcontextprotocol/client';
 import type { RecordedMessage } from './record-transport.js';
 
 export interface ReplayTransportOptions {
@@ -25,9 +24,11 @@ export class ReplayTransport implements Transport {
   sessionId?: string;
 
   private readonly expectedSends: ExpectedSend[];
+  readonly requiresLegacyNegotiation: boolean;
 
   constructor(private readonly opts: ReplayTransportOptions) {
     this.expectedSends = buildReplayQueue(readRecordedMessages(opts.recordPath), opts.server);
+    this.requiresLegacyNegotiation = this.expectedSends[0]?.method === 'initialize';
   }
 
   async start(): Promise<void> {}
@@ -172,6 +173,9 @@ function responseIdOf(message: JSONRPCMessage): string | number | undefined {
 }
 
 function paramsMatch(method: string, expected: unknown, actual: unknown): boolean {
+  if (method === 'server/discover') {
+    return true;
+  }
   if (method !== 'initialize') {
     return isDeepStrictEqual(expected, actual);
   }

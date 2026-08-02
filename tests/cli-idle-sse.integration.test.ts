@@ -193,7 +193,13 @@ describe('idle standalone SSE CLI integration', () => {
       status: 'ok',
       tools: [expect.objectContaining({ name: 'ping' })],
     });
-    expect(requestOrder).toEqual(['initialize', 'notifications/initialized', 'GET standalone-sse', 'tools/list']);
+    expect(requestOrder).toEqual([
+      'server/discover',
+      'initialize',
+      'notifications/initialized',
+      'GET standalone-sse',
+      'tools/list',
+    ]);
     expect(toolsListSawOpenSse).toBe(true);
   });
 });

@@ -42,6 +42,11 @@ const mocks = vi.hoisted(() => {
     async listResources(params: unknown) {
       return listResourcesMock(params);
     }
+
+    async request(request: { method: string; params?: unknown }) {
+      if (request.method !== 'resources/list') throw new Error(`Unexpected request method ${request.method}`);
+      return listResourcesMock(request.params);
+    }
   }
 
   class MockStreamableHTTPClientTransport {
@@ -91,24 +96,17 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
+vi.mock('@modelcontextprotocol/client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@modelcontextprotocol/client')>()),
   Client: mocks.MockClient,
-}));
-
-vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
   StreamableHTTPClientTransport: mocks.MockStreamableHTTPClientTransport,
-}));
-
-vi.mock('@modelcontextprotocol/sdk/client/sse.js', () => ({
   SSEClientTransport: mocks.MockSSEClientTransport,
-}));
-
-vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
-  StdioClientTransport: mocks.MockStdioClientTransport,
-}));
-
-vi.mock('@modelcontextprotocol/sdk/client/auth.js', () => ({
   UnauthorizedError: mocks.MockUnauthorizedError,
+}));
+
+vi.mock('@modelcontextprotocol/client/stdio', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@modelcontextprotocol/client/stdio')>()),
+  StdioClientTransport: mocks.MockStdioClientTransport,
 }));
 
 vi.mock('../src/oauth-persistence.js', () => ({

@@ -1,5 +1,4 @@
 import type { ChildProcess } from 'node:child_process';
-import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const execFileMock = vi.fn();
@@ -51,17 +50,5 @@ describe('runtime-process-utils Windows process tree', () => {
       expect.any(Object),
       expect.any(Function)
     );
-  });
-
-  it('rejects when a child process does not close before the timeout', async () => {
-    vi.useFakeTimers();
-    const { __testHooks } = await import('../src/runtime-process-utils.js');
-    const child = new EventEmitter() as ChildProcess;
-
-    const wait = __testHooks.waitForChildClose(child, 100);
-    const assertion = expect(wait).rejects.toThrow('Timed out waiting 100ms');
-    await vi.advanceTimersByTimeAsync(100);
-
-    await assertion;
   });
 });

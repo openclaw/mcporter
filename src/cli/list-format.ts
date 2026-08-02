@@ -1,7 +1,7 @@
 import type { ServerDefinition, ServerSource } from '../config.js';
 import type { ConnectionIssue } from '../error-classifier.js';
 import { analyzeConnectionError } from '../error-classifier.js';
-import type { ServerToolInfo } from '../runtime.js';
+import type { ConnectionInfo, ServerToolInfo } from '../runtime.js';
 import { formatPathForDisplay } from './path-utils.js';
 import { dimText, extraDimText, redText, yellowText } from './terminal.js';
 
@@ -12,6 +12,7 @@ export type ListSummaryResult =
       status: 'ok';
       server: ServerDefinition;
       tools: ServerToolInfo[];
+      connectionInfo?: ConnectionInfo;
       durationMs: number;
     }
   | {
@@ -45,7 +46,7 @@ export function renderServerListRow(
         ? 'no tools reported'
         : `${result.tools.length === 1 ? '1 tool' : `${result.tools.length} tools`}`;
     return {
-      line: `${prefix} (${toolSuffix}, ${durationLabel})${sourceSuffix}`,
+      line: `${prefix} (${toolSuffix}, ${durationLabel}${formatProtocolSuffix(result.connectionInfo, options.verbose)})${sourceSuffix}`,
       summary: toolSuffix,
       category: 'ok',
     };
@@ -60,6 +61,11 @@ export function renderServerListRow(
     authCommand: advice.authCommand,
     issue: advice.issue,
   };
+}
+
+function formatProtocolSuffix(info: ConnectionInfo | undefined, verbose: boolean | undefined): string {
+  if (!verbose || !info?.protocolVersion) return '';
+  return `, ${info.protocolVersion}${info.era ? ` ${info.era}` : ''}`;
 }
 
 export function formatSourceSuffix(

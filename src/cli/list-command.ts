@@ -1,7 +1,7 @@
 import ora from 'ora';
 import type { ServerDefinition } from '../config.js';
 import type { Runtime } from '../runtime.js';
-import { setStdioLogMode } from '../sdk-patches.js';
+import { setStdioLogMode } from '../sdk-stdio-logging.js';
 import { MCPORTER_VERSION } from '../version.js';
 import { renderAdhocServerHelpLines } from './adhoc-help.js';
 import { persistPreparedEphemeralServer, prepareEphemeralServerTarget } from './ephemeral-target.js';
@@ -129,6 +129,7 @@ export async function handleList(runtime: Runtime, args: string[]): Promise<void
         return buildJsonListEntry(normalizedEntry, perServerTimeoutSeconds, {
           includeSchemas: Boolean(flags.schema),
           includeSources: Boolean(flags.verbose || flags.includeSources),
+          includeConnectionInfo: flags.verbose,
         });
       });
       const counts = summarizeStatusCounts(jsonEntries);
@@ -194,6 +195,7 @@ export async function handleList(runtime: Runtime, args: string[]): Promise<void
       const entry = buildJsonListEntry(result, Math.round(timeoutMs / 1000), {
         includeSchemas: false,
         includeSources: Boolean(flags.verbose || flags.includeSources),
+        includeConnectionInfo: flags.verbose,
       });
       maybeSetListExitCode([entry], flags);
       if (flags.quiet) {
@@ -243,6 +245,7 @@ export async function handleList(runtime: Runtime, args: string[]): Promise<void
           return;
         }
         const instructions = await loadServerInstructions(runtime, target);
+        const connectionInfo = flags.verbose ? await loadConnectionInfo(runtime, target) : undefined;
         const payload = {
           mode: 'server',
           name: definition.name,
@@ -250,6 +253,8 @@ export async function handleList(runtime: Runtime, args: string[]): Promise<void
           durationMs,
           description: definition.description,
           instructions,
+          protocolVersion: connectionInfo?.protocolVersion,
+          era: connectionInfo?.era,
           transport: transportSummary,
           source: definition.source,
           sources: flags.verbose || flags.includeSources ? definition.sources : undefined,
@@ -317,6 +322,7 @@ export async function handleList(runtime: Runtime, args: string[]): Promise<void
         return;
       }
       const instructions = await loadServerInstructions(runtime, target);
+      const connectionInfo = flags.verbose ? await loadConnectionInfo(runtime, target) : undefined;
       const summaryLine = printSingleServerHeader(
         definition,
         metadataEntries.length,
@@ -328,6 +334,11 @@ export async function handleList(runtime: Runtime, args: string[]): Promise<void
           instructions,
         }
       );
+      if (connectionInfo?.protocolVersion) {
+        console.log(
+          `  ${extraDimText(`Protocol: ${connectionInfo.protocolVersion}${connectionInfo.era ? ` (${connectionInfo.era})` : ''}`)}`
+        );
+      }
       if (metadataEntries.length === 0) {
         console.log('  Tools: <none>');
         console.log(summaryLine);
@@ -407,10 +418,12 @@ async function checkListServer(
       runtime.listTools(server.name, { autoAuthorize: false, allowCachedAuth: true, disableOAuth }),
       timeoutMs
     );
+    const connectionInfo = await loadConnectionInfo(runtime, server.name);
     return {
       server,
       status: 'ok' as const,
       tools,
+      connectionInfo,
       durationMs: Date.now() - startedAt,
     };
   } catch (error) {
@@ -610,4 +623,9 @@ async function loadServerInstructions(runtime: Runtime, serverName: string): Pro
     return undefined;
   }
   return runtime.getInstructions(serverName);
+}
+
+async function loadConnectionInfo(runtime: Runtime, serverName: string) {
+  if (typeof runtime.getConnectionInfo !== 'function') return undefined;
+  return runtime.getConnectionInfo(serverName);
 }

@@ -148,6 +148,32 @@ describe('CLI list formatting', () => {
     metadataSpy.mockRestore();
   });
 
+  it('includes negotiated protocol details in verbose JSON listings', async () => {
+    const { handleList } = await cliModulePromise;
+    const toolCache = await import('../src/cli/tool-cache.js');
+    const metadataSpy = vi.spyOn(toolCache, 'loadToolMetadata').mockResolvedValue([]);
+    const definition: ServerDefinition = {
+      name: 'modern',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+    };
+    const runtime = {
+      getDefinitions: () => [definition],
+      getDefinition: () => definition,
+      registerDefinition: vi.fn(),
+      getConnectionInfo: vi.fn().mockResolvedValue({ protocolVersion: '2026-07-28', era: 'modern' }),
+    } as unknown as Awaited<ReturnType<(typeof import('../src/runtime.js'))['createRuntime']>>;
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleList(runtime, ['--json', '--verbose', 'modern']);
+
+    expect(JSON.parse(logSpy.mock.calls.at(-1)?.[0] ?? '{}')).toMatchObject({
+      protocolVersion: '2026-07-28',
+      era: 'modern',
+    });
+    logSpy.mockRestore();
+    metadataSpy.mockRestore();
+  });
+
   it('emits JSON schemas for configured HTTP servers listed by name', async () => {
     const { handleList } = await cliModulePromise;
     const toolCache = await import('../src/cli/tool-cache.js');

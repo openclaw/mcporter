@@ -1,5 +1,3 @@
-import type { MaybeChildProcess } from './sdk-stdio-process.js';
-
 export interface ProcessStreamMeta {
   stderrChunks: string[];
   stdoutChunks?: string[];
@@ -7,7 +5,6 @@ export interface ProcessStreamMeta {
   command?: string;
   code?: number | null;
   flushed?: boolean;
-  child?: MaybeChildProcess | null;
   transport?: object;
   listeners: Array<{
     stream: NodeJS.EventEmitter & { removeListener?: (event: string, listener: (...args: unknown[]) => void) => void };
@@ -16,7 +13,6 @@ export interface ProcessStreamMeta {
   }>;
 }
 
-const processBuffers = new WeakMap<MaybeChildProcess, ProcessStreamMeta>();
 const transportBuffers = new WeakMap<object, ProcessStreamMeta>();
 const STDIO_LOGS_FORCED = process.env.MCPORTER_STDIO_LOGS === '1';
 export const STDIO_TRACE_ENABLED = process.env.MCPORTER_STDIO_TRACE === '1';
@@ -47,18 +43,14 @@ if (STDIO_TRACE_ENABLED) {
 }
 
 export function ignoreStdioEmitterError(): void {}
-export function getProcessStreamMeta(child: MaybeChildProcess): ProcessStreamMeta | undefined {
-  return processBuffers.get(child);
-}
 export function getTransportStreamMeta(transport: object): ProcessStreamMeta | undefined {
   return transportBuffers.get(transport);
 }
-export function registerProcessStreamMeta(meta: ProcessStreamMeta): void {
+export function registerTransportStreamMeta(meta: ProcessStreamMeta): void {
   if (meta.transport) transportBuffers.set(meta.transport, meta);
-  if (meta.child) processBuffers.set(meta.child, meta);
 }
 
-export function flushProcessLogs(child: MaybeChildProcess, meta: ProcessStreamMeta): void {
+export function flushStdioLogs(meta: ProcessStreamMeta): void {
   if (meta.flushed) return;
   meta.flushed = true;
   if (STDIO_TRACE_ENABLED) {
@@ -86,7 +78,5 @@ export function flushProcessLogs(child: MaybeChildProcess, meta: ProcessStreamMe
     console.log(meta.command ? `[mcporter] stdin to ${meta.command}` : '[mcporter] stdin to stdio server');
     for (const entry of meta.stdinChunks) console.log(entry);
   }
-  if (meta.child) processBuffers.delete(meta.child);
   if (meta.transport) transportBuffers.delete(meta.transport);
-  if (meta.child !== child) processBuffers.delete(child);
 }

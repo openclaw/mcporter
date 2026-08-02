@@ -3,7 +3,7 @@ import { Buffer } from 'node:buffer';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
+import type { OAuthTokens } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from '../src/config.js';
 import { readJsonFile } from '../src/fs-json.js';
 import { buildOAuthPersistence, clearOAuthCaches, readCachedAccessToken } from '../src/oauth-persistence.js';
@@ -14,8 +14,8 @@ const authMocks = vi.hoisted(() => ({
   refreshAuthorization: vi.fn(),
 }));
 
-vi.mock('@modelcontextprotocol/sdk/client/auth.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@modelcontextprotocol/sdk/client/auth.js')>()),
+vi.mock('@modelcontextprotocol/client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@modelcontextprotocol/client')>()),
   discoverOAuthServerInfo: authMocks.discoverOAuthServerInfo,
   refreshAuthorization: authMocks.refreshAuthorization,
 }));

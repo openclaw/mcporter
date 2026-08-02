@@ -1,8 +1,16 @@
-import type { CallToolRequest, ListResourcesRequest, ReadResourceRequest } from '@modelcontextprotocol/sdk/types.js';
+import {
+  type CallToolRequest,
+  type ListResourcesRequest,
+  type ReadResourceRequest,
+  SdkError,
+  SdkErrorCode,
+  specTypeSchemas,
+  UrlElicitationRequiredError,
+  type ProtocolEra,
+} from '@modelcontextprotocol/client';
 import { loadServerDefinitions, type ServerDefinition } from './config.js';
 import { createPrefixedConsoleLogger, type Logger, type LogLevel, resolveLogLevelFromEnv } from './logging.js';
 import type { OAuthSessionOptions } from './oauth.js';
-import './sdk-patches.js';
 import { RuntimeConnectionCache } from './runtime/connection-cache.js';
 import { resolveOAuthTimeoutFromEnv } from './runtime/oauth.js';
 import { resolveRecordingPath } from './runtime/record-transport.js';
@@ -16,6 +24,8 @@ export { MCPORTER_VERSION } from './version.js';
 const PACKAGE_NAME = 'mcporter';
 const OAUTH_CODE_TIMEOUT_MS = resolveOAuthTimeoutFromEnv();
 const MAX_RESOURCE_LIST_PAGES = 100;
+const MRTR_UNSUPPORTED_MESSAGE =
+  'Tool requires interactive input (MRTR); mcporter does not support this yet — coming in a follow-up';
 
 export interface RuntimeOptions {
   readonly configPath?: string;
@@ -30,6 +40,11 @@ export interface RuntimeOptions {
 }
 
 export type RuntimeLogger = Logger;
+
+export interface ConnectionInfo {
+  readonly protocolVersion?: string;
+  readonly era?: ProtocolEra;
+}
 
 export interface CallOptions {
   readonly args?: CallToolRequest['params']['arguments'];
@@ -97,6 +112,7 @@ export interface Runtime {
   getDefinition(server: string): ServerDefinition;
   registerDefinition(definition: ServerDefinition, options?: { overwrite?: boolean }): void;
   getInstructions?(server: string): Promise<string | undefined>;
+  getConnectionInfo?(server: string): Promise<ConnectionInfo | undefined>;
   listTools(server: string, options?: ListToolsOptions): Promise<ServerToolInfo[]>;
   callTool(server: string, toolName: string, options?: CallOptions): Promise<unknown>;
   listResources(server: string, options?: ListResourcesOptions): Promise<unknown>;
@@ -226,6 +242,10 @@ class McpRuntime implements Runtime {
     return this.connectionCache.getInstructions(server);
   }
 
+  async getConnectionInfo(server: string): Promise<ConnectionInfo | undefined> {
+    return this.connectionCache.getConnectionInfo(server);
+  }
+
   // listTools queries tool metadata and optionally includes schemas when requested.
   async listTools(server: string, options: ListToolsOptions = {}): Promise<ServerToolInfo[]> {
     // Toggle auto authorization so list can run without forcing OAuth flows.
@@ -248,21 +268,15 @@ class McpRuntime implements Runtime {
       disableOAuth,
     });
     let closeError: unknown;
-    const tools: ServerToolInfo[] = [];
+    let tools: ServerToolInfo[] = [];
     try {
-      let cursor: string | undefined;
-      do {
-        const response = await context.client.listTools(cursor ? { cursor } : undefined);
-        tools.push(
-          ...(response.tools ?? []).map((tool) => ({
-            name: tool.name,
-            description: tool.description ?? undefined,
-            inputSchema: options.includeSchema ? tool.inputSchema : undefined,
-            outputSchema: options.includeSchema ? tool.outputSchema : undefined,
-          }))
-        );
-        cursor = response.nextCursor ?? undefined;
-      } while (cursor);
+      const response = await context.client.listTools();
+      tools = (response.tools ?? []).map((tool) => ({
+        name: tool.name,
+        description: tool.description ?? undefined,
+        inputSchema: options.includeSchema ? tool.inputSchema : undefined,
+        outputSchema: options.includeSchema ? tool.outputSchema : undefined,
+      }));
     } catch (error) {
       // Keep-alive STDIO transports often die when Chrome closes; drop the cached client
       // so the next call spins up a fresh process instead of reusing the broken handle.
@@ -307,7 +321,7 @@ class McpRuntime implements Runtime {
       // Forward the requested timeout to the MCP client so server-side requests don't hit the SDK's
       // default 60s cap. Keep our own outer race as a second guard.
       const timeoutMs = normalizeTimeout(options.timeoutMs);
-      const resultPromise = client.callTool(params, undefined, {
+      const resultPromise = client.callTool(params, {
         timeout: timeoutMs,
         // Long runs (e.g., GPT-5 Pro) emit progress/logging; allow that to refresh the timer.
         resetTimeoutOnProgress: true,
@@ -318,6 +332,9 @@ class McpRuntime implements Runtime {
       }
       return await raceWithTimeout(resultPromise, timeoutMs);
     } catch (error) {
+      if (isUnsupportedMrtrError(error)) {
+        throw new Error(MRTR_UNSUPPORTED_MESSAGE, { cause: error });
+      }
       // Runtime timeouts and transport crashes should tear down the cached connection so
       // the daemon (or direct runtime) can relaunch the MCP server on the next attempt.
       await this.resetConnectionOnError(server, error, context);
@@ -343,14 +360,23 @@ class McpRuntime implements Runtime {
       });
       const { client } = context;
       const requestParams = params as NonNullable<ListResourcesRequest['params']>;
-      let response = await client.listResources(requestParams);
       if (requestParams.cursor !== undefined) {
-        return response;
+        return await client.listResources(requestParams);
       }
 
+      // v2 auto-aggregation throws when listMaxPages is reached, while
+      // mcporter's existing resource contract returns the bounded partial
+      // result. Use the low-level typed request path to preserve that behavior.
+      let response = await client.request(
+        { method: 'resources/list', params: requestParams },
+        specTypeSchemas.ListResourcesResult
+      );
       const resources = [...response.resources];
       for (let page = 1; page < MAX_RESOURCE_LIST_PAGES && response.nextCursor; page += 1) {
-        response = await client.listResources({ ...requestParams, cursor: response.nextCursor });
+        response = await client.request(
+          { method: 'resources/list', params: { ...requestParams, cursor: response.nextCursor } },
+          specTypeSchemas.ListResourcesResult
+        );
         resources.push(...response.resources);
       }
       return { ...response, resources };
@@ -411,6 +437,15 @@ class McpRuntime implements Runtime {
   private async resetConnectionOnError(server: string, error: unknown, context?: ClientContext): Promise<void> {
     await this.connectionCache.resetConnectionOnError(server, error, context);
   }
+}
+
+function isUnsupportedMrtrError(error: unknown): boolean {
+  if (error instanceof UrlElicitationRequiredError) return true;
+  if (!(error instanceof SdkError)) return false;
+  if (error.code === SdkErrorCode.UnsupportedResultType) {
+    return (error.data as { resultType?: unknown } | undefined)?.resultType === 'input_required';
+  }
+  return error.code === SdkErrorCode.CapabilityNotSupported && error.message.startsWith('Cannot fulfil input request');
 }
 
 // createConsoleLogger produces the default runtime logger honoring MCPORTER_LOG_LEVEL.

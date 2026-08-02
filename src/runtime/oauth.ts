@@ -1,7 +1,4 @@
-import { auth as sdkAuth } from '@modelcontextprotocol/sdk/client/auth.js';
-import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import { auth as sdkAuth, type Client, type OAuthTokens, type Transport } from '@modelcontextprotocol/client';
 import type { Logger } from '../logging.js';
 import type { OAuthSession } from '../oauth.js';
 import { isUnauthorizedError } from '../runtime-oauth-support.js';

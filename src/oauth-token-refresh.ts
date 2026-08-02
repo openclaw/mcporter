@@ -1,11 +1,15 @@
 import { Buffer } from 'node:buffer';
-import { discoverOAuthServerInfo, refreshAuthorization } from '@modelcontextprotocol/sdk/client/auth.js';
 import type {
   OAuthClientInformationMixed,
   OAuthProtectedResourceMetadata,
   OAuthTokens,
-} from '@modelcontextprotocol/sdk/shared/auth.js';
-import { checkResourceAllowed, resourceUrlFromServerUrl } from '@modelcontextprotocol/sdk/shared/auth-utils.js';
+} from '@modelcontextprotocol/client';
+import {
+  checkResourceAllowed,
+  discoverOAuthServerInfo,
+  refreshAuthorization,
+  resourceUrlFromServerUrl,
+} from '@modelcontextprotocol/client';
 import type { ServerDefinition } from './config.js';
 import type { Logger } from './logging.js';
 import { buildStaticClientInformation, resolveOAuthClientSecret } from './oauth-client-info.js';

@@ -52,6 +52,12 @@ const RawHttpFetchSchema = z
   .enum(['default', 'node-http1'])
   .describe('HTTP fetch implementation for Streamable HTTP/SSE requests');
 
+export const ProtocolVersionSchema = z
+  .enum(['auto', 'legacy', '2026-07-28'])
+  .describe('MCP protocol negotiation mode; defaults to auto');
+
+export type ProtocolVersion = z.infer<typeof ProtocolVersionSchema>;
+
 const RawRefreshSchema = z
   .object({
     tokenEndpoint: z.string().optional().describe('OAuth token endpoint used to refresh access tokens'),
@@ -112,6 +118,8 @@ export const RawEntrySchema = z
     token_cache_dir: z.string().optional().describe('Directory for caching OAuth tokens (snake_case)'),
     clientName: z.string().optional().describe('Client identifier for server telemetry (camelCase)'),
     client_name: z.string().optional().describe('Client identifier for server telemetry (snake_case)'),
+    protocolVersion: ProtocolVersionSchema.optional().describe('MCP protocol negotiation mode (camelCase)'),
+    protocol_version: ProtocolVersionSchema.optional().describe('MCP protocol negotiation mode (snake_case)'),
     oauthClientId: z.string().optional().describe('Pre-registered OAuth client id (camelCase)'),
     oauth_client_id: z.string().optional().describe('Pre-registered OAuth client id (snake_case)'),
     oauthClientSecret: z.string().optional().describe('Pre-registered OAuth client secret (camelCase)'),
@@ -251,6 +259,7 @@ export interface ServerDefinition {
   readonly auth?: string;
   readonly tokenCacheDir?: string;
   readonly clientName?: string;
+  readonly protocolVersion?: ProtocolVersion;
   readonly oauthClientId?: string;
   readonly oauthClientSecret?: string;
   readonly oauthClientSecretEnv?: string;

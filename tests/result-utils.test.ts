@@ -22,6 +22,14 @@ describe('createCallResult text extraction', () => {
     expect(result.text()).toBe('Hello World');
   });
 
+  it('treats a modern complete result like the legacy result shape', () => {
+    const result = createCallResult({
+      resultType: 'complete',
+      content: [{ type: 'text', text: 'modern result' }],
+    });
+    expect(result.text()).toBe('modern result');
+  });
+
   it('extracts text from content array nested inside raw wrapper', () => {
     const response = {
       raw: {

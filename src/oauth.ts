@@ -2,12 +2,12 @@ import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { URL } from 'node:url';
-import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 import type {
   OAuthClientInformationMixed,
   OAuthClientMetadata,
+  OAuthClientProvider,
   OAuthTokens,
-} from '@modelcontextprotocol/sdk/shared/auth.js';
+} from '@modelcontextprotocol/client';
 import type { ServerDefinition } from './config.js';
 import { buildStaticClientInformation } from './oauth-client-info.js';
 import type { OAuthPersistence } from './oauth-persistence.js';

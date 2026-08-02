@@ -4,6 +4,7 @@ const SHARED_DEFINITION_FIELDS = [
   'auth',
   'tokenCacheDir',
   'clientName',
+  'protocolVersion',
   'oauthClientId',
   'oauthClientSecretEnv',
   'oauthTokenEndpointAuthMethod',

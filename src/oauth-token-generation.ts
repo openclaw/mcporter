@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
+import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprotocol/client';
 
 const TOKEN_GENERATION_FIELD = '__mcporter_generation';
 const CLIENT_GENERATION_FIELD = '__mcporter_client_generation';

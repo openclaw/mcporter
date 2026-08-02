@@ -1,4 +1,4 @@
-import type { OAuthClientInformationMixed } from '@modelcontextprotocol/sdk/shared/auth.js';
+import type { OAuthClientInformationMixed } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from './config.js';
 
 export function buildStaticClientInformation(

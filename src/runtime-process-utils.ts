@@ -1,9 +1,6 @@
-import type { ChildProcess } from 'node:child_process';
 import { execFile } from 'node:child_process';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import type { Transport } from '@modelcontextprotocol/client';
 import type { Logger } from './logging.js';
-import { waitForChildExit } from './process-utils.js';
 
 export interface CloseTransportAndWaitOptions {
   readonly throwOnCloseError?: boolean;
@@ -16,10 +13,6 @@ export async function closeTransportAndWait(
   options: CloseTransportAndWaitOptions = {}
 ): Promise<void> {
   const pidBeforeClose = getTransportPid(transport);
-  const childProcess =
-    transport instanceof StdioClientTransport
-      ? ((transport as unknown as { _process?: ChildProcess | null })._process ?? null)
-      : null;
   let closeError: unknown;
   try {
     await transport.close();
@@ -29,10 +22,6 @@ export async function closeTransportAndWait(
     } else {
       logger.warn(`Failed to close transport cleanly: ${(error as Error).message}`);
     }
-  }
-
-  if (childProcess) {
-    await waitForChildClose(childProcess, 1_000).catch(() => {});
   }
 
   if (closeError) {
@@ -47,75 +36,17 @@ export async function closeTransportAndWait(
 }
 
 function getTransportPid(transport: Transport & { pid?: number | null }): number | null {
-  if (transport instanceof StdioClientTransport) {
-    const pid = transport.pid;
-    return typeof pid === 'number' && pid > 0 ? pid : null;
-  }
   if ('pid' in transport) {
     const candidate = transport.pid;
     if (typeof candidate === 'number' && candidate > 0) {
       return candidate;
     }
   }
-  const rawPid = (transport as unknown as { _process?: { pid?: number } | null | undefined })._process?.pid;
-  return typeof rawPid === 'number' && rawPid > 0 ? rawPid : null;
+  return null;
 }
 
 async function ensureProcessTerminated(logger: Logger, pid: number): Promise<void> {
   await ensureProcessTreeTerminated(logger, pid);
-}
-
-async function waitForChildClose(child: ChildProcess, timeoutMs: number): Promise<void> {
-  await waitForChildExit(child, timeoutMs);
-
-  try {
-    child.stdin?.end?.();
-  } catch {
-    // ignore
-  }
-  try {
-    child.stdout?.destroy?.();
-    child.stdout?.removeAllListeners?.();
-    (child.stdout as unknown as { unref?: () => void })?.unref?.();
-  } catch {
-    // ignore
-  }
-  try {
-    child.stderr?.destroy?.();
-    child.stderr?.removeAllListeners?.();
-    (child.stderr as unknown as { unref?: () => void })?.unref?.();
-  } catch {
-    // ignore
-  }
-  try {
-    const stdio = (child as { stdio?: unknown[] }).stdio;
-    if (Array.isArray(stdio)) {
-      for (const stream of stdio) {
-        if (!stream || typeof stream !== 'object') {
-          continue;
-        }
-        try {
-          (stream as { removeAllListeners?: () => void }).removeAllListeners?.();
-          (stream as { destroy?: () => void }).destroy?.();
-          (stream as { end?: () => void }).end?.();
-        } catch {
-          // ignore
-        }
-      }
-    }
-  } catch {
-    // ignore
-  }
-  try {
-    child.removeAllListeners();
-  } catch {
-    // ignore
-  }
-  try {
-    child.unref?.();
-  } catch {
-    // ignore
-  }
 }
 
 function isProcessAlive(pid: number): boolean {
@@ -281,7 +212,6 @@ function collectDescendantsFromChildren(rootPid: number, children: Map<number, n
 
 export const __testHooks = {
   listDescendantPids,
-  waitForChildClose,
 };
 
 async function waitForTreeExit(pids: number[], durationMs: number): Promise<boolean> {

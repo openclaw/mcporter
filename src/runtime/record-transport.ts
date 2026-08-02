@@ -1,8 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { ChildProcess } from 'node:child_process';
-import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
-import type { Transport, TransportSendOptions } from '@modelcontextprotocol/sdk/shared/transport.js';
+import type { JSONRPCMessage, Transport, TransportSendOptions } from '@modelcontextprotocol/client';
 import { legacyMcporterDir } from '../paths.js';
 
 export interface RecordTransportOptions {
@@ -37,19 +35,19 @@ export class RecordTransport implements Transport {
 
   constructor(private readonly opts: RecordTransportOptions) {
     this.sessionId = opts.inner.sessionId;
+    // Preserve the SDK's structural stdio detection without making HTTP
+    // recordings look stdio-shaped. This keeps probe timeout semantics and
+    // still records the in-place server/discover exchange.
+    if ('stderr' in opts.inner && 'pid' in opts.inner) {
+      Object.defineProperties(this, {
+        stderr: { get: () => (opts.inner as { stderr?: unknown }).stderr },
+        pid: { get: () => (opts.inner as { pid?: unknown }).pid },
+      });
+    }
     const finishAuth = (opts.inner as { finishAuth?: (authorizationCode: string) => Promise<void> }).finishAuth;
     if (finishAuth) {
       this.finishAuth = (authorizationCode) => finishAuth.call(opts.inner, authorizationCode);
     }
-  }
-
-  get pid(): number | null {
-    const pid = (this.opts.inner as { pid?: unknown }).pid;
-    return typeof pid === 'number' && pid > 0 ? pid : null;
-  }
-
-  get _process(): ChildProcess | null {
-    return (this.opts.inner as { _process?: ChildProcess | null })._process ?? null;
   }
 
   async start(): Promise<void> {

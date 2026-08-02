@@ -1,5 +1,4 @@
-import type { Client } from '@modelcontextprotocol/sdk/client';
-import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
+import { type Client, UnauthorizedError } from '@modelcontextprotocol/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OAuthSession } from '../src/oauth.js';
 import {
@@ -19,8 +18,8 @@ const mocks = vi.hoisted(() => ({
   sdkAuth: vi.fn(),
 }));
 
-vi.mock('@modelcontextprotocol/sdk/client/auth.js', async () => {
-  const actual = await vi.importActual('@modelcontextprotocol/sdk/client/auth.js');
+vi.mock('@modelcontextprotocol/client', async () => {
+  const actual = await vi.importActual('@modelcontextprotocol/client');
   return {
     ...actual,
     auth: mocks.sdkAuth,

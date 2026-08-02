@@ -1,4 +1,4 @@
-import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+import { ProtocolErrorCode as ErrorCode } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from '../config.js';
 import { isKeepAliveServer } from '../lifecycle.js';
 import { isUnauthorizedError } from '../runtime-oauth-support.js';
@@ -184,10 +184,16 @@ function shouldRestartDaemonServer(error: unknown): boolean {
   if (isUnauthorizedError(error)) {
     return false;
   }
-  if (error instanceof McpError) {
-    return !NON_FATAL_CODES.has(error.code);
+  const code = protocolErrorCode(error);
+  if (code !== undefined) {
+    return !NON_FATAL_CODES.has(code);
   }
   return true;
+}
+
+function protocolErrorCode(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object' || !('code' in error)) return undefined;
+  return typeof error.code === 'number' ? error.code : undefined;
 }
 
 function logDaemonRetry(server: string, operation: string, error: unknown): void {
