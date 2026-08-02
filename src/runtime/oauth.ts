@@ -194,7 +194,11 @@ async function attemptTransportConnect(
   state: OAuthConnectState,
   signal?: AbortSignal
 ): Promise<OAuthCapableTransport> {
-  await client.connect(state.activeTransport, { signal });
+  if (signal) {
+    await client.connect(state.activeTransport, { signal });
+  } else {
+    await client.connect(state.activeTransport);
+  }
   return state.activeTransport;
 }
 

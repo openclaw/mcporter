@@ -481,8 +481,23 @@ export class RuntimeConnectionCache {
       await closeTransportAndWait(this.logger, context.transport, {
         throwOnCloseError: propagateReplayCloseErrors,
         close: async () => {
-          await context.client.close();
-          await context.transport.close();
+          let firstError: unknown;
+          const clientClose = (context.client as { close?: () => Promise<void> }).close;
+          if (clientClose) {
+            try {
+              await clientClose.call(context.client);
+            } catch (error) {
+              firstError = error;
+            }
+          }
+          try {
+            await context.transport.close();
+          } catch (error) {
+            firstError ??= error;
+          }
+          if (firstError) {
+            throw firstError;
+          }
         },
       });
     } catch (error) {
