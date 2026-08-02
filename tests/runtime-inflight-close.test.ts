@@ -1,10 +1,11 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createRuntime } from '../src/runtime.js';
 
-const fixture = new URL('./fixtures/unresponsive-stdio.mjs', import.meta.url).pathname;
+const fixture = fileURLToPath(new URL('./fixtures/unresponsive-stdio.mjs', import.meta.url));
 
 describe('runtime in-flight connection close', () => {
   it('cancels an unresponsive stdio connect in under one second', async () => {

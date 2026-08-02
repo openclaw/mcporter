@@ -1,12 +1,13 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ServerDefinition } from '../src/config.js';
 import { RuntimeConnectionCache } from '../src/runtime/connection-cache.js';
 import { McporterStdioTransport } from '../src/runtime/stdio-transport.js';
 
-const fixture = new URL('./fixtures/sigterm-resistant-tree.mjs', import.meta.url).pathname;
+const fixture = fileURLToPath(new URL('./fixtures/sigterm-resistant-tree.mjs', import.meta.url));
 const cleanupPids = new Set<number>();
 
 afterEach(async () => {
