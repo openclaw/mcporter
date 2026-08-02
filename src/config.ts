@@ -3,7 +3,7 @@ import {
   listConfigLayerPaths as discoverConfigLayerPaths,
   resolveConfigPath as discoverConfigPath,
 } from './config/path-discovery.js';
-import { loadConfigLayers, readConfigFile } from './config/read-config.js';
+import { loadConfigLayers, readConfigFile, type ConfigLayer } from './config/read-config.js';
 import { pathsForImport, readExternalEntries } from './config-imports.js';
 import { normalizeServerEntry } from './config-normalize.js';
 import {
@@ -35,10 +35,7 @@ export type {
   StdioCommand,
 } from './config-schema.js';
 
-export async function loadServerDefinitions(options: LoadConfigOptions = {}): Promise<ServerDefinition[]> {
-  const rootDir = options.rootDir ?? process.cwd();
-  const layers = await loadConfigLayers(options, rootDir);
-
+async function buildServerDefinitions(layers: ConfigLayer[], rootDir: string): Promise<ServerDefinition[]> {
   const merged = new Map<string, { raw: RawEntry; baseDir: string; source: ServerSource; sources: ServerSource[] }>();
 
   for (const layer of layers) {
@@ -115,9 +112,7 @@ export interface DaemonConfig {
   readonly idleTimeoutMs?: number;
 }
 
-export async function loadDaemonConfig(options: LoadConfigOptions = {}): Promise<DaemonConfig> {
-  const rootDir = options.rootDir ?? process.cwd();
-  const layers = await loadConfigLayers(options, rootDir);
+function buildDaemonConfig(layers: ConfigLayer[]): DaemonConfig {
   let idleTimeoutMs: number | undefined;
   for (const layer of layers) {
     const raw = layer.config.daemonIdleTimeoutMs ?? layer.config.daemon_idle_timeout_ms;
@@ -126,6 +121,29 @@ export async function loadDaemonConfig(options: LoadConfigOptions = {}): Promise
     }
   }
   return { idleTimeoutMs };
+}
+
+export interface LoadedConfigSnapshot {
+  readonly servers: ServerDefinition[];
+  readonly daemon: DaemonConfig;
+}
+
+export async function loadConfigSnapshot(options: LoadConfigOptions = {}): Promise<LoadedConfigSnapshot> {
+  const rootDir = options.rootDir ?? process.cwd();
+  const layers = await loadConfigLayers(options, rootDir);
+  return {
+    servers: await buildServerDefinitions(layers, rootDir),
+    daemon: buildDaemonConfig(layers),
+  };
+}
+
+export async function loadServerDefinitions(options: LoadConfigOptions = {}): Promise<ServerDefinition[]> {
+  return (await loadConfigSnapshot(options)).servers;
+}
+
+export async function loadDaemonConfig(options: LoadConfigOptions = {}): Promise<DaemonConfig> {
+  const rootDir = options.rootDir ?? process.cwd();
+  return buildDaemonConfig(await loadConfigLayers(options, rootDir));
 }
 
 export async function loadRawConfig(

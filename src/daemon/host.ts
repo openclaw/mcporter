@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
-import { loadDaemonConfig, type ServerDefinition } from '../config.js';
+import { loadConfigSnapshot, type DaemonConfig, type ServerDefinition } from '../config.js';
 import { readJsonFile, withFileLock, writeJsonFile } from '../fs-json.js';
 import { isKeepAliveServer } from '../lifecycle.js';
 import { isProcessRunning } from '../process-utils.js';
@@ -54,14 +54,11 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
     configPath: options.configExplicit ? options.configPath : undefined,
     rootDir: options.rootDir,
   });
-  const daemonConfig = await loadDaemonConfig({
+  const startup = await loadDaemonRuntimeState({
     configPath: options.configExplicit ? options.configPath : undefined,
     rootDir: options.rootDir,
   });
-  const runtime = await createRuntime({
-    configPath: options.configExplicit ? options.configPath : undefined,
-    rootDir: options.rootDir,
-  });
+  const { daemonConfig, runtime } = startup;
   const keepAliveDefinitions = runtime.getDefinitions().filter(isKeepAliveServer);
   const definitionHash = hashDaemonDefinitions(keepAliveDefinitions);
   if (keepAliveDefinitions.length === 0) {
@@ -237,6 +234,17 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);
   process.once('SIGQUIT', shutdown);
+}
+
+export async function loadDaemonRuntimeState(options: {
+  readonly configPath?: string;
+  readonly rootDir?: string;
+}): Promise<{ daemonConfig: DaemonConfig; runtime: Runtime }> {
+  const snapshot = await loadConfigSnapshot(options);
+  return {
+    daemonConfig: snapshot.daemon,
+    runtime: await createRuntime({ servers: snapshot.servers }),
+  };
 }
 
 const DAEMON_PROBE_TIMEOUT_MS = 2_000;

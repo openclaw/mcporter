@@ -38,6 +38,28 @@ describe('runtime cache policy', () => {
     vi.unstubAllEnvs();
   });
 
+  it.each([
+    { allowCachedAuth: true, disableOAuth: true },
+    { allowCachedAuth: true, disableOAuth: false },
+    { allowCachedAuth: false, disableOAuth: true },
+    { allowCachedAuth: false, disableOAuth: false },
+    { allowCachedAuth: undefined, disableOAuth: true },
+    { allowCachedAuth: undefined, disableOAuth: false },
+  ])('reuses the exact cached-auth/OAuth-disabled posture: %o', async (options) => {
+    const definition: ServerDefinition = {
+      name: 'matrix',
+      command: { kind: 'http', url: new URL('https://matrix.example.com/mcp') },
+    };
+    const context = fakeContext(definition);
+    mocks.createClientContext.mockResolvedValue(context);
+    const runtime = await createRuntime({ servers: [definition] });
+
+    await expect(runtime.connect('matrix', options)).resolves.toBe(context);
+    await expect(runtime.connect('matrix', options)).resolves.toBe(context);
+    expect(mocks.createClientContext).toHaveBeenCalledOnce();
+    await runtime.close();
+  });
+
   it('does not let stale OAuth promotion overwrite a replacement definition', async () => {
     const initial: ServerDefinition = {
       name: 'oauth',
