@@ -27,6 +27,7 @@ export interface ConnectWithAuthOptions {
   recreateTransport?: (transport: OAuthCapableTransport) => Promise<OAuthCapableTransport>;
   serverUrl?: string | URL;
   fetchFn?: typeof fetch;
+  signal?: AbortSignal;
 }
 
 interface OAuthConnectState {
@@ -139,7 +140,7 @@ export async function connectWithAuth(
 
   while (true) {
     try {
-      await attemptTransportConnect(client, state);
+      await attemptTransportConnect(client, state, options.signal);
       if (session && !state.hasCompletedAuthFlow && options.serverUrl) {
         await completeProactiveAuthorization(state.activeTransport, session, logger, {
           serverName,
@@ -188,8 +189,12 @@ export async function connectWithAuth(
   }
 }
 
-async function attemptTransportConnect(client: Client, state: OAuthConnectState): Promise<OAuthCapableTransport> {
-  await client.connect(state.activeTransport);
+async function attemptTransportConnect(
+  client: Client,
+  state: OAuthConnectState,
+  signal?: AbortSignal
+): Promise<OAuthCapableTransport> {
+  await client.connect(state.activeTransport, { signal });
   return state.activeTransport;
 }
 

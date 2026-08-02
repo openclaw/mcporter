@@ -14,6 +14,7 @@
 - Attribute elicitation prompts and public handler callbacks to their requesting server, and neutralize terminal control sequences in server-supplied prompt text.
 - Close bridge subscription handlers before the HTTP listener so active `subscriptions/listen` streams cannot deadlock shutdown.
 - Restore bounded stdio process-tree teardown with pre-close PID capture, SIGTERM/SIGKILL escalation, and explicit stream destruction.
+- Cancel in-flight connection handshakes during `runtime.close()` instead of waiting for the full negotiation timeout.
 - Keep legacy SSE fallback on legacy negotiation and preserve pinned modern-version negotiation errors instead of masking them with a secondary SSE failure.
 - Recover legacy stdio servers that exit on modern discovery by retrying initialization once with a fresh legacy-mode process.
 - Use the SDK's 60-second stdio discovery timeout for slow-starting modern servers, configurable with `MCPORTER_STDIO_PROBE_TIMEOUT_MS`.

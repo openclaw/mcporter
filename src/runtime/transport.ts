@@ -36,14 +36,16 @@ const wrapRecordTransport: WrapRecordTransport = <TTransport extends Transport>(
   definition: ServerDefinition,
   options: CreateClientContextOptions
 ): TTransport => {
-  if (!options.recordPath || !shouldUseModeForServer(definition, process.env.MCPORTER_RECORD_SERVER)) {
-    return transport;
-  }
-  return new RecordTransport({
-    inner: transport,
-    recordPath: options.recordPath,
-    server: definition.name,
-  }) as unknown as TTransport;
+  const wrapped =
+    options.recordPath && shouldUseModeForServer(definition, process.env.MCPORTER_RECORD_SERVER)
+      ? (new RecordTransport({
+          inner: transport,
+          recordPath: options.recordPath,
+          server: definition.name,
+        }) as unknown as TTransport)
+      : transport;
+  options.onTransportCreated?.(wrapped);
+  return wrapped;
 };
 
 const LIST_MAX_PAGES = 100;
@@ -101,16 +103,17 @@ async function createReplayClientContext(
   definition: ServerDefinition,
   replayPath: string,
   clientInfo: { name: string; version: string },
-  elicitationHandler?: ElicitationHandler
+  options: CreateClientContextOptions
 ): Promise<ClientContext> {
   const transport = new ReplayTransport({ recordPath: replayPath, server: definition.name });
+  options.onTransportCreated?.(transport);
   // Pre-v2 captures start with initialize. Skip a probe those recordings
   // cannot satisfy; captures containing server/discover replay normally.
   const client = createClient(definition, clientInfo, {
     forceLegacy: transport.requiresLegacyNegotiation,
-    elicitationHandler: elicitationHandler ?? createNonInteractiveElicitationResponder().handler,
+    elicitationHandler: options.elicitationHandler ?? createNonInteractiveElicitationResponder().handler,
   });
-  await client.connect(transport);
+  await client.connect(transport, { signal: options.signal });
   return { client, transport, definition, oauthSession: undefined };
 }
 
@@ -151,9 +154,11 @@ async function createStdioClientContext(
   });
   const transport = wrapRecordTransport(rawTransport, definition, options);
   try {
-    await client.connect(transport);
+    await client.connect(transport, { signal: options.signal });
   } catch (error) {
-    await closeTransportAndWait(logger, transport).catch(() => {});
+    if (!options.signal?.aborted) {
+      await closeTransportAndWait(logger, transport).catch(() => {});
+    }
     throw error;
   }
   return { client, transport, definition, oauthSession: undefined };
@@ -166,7 +171,7 @@ export async function createClientContext(
   options: CreateClientContextOptions = {}
 ): Promise<ClientContext> {
   if (options.replayPath && shouldUseModeForServer(definition, process.env.MCPORTER_REPLAY_SERVER)) {
-    return createReplayClientContext(definition, options.replayPath, clientInfo, options.elicitationHandler);
+    return createReplayClientContext(definition, options.replayPath, clientInfo, options);
   }
   const activeDefinition = await applyCachedAuthIfAvailable(definition, logger, options.allowCachedAuth);
 

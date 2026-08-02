@@ -12,6 +12,9 @@ type CachedClientEntry = {
   readonly contextPromise?: Promise<ClientContext>;
   readonly allowCachedAuth: boolean | undefined;
   readonly disableOAuth: boolean;
+  readonly abortController?: AbortController;
+  readonly transportRef?: { current?: ClientContext['transport'] };
+  readonly contextRef?: { current?: ClientContext };
 };
 
 export interface RuntimeConnectionCacheOptions {
@@ -291,6 +294,9 @@ export class RuntimeConnectionCache {
     }
 
     let connectionDefinition = definition;
+    const abortController = new AbortController();
+    const transportRef: { current?: ClientContext['transport'] } = {};
+    const contextRef: { current?: ClientContext } = {};
     let contextPromise = createClientContext(definition, this.logger, this.clientInfo, {
       maxOAuthAttempts: options.maxOAuthAttempts,
       oauthTimeoutMs: this.oauthTimeoutMs,
@@ -309,7 +315,12 @@ export class RuntimeConnectionCache {
       recordPath: this.recordPath,
       replayPath: this.replayPath,
       elicitationHandler: this.options.elicitationHandler,
+      signal: abortController.signal,
+      onTransportCreated: (transport) => {
+        transportRef.current = transport;
+      },
     }).then((context) => {
+      contextRef.current = context;
       this.lastConnectionInfo.set(normalized, connectionInfoFromClient(context.client));
       return context;
     });
@@ -338,6 +349,9 @@ export class RuntimeConnectionCache {
         contextPromise,
         allowCachedAuth: ignoresAuthCachePolicy ? effectiveAllowCachedAuth : cacheAllowCachedAuth,
         disableOAuth: ignoresAuthCachePolicy ? disableOAuth : cacheDisableOAuth,
+        abortController,
+        transportRef,
+        contextRef,
       });
       try {
         return await connection;
@@ -409,14 +423,47 @@ export class RuntimeConnectionCache {
   }
 
   private async closeCachedEntries(entries: CachedClientEntry[]): Promise<void> {
+    for (const cached of entries) {
+      cached.abortController?.abort();
+    }
     const results = await Promise.allSettled(
       entries.map(async (cached) => {
-        const context = await this.contextPromiseFor(cached);
+        const readyContext = cached.contextRef?.current;
+        if (readyContext) {
+          try {
+            await this.closeContext(readyContext);
+          } finally {
+            this.contextCacheKeys.delete(readyContext);
+            this.contextCachePromises.delete(readyContext);
+          }
+          return;
+        }
+
+        const pendingContext = this.contextPromiseFor(cached);
+        const pendingTransport = cached.transportRef?.current;
+        if (pendingTransport) {
+          await closeTransportAndWait(this.logger, pendingTransport);
+          void pendingContext.then(
+            async (context) => {
+              await context.client.close().catch(() => {});
+              await context.oauthSession?.close().catch(() => {});
+              this.contextCacheKeys.delete(context);
+              this.contextCachePromises.delete(context);
+            },
+            () => {}
+          );
+          return;
+        }
+
         try {
+          const context = await pendingContext;
           await this.closeContext(context);
-        } finally {
           this.contextCacheKeys.delete(context);
           this.contextCachePromises.delete(context);
+        } catch (error) {
+          if (!cached.abortController?.signal.aborted) {
+            throw error;
+          }
         }
       })
     );

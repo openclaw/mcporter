@@ -20,6 +20,8 @@ export interface CreateClientContextOptions {
   readonly recordPath?: string;
   readonly replayPath?: string;
   readonly elicitationHandler?: ElicitationHandler;
+  readonly signal?: AbortSignal;
+  readonly onTransportCreated?: (transport: ClientContext['transport']) => void;
 }
 
 export type WrapRecordTransport = <TTransport extends Transport>(

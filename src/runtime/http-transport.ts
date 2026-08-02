@@ -147,12 +147,14 @@ async function connectHttpTransport<TTransport extends OAuthCapableTransport>(
   transport: TTransport,
   oauthSession: OAuthSession | undefined,
   logger: Logger,
-  connectOptions: Parameters<typeof connectWithAuth>[4]
+  connectOptions: NonNullable<Parameters<typeof connectWithAuth>[4]>
 ): Promise<TTransport> {
   try {
     return (await connectWithAuth(client, transport, oauthSession, logger, connectOptions)) as TTransport;
   } catch (error) {
-    await closeTransportAndWait(logger, transport).catch(() => {});
+    if (!connectOptions.signal?.aborted) {
+      await closeTransportAndWait(logger, transport).catch(() => {});
+    }
     throw error;
   }
 }
@@ -211,7 +213,7 @@ async function attemptHttpClientContext(
       ),
     };
   } catch (primaryError) {
-    if (isEraNegotiationFailure(primaryError)) {
+    if (options.signal?.aborted || isEraNegotiationFailure(primaryError)) {
       await closeOAuthSession(oauthSession);
       throw primaryError;
     }
@@ -262,6 +264,7 @@ async function connectPrimaryHttpTransport(
     serverUrl: command.url,
     maxAttempts: options.maxOAuthAttempts,
     oauthTimeoutMs: options.oauthTimeoutMs,
+    signal: options.signal,
     recreateTransport: async () => createStreamableTransport(),
   });
   // v2 starts the legacy standalone SSE receive channel asynchronously from
@@ -295,6 +298,7 @@ async function connectSseFallbackTransport(
         serverUrl: command.url,
         maxAttempts: options.maxOAuthAttempts,
         oauthTimeoutMs: options.oauthTimeoutMs,
+        signal: options.signal,
       }
     );
     return { client, transport, definition, oauthSession };
