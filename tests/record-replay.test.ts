@@ -4,7 +4,7 @@ import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import type { Transport, TransportSendOptions } from '@modelcontextprotocol/sdk/shared/transport.js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createRuntime, MCPORTER_VERSION } from '../src/runtime.js';
 import { RecordTransport, type RecordedMessage } from '../src/runtime/record-transport.js';
 import { ReplayTransport } from '../src/runtime/replay-transport.js';
@@ -116,6 +116,53 @@ describe('record/replay transports', () => {
     const stdioShaped = transport as RecordTransport & { pid: number; stderr: EventTarget };
     expect(stdioShaped.pid).toBe(12345);
     expect(stdioShaped.stderr).toBe(stderr);
+  });
+
+  it('mirrors the wrapped v2 transport capability surface and message metadata', async () => {
+    const inner = new StubTransport() as StubTransport & {
+      hasPerRequestStream: boolean;
+      sessionId?: string;
+      setProtocolVersion: (version: string) => void;
+      setSupportedProtocolVersions: (versions: string[]) => void;
+      finishAuth: (authorizationCode: string, iss?: string) => Promise<void>;
+    };
+    inner.hasPerRequestStream = true;
+    inner.sessionId = 'initial-session';
+    inner.setProtocolVersion = vi.fn();
+    inner.setSupportedProtocolVersions = vi.fn();
+    inner.finishAuth = vi.fn(async () => {});
+    const transport = new RecordTransport({
+      inner,
+      recordPath: await tempRecordingPath(),
+      server: 'linear',
+    });
+    const receivedExtra: unknown[] = [];
+    transport.onmessage = (_message, extra) => receivedExtra.push(extra);
+
+    expect(transport.hasPerRequestStream).toBe(true);
+    expect(transport.sessionId).toBe('initial-session');
+    inner.sessionId = 'updated-session';
+    expect(transport.sessionId).toBe('updated-session');
+
+    await transport.start();
+    const extra = { request: new Request('https://example.test/mcp') };
+    inner.onmessage?.({ jsonrpc: '2.0', method: 'notifications/test' } as JSONRPCMessage, extra as never);
+    transport.setProtocolVersion('2026-07-28');
+    transport.setSupportedProtocolVersions(['2026-07-28', '2025-11-25']);
+    await transport.finishAuth?.('authorization-code', 'https://issuer.example');
+
+    expect(receivedExtra).toEqual([extra]);
+    expect(inner.setProtocolVersion).toHaveBeenCalledWith('2026-07-28');
+    expect(inner.setSupportedProtocolVersions).toHaveBeenCalledWith(['2026-07-28', '2025-11-25']);
+    expect(inner.finishAuth).toHaveBeenCalledWith('authorization-code', 'https://issuer.example');
+    await transport.close();
+  });
+
+  it('keeps replay transport on a shared in-memory channel', async () => {
+    const recordPath = await writeRecording([]);
+    const transport = new ReplayTransport({ recordPath, server: 'linear' });
+
+    expect(transport.hasPerRequestStream).toBeUndefined();
   });
 
   it('replays matching requests by method and params using the active request id', async () => {

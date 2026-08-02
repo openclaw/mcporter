@@ -27,14 +27,12 @@ export class RecordTransport implements Transport {
   onclose?: Transport['onclose'];
   onerror?: Transport['onerror'];
   onmessage?: Transport['onmessage'];
-  sessionId?: string;
-  finishAuth?: (authorizationCode: string) => Promise<void>;
+  finishAuth?: (authorizationCode: string, iss?: string) => Promise<void>;
 
   private writes: Promise<void> = Promise.resolve();
   private closeRecorded = false;
 
   constructor(private readonly opts: RecordTransportOptions) {
-    this.sessionId = opts.inner.sessionId;
     // Preserve the SDK's structural stdio detection without making HTTP
     // recordings look stdio-shaped. This keeps probe timeout semantics and
     // still records the in-place server/discover exchange.
@@ -44,10 +42,19 @@ export class RecordTransport implements Transport {
         pid: { get: () => (opts.inner as { pid?: unknown }).pid },
       });
     }
-    const finishAuth = (opts.inner as { finishAuth?: (authorizationCode: string) => Promise<void> }).finishAuth;
+    const finishAuth = (opts.inner as { finishAuth?: (authorizationCode: string, iss?: string) => Promise<void> })
+      .finishAuth;
     if (finishAuth) {
-      this.finishAuth = (authorizationCode) => finishAuth.call(opts.inner, authorizationCode);
+      this.finishAuth = (authorizationCode, iss) => finishAuth.call(opts.inner, authorizationCode, iss);
     }
+  }
+
+  get hasPerRequestStream(): boolean | undefined {
+    return this.opts.inner.hasPerRequestStream;
+  }
+
+  get sessionId(): string | undefined {
+    return this.opts.inner.sessionId;
   }
 
   async start(): Promise<void> {
@@ -59,13 +66,12 @@ export class RecordTransport implements Transport {
     this.opts.inner.onerror = (error) => {
       this.onerror?.(error);
     };
-    this.opts.inner.onmessage = (message) => {
+    this.opts.inner.onmessage = (message, extra) => {
       void this.appendLine(this.withMeta(message, 'recv'));
-      this.onmessage?.(message);
+      this.onmessage?.(message, extra);
     };
     await this.appendLifecycle('start');
     await this.opts.inner.start();
-    this.sessionId = this.opts.inner.sessionId;
   }
 
   async send(message: JSONRPCMessage, options?: TransportSendOptions): Promise<void> {
@@ -81,6 +87,10 @@ export class RecordTransport implements Transport {
 
   setProtocolVersion(version: string): void {
     this.opts.inner.setProtocolVersion?.(version);
+  }
+
+  setSupportedProtocolVersions(versions: string[]): void {
+    this.opts.inner.setSupportedProtocolVersions?.(versions);
   }
 
   private async appendLifecycle(event: 'start' | 'close'): Promise<void> {

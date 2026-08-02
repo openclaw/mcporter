@@ -18,6 +18,7 @@ interface ExpectedSend {
 type JsonRpcRecord = Record<string, unknown>;
 
 export class ReplayTransport implements Transport {
+  readonly hasPerRequestStream = undefined;
   onclose?: Transport['onclose'];
   onerror?: Transport['onerror'];
   onmessage?: Transport['onmessage'];
