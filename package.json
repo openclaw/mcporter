@@ -53,6 +53,7 @@
     "test:quiet": "cross-env MCPORTER_TEST_REPORTER=quiet pnpm test:verbose",
     "test:verbose": "pnpm build && node scripts/test-runner.js",
     "test:live": "MCP_LIVE_TESTS=1 vitest run tests/live",
+    "test:coverage": "pnpm build && cross-env MCPORTER_TEST_REPORTER=quiet vitest run --coverage",
     "clean": "rimraf dist",
     "dev": "tsc -w -p tsconfig.build.json",
     "prepublishOnly": "pnpm check && pnpm test && pnpm build",

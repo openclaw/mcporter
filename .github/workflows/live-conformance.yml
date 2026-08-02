@@ -1,0 +1,51 @@
+name: Live conformance
+
+# The live suite talks to real third-party MCP servers, so it cannot gate PRs:
+# a vendor outage or a newly-added auth requirement is not a mcporter regression.
+# Running it on a schedule still surfaces protocol drift (an endpoint moving era,
+# adding auth, or disappearing) instead of letting tests/live rot unnoticed.
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-conformance
+  cancel-in-progress: false
+
+jobs:
+  live:
+    name: Live MCP conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - run: corepack enable
+      - run: corepack prepare pnpm@10.33.2 --activate
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Run live conformance suite
+        run: pnpm test:live
+
+      - name: Note failure cause
+        if: failure()
+        shell: bash
+        run: |
+          {
+            echo "## Live conformance failed"
+            echo
+            echo "This suite talks to third-party MCP servers. Before treating it as an"
+            echo "mcporter regression, re-probe the failing endpoint: vendors have added"
+            echo "auth to previously open servers and moved protocol revisions before."
+            echo "See tests/live/README.md for the survey and refresh guidance."
+          } >> "$GITHUB_STEP_SUMMARY"

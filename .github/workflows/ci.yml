@@ -50,6 +50,8 @@ jobs:
       - run: pnpm check
         if: matrix.os != 'macos-15'
 
+      # Type-aware oxlint (tsgolint) crashes on macOS runners; ubuntu and windows
+      # still run the full `pnpm check`, so the rule set stays enforced.
       - name: Check without type-aware oxlint
         if: matrix.os == 'macos-15'
         run: pnpm format:check && pnpm typecheck
@@ -77,6 +79,36 @@ jobs:
         run: pnpm pack --pack-destination /tmp
 
       - run: pnpm test
+        if: matrix.os != 'ubuntu-latest'
         env:
           FIRECRAWL_API_KEY: test
           LINEAR_API_KEY: test
+
+      # Coverage runs on one platform only: the thresholds in vitest.config.ts are
+      # platform-independent, and instrumenting all three would triple CI time for
+      # no extra signal. This still runs the whole suite, so ubuntu loses nothing.
+      - name: Test with coverage
+        if: matrix.os == 'ubuntu-latest'
+        run: pnpm test:coverage
+        env:
+          FIRECRAWL_API_KEY: test
+          LINEAR_API_KEY: test
+
+      - name: Summarize coverage
+        if: matrix.os == 'ubuntu-latest' && always()
+        shell: bash
+        run: |
+          if [ -f coverage/coverage-summary.json ]; then
+            node scripts/coverage-summary.mjs >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No coverage summary produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload coverage report
+        if: matrix.os == 'ubuntu-latest' && always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 14
+          if-no-files-found: ignore
