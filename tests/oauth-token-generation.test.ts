@@ -11,20 +11,15 @@ import {
   withOAuthTokenGeneration,
 } from '../src/oauth-token-generation.js';
 
-// These live helpers stamp each credential save with an opaque "generation" so
-// oauth-vault.ts / oauth-persistence.ts can compare-and-set across backing stores,
-// yet ship with no direct unit test. Pins reuse-vs-mint, the hidden (non-enumerable)
-// marker, and the generation-plus-value / legacy-deep-equal comparison arms.
-
 const baseTokens = { access_token: 'tok-abc', token_type: 'Bearer' } as OAuthTokens;
 const baseClient = { client_id: 'client-xyz' } as OAuthClientInformationMixed;
 
 describe('withOAuthTokenGeneration', () => {
   it('stamps a new enumerable generation on tokens that lack one, without mutating the input', () => {
     const stamped = withOAuthTokenGeneration(baseTokens);
-    expect(sameOAuthTokenValue(stamped, baseTokens)).toBe(true); // public value preserved
-    expect(Object.keys(stamped)).toHaveLength(Object.keys(baseTokens).length + 1); // extra enumerable marker
-    expect(Object.keys(baseTokens)).toEqual(['access_token', 'token_type']); // input untouched
+    expect(sameOAuthTokenValue(stamped, baseTokens)).toBe(true);
+    expect(Object.keys(stamped)).toHaveLength(Object.keys(baseTokens).length + 1);
+    expect(Object.keys(baseTokens)).toEqual(['access_token', 'token_type']);
   });
 
   it('reuses an existing generation instead of minting a new one', () => {
@@ -36,8 +31,8 @@ describe('withOAuthTokenGeneration', () => {
   it('mints distinct generations across independent stamps of the same value', () => {
     const a = withOAuthTokenGeneration(baseTokens);
     const b = withOAuthTokenGeneration(baseTokens);
-    expect(sameOAuthTokenValue(a, b)).toBe(true); // identical public value
-    expect(sameOAuthTokenGeneration(a, b)).toBe(false); // but a distinct save, so not the same generation
+    expect(sameOAuthTokenValue(a, b)).toBe(true);
+    expect(sameOAuthTokenGeneration(a, b)).toBe(false);
   });
 });
 
@@ -45,9 +40,9 @@ describe('withHiddenOAuthTokenGeneration', () => {
   it('hides the generation from enumeration/serialization while keeping it recoverable', () => {
     const stamped = withOAuthTokenGeneration(baseTokens);
     const hidden = withHiddenOAuthTokenGeneration(stamped);
-    expect(Object.keys(hidden)).toHaveLength(Object.keys(baseTokens).length); // marker no longer enumerable
+    expect(Object.keys(hidden)).toHaveLength(Object.keys(baseTokens).length);
     expect(JSON.parse(JSON.stringify(hidden))).toEqual({ access_token: 'tok-abc', token_type: 'Bearer' });
-    expect(sameOAuthTokenGeneration(hidden, stamped)).toBe(true); // still readable for compare-and-set
+    expect(sameOAuthTokenGeneration(hidden, stamped)).toBe(true);
   });
 
   it('returns the input unchanged when there is no generation to hide', () => {
@@ -72,7 +67,7 @@ describe('sameOAuthTokenGeneration', () => {
   it('requires matching generation AND public value when generations are present', () => {
     const stamped = withOAuthTokenGeneration(baseTokens);
     expect(sameOAuthTokenGeneration(stamped, stamped)).toBe(true);
-    const mutatedValue = { ...stamped, access_token: 'changed' } as OAuthTokens; // same generation, different value
+    const mutatedValue = { ...stamped, access_token: 'changed' } as OAuthTokens;
     expect(sameOAuthTokenGeneration(mutatedValue, stamped)).toBe(false);
   });
 
@@ -95,8 +90,21 @@ describe('client-registration generation helpers', () => {
     const a = withOAuthClientGeneration(baseClient);
     const b = withOAuthClientGeneration(baseClient);
     expect(Object.keys(a)).toHaveLength(Object.keys(baseClient).length + 1);
-    expect(sameOAuthClientValue(a, baseClient)).toBe(true); // generation ignored in value compare
-    expect(sameOAuthClientGeneration(a, b)).toBe(false); // distinct saves
+    expect(sameOAuthClientValue(a, baseClient)).toBe(true);
+    expect(sameOAuthClientGeneration(a, b)).toBe(false);
+  });
+
+  it('reuses an existing client generation instead of minting a new one', () => {
+    const stamped = withOAuthClientGeneration(baseClient);
+    const restamped = withOAuthClientGeneration(stamped);
+    expect(sameOAuthClientGeneration(restamped, stamped)).toBe(true);
+  });
+
+  it('requires matching generation and public value for clients', () => {
+    const stamped = withOAuthClientGeneration(baseClient);
+    const changed = { ...stamped, client_id: 'changed' } as OAuthClientInformationMixed;
+    expect(sameOAuthClientGeneration(changed, stamped)).toBe(false);
+    expect(sameOAuthClientValue(changed, stamped)).toBe(false);
   });
 
   it('hides the client generation while keeping it recoverable, and is identity without one', () => {
