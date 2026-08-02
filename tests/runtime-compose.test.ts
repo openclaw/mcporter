@@ -18,6 +18,8 @@ const mocks = vi.hoisted(() => {
   const stdioInstances: unknown[] = [];
 
   class MockClient {
+    private readonly requestHandlers = new Map<string, unknown>();
+
     constructor() {
       clientInstances.push(this);
     }
@@ -30,6 +32,10 @@ const mocks = vi.hoisted(() => {
     }
 
     async close() {}
+
+    setRequestHandler(method: string, handler: unknown) {
+      this.requestHandlers.set(method, handler);
+    }
 
     async listTools(params: unknown) {
       return listToolsMock(params);
