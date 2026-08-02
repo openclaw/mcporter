@@ -21,6 +21,23 @@ afterEach(async () => {
   await Promise.allSettled(connectedServers.splice(0).map((server) => server.close()));
 });
 
+// readline emits its own cursor-positioning codes when rendering a prompt to a
+// non-TTY stream; those are generated locally and never derived from server
+// input. Assert on the classes an attacker could actually smuggle instead.
+function expectNoInjectedControlSequences(output: string): void {
+  expect(output).not.toContain('\u0007'); // BEL (OSC terminator)
+  expect(output).not.toContain('\u001b]'); // OSC introducer, e.g. OSC-52 clipboard writes
+  expect(output).not.toContain('\u009b'); // C1 CSI
+  expect(output).not.toContain('\u001b['); // ESC-based CSI from server text
+}
+// Cursor moves (CSI n G) and erase-below (CSI 0 J) that node:readline writes
+// while drawing its prompt. Deliberately narrow so a server-supplied CSI such
+// as ESC[2J or ESC[31m still reaches the assertions above.
+function stripReadlinePromptCodes(output: string): string {
+  // eslint-disable-next-line no-control-regex -- matching the terminal bytes is the point
+  return output.replace(/\u001b\[(?:\d*G|0J)/gu, '');
+}
+
 describe('elicitation responder', () => {
   it('attributes interactive form prompts and strips terminal control sequences from every display field', async () => {
     const request = {
@@ -50,9 +67,10 @@ describe('elicitation responder', () => {
     expect(output).toContain('Description');
     expect(output).toContain('Choices: safe-choice');
     expect(output).toContain('Target [safe-choice]:');
-    expect(output).not.toContain('\u0007');
-    expect(output).not.toContain('\u001b');
-    expect(output).not.toContain('\u009b');
+    expectNoInjectedControlSequences(stripReadlinePromptCodes(output));
+    expect(output).not.toContain('Y2xpcGJvYXJk');
+    expect(output).not.toContain('[2J');
+    expect(output).not.toContain('[31m');
   });
 
   it('strips terminal control sequences from elicitation URLs', async () => {
@@ -68,9 +86,8 @@ describe('elicitation responder', () => {
     const output = await captureInteractivePrompt(request, '\n', 'linear');
 
     expect(output).toContain('https://example.com/continue');
-    expect(output).not.toContain('\u0007');
-    expect(output).not.toContain('\u001b');
-    expect(output).not.toContain('\u009b');
+    expectNoInjectedControlSequences(stripReadlinePromptCodes(output));
+    expect(output).not.toContain('c2VjcmV0');
   });
 
   it('fulfils modern input_required results through the registered handler', async () => {
