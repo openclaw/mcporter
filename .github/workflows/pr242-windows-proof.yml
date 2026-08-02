@@ -93,6 +93,6 @@ jobs:
             console.error(error);
             process.exitCode = 1;
           });
-          '@ | Set-Content -Path "$env:RUNNER_TEMP\mcporter-pr242-proof.ts" -Encoding utf8
+          '@ | Set-Content -Path ".mcporter-pr242-proof.ts" -Encoding utf8
 
-          pnpm exec tsx "$env:RUNNER_TEMP\mcporter-pr242-proof.ts"
+          pnpm exec tsx ".mcporter-pr242-proof.ts"
