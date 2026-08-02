@@ -171,6 +171,38 @@ describe.each(transports)('modern MRTR and identity over %s', (transport) => {
   });
 });
 
+it('streams modern tool-list changes and exposes cache metadata', async () => {
+  const client = new ModernClient(
+    { name: 'fixture-modern-subscription-client', version: '1.0.0' },
+    { versionNegotiation: { mode: { pin: '2026-07-28' } } }
+  );
+  let toolListChanges = 0;
+  client.setNotificationHandler('notifications/tools/list_changed', () => {
+    toolListChanges += 1;
+  });
+
+  try {
+    await client.connect(new ModernHttpTransport(new URL(modernHttp.url)));
+    const initial = await client.listTools(undefined, { cacheMode: 'refresh' });
+    expect(initial).toMatchObject({ ttlMs: 1_000, cacheScope: 'private' });
+    const initiallyEnabled = initial.tools.some((tool) => tool.name === 'runtime_tool');
+    const subscription = await client.listen({ toolsListChanged: true });
+    expect(subscription.honoredFilter).toEqual({ toolsListChanged: true });
+
+    try {
+      await client.callTool({ name: 'toggle_tool', arguments: {} });
+      await expect.poll(() => toolListChanges, { timeout: 2_000 }).toBeGreaterThan(0);
+      const refreshed = await client.listTools(undefined, { cacheMode: 'refresh' });
+      expect(refreshed).toMatchObject({ ttlMs: 1_000, cacheScope: 'private' });
+      expect(refreshed.tools.some((tool) => tool.name === 'runtime_tool')).toBe(!initiallyEnabled);
+    } finally {
+      await subscription.close();
+    }
+  } finally {
+    await client.close();
+  }
+}, 20_000);
+
 it('bridges both fixtures to pinned modern and legacy HTTP clients through mcporter serve', async () => {
   await withConfig(
     {

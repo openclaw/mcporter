@@ -31,7 +31,7 @@ MCPorter helps you lean into the "code execution" workflows highlighted in Anthr
 MCPorter speaks both generations of the Model Context Protocol and picks the right one per server, automatically:
 
 - **2026-07-28 ("MCP 2.0")** – the stateless revision: `server/discover` version negotiation, per-request identity, Multi Round-Trip Requests (`input_required`), cacheable list results, and the hardened authorization rules (RFC 9207 issuer validation, issuer-bound credentials, Client ID Metadata Documents via `oauthClientMetadataUrl`).
-- **Legacy eras (2024-10-07 … 2025-11-25)** – the classic `initialize` handshake, byte-identical to before.
+- **Legacy eras (2024-10-07 … 2025-11-25)** – the classic `initialize` handshake and compatible request flow, now advertising client elicitation capabilities during initialization.
 
 By default MCPorter probes with `server/discover` and falls back to the legacy handshake seamlessly (on stdio the probe runs in place on the live connection — no extra process spawn). Pin or opt out per server with the `protocolVersion` config field:
 
@@ -49,7 +49,7 @@ By default MCPorter probes with `server/discover` and falls back to the legacy h
 
 Interactive tools work on both eras: when an ephemeral server needs input mid-call (elicitation on legacy servers, `input_required` retries on 2026-07-28 servers), MCPorter prompts on the terminal — or declines cleanly with a hint when running non-interactively. Daemon-managed keep-alive calls cannot forward prompts to the calling terminal yet, so they decline with the same actionable hint; set `lifecycle: "ephemeral"` when a tool must prompt interactively. `mcporter serve` bridges your configured servers to both client generations at once: one endpoint serves 2026-07-28 and 2025-era clients side by side.
 
-The repo ships two committed fixture servers ([tests/servers/legacy](tests/servers/legacy), [tests/servers/modern](tests/servers/modern)) exercising the wide surface of each protocol generation end-to-end in CI, validated against live public servers on both revisions.
+The repo ships two committed fixture servers ([tests/servers/legacy](tests/servers/legacy), [tests/servers/modern](tests/servers/modern)). CI exercises representative fixture paths end-to-end over stdio and Streamable HTTP, including negotiation, tools, resources, elicitation, modern cache metadata, and `subscriptions/listen` tool changes. Broader fixture-only paths remain available for targeted and manual testing; opt-in live tests cover public servers separately.
 
 ## What's New in 0.11.0
 
