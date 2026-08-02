@@ -441,6 +441,40 @@ describe('mcporter composability', () => {
     }
   });
 
+  it('stops automatic resource pagination when the server repeats a cursor', async () => {
+    mocks.listResourcesMock
+      .mockResolvedValueOnce({
+        resources: [{ uri: 'memo://one', name: 'One' }],
+        nextCursor: 'same-page',
+      })
+      .mockResolvedValueOnce({
+        resources: [{ uri: 'memo://two', name: 'Two' }],
+        nextCursor: 'same-page',
+      });
+    const runtime = await createRuntime({
+      servers: [
+        {
+          name: 'resources',
+          command: { kind: 'http' as const, url: new URL('https://resources.example.com/mcp') },
+        },
+      ],
+    });
+
+    try {
+      await expect(runtime.listResources('resources')).resolves.toEqual({
+        resources: [
+          { uri: 'memo://one', name: 'One' },
+          { uri: 'memo://two', name: 'Two' },
+        ],
+        nextCursor: 'same-page',
+      });
+      expect(mocks.listResourcesMock).toHaveBeenCalledTimes(2);
+      expect(mocks.listResourcesMock).toHaveBeenNthCalledWith(2, { cursor: 'same-page' });
+    } finally {
+      await runtime.close();
+    }
+  });
+
   it('uses disableOAuth on cold callTool/listTools helper connections', async () => {
     const runtime = await createRuntime({
       servers: [

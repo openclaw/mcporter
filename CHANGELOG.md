@@ -15,6 +15,7 @@
 - Preserve transport capabilities and request metadata through recording wrappers so modern HTTP cancellation remains stream-based.
 - Replay accepted modern elicitation rounds with the caller's handler instead of unconditionally declining them.
 - Preserve primitive tool output schemas through `mcporter serve` and project structured results correctly for both legacy and modern clients.
+- Stop resource pagination when a server repeats its cursor, returning the bounded partial result without duplicate-page churn.
 
 ### Config
 

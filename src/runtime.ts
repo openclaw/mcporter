@@ -379,7 +379,10 @@ class McpRuntime implements Runtime {
         specTypeSchemas.ListResourcesResult
       );
       const resources = [...response.resources];
+      const seenCursors = new Set<string>();
       for (let page = 1; page < MAX_RESOURCE_LIST_PAGES && response.nextCursor; page += 1) {
+        if (seenCursors.has(response.nextCursor)) break;
+        seenCursors.add(response.nextCursor);
         response = await client.request(
           { method: 'resources/list', params: { ...requestParams, cursor: response.nextCursor } },
           specTypeSchemas.ListResourcesResult
