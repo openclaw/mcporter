@@ -28,7 +28,7 @@ This file tracks limitations that users regularly run into. Most of these requir
 
 - Upgrading `@modelcontextprotocol/sdk` to 1.22.0 causes `mcporter generate-cli --compile` (and direct runtime `listTools`) to fail against inline STDIO servers with `MCP error -32603: Cannot read properties of undefined (reading 'typeName')`.
 - Repro: `pnpm mcporter generate-cli "node mock-stdio.mjs" --compile /tmp/inline-cli --runtime bun` using the inline stdio harness in `tests/cli-generate-cli.integration.test.ts`.
-- Status: reproduced locally; pinned the SDK to `~1.21.2` until upstream ships a fix.
+- Status: **stale pinned observation from SDK 1.22.0, not a current finding.** The `~1.21.2` pin described here is no longer in effect — `package.json` has since moved to `@modelcontextprotocol/sdk` `^1.30.0`. Whether the underlying regression was fixed upstream, worked around in the inline-stdio test harness, or is simply no longer exercised has not been re-verified. Re-run the repro above against the current SDK before relying on this entry.
 
 ## Next Steps
 
