@@ -8,7 +8,7 @@ import { expandHome } from '../env.js';
 import { isKeepAliveServer } from '../lifecycle.js';
 import { createRuntime } from '../runtime.js';
 
-interface DaemonCliOptions {
+export interface DaemonCliOptions {
   readonly configPath: string;
   // Whether the config path was explicitly provided (flag/env). If false, runtime should
   // treat config as implicit and allow missing files without throwing ENOENT.

@@ -14,12 +14,12 @@ export interface ElicitationResponder {
   didDecline(): boolean;
 }
 
-interface InteractiveElicitationOptions {
+export interface InteractiveElicitationOptions {
   readonly input?: NodeJS.ReadableStream;
   readonly output?: NodeJS.WritableStream;
 }
 
-interface NonInteractiveElicitationOptions {
+export interface NonInteractiveElicitationOptions {
   readonly onDecline?: (request: ElicitRequest) => void;
 }
 

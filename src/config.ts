@@ -23,7 +23,9 @@ export { __configInternals } from './config-normalize.js';
 export type {
   CommandSpec,
   HttpCommand,
+  ImportKind,
   LoadConfigOptions,
+  ProtocolVersion,
   RawConfig,
   RawEntry,
   RawLifecycle,

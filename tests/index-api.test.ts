@@ -1,5 +1,28 @@
-import { describe, expect, it } from 'vitest';
-import type { CallResult } from '../src/index.js';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import type {
+  CallResult,
+  ClientContext,
+  ConnectionInfo,
+  ConnectionIssueKind,
+  DaemonCliOptions,
+  HttpCommand,
+  ImportKind,
+  InteractiveElicitationOptions,
+  LoadConfigOptions,
+  NonInteractiveElicitationOptions,
+  OAuthAuthorizationRequest,
+  OAuthAuthorizationResponse,
+  OAuthSession,
+  OAuthSessionOptions,
+  ProtocolVersion,
+  RefreshableBearerOptions,
+  ServerLifecycle,
+  ServerLoggingOptions,
+  ServerProxy,
+  ServerSource,
+  StdioCommand,
+  ToolCallOptions,
+} from '../src/index.js';
 import { createServerProxy } from '../src/index.js';
 import type { Runtime, ServerToolInfo } from '../src/runtime.js';
 
@@ -7,6 +30,30 @@ type CallLogEntry = {
   server: string;
   tool: string;
   options: unknown;
+};
+
+type PublicApiTypes = {
+  clientContext: ClientContext;
+  connectionInfo: ConnectionInfo;
+  connectionIssueKind: ConnectionIssueKind;
+  daemonCliOptions: DaemonCliOptions;
+  httpCommand: HttpCommand;
+  importKind: ImportKind;
+  interactiveElicitationOptions: InteractiveElicitationOptions;
+  loadConfigOptions: LoadConfigOptions;
+  nonInteractiveElicitationOptions: NonInteractiveElicitationOptions;
+  oauthAuthorizationRequest: OAuthAuthorizationRequest;
+  oauthAuthorizationResponse: OAuthAuthorizationResponse;
+  oauthSession: OAuthSession;
+  oauthSessionOptions: OAuthSessionOptions;
+  protocolVersion: ProtocolVersion;
+  refreshableBearerOptions: RefreshableBearerOptions;
+  serverLifecycle: ServerLifecycle;
+  serverLoggingOptions: ServerLoggingOptions;
+  serverProxy: ServerProxy;
+  serverSource: ServerSource;
+  stdioCommand: StdioCommand;
+  toolCallOptions: ToolCallOptions;
 };
 
 function createComposableRuntime() {
@@ -99,6 +146,13 @@ function createComposableRuntime() {
 }
 
 describe('index exports integration', () => {
+  it('exports connection metadata returned by the runtime API', () => {
+    const info = { protocolVersion: '2026-07-28', era: 'modern' } satisfies ConnectionInfo;
+
+    expect(info.protocolVersion).toBe('2026-07-28');
+    expectTypeOf<PublicApiTypes>().toBeObject();
+  });
+
   it('composes proxies across MCP servers using the TypeScript API', async () => {
     const runtime = createComposableRuntime();
     const docs = createServerProxy(runtime as unknown as Runtime, 'docs') as Record<string, unknown>;

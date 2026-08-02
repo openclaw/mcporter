@@ -2,10 +2,10 @@ import { createCallResult } from './result-utils.js';
 import type { CallOptions, ListToolsOptions, Runtime, ServerToolInfo } from './runtime.js';
 import { readSchemaCache, writeSchemaCache } from './schema-cache.js';
 
-type ToolCallOptions = CallOptions & { args?: unknown };
+export type ToolCallOptions = CallOptions & { args?: unknown };
 type ToolArguments = CallOptions['args'];
 
-type ServerProxy = {
+export type ServerProxy = {
   call(toolName: string, options?: ToolCallOptions): Promise<ReturnType<typeof createCallResult>>;
   listTools(options?: ListToolsOptions): Promise<ServerToolInfo[]>;
 };

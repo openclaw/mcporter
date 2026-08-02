@@ -30,6 +30,10 @@
 - Validate RFC 9207 authorization-response issuers before redeeming callback codes, with server-specific mismatch errors.
 - Bind persisted tokens and client registrations to their authorization-server issuer while accepting legacy unstamped records once and stamping them on the next successful save.
 
+### TypeScript API
+
+- Export connection metadata and the named option/result types reachable through the package-root API.
+
 ### Tooling / Dependencies
 
 - Migrate mcporter runtime and serve bridges to the MCP TypeScript SDK v2 client/server packages while retaining SDK v1 as a legacy test fixture.
