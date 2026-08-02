@@ -21,10 +21,13 @@ export function buildStaticClientInformation(
   } as OAuthClientInformationMixed;
 }
 
-export function resolveOAuthClientSecret(definition: ServerDefinition): string | undefined {
+export function resolveOAuthClientSecret(
+  definition: ServerDefinition,
+  options: { rejectBlank?: boolean } = {}
+): string | undefined {
   if (definition.oauthClientSecretEnv) {
     const value = process.env[definition.oauthClientSecretEnv];
-    if (!value) {
+    if (!value || (options.rejectBlank && value.trim().length === 0)) {
       throw new Error(`Environment variable '${definition.oauthClientSecretEnv}' is required for OAuth client secret.`);
     }
     return value;
