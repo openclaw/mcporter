@@ -24,6 +24,32 @@ MCPorter helps you lean into the "code execution" workflows highlighted in Anthr
 - **Record/replay fixtures.** `mcporter record` captures MCP JSON-RPC traffic as NDJSON, and `mcporter replay` serves the same responses deterministically for offline debugging and redacted repros.
 - **OAuth and stdio ergonomics.** Built-in OAuth caching, log tailing, and stdio wrappers let you work with HTTP, SSE, and stdio transports from the same interface.
 - **Ad-hoc connections.** Point the CLI at _any_ MCP endpoint (HTTP or stdio) without touching config, then persist it later if you want. Hosted MCPs that expect a browser login (Supabase, Vercel, etc.) are auto-detected—just run `mcporter auth <url>` and the CLI promotes the definition to OAuth on the fly. See [docs/adhoc.md](docs/adhoc.md).
+- **MCP 2.0 ready.** Speaks the stateless 2026-07-28 protocol revision and every legacy era, negotiated automatically per server.
+
+## MCP 2.0 Support
+
+MCPorter speaks both generations of the Model Context Protocol and picks the right one per server, automatically:
+
+- **2026-07-28 ("MCP 2.0")** – the stateless revision: `server/discover` version negotiation, per-request identity, Multi Round-Trip Requests (`input_required`), cacheable list results, and the hardened authorization rules (RFC 9207 issuer validation, issuer-bound credentials, Client ID Metadata Documents via `oauthClientMetadataUrl`).
+- **Legacy eras (2024-10-07 … 2025-11-25)** – the classic `initialize` handshake, byte-identical to before.
+
+By default MCPorter probes with `server/discover` and falls back to the legacy handshake seamlessly (on stdio the probe runs in place on the live connection — no extra process spawn). Pin or opt out per server with the `protocolVersion` config field:
+
+```jsonc
+{
+  "mcpServers": {
+    "modern": { "url": "https://huggingface.co/mcp", "protocolVersion": "2026-07-28" },
+    "classic": { "url": "https://mcp.context7.com/mcp", "protocolVersion": "legacy" },
+    "auto": { "url": "https://example.com/mcp" }, // default: auto-negotiate
+  },
+}
+```
+
+`mcporter list <server> --verbose` shows the negotiated revision, e.g. `Protocol: 2026-07-28 (modern)`.
+
+Interactive tools work on both eras: when a server needs input mid-call (elicitation on legacy servers, `input_required` retries on 2026-07-28 servers), MCPorter prompts on the terminal — or declines cleanly with a hint when running non-interactively. `mcporter serve` bridges your configured servers to both client generations at once: one endpoint serves 2026-07-28 and 2025-era clients side by side.
+
+The repo ships two committed fixture servers ([tests/servers/legacy](tests/servers/legacy), [tests/servers/modern](tests/servers/modern)) exercising the wide surface of each protocol generation end-to-end in CI, validated against live public servers on both revisions.
 
 ## What's New in 0.11.0
 
