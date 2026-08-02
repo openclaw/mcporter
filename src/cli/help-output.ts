@@ -1,5 +1,6 @@
 import fsPromises from 'node:fs/promises';
 import { MCPORTER_VERSION } from '../version.js';
+import { consumeMatchingTokens } from './flag-utils.js';
 import { boldText, dimText, extraDimText, supportsAnsiColor } from './terminal.js';
 
 type HelpEntry = {
@@ -201,15 +202,7 @@ export function isHelpToken(token: string): boolean {
 }
 
 export function consumeHelpTokens(args: string[]): boolean {
-  let found = false;
-  for (let index = args.length - 1; index >= 0; index -= 1) {
-    const token = args[index];
-    if (token && isHelpToken(token)) {
-      args.splice(index, 1);
-      found = true;
-    }
-  }
-  return found;
+  return consumeMatchingTokens(args, isHelpToken);
 }
 
 export function isVersionToken(token: string): boolean {

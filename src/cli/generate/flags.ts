@@ -1,12 +1,7 @@
-import { splitCommandLine } from '../adhoc-server.js';
 import { expectValue } from '../flag-utils.js';
-import {
-  extractHttpServerTarget,
-  looksLikeHttpUrl,
-  normalizeHttpUrlCandidate,
-  splitHttpToolSelector,
-} from '../http-utils.js';
+import { extractHttpServerTarget, looksLikeHttpUrl, splitHttpToolSelector } from '../http-utils.js';
 import { extractGeneratorFlags } from './flag-parser.js';
+import { looksLikeInlineCommand, normalizeCommandInput as normalizeGeneratedCommandInput } from './name-utils.js';
 import type { CommandInput } from './types.js';
 
 export interface GenerateFlags {
@@ -209,40 +204,13 @@ function mergeCsvList(existing: string[] | undefined, value: string): string[] {
 }
 
 function normalizeCommandInput(value: string): CommandInput {
-  const httpCandidate = normalizeHttpUrlCandidate(value);
-  if (httpCandidate) {
-    const selector = splitHttpToolSelector(httpCandidate);
+  const command = normalizeGeneratedCommandInput(value);
+  if (typeof command === 'string') {
+    const selector = splitHttpToolSelector(command);
     if (selector) {
       return selector.baseUrl;
     }
-    return httpCandidate;
+    return command;
   }
-  if (looksLikeInlineCommand(value)) {
-    return parseInlineCommand(value);
-  }
-  return { command: value };
-}
-
-function looksLikeInlineCommand(value: string): boolean {
-  if (!value) {
-    return false;
-  }
-  if (!/\s/.test(value)) {
-    return false;
-  }
-  try {
-    const parts = splitCommandLine(value.trim());
-    return parts.length > 0;
-  } catch {
-    return false;
-  }
-}
-
-function parseInlineCommand(value: string): CommandInput {
-  const parts = splitCommandLine(value.trim());
-  if (parts.length === 0) {
-    throw new Error('--command requires a non-empty value.');
-  }
-  const [command, ...rest] = parts as [string, ...string[]];
-  return { command, args: rest };
+  return command;
 }

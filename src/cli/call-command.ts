@@ -1,5 +1,6 @@
 import { analyzeConnectionError, type ConnectionIssue } from '../error-classifier.js';
 import { wrapCallResult } from '../result-utils.js';
+import type { Runtime } from '../runtime.js';
 import { type CallArgsParseResult, parseCallArguments } from './call-arguments.js';
 import {
   CALL_HELP_ADHOC_SERVER_LINES,
@@ -27,8 +28,6 @@ import { dumpActiveHandles } from './runtime-debug.js';
 import { dimText, redText, yellowText } from './terminal.js';
 import { resolveCallTimeout, withTimeout } from './timeouts.js';
 import { loadToolMetadata } from './tool-cache.js';
-
-type Runtime = Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>;
 
 interface ResolvedCallTarget {
   server: string;
@@ -247,7 +246,7 @@ export function printCallHelp(): void {
 }
 
 async function maybeDescribeServer(
-  runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
+  runtime: Runtime,
   server: string,
   tool: string,
   outputFormat: OutputFormat,
@@ -336,7 +335,7 @@ function splitServerToolSelector(selector: string): { server: string; tool: stri
 }
 
 async function enforceSchemaAwareArgumentTypes(
-  runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
+  runtime: Runtime,
   server: string,
   tool: string,
   args: Record<string, unknown>,
@@ -433,7 +432,7 @@ function schemaAllowsArray(descriptor: unknown): boolean {
 }
 
 async function hydratePositionalArguments(
-  runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
+  runtime: Runtime,
   server: string,
   tool: string,
   namedArgs: Record<string, unknown>,
@@ -484,7 +483,7 @@ async function hydratePositionalArguments(
 type ToolResolution = IdentifierResolution;
 
 async function inferSingleToolName(
-  runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
+  runtime: Runtime,
   server: string,
   disableOAuth: boolean | undefined
 ): Promise<string | undefined> {
@@ -501,7 +500,7 @@ async function inferSingleToolName(
 }
 
 async function invokeWithAutoCorrection(
-  runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
+  runtime: Runtime,
   server: string,
   tool: string,
   args: Record<string, unknown>,
@@ -514,7 +513,7 @@ async function invokeWithAutoCorrection(
 }
 
 async function attemptCall(
-  runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
+  runtime: Runtime,
   server: string,
   tool: string,
   args: Record<string, unknown>,
@@ -582,7 +581,7 @@ async function attemptCall(
 }
 
 async function maybeRetryResolvedTool(
-  runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
+  runtime: Runtime,
   server: string,
   tool: string,
   args: Record<string, unknown>,
@@ -611,7 +610,7 @@ async function maybeRetryResolvedTool(
 }
 
 async function maybeResolveToolName(
-  runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
+  runtime: Runtime,
   server: string,
   attemptedTool: string,
   error: unknown,

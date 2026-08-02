@@ -29,7 +29,3 @@ export function getDaemonSocketPath(configKey: string): string {
 export function getDaemonLogPath(configKey: string): string {
   return path.join(ensureRunDir(), `daemon-${configKey}.log`);
 }
-
-export function getDaemonDir(): string {
-  return ensureRunDir();
-}

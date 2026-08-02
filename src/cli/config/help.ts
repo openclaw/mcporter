@@ -1,4 +1,5 @@
 import { boldText, dimText, extraDimText } from '../terminal.js';
+import { consumeMatchingTokens } from '../flag-utils.js';
 import { printConfigUsageExamples } from './render.js';
 import { COLOR_ENABLED } from './shared.js';
 
@@ -146,15 +147,7 @@ export function isHelpToken(token: string): boolean {
 }
 
 export function consumeInlineHelpTokens(args: string[]): boolean {
-  let found = false;
-  for (let index = args.length - 1; index >= 0; index -= 1) {
-    const token = args[index];
-    if (token && isHelpToken(token)) {
-      args.splice(index, 1);
-      found = true;
-    }
-  }
-  return found;
+  return consumeMatchingTokens(args, isHelpToken);
 }
 
 export function printConfigHelp(subcommand?: string): void {

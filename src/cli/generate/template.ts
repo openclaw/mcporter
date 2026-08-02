@@ -9,7 +9,7 @@ import { markExecutable } from './fs-helpers.js';
 import { renderEmbeddedHelpSource } from './template-help.js';
 import type { GeneratedOption, ToolMetadata } from './tools.js';
 import { buildEmbeddedSchemaMap } from './tools.js';
-import { stableJsonStringify } from './stable-json.js';
+import { stableJsonStringify } from '../../stable-json.js';
 
 export interface TemplateInput {
   outputPath?: string;

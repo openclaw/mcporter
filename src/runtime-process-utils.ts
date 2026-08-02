@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { Logger } from './logging.js';
+import { waitForChildExit } from './process-utils.js';
 
 export interface CloseTransportAndWaitOptions {
   readonly throwOnCloseError?: boolean;
@@ -65,47 +66,7 @@ async function ensureProcessTerminated(logger: Logger, pid: number): Promise<voi
 }
 
 async function waitForChildClose(child: ChildProcess, timeoutMs: number): Promise<void> {
-  if (
-    (child as { exitCode?: number | null }).exitCode !== null &&
-    (child as { exitCode?: number | null }).exitCode !== undefined
-  ) {
-    return;
-  }
-  await new Promise<void>((resolve, reject) => {
-    let settled = false;
-    const finish = () => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      cleanup();
-      resolve();
-    };
-    const timeout = () => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      cleanup();
-      reject(new Error(`Timed out waiting ${timeoutMs}ms for child process to close.`));
-    };
-    const cleanup = () => {
-      child.removeListener('close', finish);
-      child.removeListener('exit', finish);
-      child.removeListener('error', finish);
-      if (timer) {
-        clearTimeout(timer);
-      }
-    };
-    child.once('close', finish);
-    child.once('exit', finish);
-    child.once('error', finish);
-    let timer: NodeJS.Timeout | undefined;
-    if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
-      timer = setTimeout(timeout, timeoutMs);
-      timer.unref?.();
-    }
-  });
+  await waitForChildExit(child, timeoutMs);
 
   try {
     child.stdin?.end?.();

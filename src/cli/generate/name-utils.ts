@@ -93,7 +93,7 @@ export function looksLikeInlineCommand(value: string): boolean {
   }
 }
 
-function parseInlineCommand(value: string): CommandInput {
+export function parseInlineCommand(value: string): CommandInput {
   const parts = splitCommandLine(value.trim());
   if (parts.length === 0) {
     throw new Error('--command requires a non-empty value.');

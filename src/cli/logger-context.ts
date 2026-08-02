@@ -16,13 +16,6 @@ export function setLogLevel(level: LogLevel): void {
   activeLogger = createPrefixedConsoleLogger('mcporter', activeLogLevel);
 }
 
-export function setLogger(logger: Logger, level?: LogLevel): void {
-  activeLogger = logger;
-  if (level) {
-    activeLogLevel = level;
-  }
-}
-
 export function logInfo(message: string): void {
   activeLogger.info(message);
 }

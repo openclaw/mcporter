@@ -588,7 +588,7 @@ export async function buildOAuthPersistence(definition: ServerDefinition, logger
 
   // Migrate legacy default per-server cache (~/.mcporter/<name>) into the vault if present.
   const legacyDir = path.join(legacyMcporterDir(), definition.name);
-  if (!definition.tokenCacheDir && legacyDir) {
+  if (!definition.tokenCacheDir) {
     const legacy = new DirectoryPersistence(legacyDir, logger, serverUrl, true);
     const legacyTokens = await legacy.readTokens();
     const legacyClient = await legacy.readClientInfo();
@@ -638,7 +638,7 @@ async function clearLegacyOAuthArtifacts(
   scope: OAuthClearScope
 ): Promise<void> {
   const legacyDir = path.join(legacyMcporterDir(), definition.name);
-  if (legacyDir && (!definition.tokenCacheDir || legacyDir !== definition.tokenCacheDir)) {
+  if (!definition.tokenCacheDir || legacyDir !== definition.tokenCacheDir) {
     const legacy = new DirectoryPersistence(legacyDir, logger);
     await legacy.clear(scope);
   }

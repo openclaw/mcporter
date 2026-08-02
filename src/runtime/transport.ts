@@ -25,8 +25,6 @@ import { RecordTransport } from './record-transport.js';
 import { ReplayTransport } from './replay-transport.js';
 import { resolveCommandArgument, resolveCommandArguments } from './utils.js';
 
-const STDIO_TRACE_ENABLED = process.env.MCPORTER_STDIO_TRACE === '1';
-
 function extractTransportStatusCode(error: unknown): number | undefined {
   if (!error || typeof error !== 'object') {
     return undefined;
@@ -67,11 +65,6 @@ interface ResolvedHttpTransportOptions {
 type HttpClientContextAttempt =
   | { context: ClientContext; nextDefinition?: undefined }
   | { context?: undefined; nextDefinition: ServerDefinition };
-
-function attachStdioTraceLogging(_transport: StdioClientTransport, _label?: string): void {
-  // STDIO instrumentation is handled via sdk-patches side effects. This helper remains
-  // so runtime callers can opt-in without sprinkling conditional checks everywhere.
-}
 
 export interface ClientContext {
   readonly client: Client;
@@ -331,9 +324,6 @@ async function createStdioClientContext(
     cwd: definition.command.cwd,
     env: compat.env,
   });
-  if (STDIO_TRACE_ENABLED) {
-    attachStdioTraceLogging(rawTransport, definition.name ?? definition.command.command);
-  }
   const transport = wrapRecordTransport(rawTransport, definition, options);
   try {
     await client.connect(transport);

@@ -30,26 +30,10 @@ export function resolveCallTimeout(override?: number): number {
 
 // withTimeout races a promise against a timeout to avoid hangs.
 export function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  // Race the original promise with a timeout to keep CLI responsive.
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     return promise;
   }
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error('Timeout'));
-    }, timeoutMs);
-
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error) => {
-        clearTimeout(timer);
-        reject(error);
-      }
-    );
-  });
+  return raceWithTimeout(promise, timeoutMs);
 }
 
 export function consumeTimeoutFlag(
@@ -70,3 +54,4 @@ export function consumeTimeoutFlag(
   args.splice(index, 2);
   return parsed;
 }
+import { raceWithTimeout } from '../runtime/utils.js';

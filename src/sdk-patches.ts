@@ -2,6 +2,7 @@ import type { ChildProcess } from 'node:child_process';
 import type { PassThrough } from 'node:stream';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
+import { waitForChildExit } from './process-utils.js';
 
 // Upstream TODO: Once typescript-sdk#579/#780/#1049 land, this shim can be dropped.
 // We monkey-patch the transport so child processes actually exit and their stdio
@@ -119,63 +120,6 @@ function destroyStream(stream: unknown): void {
   }
 }
 
-function waitForChildClose(child: MaybeChildProcess | undefined, timeoutMs: number): Promise<void> {
-  if (!child) {
-    return Promise.resolve();
-  }
-  if (
-    (child as { exitCode?: number | null }).exitCode !== null &&
-    (child as { exitCode?: number | null }).exitCode !== undefined
-  ) {
-    return Promise.resolve();
-  }
-  return new Promise<void>((resolve, reject) => {
-    let settled = false;
-    try {
-      child.on?.('error', ignoreEmitterError);
-    } catch {
-      // ignore
-    }
-    const finish = () => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      cleanup();
-      resolve();
-    };
-    const timeout = () => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      cleanup();
-      reject(new Error(`Timed out waiting ${timeoutMs}ms for child process to close.`));
-    };
-    const cleanup = () => {
-      child.removeListener('exit', finish);
-      child.removeListener('close', finish);
-      child.removeListener('error', finish);
-      try {
-        child.removeListener?.('error', ignoreEmitterError);
-      } catch {
-        // ignore
-      }
-      if (timer) {
-        clearTimeout(timer);
-      }
-    };
-    child.once('exit', finish);
-    child.once('close', finish);
-    child.once('error', finish);
-    let timer: NodeJS.Timeout | undefined;
-    if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
-      timer = setTimeout(timeout, timeoutMs);
-      timer.unref?.();
-    }
-  });
-}
-
 function flushProcessLogs(_child: MaybeChildProcess, meta: ProcessStreamMeta): void {
   if (meta.flushed) {
     return;
@@ -282,7 +226,7 @@ function patchStdioClose(): void {
       destroyStream(stream);
     }
 
-    let exited = await waitForChildClose(child, 700).then(
+    let exited = await waitForChildExit(child, 700).then(
       () => true,
       () => false
     );
@@ -294,7 +238,7 @@ function patchStdioClose(): void {
       } catch {
         // ignore
       }
-      exited = await waitForChildClose(child, 700).then(
+      exited = await waitForChildExit(child, 700).then(
         () => true,
         () => false
       );
@@ -307,7 +251,7 @@ function patchStdioClose(): void {
       } catch {
         // ignore
       }
-      await waitForChildClose(child, 500).catch(() => {});
+      await waitForChildExit(child, 500).catch(() => {});
     }
 
     destroyStream(child.stdin);

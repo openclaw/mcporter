@@ -15,7 +15,7 @@ function sortJsonValue(value: unknown): unknown {
   }
   const result: Record<string, unknown> = {};
   for (const key of Object.keys(value).toSorted()) {
-    const entry = (value as Record<string, unknown>)[key];
+    const entry = value[key];
     if (entry !== undefined) {
       result[key] = sortJsonValue(entry);
     }

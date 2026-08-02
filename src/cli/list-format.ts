@@ -62,13 +62,6 @@ export function renderServerListRow(
   };
 }
 
-export function truncateForSpinner(text: string, maxLength = 72): string {
-  if (text.length <= maxLength) {
-    return text;
-  }
-  return `${text.slice(0, Math.max(0, maxLength - 1))}…`;
-}
-
 export function formatSourceSuffix(
   sourceOrSources: ServerSource | readonly ServerSource[] | undefined,
   inline = false,

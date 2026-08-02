@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { constants } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { isProcessRunning } from './process-utils.js';
 
 const DEFAULT_LOCK_TIMEOUT_MS = 30_000;
 const LOCK_POLL_MS = 25;
@@ -269,15 +270,6 @@ async function isLockRecoverable(lockPath: string): Promise<boolean> {
     return !isProcessRunning(pid);
   }
   return await isMalformedLockStale(lockPath);
-}
-
-function isProcessRunning(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
 }
 
 async function isMalformedLockStale(lockPath: string): Promise<boolean> {

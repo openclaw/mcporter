@@ -1,14 +1,10 @@
 import type { CliArtifactMetadata, SerializedServerDefinition } from '../../cli-metadata.js';
 import type { GenerateCliOptions } from '../../generate-cli.js';
+import { validateToolSelection } from './tool-selection.js';
 
 export type InspectableInvocation = CliArtifactMetadata['invocation'] & {
   serverRef?: string;
 };
-
-export interface GenerateCliContext {
-  invocation: InspectableInvocation;
-  definition: SerializedServerDefinition;
-}
 
 export function buildGenerateCliCommand(
   invocation: InspectableInvocation,
@@ -92,15 +88,9 @@ export function resolveGenerateRequestFromArtifact(
 
   const includeTools = parsed.includeTools ?? invocation.includeTools;
   const excludeTools = parsed.excludeTools ?? invocation.excludeTools;
-  if (includeTools && excludeTools) {
-    throw new Error('Cannot combine --include-tools and --exclude-tools.');
-  }
-  if (includeTools && includeTools.length === 0) {
-    throw new Error('--include-tools requires at least one tool name.');
-  }
-  if (excludeTools && excludeTools.length === 0) {
-    throw new Error('--exclude-tools requires at least one tool name.');
-  }
+  validateToolSelection(includeTools, excludeTools, {
+    mutuallyExclusiveMessage: 'Cannot combine --include-tools and --exclude-tools.',
+  });
 
   return {
     serverRef,

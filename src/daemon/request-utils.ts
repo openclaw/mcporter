@@ -8,6 +8,12 @@ export interface ServerActivity {
   lastUsedAt?: number;
 }
 
+export function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 export function ensureManaged(server: string, managedServers: Map<string, ServerDefinition>): void {
   if (!managedServers.has(server)) {
     throw new Error(`Server '${server}' is not managed by the daemon.`);

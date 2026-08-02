@@ -1,10 +1,9 @@
 import { analyzeConnectionError } from '../error-classifier.js';
 import { wrapCallResult } from '../result-utils.js';
+import type { Runtime } from '../runtime.js';
 import { buildConnectionIssueEnvelope, formatErrorMessage } from './json-output.js';
 import { consumeOutputFormat } from './output-format.js';
 import { printCallOutput } from './output-utils.js';
-
-type Runtime = Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>;
 
 export async function handleResource(runtime: Runtime, args: string[]): Promise<void> {
   const output = consumeOutputFormat(args, {

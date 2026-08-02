@@ -62,10 +62,6 @@ export function analyzeConnectionError(error: unknown): ConnectionIssue {
   return { kind: 'other', rawMessage };
 }
 
-export function isAuthIssue(issue: ConnectionIssue): boolean {
-  return issue.kind === 'auth';
-}
-
 function extractMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message ?? '';

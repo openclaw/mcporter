@@ -3,7 +3,7 @@ import type { ServerDefinition } from '../config-schema.js';
 import type { OAuthAuthorizationRequest, OAuthSessionOptions } from '../oauth.js';
 import { analyzeConnectionError } from '../error-classifier.js';
 import { clearOAuthCaches } from '../oauth-persistence.js';
-import type { createRuntime } from '../runtime.js';
+import type { Runtime } from '../runtime.js';
 import { isOAuthFlowError } from '../runtime/oauth.js';
 import type { EphemeralServerSpec } from './adhoc-server.js';
 import { extractEphemeralServerFlags } from './ephemeral-flags.js';
@@ -12,8 +12,6 @@ import { looksLikeHttpUrl } from './http-utils.js';
 import { buildConnectionIssueEnvelope } from './json-output.js';
 import { getActiveLogger, logInfo, logWarn } from './logger-context.js';
 import { consumeOutputFormat } from './output-format.js';
-
-type Runtime = Awaited<ReturnType<typeof createRuntime>>;
 
 type BrowserSuppression = 'default' | 'no-browser';
 

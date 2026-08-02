@@ -1,5 +1,6 @@
 import ora from 'ora';
 import type { ServerDefinition } from '../config.js';
+import type { Runtime } from '../runtime.js';
 import { setStdioLogMode } from '../sdk-patches.js';
 import { MCPORTER_VERSION } from '../version.js';
 import { persistPreparedEphemeralServer, prepareEphemeralServerTarget } from './ephemeral-target.js';
@@ -26,10 +27,7 @@ import { LIST_TIMEOUT_MS, withTimeout } from './timeouts.js';
 import { loadToolMetadata } from './tool-cache.js';
 import { formatTransportSummary } from './transport-utils.js';
 
-export async function handleList(
-  runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
-  args: string[]
-): Promise<void> {
+export async function handleList(runtime: Runtime, args: string[]): Promise<void> {
   const flags = extractListFlags(args);
   let target = args.shift();
   let requestedTool: string | undefined;
@@ -397,7 +395,7 @@ export async function handleList(
 }
 
 async function checkListServer(
-  runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
+  runtime: Runtime,
   server: ServerDefinition,
   timeoutMs: number,
   disableOAuth: boolean
@@ -502,7 +500,7 @@ export function printListHelp(): void {
 }
 
 function resolveServerDefinition(
-  runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
+  runtime: Runtime,
   name: string,
   options: { quiet?: boolean } = {}
 ): { definition: ServerDefinition; name: string } | undefined {
@@ -541,17 +539,14 @@ function resolveServerDefinition(
   }
 }
 
-function suggestServerName(
-  runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
-  attempted: string
-) {
+function suggestServerName(runtime: Runtime, attempted: string) {
   const definitions = runtime.getDefinitions();
   const names = definitions.map((entry) => entry.name);
   return chooseClosestIdentifier(attempted, names);
 }
 
 function resolveConfiguredToolSelector(
-  runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
+  runtime: Runtime,
   target: string | undefined
 ): { server: string; tool: string } | undefined {
   if (!target || !target.includes('.')) {
@@ -619,10 +614,7 @@ function printMissingToolJson(
   process.exitCode = 1;
 }
 
-async function loadServerInstructions(
-  runtime: Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>,
-  serverName: string
-): Promise<string | undefined> {
+async function loadServerInstructions(runtime: Runtime, serverName: string): Promise<string | undefined> {
   if (typeof runtime.getInstructions !== 'function') {
     return undefined;
   }

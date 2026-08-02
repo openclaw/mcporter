@@ -30,3 +30,15 @@ export function expectValue(flag: string, value: string | undefined): string {
   }
   return value;
 }
+
+export function consumeMatchingTokens(args: string[], predicate: (token: string) => boolean): boolean {
+  let found = false;
+  for (let index = args.length - 1; index >= 0; index -= 1) {
+    const token = args[index];
+    if (token && predicate(token)) {
+      args.splice(index, 1);
+      found = true;
+    }
+  }
+  return found;
+}

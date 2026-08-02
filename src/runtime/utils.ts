@@ -17,7 +17,7 @@ export function resolveCommandArgument(value: string): string {
 }
 
 export function resolveCommandArguments(args: readonly string[]): string[] {
-  if (!args || args.length === 0) {
+  if (args.length === 0) {
     return [];
   }
   return args.map((arg) => resolveCommandArgument(arg));

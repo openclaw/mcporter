@@ -38,7 +38,7 @@ export interface ListJsonServerEntry {
 }
 
 export function printSingleServerHeader(
-  definition: ReturnType<Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>['getDefinition']>,
+  definition: ServerDefinition,
   toolCount: number | undefined,
   durationMs: number | undefined,
   transportSummary: string,
@@ -90,7 +90,7 @@ function formatInstructionLines(instructions: string): string[] {
 }
 
 export function printToolDetail(
-  definition: ReturnType<Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>['getDefinition']>,
+  definition: ServerDefinition,
   metadata: ToolMetadata,
   includeSchema: boolean,
   requiredOnly: boolean
@@ -127,7 +127,7 @@ export function printToolDetail(
 }
 
 export function printBriefTool(
-  definition: ReturnType<Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>['getDefinition']>,
+  definition: ServerDefinition,
   metadata: ToolMetadata,
   requiredOnly: boolean
 ): ToolBriefResult {
@@ -151,7 +151,7 @@ export function printBriefTool(
 }
 
 function buildExampleOptions(
-  definition: ReturnType<Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>['getDefinition']>
+  definition: ServerDefinition
 ): { selector?: string; wrapExpression?: boolean } | undefined {
   if (definition.source?.kind !== 'local' || definition.source.path !== '<adhoc>') {
     return undefined;
@@ -192,11 +192,7 @@ export function buildJsonListEntry(
       status: 'ok',
       durationMs: result.durationMs,
       description: result.server.description,
-      transport: formatTransportSummary(
-        result.server as ReturnType<
-          Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>['getDefinition']
-        >
-      ),
+      transport: formatTransportSummary(result.server as ServerDefinition),
       source: result.server.source,
       sources: options.includeSources ? result.server.sources : undefined,
       tools: result.tools.map((tool) => ({
@@ -207,20 +203,14 @@ export function buildJsonListEntry(
       })),
     };
   }
-  const authCommand = buildAuthCommandHint(
-    result.server as ReturnType<Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>['getDefinition']>
-  );
+  const authCommand = buildAuthCommandHint(result.server as ServerDefinition);
   const advice = classifyListError(result.error, result.server.name, timeoutSeconds, { authCommand });
   return {
     name: result.server.name,
     status: advice.category,
     durationMs: result.durationMs,
     description: result.server.description,
-    transport: formatTransportSummary(
-      result.server as ReturnType<
-        Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>['getDefinition']
-      >
-    ),
+    transport: formatTransportSummary(result.server as ServerDefinition),
     source: result.server.source,
     sources: options.includeSources ? result.server.sources : undefined,
     issue: serializeConnectionIssue(advice.issue),
@@ -238,9 +228,7 @@ export function createUnknownResult(server: ServerDefinition): ListSummaryResult
   };
 }
 
-export function buildAuthCommandHint(
-  definition: ReturnType<Awaited<ReturnType<(typeof import('../runtime.js'))['createRuntime']>>['getDefinition']>
-): string {
+export function buildAuthCommandHint(definition: ServerDefinition): string {
   if (definition.source?.kind === 'local' && definition.source.path === '<adhoc>') {
     if (definition.command.kind === 'http') {
       const url = definition.command.url instanceof URL ? definition.command.url.href : String(definition.command.url);

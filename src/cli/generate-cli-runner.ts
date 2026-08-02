@@ -5,19 +5,14 @@ import { inferNameFromCommand } from './generate/name-utils.js';
 import { performGenerateFromArtifact, performGenerateFromRequest } from './generate/output.js';
 import { buildInlineServerDefinition } from './generate/server-utils.js';
 import { buildGenerateCliCommand, resolveGenerateRequestFromArtifact } from './generate/template-data.js';
+import { validateToolSelection } from './generate/tool-selection.js';
 
 // handleGenerateCli parses flags and generates the requested standalone CLI.
 export async function handleGenerateCli(args: string[], globalFlags: FlagMap): Promise<void> {
   const parsed = parseGenerateFlags(args);
-  if (parsed.includeTools && parsed.excludeTools) {
-    throw new Error('--include-tools and --exclude-tools cannot be used together.');
-  }
-  if (parsed.includeTools && parsed.includeTools.length === 0) {
-    throw new Error('--include-tools requires at least one tool name.');
-  }
-  if (parsed.excludeTools && parsed.excludeTools.length === 0) {
-    throw new Error('--exclude-tools requires at least one tool name.');
-  }
+  validateToolSelection(parsed.includeTools, parsed.excludeTools, {
+    mutuallyExclusiveMessage: '--include-tools and --exclude-tools cannot be used together.',
+  });
   if (parsed.from && (parsed.command || parsed.description || parsed.name)) {
     throw new Error('--from cannot be combined with --command/--description/--name.');
   }

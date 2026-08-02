@@ -10,10 +10,11 @@ import {
 import { ensureInvocationDefaults, fetchTools, resolveServerDefinition } from './cli/generate/definition.js';
 import { resolveRuntimeKind } from './cli/generate/runtime.js';
 import { readPackageMetadata, writeTemplate } from './cli/generate/template.js';
+import { validateToolSelection } from './cli/generate/tool-selection.js';
 import type { ToolMetadata } from './cli/generate/tools.js';
 import { buildToolMetadataList, toolsTestHelpers } from './cli/generate/tools.js';
 import { type CliArtifactMetadata, serializeDefinition } from './cli-metadata.js';
-import { stableJsonStringify } from './cli/generate/stable-json.js';
+import { stableJsonStringify } from './stable-json.js';
 import type { ServerDefinition } from './config.js';
 import type { ServerToolInfo } from './runtime.js';
 
@@ -205,15 +206,9 @@ function sanitizePathSegment(value: string): string {
 }
 
 function applyToolFilters(tools: ServerToolInfo[], includeTools?: string[], excludeTools?: string[]): ServerToolInfo[] {
-  if (includeTools && excludeTools) {
-    throw new Error('Internal error: both includeTools and excludeTools provided to generateCli.');
-  }
-  if (includeTools && includeTools.length === 0) {
-    throw new Error('--include-tools requires at least one tool name.');
-  }
-  if (excludeTools && excludeTools.length === 0) {
-    throw new Error('--exclude-tools requires at least one tool name.');
-  }
+  validateToolSelection(includeTools, excludeTools, {
+    mutuallyExclusiveMessage: 'Internal error: both includeTools and excludeTools provided to generateCli.',
+  });
 
   if (!includeTools && !excludeTools) {
     return tools;
