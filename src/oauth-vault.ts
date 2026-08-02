@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { OAuthClientInformationMixed, OAuthDiscoveryState, OAuthTokens } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from './config.js';
 import { readJsonFile, withFileLock, writeJsonFile } from './fs-json.js';
+import { isStoredOAuthClientInformation, isStoredOAuthTokens } from './oauth-credential-validation.js';
 import {
   sameOAuthClientGeneration,
   sameOAuthClientValue,
@@ -220,10 +221,11 @@ function externalVaultEntry(entry: VaultEntry | undefined): VaultEntry | undefin
   if (!entry) {
     return entry;
   }
+  const { tokens, clientInfo, ...metadata } = entry;
   return {
-    ...entry,
-    ...(entry.tokens ? { tokens: withHiddenOAuthTokenGeneration(entry.tokens) } : {}),
-    ...(entry.clientInfo ? { clientInfo: withHiddenOAuthClientGeneration(entry.clientInfo) } : {}),
+    ...metadata,
+    ...(isStoredOAuthTokens(tokens) ? { tokens: withHiddenOAuthTokenGeneration(tokens) } : {}),
+    ...(isStoredOAuthClientInformation(clientInfo) ? { clientInfo: withHiddenOAuthClientGeneration(clientInfo) } : {}),
   };
 }
 

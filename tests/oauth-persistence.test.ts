@@ -733,6 +733,42 @@ describe('oauth persistence', () => {
     await expect(clearVaultEntry(definition, 'all')).resolves.toBeUndefined();
   });
 
+  it('degrades malformed stored issuer stamps to missing credentials', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-vault-invalid-issuer-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(path.join(tmp, 'home'));
+    hasSpy = true;
+    process.env.XDG_DATA_HOME = path.join(tmp, 'data');
+
+    const definition = mkDef('invalid-issuer');
+    const vaultPath = path.join(tmp, 'data', 'mcporter', 'credentials.json');
+    await fs.mkdir(path.dirname(vaultPath), { recursive: true });
+    await fs.writeFile(
+      vaultPath,
+      JSON.stringify({
+        version: 2,
+        entries: {
+          [vaultKeyForDefinition(definition)]: {
+            serverName: definition.name,
+            serverUrl: 'https://example.com/mcp',
+            tokens: {
+              access_token: 'token',
+              token_type: 'Bearer',
+              issuer: { url: 'https://issuer.example' },
+            },
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      }),
+      'utf8'
+    );
+
+    const persistence = await buildOAuthPersistence(definition);
+    await expect(persistence.readTokens()).resolves.toBeUndefined();
+    await expect(loadVaultEntry(definition)).resolves.not.toHaveProperty('tokens');
+    await expect(readCachedAccessToken(definition)).resolves.toBeUndefined();
+  });
+
   it.runIf(process.platform !== 'win32')('surfaces unreadable vault files', async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-vault-unreadable-'));
     tempRoots.push(tmp);

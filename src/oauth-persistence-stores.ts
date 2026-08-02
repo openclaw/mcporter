@@ -5,6 +5,7 @@ import type { OAuthClientInformationMixed, OAuthDiscoveryState, OAuthTokens } fr
 import type { ServerDefinition } from './config.js';
 import { readJsonFile, withFileLock, writeJsonFile, writeTextFileAtomic } from './fs-json.js';
 import type { Logger } from './logging.js';
+import { isStoredOAuthClientInformation, isStoredOAuthTokens } from './oauth-credential-validation.js';
 import type { OAuthClearScope, OAuthPersistence, OAuthPersistenceSnapshot } from './oauth-persistence.js';
 import {
   sameOAuthClientGeneration,
@@ -142,7 +143,7 @@ export class DirectoryPersistence implements OAuthPersistence {
 
   private async readTokensAfterReconcile(): Promise<OAuthTokens | undefined> {
     const tokens = await this.readJsonOrUndefined<OAuthTokens>(this.tokenPath);
-    return tokens ? withHiddenOAuthTokenGeneration(tokens) : undefined;
+    return isStoredOAuthTokens(tokens) ? withHiddenOAuthTokenGeneration(tokens) : undefined;
   }
 
   async saveTokens(tokens: OAuthTokens): Promise<void> {
@@ -194,7 +195,7 @@ export class DirectoryPersistence implements OAuthPersistence {
 
   private async readClientInfoAfterReconcile(): Promise<OAuthClientInformationMixed | undefined> {
     const info = await this.readJsonOrUndefined<OAuthClientInformationMixed>(this.clientInfoPath);
-    return info ? withHiddenOAuthClientGeneration(info) : undefined;
+    return isStoredOAuthClientInformation(info) ? withHiddenOAuthClientGeneration(info) : undefined;
   }
 
   async saveClientInfo(info: OAuthClientInformationMixed): Promise<void> {

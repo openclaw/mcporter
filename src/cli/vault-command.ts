@@ -138,7 +138,7 @@ function validateOAuthTokens(tokens: Record<string, unknown>): void {
   if (typeof tokens.token_type !== 'string' || tokens.token_type.length === 0) {
     throw new CliUsageError('Vault payload tokens.token_type must be a non-empty string.');
   }
-  for (const key of ['refresh_token', 'scope'] as const) {
+  for (const key of ['refresh_token', 'scope', 'issuer'] as const) {
     if (tokens[key] !== undefined && typeof tokens[key] !== 'string') {
       throw new CliUsageError(`Vault payload tokens.${key} must be a string.`);
     }

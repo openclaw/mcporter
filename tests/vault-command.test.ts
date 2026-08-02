@@ -104,6 +104,23 @@ describe('vault command', () => {
       })
     ).rejects.toThrow("Vault payload must include a 'tokens' object.");
   });
+
+  it('rejects malformed token issuer stamps', async () => {
+    await expect(
+      handleVault(runtimeFor(definition), ['set', 'calendar', '--stdin'], {
+        readStdin: async () =>
+          JSON.stringify({
+            tokens: {
+              access_token: 'token',
+              token_type: 'Bearer',
+              issuer: { url: 'https://issuer.example' },
+            },
+          }),
+      })
+    ).rejects.toThrow('Vault payload tokens.issuer must be a string.');
+
+    await expect(loadVaultEntry(definition)).resolves.toBeUndefined();
+  });
 });
 
 function runtimeFor(server: ServerDefinition) {
