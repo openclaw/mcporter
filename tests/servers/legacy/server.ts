@@ -34,6 +34,19 @@ interface ToolSpec {
   ) => CallToolResult | Promise<CallToolResult>;
 }
 
+function objectSchema(properties: Record<string, object> = {}, required: string[] = []) {
+  return {
+    type: 'object' as const,
+    properties,
+    ...(required.length > 0 ? { required } : {}),
+    additionalProperties: false,
+  };
+}
+
+function textResult(text: string): CallToolResult {
+  return { content: [{ type: 'text', text }] };
+}
+
 export function createLegacyServer(): McpServer {
   const server = new McpServer(
     { name: 'mcporter-legacy-fixture', version: '1.0.0' },
@@ -50,13 +63,6 @@ export function createLegacyServer(): McpServer {
   const subscriptions = new Set<string>();
 
   const addTool = (spec: ToolSpec) => tools.set(spec.definition.name, spec);
-  const objectSchema = (properties: Record<string, object> = {}, required: string[] = []) => ({
-    type: 'object' as const,
-    properties,
-    ...(required.length > 0 ? { required } : {}),
-    additionalProperties: false,
-  });
-  const textResult = (text: string): CallToolResult => ({ content: [{ type: 'text', text }] });
 
   addTool({
     definition: {

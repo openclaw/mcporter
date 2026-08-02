@@ -32,7 +32,7 @@ export function createModernServer(notifyHttpToolsChanged?: () => void): McpServ
         'tools/list': { ttlMs: 1_000, cacheScope: 'private' },
         'resources/list': { ttlMs: 1_000, cacheScope: 'private' },
       },
-      requestState: { verify: requestStateCodec.verify },
+      requestState: { verify: (state, ctx) => requestStateCodec.verify(state, ctx) },
     }
   );
 
