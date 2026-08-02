@@ -29,15 +29,16 @@ export default defineConfig({
         'src/**/*.d.ts',
       ],
       reporter: ['text-summary', 'json-summary', 'lcov'],
-      // A ratchet, not a target: these sit ~1 point under the measured coverage
-      // (85.0 st / 78.2 br / 88.9 fn / 85.1 li) so an unrelated PR cannot trip CI
-      // by a rounding error, while a real regression still fails. Raise them
-      // deliberately when coverage climbs.
+      // A ratchet, not a target. Calibrate against LINUX, where the CI coverage job
+      // runs: platform-branching code makes macOS read ~1 point higher (85.1/78.3/
+      // 88.9/85.2 locally vs 84.2/77.7/87.8/84.3 on ubuntu), so thresholds derived
+      // from a developer machine fail CI. These sit ~1 point under the ubuntu
+      // numbers; raise them deliberately when coverage climbs.
       thresholds: {
-        statements: 84,
-        branches: 77,
-        functions: 88,
-        lines: 84,
+        statements: 83,
+        branches: 76,
+        functions: 86,
+        lines: 83,
       },
     },
   },
