@@ -9,7 +9,6 @@
 
 ### OAuth
 
-- Launch Windows OAuth browser open via `rundll32 url.dll,FileProtocolHandler` with the authorization URL as a separate argv element so quote-bearing URLs never pass through `cmd.exe`. (thanks @SebTardif)
 - Recover rotating refresh tokens after transient OAuth refresh failures without clearing a concurrently persisted winner, and clear only the exact rejected token on `invalid_grant`. (PR #227, thanks @feniix)
 
 ### Distribution
