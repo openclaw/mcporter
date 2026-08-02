@@ -11,7 +11,7 @@ import {
   type ElicitationHandler,
   registerElicitationHandler,
 } from './elicitation.js';
-import { createHttpClientContext } from './http-transport.js';
+import { createHttpClientContext, type HttpClientFactory } from './http-transport.js';
 import { RecordTransport } from './record-transport.js';
 import { ReplayTransport } from './replay-transport.js';
 import { McporterStdioTransport } from './stdio-transport.js';
@@ -153,12 +153,15 @@ export async function createClientContext(
         options
       );
     }
-    return createHttpClientContext(
-      createClient(activeDefinition, clientInfo, { elicitationHandler: options.elicitationHandler }),
-      activeDefinition,
-      logger,
-      options,
-      wrapRecordTransport
-    );
+    const httpClientFactory: HttpClientFactory = {
+      create: (httpDefinition) =>
+        createClient(httpDefinition, clientInfo, { elicitationHandler: options.elicitationHandler }),
+      createLegacy: (httpDefinition) =>
+        createClient(httpDefinition, clientInfo, {
+          forceLegacy: true,
+          elicitationHandler: options.elicitationHandler,
+        }),
+    };
+    return createHttpClientContext(activeDefinition, logger, options, wrapRecordTransport, httpClientFactory);
   });
 }

@@ -1,5 +1,6 @@
 import {
   Client,
+  SdkError,
   SdkErrorCode,
   SdkHttpError,
   SSEClientTransport,
@@ -146,6 +147,66 @@ describe('createClientContext (HTTP)', () => {
 
     expect(context.transport).toBeInstanceOf(SSEClientTransport);
     expect(clientConnect).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses a newly created legacy client for the SSE fallback', async () => {
+    const definition = stubHttpDefinition('https://example.com/legacy-sse');
+    const connectedClients: Client[] = [];
+
+    mocks.connectWithAuth
+      .mockImplementationOnce(async (client, transport) => {
+        connectedClients.push(client);
+        expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
+        throw new Error('streamable transport unavailable');
+      })
+      .mockImplementationOnce(async (client, transport) => {
+        connectedClients.push(client);
+        expect(transport).toBeInstanceOf(SSEClientTransport);
+        return transport;
+      });
+
+    const context = await createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 });
+    const fallbackNegotiation = (connectedClients[1] as unknown as { _versionNegotiation?: { mode?: unknown } })
+      ._versionNegotiation;
+
+    expect(connectedClients).toHaveLength(2);
+    expect(connectedClients[1]).not.toBe(connectedClients[0]);
+    expect(fallbackNegotiation?.mode).toBe('legacy');
+    expect(context.client).toBe(connectedClients[1]);
+  });
+
+  it.each([
+    [
+      'SdkError',
+      new SdkError(
+        SdkErrorCode.EraNegotiationFailed,
+        'Version negotiation failed: the server did not offer pinned protocol version 2026-07-28 (no fallback in pin mode)'
+      ),
+    ],
+    [
+      'SdkHttpError',
+      new SdkHttpError(
+        SdkErrorCode.EraNegotiationFailed,
+        'Version negotiation failed: the server did not offer pinned protocol version 2026-07-28 (no fallback in pin mode)',
+        { status: 400 }
+      ),
+    ],
+  ])('preserves pinned negotiation failures from %s without trying SSE', async (_kind, negotiationError) => {
+    const definition: ServerDefinition = {
+      ...stubHttpDefinition('https://example.com/legacy-only'),
+      protocolVersion: '2026-07-28',
+    };
+    const clientConnect = vi
+      .spyOn(Client.prototype, 'connect')
+      .mockRejectedValueOnce(negotiationError)
+      .mockRejectedValueOnce(new Error('SSE error: Non-200 status code (405)'));
+
+    await expect(createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 })).rejects.toBe(
+      negotiationError
+    );
+
+    expect(clientConnect).toHaveBeenCalledTimes(1);
+    expect(clientConnect.mock.calls[0]?.[0]).toBeInstanceOf(StreamableHTTPClientTransport);
   });
 
   it('does not fall back to SSE after the OAuth flow fails', async () => {

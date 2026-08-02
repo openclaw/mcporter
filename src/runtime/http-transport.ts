@@ -1,6 +1,7 @@
 import {
   type Client,
   type FetchLike,
+  SdkErrorCode,
   SdkHttpError,
   SSEClientTransport,
   StreamableHTTPClientTransport,
@@ -32,6 +33,11 @@ interface ResolvedHttpTransportOptions {
 type HttpClientContextAttempt =
   | { context: ClientContext; nextDefinition?: undefined }
   | { context?: undefined; nextDefinition: ServerDefinition };
+
+export interface HttpClientFactory {
+  create(definition: ServerDefinition): Client;
+  createLegacy(definition: ServerDefinition): Client;
+}
 
 function extractTransportStatusCode(error: unknown): number | undefined {
   if (!error || typeof error !== 'object') return undefined;
@@ -123,6 +129,10 @@ function shouldAbortSseFallback(error: unknown): boolean {
   return isOAuthFlowError(error) || error instanceof OAuthTimeoutError;
 }
 
+function isEraNegotiationFailure(error: unknown): boolean {
+  return !!error && typeof error === 'object' && 'code' in error && error.code === SdkErrorCode.EraNegotiationFailed;
+}
+
 function maybePromoteHttpDefinition(
   definition: ServerDefinition,
   logger: Logger,
@@ -148,15 +158,22 @@ async function connectHttpTransport<TTransport extends OAuthCapableTransport>(
 }
 
 export async function createHttpClientContext(
-  client: Client,
   definition: ServerDefinition,
   logger: Logger,
   options: CreateClientContextOptions,
-  wrapRecordTransport: WrapRecordTransport
+  wrapRecordTransport: WrapRecordTransport,
+  clientFactory: HttpClientFactory
 ): Promise<ClientContext> {
   let activeDefinition = definition;
   while (true) {
-    const attempt = await attemptHttpClientContext(client, activeDefinition, logger, options, wrapRecordTransport);
+    const attempt = await attemptHttpClientContext(
+      clientFactory.create(activeDefinition),
+      activeDefinition,
+      logger,
+      options,
+      wrapRecordTransport,
+      clientFactory
+    );
     if (!attempt.nextDefinition) return attempt.context;
     activeDefinition = attempt.nextDefinition;
     options.onDefinitionPromoted?.(activeDefinition);
@@ -168,7 +185,8 @@ async function attemptHttpClientContext(
   activeDefinition: ServerDefinition,
   logger: Logger,
   options: CreateClientContextOptions,
-  wrapRecordTransport: WrapRecordTransport
+  wrapRecordTransport: WrapRecordTransport,
+  clientFactory: HttpClientFactory
 ): Promise<HttpClientContextAttempt> {
   const command = activeDefinition.command;
   if (command.kind !== 'http')
@@ -193,6 +211,10 @@ async function attemptHttpClientContext(
       ),
     };
   } catch (primaryError) {
+    if (isEraNegotiationFailure(primaryError)) {
+      await closeOAuthSession(oauthSession);
+      throw primaryError;
+    }
     if (shouldAbortSseFallback(primaryError)) {
       await closeOAuthSession(oauthSession);
       throw primaryError;
@@ -209,14 +231,15 @@ async function attemptHttpClientContext(
     }
     return {
       context: await connectSseFallbackTransport(
-        client,
+        clientFactory.createLegacy(activeDefinition),
         activeDefinition,
         command,
         transportOptions,
         oauthSession,
         logger,
         options,
-        wrapRecordTransport
+        wrapRecordTransport,
+        clientFactory
       ),
     };
   }
@@ -258,7 +281,8 @@ async function connectSseFallbackTransport(
   oauthSession: OAuthSession | undefined,
   logger: Logger,
   options: CreateClientContextOptions,
-  wrapRecordTransport: WrapRecordTransport
+  wrapRecordTransport: WrapRecordTransport,
+  clientFactory: HttpClientFactory
 ): Promise<ClientContext> {
   try {
     const transport = await connectHttpTransport(
@@ -281,7 +305,7 @@ async function connectSseFallbackTransport(
       const promoted = maybePromoteHttpDefinition(definition, logger, options);
       if (promoted) {
         options.onDefinitionPromoted?.(promoted);
-        return createHttpClientContext(client, promoted, logger, options, wrapRecordTransport);
+        return createHttpClientContext(promoted, logger, options, wrapRecordTransport, clientFactory);
       }
       if (definition.auth) throw sseError;
     }
