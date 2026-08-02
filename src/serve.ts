@@ -60,6 +60,7 @@ export async function serveStdio(options: ServeStdioOptions): Promise<void> {
 
 export async function serveHttp(options: ServeHttpOptions): Promise<http.Server> {
   const handlers = new Map<string, ReturnType<typeof createMcpHandler>>();
+  let closing = false;
   const handlerFor = (pathname: string, bridgeOptions: ServeOptions) => {
     const existing = handlers.get(pathname);
     if (existing) return existing;
@@ -69,6 +70,10 @@ export async function serveHttp(options: ServeHttpOptions): Promise<http.Server>
   };
 
   const httpServer = http.createServer((request, response) => {
+    if (closing) {
+      response.writeHead(503, { 'content-type': 'text/plain; charset=utf-8' }).end('Server is shutting down');
+      return;
+    }
     const url = new URL(request.url ?? '/', `http://${DEFAULT_SERVE_HTTP_HOST}`);
     let bridgeOptions: ServeOptions;
     if (url.pathname === '/mcp') {
@@ -103,6 +108,28 @@ export async function serveHttp(options: ServeHttpOptions): Promise<http.Server>
   httpServer.once('close', () => {
     for (const handler of handlers.values()) void handler.close().catch(() => {});
   });
+  const originalClose = httpServer.close.bind(httpServer);
+  let shutdownPromise: Promise<void> | undefined;
+  httpServer.close = ((callback?: (error?: Error) => void) => {
+    closing = true;
+    if (!shutdownPromise) {
+      const handlersClosed = Promise.allSettled([...handlers.values()].map((handler) => handler.close()));
+      const httpClosed = new Promise<void>((resolve, reject) => {
+        originalClose((error) => (error ? reject(error) : resolve()));
+      });
+      shutdownPromise = handlersClosed
+        .then(() => {
+          httpServer.closeAllConnections?.();
+          return httpClosed;
+        })
+        .then(() => {});
+    }
+    void shutdownPromise.then(
+      () => callback?.(),
+      (error: unknown) => callback?.(error instanceof Error ? error : new Error(String(error)))
+    );
+    return httpServer;
+  }) as typeof httpServer.close;
 
   await new Promise<void>((resolve, reject) => {
     httpServer.once('error', reject);

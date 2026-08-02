@@ -354,6 +354,45 @@ describe('mcporter serve bridge', () => {
     }
   });
 
+  it('closes promptly while a modern subscriptions/listen stream is active', async () => {
+    const runtime = {
+      listTools: vi.fn().mockResolvedValue([{ name: 'ping', inputSchema: { type: 'object' } }]),
+      callTool: vi.fn(),
+    };
+    const httpServer = await serveHttp({ runtime, definitions, servers: ['alpha'], port: 0 });
+    const address = httpServer.address();
+    if (!address || typeof address !== 'object') throw new Error('Expected a listening HTTP server.');
+
+    const client = new V2Client(
+      { name: 'modern-listen-close-client', version: '1.0.0' },
+      { versionNegotiation: { mode: { pin: '2026-07-28' } } }
+    );
+    const transport = new V2StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${address.port}/mcp`));
+    let subscription: Awaited<ReturnType<V2Client['listen']>> | undefined;
+    let closePromise: Promise<void> | undefined;
+    try {
+      await client.connect(transport);
+      subscription = await client.listen({ toolsListChanged: true });
+      closePromise = new Promise<void>((resolve, reject) => {
+        httpServer.close((error) => (error ? reject(error) : resolve()));
+      });
+
+      const closedPromptly = await Promise.race([
+        closePromise.then(() => true),
+        new Promise<false>((resolve) => setTimeout(() => resolve(false), 750)),
+      ]);
+      expect(closedPromptly).toBe(true);
+    } finally {
+      await subscription?.close().catch(() => {});
+      await client.close().catch(() => {});
+      if (closePromise) {
+        await closePromise;
+      } else {
+        await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+      }
+    }
+  });
+
   it('returns 404 for paths outside the MCP endpoint', async () => {
     const runtime = {
       listTools: vi.fn(),
