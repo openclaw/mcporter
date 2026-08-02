@@ -1,17 +1,16 @@
 import http from 'node:http';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { Readable } from 'node:stream';
 import {
-  CallToolRequestSchema,
-  ErrorCode,
-  ListToolsRequestSchema,
-  McpError,
+  createMcpHandler,
+  McpServer,
+  ProtocolError as McpError,
+  ProtocolErrorCode as ErrorCode,
   type CallToolResult,
   type ListToolsResult,
   type ServerCapabilities,
   type Tool,
-} from '@modelcontextprotocol/sdk/types.js';
+} from '@modelcontextprotocol/server';
+import { serveStdio as serveMcpStdio } from '@modelcontextprotocol/server/stdio';
 import type { ServerDefinition } from './config.js';
 import { isKeepAliveServer } from './lifecycle.js';
 import type { Runtime } from './runtime.js';
@@ -41,17 +40,27 @@ const DEFAULT_OBJECT_SCHEMA = { type: 'object' } as const;
 export const DEFAULT_SERVE_HTTP_HOST = '127.0.0.1';
 
 export async function serveStdio(options: ServeStdioOptions): Promise<void> {
-  const server = createBridgeServer(options);
-  const transport = new StdioServerTransport();
-  const closed = new Promise<void>((resolve, reject) => {
-    transport.onclose = () => resolve();
-    transport.onerror = (error) => reject(error);
+  const handle = serveMcpStdio(() => createBridgeServer(options), {
+    onerror: (error) => console.error(error),
   });
-  await server.connect(transport);
-  await closed;
+  await new Promise<void>((resolve, reject) => {
+    process.stdin.once('end', () => {
+      void handle.close().then(resolve, reject);
+    });
+    process.stdin.once('error', reject);
+  });
 }
 
 export async function serveHttp(options: ServeHttpOptions): Promise<http.Server> {
+  const handlers = new Map<string, ReturnType<typeof createMcpHandler>>();
+  const handlerFor = (pathname: string, bridgeOptions: ServeOptions) => {
+    const existing = handlers.get(pathname);
+    if (existing) return existing;
+    const handler = createMcpHandler(() => createBridgeServer(bridgeOptions));
+    handlers.set(pathname, handler);
+    return handler;
+  };
+
   const httpServer = http.createServer((request, response) => {
     const url = new URL(request.url ?? '/', `http://${DEFAULT_SERVE_HTTP_HOST}`);
     let bridgeOptions: ServeOptions;
@@ -75,24 +84,17 @@ export async function serveHttp(options: ServeHttpOptions): Promise<http.Server>
       response.writeHead(404).end('Not found');
       return;
     }
-    const bridgeServer = createBridgeServer(bridgeOptions);
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-    });
-    response.on('close', () => {
-      void transport.close().catch(() => {});
-      void bridgeServer.close().catch(() => {});
-    });
-    void (async () => {
-      await bridgeServer.connect(transport);
-      await transport.handleRequest(request, response);
-    })().catch((error: unknown) => {
+    const handler = handlerFor(url.pathname, bridgeOptions);
+    void handleNodeRequest(handler, request, response).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
       if (!response.headersSent) {
         response.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
       }
       response.end(message);
     });
+  });
+  httpServer.once('close', () => {
+    for (const handler of handlers.values()) void handler.close().catch(() => {});
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -129,7 +131,7 @@ export function createBridgeServer(options: ServeOptions): McpServer {
     }
   );
 
-  server.server.setRequestHandler(ListToolsRequestSchema, async () => {
+  server.server.setRequestHandler('tools/list', async () => {
     const tools: Tool[] = [];
     for (const served of servedServers) {
       const listed = (await options.runtime.listTools(served.name, {
@@ -154,7 +156,7 @@ export function createBridgeServer(options: ServeOptions): McpServer {
     return { tools } satisfies ListToolsResult;
   });
 
-  server.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.server.setRequestHandler('tools/call', async (request) => {
     const target = bare
       ? { server: firstServed.name, tool: request.params.name }
       : decodeToolName(request.params.name, servedServers);
@@ -168,6 +170,46 @@ export function createBridgeServer(options: ServeOptions): McpServer {
   });
 
   return server;
+}
+
+async function handleNodeRequest(
+  handler: ReturnType<typeof createMcpHandler>,
+  request: http.IncomingMessage,
+  response: http.ServerResponse
+): Promise<void> {
+  const webRequest = toWebRequest(request);
+  const webResponse = await handler.fetch(webRequest);
+  response.statusCode = webResponse.status;
+  if (webResponse.statusText) response.statusMessage = webResponse.statusText;
+  webResponse.headers.forEach((value, name) => response.setHeader(name, value));
+  if (!webResponse.body) {
+    response.end();
+    return;
+  }
+  const body = Readable.fromWeb(webResponse.body as never);
+  body.on('error', (error) => response.destroy(error));
+  body.pipe(response);
+}
+
+function toWebRequest(request: http.IncomingMessage): Request {
+  const host = request.headers.host ?? DEFAULT_SERVE_HTTP_HOST;
+  const url = new URL(request.url ?? '/', `http://${host}`);
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(request.headers)) {
+    if (Array.isArray(value)) {
+      for (const entry of value) headers.append(name, entry);
+    } else if (value !== undefined) {
+      headers.set(name, value);
+    }
+  }
+  const method = request.method ?? 'GET';
+  const hasBody = method !== 'GET' && method !== 'HEAD';
+  const init: RequestInit & { duplex?: 'half' } = { method, headers };
+  if (hasBody) {
+    init.body = Readable.toWeb(request) as unknown as BodyInit;
+    init.duplex = 'half';
+  }
+  return new Request(url, init);
 }
 
 export function selectServedServers(

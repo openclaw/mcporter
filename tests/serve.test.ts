@@ -2,6 +2,10 @@ import http from 'node:http';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import {
+  Client as V2Client,
+  StreamableHTTPClientTransport as V2StreamableHTTPClientTransport,
+} from '@modelcontextprotocol/client';
 import { describe, expect, it, vi } from 'vitest';
 import type { ServerDefinition } from '../src/config.js';
 import { createKeepAliveRuntime } from '../src/daemon/runtime-wrapper.js';
@@ -205,7 +209,7 @@ describe('mcporter serve bridge', () => {
       });
       expect(baseRuntime.listTools).not.toHaveBeenCalled();
 
-      await expect(client.callTool({ name: 'alpha__ping', arguments: {} })).resolves.toEqual({
+      await expect(client.callTool({ name: 'alpha__ping', arguments: {} })).resolves.toMatchObject({
         content: [{ type: 'text', text: 'daemon pong' }],
       });
       expect(daemon.callTool).toHaveBeenCalledTimes(2);
@@ -263,6 +267,33 @@ describe('mcporter serve bridge', () => {
           resolve();
         });
       });
+    }
+  });
+
+  it('serves tools over HTTP in pinned 2026-07-28 mode', async () => {
+    const runtime = {
+      listTools: vi.fn().mockResolvedValue([{ name: 'ping', inputSchema: { type: 'object' } }]),
+      callTool: vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'pong-modern' }] }),
+    };
+    const httpServer = await serveHttp({ runtime, definitions, servers: ['alpha'], port: 0 });
+    const address = httpServer.address();
+    if (!address || typeof address !== 'object') throw new Error('Expected a listening HTTP server.');
+
+    const client = new V2Client(
+      { name: 'modern-test-client', version: '1.0.0' },
+      { versionNegotiation: { mode: { pin: '2026-07-28' } } }
+    );
+    const transport = new V2StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${address.port}/mcp`));
+    try {
+      await client.connect(transport);
+      expect(client.getProtocolEra()).toBe('modern');
+      await expect(client.listTools()).resolves.toMatchObject({ tools: [{ name: 'alpha__ping' }] });
+      await expect(client.callTool({ name: 'alpha__ping', arguments: {} })).resolves.toMatchObject({
+        content: [{ type: 'text', text: 'pong-modern' }],
+      });
+    } finally {
+      await client.close().catch(() => {});
+      await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     }
   });
 
