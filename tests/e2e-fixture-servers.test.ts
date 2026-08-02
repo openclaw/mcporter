@@ -30,6 +30,7 @@ type CliResult = { stdout: string; stderr: string; exitCode: number };
 
 let legacyHttp: RunningFixture;
 let modernHttp: RunningFixture;
+const spawnedChildren = new Set<ChildProcess>();
 
 interface RunningFixture {
   child: ChildProcess;
@@ -48,7 +49,7 @@ beforeAll(async () => {
 }, 20_000);
 
 afterAll(async () => {
-  await Promise.all([stopChild(legacyHttp?.child), stopChild(modernHttp?.child)]);
+  await Promise.allSettled([...spawnedChildren].map((child) => stopChild(child)));
 });
 
 describe.each(fixtureKinds)('%s fixture through the real CLI', (fixture) => {
@@ -214,6 +215,43 @@ it('bridges both fixtures to pinned modern and legacy HTTP clients through mcpor
   );
 }, 40_000);
 
+describe('fixture child lifecycle', () => {
+  it('kills a fixture child when readiness times out', async () => {
+    const tempDir = await makeShortTempDir('fixture-timeout');
+    const serverPath = path.join(tempDir, 'never-ready.ts');
+    await fs.writeFile(serverPath, 'setInterval(() => {}, 1_000);\n', 'utf8');
+    const existing = new Set(spawnedChildren);
+
+    try {
+      await expect(startHttpFixture('modern', serverPath, 50)).rejects.toThrow('did not become ready');
+      expect([...spawnedChildren].filter((child) => !existing.has(child))).toHaveLength(0);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps partially started fixture children registered for cleanup', async () => {
+    const tempDir = await makeShortTempDir('fixture-partial');
+    const waitingPath = path.join(tempDir, 'waiting.ts');
+    const failingPath = path.join(tempDir, 'failing.ts');
+    await fs.writeFile(waitingPath, 'setInterval(() => {}, 1_000);\n', 'utf8');
+    await fs.writeFile(failingPath, 'process.exit(23);\n', 'utf8');
+    const existing = new Set(spawnedChildren);
+
+    try {
+      await expect(
+        Promise.all([startHttpFixture('modern', waitingPath, 10_000), startHttpFixture('legacy', failingPath, 10_000)])
+      ).rejects.toThrow('exited before ready');
+      const partialChildren = [...spawnedChildren].filter((child) => !existing.has(child));
+      expect(partialChildren).toHaveLength(1);
+      await Promise.all(partialChildren.map((child) => stopChild(child)));
+      expect([...spawnedChildren].filter((child) => !existing.has(child))).toHaveLength(0);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+});
+
 function configFor(fixture: FixtureKind, transport: TransportKind): RawServerConfig {
   if (transport === 'http') {
     return {
@@ -294,58 +332,83 @@ function parseJson<T = Record<string, unknown>>(value: string): T {
   return JSON.parse(value.trim()) as T;
 }
 
-async function startHttpFixture(fixture: FixtureKind, serverPath: string): Promise<RunningFixture> {
-  const child = spawn(process.execPath, [TSX_CLI, serverPath, '--http', '0'], {
-    cwd: REPO_ROOT,
-    env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+async function startHttpFixture(
+  fixture: FixtureKind,
+  serverPath: string,
+  readyTimeoutMs = 10_000
+): Promise<RunningFixture> {
+  const child = trackChild(
+    spawn(process.execPath, [TSX_CLI, serverPath, '--http', '0'], {
+      cwd: REPO_ROOT,
+      env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  );
   child.stdout?.resume();
   child.stderr?.setEncoding('utf8');
   let captured = '';
-  const url = await new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${fixture} fixture did not become ready:\n${captured}`)), 10_000);
-    child.stderr?.on('data', (chunk: string) => {
-      captured += chunk;
-      const match = captured.match(/listening on (http:\/\/127\.0\.0\.1:\d+\/mcp)/);
-      if (match?.[1]) {
+  try {
+    const url = await new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`${fixture} fixture did not become ready:\n${captured}`)),
+        readyTimeoutMs
+      );
+      child.stderr?.on('data', (chunk: string) => {
+        captured += chunk;
+        const match = captured.match(/listening on (http:\/\/127\.0\.0\.1:\d+\/mcp)/);
+        if (!match?.[1]) return;
         clearTimeout(timer);
         resolve(match[1]);
-      }
+      });
+      child.once('exit', (code, signal) => {
+        clearTimeout(timer);
+        reject(new Error(`${fixture} fixture exited before ready (${code ?? signal}):\n${captured}`));
+      });
     });
-    child.once('exit', (code, signal) => {
-      clearTimeout(timer);
-      reject(new Error(`${fixture} fixture exited before ready (${code ?? signal}):\n${captured}`));
-    });
-  });
-  return { child, url, stderr: () => captured };
+    return { child, url, stderr: () => captured };
+  } catch (error) {
+    await stopChild(child);
+    throw error;
+  }
 }
 
 async function startBridge(configPath: string, env: NodeJS.ProcessEnv): Promise<RunningFixture> {
-  const child = spawn(process.execPath, [CLI_ENTRY, '--config', configPath, 'serve', '--http', '0'], {
-    cwd: REPO_ROOT,
-    env,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const child = trackChild(
+    spawn(process.execPath, [CLI_ENTRY, '--config', configPath, 'serve', '--http', '0'], {
+      cwd: REPO_ROOT,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  );
   child.stdout?.resume();
   child.stderr?.setEncoding('utf8');
   let captured = '';
-  const url = await new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`mcporter serve did not become ready:\n${captured}`)), 15_000);
-    child.stderr?.on('data', (chunk: string) => {
-      captured += chunk;
-      const match = captured.match(/bridge (http:\/\/127\.0\.0\.1:\d+\/mcp)/);
-      if (match?.[1]) {
+  try {
+    const url = await new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`mcporter serve did not become ready:\n${captured}`)), 15_000);
+      child.stderr?.on('data', (chunk: string) => {
+        captured += chunk;
+        const match = captured.match(/bridge (http:\/\/127\.0\.0\.1:\d+\/mcp)/);
+        if (!match?.[1]) return;
         clearTimeout(timer);
         resolve(match[1]);
-      }
+      });
+      child.once('exit', (code, signal) => {
+        clearTimeout(timer);
+        reject(new Error(`mcporter serve exited before ready (${code ?? signal}):\n${captured}`));
+      });
     });
-    child.once('exit', (code, signal) => {
-      clearTimeout(timer);
-      reject(new Error(`mcporter serve exited before ready (${code ?? signal}):\n${captured}`));
-    });
-  });
-  return { child, url, stderr: () => captured };
+    return { child, url, stderr: () => captured };
+  } catch (error) {
+    await stopChild(child);
+    throw error;
+  }
+}
+
+function trackChild(child: ChildProcess): ChildProcess {
+  spawnedChildren.add(child);
+  child.once('exit', () => spawnedChildren.delete(child));
+  return child;
 }
 
 async function stopChild(child: ChildProcess | undefined): Promise<void> {
