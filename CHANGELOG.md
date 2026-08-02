@@ -32,6 +32,7 @@
 - Bind persisted tokens and client registrations to their authorization-server issuer across interactive and silent refresh flows, discarding mismatches before credentials are transmitted and stamping successful refreshes.
 - Preserve RFC 9207 authorization-response issuer validation while OAuth traffic is wrapped in recording mode.
 - Reject invalid Client ID Metadata Document configuration before binding the loopback OAuth callback listener.
+- Stop reflecting authorization-server callback errors into executable HTML or terminal-facing error messages.
 
 ### TypeScript API
 

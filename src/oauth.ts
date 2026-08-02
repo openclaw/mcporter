@@ -238,8 +238,8 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
         } else if (error) {
           res.statusCode = 400;
           res.setHeader('Content-Type', 'text/html');
-          res.end(`<html><body><h1>Authorization failed</h1><p>${error}</p></body></html>`);
-          this.authorizationDeferred?.reject(new Error(`OAuth error: ${error}`));
+          res.end('<html><body><h1>Authorization failed</h1><p>Return to the CLI for details.</p></body></html>');
+          this.authorizationDeferred?.reject(new Error('OAuth authorization failed.'));
           this.authorizationDeferred = null;
           this.clearInteractiveAuthorization();
         } else {

@@ -17,7 +17,7 @@ type StatefulProvider = {
   hasAuthorizationRedirectStarted: () => boolean;
 };
 
-const requestStatus = (target: URL): Promise<number> =>
+const requestResponse = (target: URL): Promise<{ status: number; body: string; contentType?: string }> =>
   new Promise((resolve, reject) => {
     const req = http.request(
       {
@@ -29,13 +29,22 @@ const requestStatus = (target: URL): Promise<number> =>
       },
       (res) => {
         const status = res.statusCode ?? 0;
-        res.resume();
-        resolve(status);
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+        res.on('end', () => {
+          resolve({
+            status,
+            body: Buffer.concat(chunks).toString('utf8'),
+            ...(typeof res.headers['content-type'] === 'string' ? { contentType: res.headers['content-type'] } : {}),
+          });
+        });
       }
     );
     req.on('error', reject);
     req.end();
   });
+
+const requestStatus = async (target: URL): Promise<number> => (await requestResponse(target)).status;
 
 const authorizationUrlFor = (verifier: string) => {
   const url = new URL('https://auth.example.com/authorize');
@@ -351,6 +360,39 @@ describe('FileOAuthClientProvider session lifecycle', () => {
     const status = await requestStatus(callback);
     expect(status).toBe(200);
     await expect(waitPromise).resolves.toBe('prewait-code');
+    await session.close();
+  });
+
+  it('does not reflect OAuth callback errors into HTML or terminal-facing errors', async () => {
+    const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+    tempDirs.push(tokenCacheDir);
+    const definition: ServerDefinition = {
+      name: 'test-oauth-error-callback',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'oauth',
+      tokenCacheDir,
+    };
+    const session = await createOAuthSession(definition, { info: vi.fn(), warn: vi.fn(), error: vi.fn() });
+    const provider = session.provider as StatefulProvider;
+    const state = await provider.state();
+    const payload = '<script>globalThis.pwned = true</script>\u001b[2J';
+    const callback = new URL(String(provider.redirectUrl));
+    callback.searchParams.set('error', payload);
+    callback.searchParams.set('state', state);
+    const waitPromise = session.waitForAuthorizationCode().then(
+      () => undefined,
+      (error: unknown) => error
+    );
+
+    const response = await requestResponse(callback);
+    const rejection = await waitPromise;
+
+    expect(response.status).toBe(400);
+    expect(response.contentType).toContain('text/html');
+    expect(response.body).not.toContain(payload);
+    expect(response.body).not.toContain('<script>');
+    expect(rejection).toBeInstanceOf(Error);
+    expect((rejection as Error).message).not.toContain(payload);
     await session.close();
   });
 
