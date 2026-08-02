@@ -3,6 +3,7 @@ import type { ServerDefinition } from '../config.js';
 import type { Runtime } from '../runtime.js';
 import { setStdioLogMode } from '../sdk-patches.js';
 import { MCPORTER_VERSION } from '../version.js';
+import { renderAdhocServerHelpLines } from './adhoc-help.js';
 import { persistPreparedEphemeralServer, prepareEphemeralServerTarget } from './ephemeral-target.js';
 import { splitHttpToolSelector } from './http-utils.js';
 import { chooseClosestIdentifier, renderIdentifierResolutionMessages } from './identifier-helpers.js';
@@ -460,17 +461,7 @@ export function printListHelp(): void {
     '  https://host/mcp       List an HTTP server directly; mcporter infers the entry.',
     '',
     'Ad-hoc servers:',
-    '  --http-url <url>       Register an HTTP server for this run.',
-    '  --allow-http           Permit plain http:// URLs with --http-url.',
-    '  --header KEY=value     Attach HTTP headers (repeatable).',
-    '  --stdio <command>      Run a stdio MCP server (repeat --stdio-arg for args).',
-    '  --stdio-arg <value>    Append args to the stdio command (repeatable).',
-    '  --env KEY=value        Inject env vars for stdio servers (repeatable).',
-    '  --cwd <path>           Working directory for stdio servers.',
-    '  --name <value>         Override the display name for ad-hoc servers.',
-    '  --description <text>   Override the description for ad-hoc servers.',
-    '  --persist <path>       Write the ad-hoc definition to config/mcporter.json.',
-    '  --yes                  Skip confirmation prompts when persisting.',
+    ...renderAdhocServerHelpLines(),
     '',
     'Display flags:',
     '  --brief                Show compact signatures only for a single server.',

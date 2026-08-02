@@ -1,12 +1,10 @@
-import { spawn } from 'node:child_process';
-import fs from 'node:fs/promises';
-import {
-  ensurePrivateRecordingDir,
-  PRIVATE_RECORDING_FILE_MODE,
-  resolveRecordingConfigPath,
-  resolveRecordingPath,
-} from '../runtime/record-transport.js';
+import { resolveRecordingConfigPath, resolveRecordingPath } from '../runtime/record-transport.js';
 import { buildRecordCommandEnv } from './record-replay-env.js';
+import {
+  buildRecordReplayInstructions,
+  runRecordReplayCommand,
+  writeRecordReplayConfig,
+} from './record-replay-command.js';
 
 export interface ParsedRecordArgs {
   readonly sessionName: string;
@@ -19,25 +17,13 @@ export async function handleRecordCli(args: string[]): Promise<void> {
   const recordPath = resolveRecordingPath(parsed.sessionName);
 
   if (parsed.command.length > 0) {
-    await runWithRecordingEnv(parsed, buildRecordCommandEnv(parsed.sessionName, parsed.server));
+    await runRecordReplayCommand(parsed.command, buildRecordCommandEnv(parsed.sessionName, parsed.server));
     return;
   }
 
-  await writeModeConfig(parsed, {
-    mode: 'record',
-    recordPath,
-    env: {
-      MCPORTER_RECORD: parsed.sessionName,
-      ...(parsed.server ? { MCPORTER_RECORD_SERVER: parsed.server } : {}),
-      MCPORTER_DISABLE_KEEPALIVE: '*',
-    },
-  });
+  await writeRecordReplayConfig(parsed, 'record');
   console.log(`Recording configuration written to ${resolveRecordingConfigPath(parsed.sessionName)}`);
-  const envInstructions = [
-    `MCPORTER_RECORD=${parsed.sessionName}`,
-    ...(parsed.server ? [`MCPORTER_RECORD_SERVER=${parsed.server}`] : []),
-    'MCPORTER_DISABLE_KEEPALIVE=*',
-  ];
+  const envInstructions = buildRecordReplayInstructions('record', parsed.sessionName, parsed.server);
   console.log(`Set ${envInstructions.join(' and ')} before the next mcporter call to record ${recordPath}.`);
 }
 
@@ -56,50 +42,6 @@ export function parseRecordArgs(args: string[]): ParsedRecordArgs {
 
 export function parseReplayArgs(args: string[]): ParsedRecordArgs {
   return parseSessionCommandArgs(args, 'replay');
-}
-
-async function writeModeConfig(parsed: ParsedRecordArgs, extra: Record<string, unknown>): Promise<void> {
-  const configPath = resolveRecordingConfigPath(parsed.sessionName);
-  await ensurePrivateRecordingDir(configPath);
-  await fs.writeFile(
-    configPath,
-    `${JSON.stringify(
-      {
-        session: parsed.sessionName,
-        server: parsed.server,
-        ...extra,
-      },
-      null,
-      2
-    )}\n`,
-    {
-      encoding: 'utf8',
-      mode: PRIVATE_RECORDING_FILE_MODE,
-    }
-  );
-  await fs.chmod(configPath, PRIVATE_RECORDING_FILE_MODE);
-}
-
-async function runWithRecordingEnv(parsed: ParsedRecordArgs, env: NodeJS.ProcessEnv): Promise<void> {
-  const [command, ...commandArgs] = parsed.command;
-  if (!command) {
-    return;
-  }
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(command, commandArgs, {
-      stdio: 'inherit',
-      env,
-    });
-    child.once('error', reject);
-    child.once('exit', (code, signal) => {
-      if (signal) {
-        reject(new Error(`Command '${command}' exited from signal ${signal}.`));
-        return;
-      }
-      process.exitCode = code ?? 0;
-      resolve();
-    });
-  });
 }
 
 function parseSessionCommandArgs(args: string[], commandName: 'record' | 'replay'): ParsedRecordArgs {

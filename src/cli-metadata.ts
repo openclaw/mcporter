@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import type { ServerDefinition, ServerSource } from './config.js';
+import { pickSharedDefinitionFields } from './definition-fields.js';
 
 export type CliArtifactKind = 'template' | 'bundle' | 'binary';
 
@@ -145,6 +146,7 @@ function isErrno(error: unknown, code: string): error is NodeJS.ErrnoException {
 
 // serializeDefinition converts an in-memory server definition into the metadata-friendly JSON form.
 export function serializeDefinition(definition: ServerDefinition): SerializedServerDefinition {
+  const sharedFields = pickSharedDefinitionFields(definition);
   if (definition.command.kind === 'http') {
     return {
       name: definition.name,
@@ -155,18 +157,7 @@ export function serializeDefinition(definition: ServerDefinition): SerializedSer
         headers: definition.command.headers,
       },
       env: definition.env,
-      auth: definition.auth,
-      tokenCacheDir: definition.tokenCacheDir,
-      clientName: definition.clientName,
-      oauthClientId: definition.oauthClientId,
-      oauthClientSecretEnv: definition.oauthClientSecretEnv,
-      oauthTokenEndpointAuthMethod: definition.oauthTokenEndpointAuthMethod,
-      oauthRedirectUrl: definition.oauthRedirectUrl,
-      oauthScope: definition.oauthScope,
-      refresh: definition.refresh,
-      httpFetch: definition.httpFetch,
-      allowedTools: definition.allowedTools,
-      blockedTools: definition.blockedTools,
+      ...sharedFields,
     };
   }
   return {
@@ -179,17 +170,6 @@ export function serializeDefinition(definition: ServerDefinition): SerializedSer
       cwd: definition.command.cwd,
     },
     env: definition.env,
-    auth: definition.auth,
-    tokenCacheDir: definition.tokenCacheDir,
-    clientName: definition.clientName,
-    oauthClientId: definition.oauthClientId,
-    oauthClientSecretEnv: definition.oauthClientSecretEnv,
-    oauthTokenEndpointAuthMethod: definition.oauthTokenEndpointAuthMethod,
-    oauthRedirectUrl: definition.oauthRedirectUrl,
-    oauthScope: definition.oauthScope,
-    refresh: definition.refresh,
-    httpFetch: definition.httpFetch,
-    allowedTools: definition.allowedTools,
-    blockedTools: definition.blockedTools,
+    ...sharedFields,
   };
 }

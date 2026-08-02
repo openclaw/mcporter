@@ -7,19 +7,28 @@ import { handleReplayCli } from '../src/cli/replay-command.js';
 
 const spawnMock = vi.hoisted(() => {
   const calls: Array<{ command: string; args: string[]; options: { env?: NodeJS.ProcessEnv } }> = [];
+  let exitCode: number | null = 0;
+  let exitSignal: NodeJS.Signals | null = null;
   const spawn = vi.fn((command: string, args: string[], options: { env?: NodeJS.ProcessEnv }) => {
     calls.push({ command, args, options });
     const child = {
       once(event: string, handler: (codeOrError: number | Error | null, signal?: NodeJS.Signals | null) => void) {
         if (event === 'exit') {
-          queueMicrotask(() => handler(0, null));
+          queueMicrotask(() => handler(exitCode, exitSignal));
         }
         return child;
       },
     };
     return child;
   });
-  return { calls, spawn };
+  return {
+    calls,
+    spawn,
+    setExit(code: number | null, signal: NodeJS.Signals | null = null) {
+      exitCode = code;
+      exitSignal = signal;
+    },
+  };
 });
 
 vi.mock('node:child_process', () => ({
@@ -32,6 +41,7 @@ describe('record/replay CLI command environments', () => {
   beforeEach(() => {
     spawnMock.calls.length = 0;
     spawnMock.spawn.mockClear();
+    spawnMock.setExit(0);
     process.exitCode = undefined;
     process.env = { ...originalEnv };
   });
@@ -84,10 +94,16 @@ describe('record/replay CLI command environments', () => {
 
     const configPath = path.join(tempHome, '.mcporter', 'recordings', 'demo.config.json');
     const config = JSON.parse(await fs.readFile(configPath, 'utf8'));
-    expect(config.env).toMatchObject({
-      MCPORTER_RECORD: 'demo',
-      MCPORTER_RECORD_SERVER: 'github',
-      MCPORTER_DISABLE_KEEPALIVE: '*',
+    expect(config).toEqual({
+      session: 'demo',
+      server: 'github',
+      mode: 'record',
+      recordPath: path.join(tempHome, '.mcporter', 'recordings', 'demo.ndjson'),
+      env: {
+        MCPORTER_RECORD: 'demo',
+        MCPORTER_RECORD_SERVER: 'github',
+        MCPORTER_DISABLE_KEEPALIVE: '*',
+      },
     });
     expect(logSpy).toHaveBeenCalledWith(
       expect.stringContaining(
@@ -106,10 +122,16 @@ describe('record/replay CLI command environments', () => {
 
     const configPath = path.join(tempHome, '.mcporter', 'recordings', 'demo.config.json');
     const config = JSON.parse(await fs.readFile(configPath, 'utf8'));
-    expect(config.env).toMatchObject({
-      MCPORTER_REPLAY: 'demo',
-      MCPORTER_REPLAY_SERVER: 'github',
-      MCPORTER_DISABLE_KEEPALIVE: '*',
+    expect(config).toEqual({
+      session: 'demo',
+      server: 'github',
+      mode: 'replay',
+      replayPath: path.join(tempHome, '.mcporter', 'recordings', 'demo.ndjson'),
+      env: {
+        MCPORTER_REPLAY: 'demo',
+        MCPORTER_REPLAY_SERVER: 'github',
+        MCPORTER_DISABLE_KEEPALIVE: '*',
+      },
     });
     expect(logSpy).toHaveBeenCalledWith(
       expect.stringContaining(
@@ -117,6 +139,22 @@ describe('record/replay CLI command environments', () => {
       )
     );
     await expectPrivateRecordingPermissions(configPath);
+  });
+
+  it('propagates nonzero child exit codes', async () => {
+    spawnMock.setExit(7);
+
+    await handleRecordCli(['demo', '--', 'node', 'script.js']);
+
+    expect(process.exitCode).toBe(7);
+  });
+
+  it('rejects child signal termination with the existing command error', async () => {
+    spawnMock.setExit(null, 'SIGTERM');
+
+    await expect(handleReplayCli(['demo', '--', 'node', 'script.js'])).rejects.toThrow(
+      "Command 'node' exited from signal SIGTERM."
+    );
   });
 });
 

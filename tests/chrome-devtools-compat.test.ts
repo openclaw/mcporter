@@ -1,8 +1,12 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { patchChromeDevtoolsMcp } from '../src/chrome-devtools-auto-connect-patch.js';
+import {
+  patchChromeDevtoolsMcp,
+  renderChromeDevtoolsAutoConnectPatchSource,
+} from '../src/chrome-devtools-auto-connect-patch.js';
 import {
   applyChromeDevtoolsCompat,
   resolveChromeDevtoolsCompatPatchPath,
@@ -65,7 +69,8 @@ describe('chrome-devtools compatibility', () => {
     const patchPath = resolveChromeDevtoolsCompatPatchPath([], tmp);
 
     expect(patchPath).toBe(path.join(tmp, 'mcporter-chrome-devtools-auto-connect-patch.js'));
-    await expect(fs.readFile(patchPath!, 'utf8')).resolves.toContain('MCPORTER_DEVTOOLS_TIMEOUT_PATCH');
+    await expect(fs.readFile(patchPath!, 'utf8')).resolves.toBe(renderChromeDevtoolsAutoConnectPatchSource());
+    await expect(import(`${pathToFileURL(patchPath!).href}?test=${Date.now()}`)).resolves.toBeDefined();
   });
 
   it('patches an npx .bin symlink target idempotently', async () => {

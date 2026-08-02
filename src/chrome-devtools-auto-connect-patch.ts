@@ -31,41 +31,83 @@ const PATCHED_DETECTION_BLOCK = `if (await mcporterWithTimeout(page.hasDevTools(
                     mcpPage.devToolsPage = await mcporterWithTimeout(page.openDevTools(), undefined);
                 }`;
 
+interface PatchFileSystem {
+  realpathSync(filePath: string): string;
+  readFileSync(filePath: string, encoding: 'utf8'): string;
+  writeFileSync(filePath: string, contents: string): void;
+}
+
+interface PatchPath {
+  dirname(filePath: string): string;
+  join(...paths: string[]): string;
+  resolve(...paths: string[]): string;
+}
+
 patchChromeDevtoolsMcp();
 
 export function patchChromeDevtoolsMcp(mainPath = process.argv[1]): void {
+  patchChromeDevtoolsMcpWithDependencies(mainPath, fs, path, MARKER, HELPER, DETECTION_BLOCK, PATCHED_DETECTION_BLOCK);
+}
+
+export function renderChromeDevtoolsAutoConnectPatchSource(): string {
+  return `import fs from 'node:fs';
+import path from 'node:path';
+
+const patchChromeDevtoolsMcp = ${patchChromeDevtoolsMcpWithDependencies.toString()};
+
+patchChromeDevtoolsMcp(
+  process.argv[1],
+  fs,
+  path,
+  ${JSON.stringify(MARKER)},
+  ${JSON.stringify(HELPER)},
+  ${JSON.stringify(DETECTION_BLOCK)},
+  ${JSON.stringify(PATCHED_DETECTION_BLOCK)}
+);
+`;
+}
+
+function patchChromeDevtoolsMcpWithDependencies(
+  mainPath: string | undefined,
+  fsApi: PatchFileSystem,
+  pathApi: PatchPath,
+  marker: string,
+  helper: string,
+  detectionBlock: string,
+  patchedDetectionBlock: string
+): void {
   if (!mainPath || !mainPath.includes('chrome-devtools-mcp')) {
     return;
   }
   let resolvedMainPath: string;
   try {
-    resolvedMainPath = fs.realpathSync(mainPath);
+    resolvedMainPath = fsApi.realpathSync(mainPath);
   } catch {
     return;
   }
-  if (!resolvedMainPath.endsWith(path.join('bin', 'chrome-devtools-mcp.js'))) {
+  if (!resolvedMainPath.endsWith(pathApi.join('bin', 'chrome-devtools-mcp.js'))) {
     return;
   }
-  const contextPath = path.resolve(path.dirname(resolvedMainPath), '..', 'McpContext.js');
+  const contextPath = pathApi.resolve(pathApi.dirname(resolvedMainPath), '..', 'McpContext.js');
   let source: string;
   try {
-    source = fs.readFileSync(contextPath, 'utf8');
+    source = fsApi.readFileSync(contextPath, 'utf8');
   } catch {
     return;
   }
-  if (source.includes(MARKER)) {
+  if (source.includes(marker)) {
     return;
   }
-  if (!source.includes(DETECTION_BLOCK)) {
+  if (!source.includes(detectionBlock)) {
     return;
   }
   const withHelper = source.replace(
     'const NAVIGATION_TIMEOUT = 10_000;\n',
-    `const NAVIGATION_TIMEOUT = 10_000;\n${HELPER}`
+    `const NAVIGATION_TIMEOUT = 10_000;\n${helper}`
   );
-  const patched = withHelper.replace(DETECTION_BLOCK, PATCHED_DETECTION_BLOCK);
+  const patched = withHelper.replace(detectionBlock, patchedDetectionBlock);
   try {
-    fs.writeFileSync(contextPath, patched);
+    fsApi.writeFileSync(contextPath, patched);
   } catch {
     return;
   }

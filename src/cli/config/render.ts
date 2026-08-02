@@ -1,4 +1,5 @@
 import type { ServerDefinition } from '../../config-schema.js';
+import { pickSharedDefinitionFields } from '../../definition-fields.js';
 import { boldText, dimText } from '../terminal.js';
 import { COLOR_ENABLED } from './shared.js';
 
@@ -29,23 +30,13 @@ export type SerializedServerDefinition = {
 
 export function serializeDefinition(definition: ServerDefinition): SerializedServerDefinition {
   const origin = definition.source ?? { kind: 'local', path: '' };
+  const sharedFields = pickSharedDefinitionFields(definition);
   if (definition.command.kind === 'http') {
     return {
       name: definition.name,
       description: definition.description,
       source: origin,
-      auth: definition.auth,
-      tokenCacheDir: definition.tokenCacheDir,
-      clientName: definition.clientName,
-      oauthClientId: definition.oauthClientId,
-      oauthClientSecretEnv: definition.oauthClientSecretEnv,
-      oauthTokenEndpointAuthMethod: definition.oauthTokenEndpointAuthMethod,
-      oauthRedirectUrl: definition.oauthRedirectUrl,
-      oauthScope: definition.oauthScope,
-      refresh: definition.refresh,
-      httpFetch: definition.httpFetch,
-      allowedTools: definition.allowedTools,
-      blockedTools: definition.blockedTools,
+      ...sharedFields,
       env: definition.env,
       transport: 'http',
       baseUrl: definition.command.url.href,
@@ -56,18 +47,7 @@ export function serializeDefinition(definition: ServerDefinition): SerializedSer
     name: definition.name,
     description: definition.description,
     source: origin,
-    auth: definition.auth,
-    tokenCacheDir: definition.tokenCacheDir,
-    clientName: definition.clientName,
-    oauthClientId: definition.oauthClientId,
-    oauthClientSecretEnv: definition.oauthClientSecretEnv,
-    oauthTokenEndpointAuthMethod: definition.oauthTokenEndpointAuthMethod,
-    oauthRedirectUrl: definition.oauthRedirectUrl,
-    oauthScope: definition.oauthScope,
-    refresh: definition.refresh,
-    httpFetch: definition.httpFetch,
-    allowedTools: definition.allowedTools,
-    blockedTools: definition.blockedTools,
+    ...sharedFields,
     env: definition.env,
     transport: 'stdio',
     command: definition.command.command,

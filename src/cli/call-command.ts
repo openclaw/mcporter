@@ -2,12 +2,8 @@ import { analyzeConnectionError, type ConnectionIssue } from '../error-classifie
 import { wrapCallResult } from '../result-utils.js';
 import type { Runtime } from '../runtime.js';
 import { type CallArgsParseResult, parseCallArguments } from './call-arguments.js';
-import {
-  CALL_HELP_ADHOC_SERVER_LINES,
-  CALL_HELP_ARGUMENT_LINES,
-  CALL_HELP_EXAMPLE_LINES,
-  CALL_HELP_RUNTIME_FLAG_LINES,
-} from './call-help.js';
+import { CALL_HELP_ARGUMENT_LINES, CALL_HELP_EXAMPLE_LINES, CALL_HELP_RUNTIME_FLAG_LINES } from './call-help.js';
+import { renderAdhocServerHelpLines } from './adhoc-help.js';
 import {
   persistPreparedEphemeralServer,
   prepareEphemeralServerTarget,
@@ -237,7 +233,7 @@ export function printCallHelp(): void {
     ...CALL_HELP_RUNTIME_FLAG_LINES,
     '',
     'Ad-hoc servers:',
-    ...CALL_HELP_ADHOC_SERVER_LINES,
+    ...renderAdhocServerHelpLines(),
     '',
     'Examples:',
     ...CALL_HELP_EXAMPLE_LINES,
