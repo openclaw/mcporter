@@ -5,6 +5,7 @@
 ### CLI
 
 - Follow `resources/list` cursors automatically so paginated MCP resources are returned in full.
+- Keep replay recordings usable across MCP protocol-version and mcporter client-version changes.
 
 ## [0.12.4] - 2026-08-02
 

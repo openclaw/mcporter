@@ -39,13 +39,20 @@ export class ReplayTransport implements Transport {
     }
 
     const expected = this.expectedSends[0];
-    if (!expected || expected.method !== request.method || !isDeepStrictEqual(expected.params, request.params)) {
+    if (
+      !expected ||
+      expected.method !== request.method ||
+      !paramsMatch(request.method, expected.params, request.params)
+    ) {
       throw new Error(formatReplayMismatch(this.opts.server, request, expected));
     }
 
     this.expectedSends.shift();
     if (expected.response) {
-      const response = withActiveRequestId(expected.response, request.id);
+      const response = withActiveRequestId(
+        adaptInitializeResponse(request.method, expected.response, request.params),
+        request.id
+      );
       queueMicrotask(() => this.onmessage?.(response));
     }
   }
@@ -162,6 +169,44 @@ function responseIdOf(message: JSONRPCMessage): string | number | undefined {
   }
   const id = record.id;
   return typeof id === 'string' || typeof id === 'number' ? id : undefined;
+}
+
+function paramsMatch(method: string, expected: unknown, actual: unknown): boolean {
+  if (method !== 'initialize') {
+    return isDeepStrictEqual(expected, actual);
+  }
+  return isDeepStrictEqual(normalizeInitializeParams(expected), normalizeInitializeParams(actual));
+}
+
+function normalizeInitializeParams(params: unknown): unknown {
+  if (!isJsonRpcRecord(params)) {
+    return params;
+  }
+  const normalized = { ...params };
+  delete normalized.protocolVersion;
+  delete normalized.capabilities;
+  delete normalized.clientInfo;
+  return normalized;
+}
+
+function adaptInitializeResponse(method: string, response: JSONRPCMessage, requestParams: unknown): JSONRPCMessage {
+  if (method !== 'initialize' || !isJsonRpcRecord(requestParams) || !('result' in response)) {
+    return response;
+  }
+  const protocolVersion = requestParams.protocolVersion;
+  if (typeof protocolVersion !== 'string' || !isJsonRpcRecord(response.result)) {
+    return response;
+  }
+
+  // SDK v1.30 accepts supported version mismatches but rejects unknown initialize-result versions.
+  return {
+    ...response,
+    result: { ...response.result, protocolVersion },
+  };
+}
+
+function isJsonRpcRecord(value: unknown): value is JsonRpcRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function withActiveRequestId(response: JSONRPCMessage, requestId: string | number | undefined): JSONRPCMessage {

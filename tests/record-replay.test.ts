@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import type { Transport, TransportSendOptions } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { describe, expect, it } from 'vitest';
@@ -141,6 +142,27 @@ describe('record/replay transports', () => {
         result: { content: [{ type: 'text', text: 'recorded' }] },
       },
     ]);
+  });
+
+  it('replays initialize recordings across protocol and client version drift', async () => {
+    const recordPath = await writeRecording([
+      send('linear', 1, 'initialize', {
+        protocolVersion: '2099-01-01',
+        capabilities: { sampling: {} },
+        clientInfo: { name: 'mcporter', version: '0.1.0' },
+      }),
+      recv('linear', 1, {
+        protocolVersion: '2099-01-01',
+        capabilities: {},
+        serverInfo: { name: 'recorded-server', version: '1.0.0' },
+      }),
+      notification('linear', 'notifications/initialized'),
+    ]);
+    const transport = new ReplayTransport({ recordPath, server: 'linear' });
+    const client = new Client({ name: 'mcporter', version: MCPORTER_VERSION }, { capabilities: {} });
+
+    await expect(client.connect(transport)).resolves.toBeUndefined();
+    await expect(client.close()).resolves.toBeUndefined();
   });
 
   it('skips recorded requests that never received a response', async () => {
