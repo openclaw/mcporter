@@ -16,6 +16,9 @@ export default defineConfig({
     ...quietReporterOptions,
     // CLI-heavy suites import the full entrypoint in parallel and can exceed the
     // default 5s timeout under local load even when behavior is correct.
+    // Point HOME/XDG at a throwaway root before any suite loads, so no test can
+    // write into a developer's real ~/.mcporter.
+    setupFiles: ['./tests/setup/isolate-home.ts'],
     testTimeout: 10_000,
     // Agent worktrees under .claude/worktrees contain full repo copies; without
     // this exclude a root-level run also collects every worktree's test suite.
