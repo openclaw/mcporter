@@ -19,6 +19,14 @@ afterEach(async () => {
   cleanupPids.clear();
 });
 
+// closeStdioChild escalates SIGTERM -> SIGTERM -> SIGKILL with 700/700/500 ms waits,
+// so a cooperative-refusing tree costs ~1.9s before the kill lands. The point of this
+// assertion is that teardown is BOUNDED rather than hanging or waiting out a request
+// timeout, so allow real headroom for spawn plus process-tree enumeration — which is
+// markedly slower on Windows, where a 2.5s bound flaked at 3.8s on CI.
+const ESCALATION_BUDGET_MS = 700 + 700 + 500;
+const TEARDOWN_BUDGET_MS = process.platform === 'win32' ? ESCALATION_BUDGET_MS * 4 : ESCALATION_BUDGET_MS * 2;
+
 describe('stdio runtime close', () => {
   it('reaps a SIGTERM-resistant process tree with inherited stdio in bounded time', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-stdio-close-'));
@@ -52,7 +60,7 @@ describe('stdio runtime close', () => {
       definition,
     });
 
-    expect(Date.now() - started).toBeLessThan(2_500);
+    expect(Date.now() - started).toBeLessThan(TEARDOWN_BUDGET_MS);
     await expectProcessExit(rootPid);
     await expectProcessExit(descendantPid);
     cleanupPids.delete(rootPid);
