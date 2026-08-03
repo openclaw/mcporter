@@ -1,7 +1,7 @@
 # MCPorter 🧳 — Carry MCP tools into scripts, CLIs, and agents
 
 [![CI](https://img.shields.io/github/actions/workflow/status/openclaw/mcporter/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/openclaw/mcporter/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/mcporter?style=flat-square)](https://registry.npmjs.org/mcporter/latest)
+[![npm](https://img.shields.io/npm/v/mcporter?style=flat-square)](https://www.npmjs.com/package/mcporter)
 [![Node](https://img.shields.io/node/v/mcporter?style=flat-square)](https://nodejs.org)
 [![License](https://img.shields.io/github/license/openclaw/mcporter?style=flat-square)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-mcporter.sh-2563eb?style=flat-square)](https://mcporter.sh)
