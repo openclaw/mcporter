@@ -376,8 +376,9 @@ assert_fails env -u GH_TOKEN -u GITHUB_TOKEN \
   "$ROOT/scripts/verify-release.sh" "$TAG" "$package_only_out"
 
 # Workflow and orchestration boundaries: protected current default branch,
-# exact REST draft inventory, narrow token scope, and no one-shot publish path.
+# exact REST inventories, narrow token scope, and serialized publication.
 release_workflow="$ROOT/.github/workflows/release-assets.yml"
+publish_workflow="$ROOT/.github/workflows/release.yml"
 homebrew_workflow="$ROOT/.github/workflows/update-homebrew-tap.yml"
 assert_fails "$ROOT/scripts/package-release.sh" v1.2.3-rc.1
 assert_fails "$ROOT/scripts/verify-release.sh" v1.2.3-rc.1 "$WORK/missing-prerelease-assets"
@@ -402,6 +403,20 @@ grep -Eq 'arch: process.env.RELEASE_ARCH' "$release_workflow"
 [[ "$(grep -Ec '^          GH_TOKEN:' "$release_workflow")" == 1 ]] || fail 'release token scope changed'
 ! grep -Eq 'secrets\.RELEASE_ASSET_TOKEN' "$release_workflow" || fail 'release verifier uses a persistent secret'
 ! grep -Eq 'gh release download' "$release_workflow" || fail 'release download bypasses exact REST lookup'
+
+grep -Eq '^  release:$' "$publish_workflow"
+grep -Eq '^    types: \[published\]$' "$publish_workflow"
+grep -Eq '^  workflow_dispatch:$' "$publish_workflow"
+grep -Fq 'npm publish --access public --provenance "$NPM_ARCHIVE"' "$publish_workflow"
+grep -Fq 'pnpm check' "$publish_workflow"
+grep -Fq 'pnpm test' "$publish_workflow"
+grep -Fq 'id-token: write' "$publish_workflow"
+grep -Fq 'ACTIONS_ID_TOKEN_REQUEST_URL' "$publish_workflow"
+grep -Fq 'secrets.HOMEBREW_TAP_TOKEN' "$publish_workflow"
+grep -Fq 'workflow run update-homebrew-tap.yml' "$publish_workflow"
+grep -Fq 'verify-published-release-proof.mjs' "$publish_workflow"
+grep -Fq 'validate-release-metadata.mjs' "$publish_workflow"
+! grep -Eq 'secrets\.(NPM_TOKEN|NODE_AUTH_TOKEN)' "$publish_workflow" || fail 'automated release regained a persistent npm token'
 
 ! grep -Eq '\bspctl\b' "$ROOT/scripts/codesign-native.sh" "$ROOT/scripts/verify-release.sh" || \
   fail 'standalone CLI verification must not require raw-binary spctl success'

@@ -1,0 +1,304 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing published release tag to publish (for example, v0.13.1)'
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: 24
+  PNPM_VERSION: 10.33.2
+
+jobs:
+  release:
+    # DO NOT change this job to a self-hosted runner.
+    # npm trusted publishing + provenance for GitHub Actions releases
+    # requires a GitHub-hosted runner, and publishing fails on self-hosted
+    # environments with:
+    # "Unsupported GitHub Actions runner environment: self-hosted".
+    # Before the first run, configure mcporter's npmjs.com trusted publisher
+    # for openclaw/mcporter and .github/workflows/release.yml. No NPM_TOKEN is used.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Resolve real published release
+        id: release
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]] || {
+            echo "::error::Release tags must match vX.Y.Z; received ${RELEASE_TAG:-<missing>}."
+            exit 1
+          }
+
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            expected_ref="refs/heads/$DEFAULT_BRANCH"
+            expected_workflow_ref="$GITHUB_REPOSITORY/.github/workflows/release.yml@$expected_ref"
+            [[ "$GITHUB_REF" == "$expected_ref" ]] || {
+              echo "::error::Manual release publication must be dispatched from $expected_ref"
+              exit 1
+            }
+            [[ "$GITHUB_WORKFLOW_REF" == "$expected_workflow_ref" ]] || {
+              echo "::error::Release workflow must come from $expected_workflow_ref"
+              exit 1
+            }
+          fi
+
+          release="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"
+          [[ "$(jq -r '.tag_name' <<<"$release")" == "$RELEASE_TAG" ]]
+          [[ "$(jq -r '.draft' <<<"$release")" == false ]] || {
+            echo "::error::GitHub Release $RELEASE_TAG is still a draft."
+            exit 1
+          }
+          [[ "$(jq -r '.prerelease' <<<"$release")" == false ]] || {
+            echo "::error::GitHub Release $RELEASE_TAG is a prerelease."
+            exit 1
+          }
+          [[ "$(jq -r '.published_at // empty' <<<"$release")" != "" ]] || {
+            echo "::error::GitHub Release $RELEASE_TAG has not been published."
+            exit 1
+          }
+
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "default_branch=$DEFAULT_BRANCH" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6.0.8
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Validate package metadata for trusted publishing
+        run: node scripts/validate-release-metadata.mjs
+
+      - name: Validate release tag
+        id: tag
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ steps.release.outputs.default_branch }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$DEFAULT_BRANCH" --depth=1
+          release_sha="$(git rev-parse "$RELEASE_TAG^{commit}")"
+          package_version="$(node -p "require('./package.json').version")"
+          expected_tag="v$package_version"
+
+          [[ "$RELEASE_TAG" == "$expected_tag" ]] || {
+            echo "::error::Release tag $RELEASE_TAG does not match package.json version $package_version; expected $expected_tag."
+            exit 1
+          }
+          git merge-base --is-ancestor "$release_sha" "origin/$DEFAULT_BRANCH" || {
+            echo "::error::Tagged commit $release_sha is not contained in origin/$DEFAULT_BRANCH."
+            exit 1
+          }
+
+          echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
+          echo "version=$package_version" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure version is not already published
+        shell: bash
+        env:
+          PACKAGE_VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          error_log="$(mktemp)"
+          trap 'rm -f "$error_log"' EXIT
+
+          if npm view "mcporter@$PACKAGE_VERSION" version >/dev/null 2>"$error_log"; then
+            echo "::error::mcporter@$PACKAGE_VERSION is already published on npm."
+            exit 1
+          fi
+          if ! grep -Eq "E404|404 Not Found" "$error_log"; then
+            cat "$error_log" >&2
+            exit 1
+          fi
+
+          echo "Publishing mcporter@$PACKAGE_VERSION"
+
+      - name: Verify protected native proof and published assets
+        id: proof
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ steps.release.outputs.default_branch }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          RELEASE_SHA: ${{ steps.tag.outputs.sha }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ -n "$GH_TOKEN" ]] || {
+            echo "::error::HOMEBREW_TAP_TOKEN is required to read protected verifier artifacts and dispatch Homebrew."
+            exit 1
+          }
+
+          proof_runs="$RUNNER_TEMP/native-proof-runs.json"
+          gh run list \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow release-assets.yml \
+            --event workflow_dispatch \
+            --branch "$DEFAULT_BRANCH" \
+            --status success \
+            --limit 100 \
+            --json conclusion,databaseId,displayTitle,event,headBranch,headSha,workflowName \
+            > "$proof_runs"
+          run_id="$(jq -r \
+            --arg title "Verify release assets $RELEASE_TAG" \
+            --arg sha "$RELEASE_SHA" \
+            --arg branch "$DEFAULT_BRANCH" \
+            '[.[] | select(
+              .conclusion == "success" and
+              .event == "workflow_dispatch" and
+              .displayTitle == $title and
+              .headBranch == $branch and
+              .headSha == $sha and
+              .workflowName == "Verify Release Assets"
+            )][0].databaseId // empty' "$proof_runs")"
+          [[ "$run_id" =~ ^[0-9]+$ ]] || {
+            echo "::error::No successful protected native verifier run matches $RELEASE_TAG at $RELEASE_SHA."
+            exit 1
+          }
+
+          proof_dir="$RUNNER_TEMP/native-proof"
+          asset_dir="$RUNNER_TEMP/release-assets"
+          mkdir -p "$proof_dir/arm64" "$proof_dir/x86_64" "$asset_dir"
+          gh run download "$run_id" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name verified-assets-arm64 \
+            --dir "$proof_dir/arm64"
+          gh run download "$run_id" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name verified-assets-x86_64 \
+            --dir "$proof_dir/x86_64"
+
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/release.json"
+          while IFS=$'\t' read -r asset_id asset_name; do
+            gh api \
+              --header 'Accept: application/octet-stream' \
+              "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" > "$asset_dir/$asset_name"
+          done < <(jq -r '.assets[] | [.id, .name] | @tsv' "$RUNNER_TEMP/release.json")
+
+          node scripts/verify-published-release-proof.mjs \
+            "$RUNNER_TEMP/release.json" \
+            "$proof_dir/arm64/verified-assets.json" \
+            "$proof_dir/x86_64/verified-assets.json" \
+            "$asset_dir" \
+            "$RELEASE_TAG" \
+            "$RELEASE_SHA"
+
+          echo "native_verifier_run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "npm_archive=$asset_dir/mcporter-${RELEASE_TAG#v}.tgz" >> "$GITHUB_OUTPUT"
+
+      - name: Run source gates
+        run: |
+          pnpm check
+          pnpm test
+
+      - name: Verify npm trusted publishing OIDC
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" && -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]] || {
+            echo "::error::GitHub OIDC is unavailable. Keep id-token: write and use a GitHub-hosted runner."
+            exit 1
+          }
+
+          oidc_response="$RUNNER_TEMP/npm-oidc.json"
+          if ! curl --fail --silent --show-error \
+            --header "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm:registry.npmjs.org" \
+            --output "$oidc_response"; then
+            echo "::error::GitHub could not issue the OIDC token required by npm trusted publishing."
+            exit 1
+          fi
+          jq -e '.value | strings | length > 0' "$oidc_response" >/dev/null || {
+            echo "::error::GitHub returned an invalid OIDC response for npm trusted publishing."
+            exit 1
+          }
+
+      - name: Publish verified npm archive with provenance
+        shell: bash
+        env:
+          NPM_ARCHIVE: ${{ steps.proof.outputs.npm_archive }}
+          NPM_CONFIG_IGNORE_SCRIPTS: 'true'
+        run: |
+          set -euo pipefail
+          if ! npm publish --access public --provenance "$NPM_ARCHIVE"; then
+            echo "::error::npm trusted publishing failed. Configure the mcporter package on npmjs.com with openclaw/mcporter and .github/workflows/release.yml; this workflow intentionally has no NPM_TOKEN."
+            exit 1
+          fi
+
+      - name: Verify immutable npm publication
+        shell: bash
+        env:
+          NPM_ARCHIVE: ${{ steps.proof.outputs.npm_archive }}
+          PACKAGE_VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          expected_integrity="sha512-$(openssl dgst -sha512 -binary "$NPM_ARCHIVE" | openssl base64 -A)"
+          registry_ready=0
+
+          for _ in {1..20}; do
+            registry_version="$(npm view "mcporter@$PACKAGE_VERSION" version 2>/dev/null || true)"
+            registry_integrity="$(npm view "mcporter@$PACKAGE_VERSION" dist.integrity 2>/dev/null || true)"
+            if [[ "$registry_version" == "$PACKAGE_VERSION" && "$registry_integrity" == "$expected_integrity" ]]; then
+              registry_ready=1
+              break
+            fi
+            if [[ "$registry_version" == "$PACKAGE_VERSION" && -n "$registry_integrity" && "$registry_integrity" != "$expected_integrity" ]]; then
+              echo "::error::npm registry integrity does not match the protected GitHub Release tarball."
+              exit 1
+            fi
+            sleep 3
+          done
+
+          [[ "$registry_ready" == 1 ]] || {
+            echo "::error::npm did not expose the verified release artifact before timeout."
+            exit 1
+          }
+          [[ "$(npm view mcporter dist-tags.latest)" == "$PACKAGE_VERSION" ]] || {
+            echo "::error::npm latest does not point to $PACKAGE_VERSION."
+            exit 1
+          }
+
+      - name: Dispatch protected Homebrew update
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ steps.release.outputs.default_branch }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          NATIVE_VERIFIER_RUN_ID: ${{ steps.proof.outputs.native_verifier_run_id }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ -n "$GH_TOKEN" ]]
+          gh workflow run update-homebrew-tap.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$DEFAULT_BRANCH" \
+            -f tag="$RELEASE_TAG" \
+            -f native_verifier_run_id="$NATIVE_VERIFIER_RUN_ID"

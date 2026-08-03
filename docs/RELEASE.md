@@ -1,5 +1,5 @@
 ---
-summary: 'Serialized release checklist for exact-tag native proof, GitHub, npm, and Homebrew publication.'
+summary: 'Serialized release checklist for exact-tag native proof and automated npm and Homebrew publication.'
 read_when:
   - 'Cutting a release or updating release automation'
 ---
@@ -21,6 +21,9 @@ v0.12.3's standalone arm64 binary is not a continuity baseline: it was ad-hoc `a
 - The verifier job grants its built-in `github.token` only `contents: write`, which GitHub requires for draft visibility. That token exists only in the exact draft-download step; the verifier explicitly rejects `GH_TOKEN` and `GITHUB_TOKEN` before it executes the package or either native candidate. No repository release-token secret is used.
 - `.github/workflows/release-assets.yml` and `.github/workflows/update-homebrew-tap.yml` must be dispatched from the repository's current default branch. Both reject a mismatched workflow ref.
 - Release automation accepts stable `vMAJOR.MINOR.PATCH` tags only; prereleases require a separate dist-tag-aware contract before they can enter this pipeline.
+
+> [!IMPORTANT]
+> Before the first automated publication, configure npm trusted publishing for the `mcporter` package on npmjs.com with repository `openclaw/mcporter` and workflow `.github/workflows/release.yml`. The workflow deliberately has no `NPM_TOKEN`: it requires GitHub OIDC on a GitHub-hosted runner and fails with an actionable error when that path is unavailable. This npmjs.com setting cannot be verified from the repository.
 
 ## 1. Credential-free preparation
 
@@ -71,23 +74,20 @@ Do not publish GitHub, npm, or Homebrew before both native jobs succeed.
 
 ## 4. Serialized publication
 
-1. Publish the already-verified GitHub draft without changing its tag or asset inventory.
-2. Publish npm only through the proof-gated phase:
+1. Publish the already-verified GitHub draft without changing its tag or asset inventory. Publishing a real, non-prerelease GitHub Release triggers **Release**; pushing the tag alone does not publish npm.
+2. **Release** checks out the exact tag on a GitHub-hosted Ubuntu runner, validates the package author and normalized repository URL, requires `vMAJOR.MINOR.PATCH` to equal `v${package.json.version}`, and proves the tagged commit is contained in `origin/main`. It rejects draft and prerelease releases and any version already present on npm.
+3. Before npm publication, the workflow finds the successful **Verify Release Assets** run for the exact tag commit, downloads both architecture proof artifacts and every published release asset, and requires their IDs, sizes, and SHA-256 digests to match. It then runs `pnpm check` and `pnpm test` without weakening either gate.
+4. With those proofs complete, the workflow confirms that GitHub OIDC is available and uses npm trusted publishing plus provenance to publish the exact verified `mcporter-<version>.tgz` from the GitHub Release. It waits for npm to expose that immutable version, requires registry integrity to match the verified tarball, and requires `latest` to point to it. No Developer ID, notarization, or npm token enters Actions.
+5. Only after npm verification succeeds, **Release** dispatches **Update Homebrew Tap** from the current default branch with the tag and resolved native verifier run ID. That existing workflow rechecks npm, the exact native proof SHA/title/workflow, both architecture manifests, and every published GitHub byte before dispatching the tap. It computes SHA-512 integrity from the verified GitHub npm tarball and requires npm `dist.integrity` plus `latest` to match; `HOMEBREW_TAP_TOKEN` is scoped only to proof access and dispatch/wait steps.
 
-   ```bash
-   NATIVE_VERIFIER_RUN_ID=<run-id> ./scripts/release.sh publish-npm
-   ```
+A manual **Release** dispatch is a recovery fallback, not a way around the native gate. Dispatch it from the current default branch with `tag=v<version>`; it accepts only an existing published, non-prerelease GitHub Release and repeats the same tag, `main`, native-proof, source-gate, npm, and Homebrew checks. Because npm versions are immutable, if npm succeeded but the downstream Homebrew dispatch failed, rerun **Update Homebrew Tap** directly with the same tag and recorded native verifier run ID instead of rerunning **Release**.
 
-   This repeats local native verification, checks the exact successful protected workflow run, downloads and cross-checks both architecture proof artifacts, re-downloads every published asset by REST ID, and requires every digest to match the protected draft proof. It publishes the exact verified npm tarball, tolerates registry propagation after a successful publish, and verifies immutable registry integrity before continuing.
+Verify registry metadata after automation completes:
 
-3. Verify registry metadata:
-
-   ```bash
-   npm view mcporter@<version> version dist-tags.latest dist.tarball dist.integrity time
-   ./scripts/release.sh smoke
-   ```
-
-4. Dispatch **Update Homebrew Tap** from the current default branch with `tag=v<version>` and the same `native_verifier_run_id`. The workflow rechecks npm, the exact native proof SHA/title/workflow, both architecture manifests, and every published GitHub byte against the preserved proof. It computes SHA-512 integrity from the verified GitHub npm tarball and requires npm `dist.integrity` plus `latest` to match before dispatching. Its token is scoped only to those dispatch/wait steps.
+```bash
+npm view mcporter@<version> version dist-tags.latest dist.tarball dist.integrity time
+./scripts/release.sh smoke
+```
 
 ## 5. Downstream verification and closeout
 
