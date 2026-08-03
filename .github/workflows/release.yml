@@ -106,7 +106,11 @@ jobs:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
-          git fetch --no-tags origin "$DEFAULT_BRANCH" --depth=1
+          # Fetch the default branch into its remote-tracking ref with full history:
+          # this job checks out the tag, so origin/<branch> does not otherwise exist,
+          # and --depth=1 cannot answer the ancestry question below.
+          git fetch --no-tags origin \
+            "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
           release_sha="$(git rev-parse "$RELEASE_TAG^{commit}")"
           package_version="$(node -p "require('./package.json').version")"
           expected_tag="v$package_version"
