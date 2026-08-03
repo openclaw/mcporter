@@ -197,7 +197,11 @@ export function resolveBundleTarget({
   }
   if (typeof compile === 'string') {
     const ext = path.extname(compile);
-    const base = ext ? path.join(path.dirname(compile), path.basename(compile, ext)) : compile;
+    // Normalize both arms: rebuilding through path.join only when an extension was
+    // present used to return a platform-native path for `dist/custom.bin` and the
+    // caller's verbatim string for `dist/custom`, so the same flag produced two
+    // separator styles on Windows.
+    const base = path.join(path.dirname(compile), path.basename(compile, ext));
     return `${base}.js`;
   }
   if (compile) {

@@ -461,14 +461,16 @@ describe('resolveBundleTarget', () => {
     expect(resolveBundleTarget({ bundle: 'dist/custom.js', compile: 'dist/custom', outputPath: 'source.ts' })).toBe(
       'dist/custom.js'
     );
-    // A --compile target WITH an extension is rebuilt through path.join, so it
-    // picks up the platform separator; one WITHOUT an extension is passed through
-    // untouched and keeps whatever separator the caller wrote. The two therefore
-    // differ on Windows.
-    expect(resolveBundleTarget({ compile: 'dist/custom.bin', outputPath: 'source.ts' })).toBe(
-      `${path.join('dist', 'custom')}.js`
-    );
-    expect(resolveBundleTarget({ compile: 'dist/custom', outputPath: 'source.ts' })).toBe('dist/custom.js');
+    // Both --compile forms must agree, with or without a supplied extension. The
+    // arms used to diverge only on Windows (path.join there yields a backslash
+    // while the extensionless arm returned the caller's string verbatim), so this
+    // invariant is trivially true on POSIX and is really enforced by Windows CI.
+    const distCustomJs = `${path.join('dist', 'custom')}.js`;
+    const withExtension = resolveBundleTarget({ compile: 'dist/custom.bin', outputPath: 'source.ts' });
+    const withoutExtension = resolveBundleTarget({ compile: 'dist/custom', outputPath: 'source.ts' });
+    expect(withExtension).toBe(distCustomJs);
+    expect(withoutExtension).toBe(distCustomJs);
+    expect(withoutExtension).toBe(withExtension);
     expect(resolveBundleTarget({ compile: true, outputPath: 'dist/source.ts' })).toMatch(
       /tmp[/\\]mcporter-cli-bundles[/\\]source-\d+\.bundle\.js$/
     );
