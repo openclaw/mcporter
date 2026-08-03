@@ -17,6 +17,8 @@ function skipReason(): string | undefined {
 
 describe.skipIf(Boolean(skipReason()))('deepwiki live', () => {
   it('lists wiki structure via streamable-http', async () => {
+    // Regression: the Streamable HTTP call cannot complete or decode. Vendor drift: prose assertions identify
+    // that DeepWiki changed its public response, while connection failures remain visible as process errors.
     const { stdout, stderr } = await execFileAsync('node', [
       'dist/cli.js',
       'call',
@@ -32,6 +34,8 @@ describe.skipIf(Boolean(skipReason()))('deepwiki live', () => {
   }, 30_000);
 
   it('prints the readable result when default output is used via streamable-http', async () => {
+    // Regression: default rendering leaks the raw MCP envelope instead of readable content. Vendor drift: changed
+    // wiki prose is distinct from an envelope/rendering failure and can be refreshed independently.
     const { stdout, stderr } = await execFileAsync('node', [
       'dist/cli.js',
       'call',
@@ -46,6 +50,8 @@ describe.skipIf(Boolean(skipReason()))('deepwiki live', () => {
   }, 30_000);
 
   it('reports the deprecated sse endpoint as a structured 410 issue', async () => {
+    // Regression: HTTP classification loses the 410 or crashes. Vendor drift: a revived/moved DeepWiki SSE
+    // endpoint changes the status and signals that this deprecated-endpoint survey case should be replaced.
     const { stdout, stderr } = await execFileAsync('node', [
       'dist/cli.js',
       'call',

@@ -23,16 +23,19 @@ This runs the Vitest suite under `tests/live`, in-band, with longer timeouts.
 
 ## Current coverage
 
-- **DeepWiki**:
-  - Streamable HTTP success path: `https://mcp.deepwiki.com/mcp`
-  - Deprecated SSE endpoint classification: `https://mcp.deepwiki.com/sse`
-  - Tests:
-    - call `read_wiki_structure repoName:facebook/react` and assert a non-empty result over Streamable HTTP
-    - assert the legacy SSE endpoint currently returns a structured HTTP `410` issue envelope
+The suite negotiates and calls real servers across all supported revisions (`2026-07-28`, `2025-11-25`,
+`2025-06-18`, and `2025-03-26`). It also exercises resources, prompts, 200+ tool pagination with a duplicate tool
+name, standalone SSE fallback, OAuth-required classification, modern/legacy downstream clients through
+`mcporter serve`, modern record/replay, and explicit version pins. DeepWiki remains as a focused Streamable HTTP
+rendering and deprecated-endpoint classification check.
+
+The full endpoint survey, expected drift, and weekly failure triage live in
+[`tests/live/README.md`](../tests/live/README.md).
 
 ## Notes
 
 - Tests are skipped entirely unless `MCP_LIVE_TESTS=1` is set.
-- Ensure network egress is allowed. No secrets are required for the current DeepWiki checks.
+- Ensure network egress is allowed. No secrets are required for the live checks.
 - As of 2026-03-29, DeepWiki's hosted `/sse` endpoint responds with HTTP `410`, so the live suite treats that as a compatibility/error-classification smoke rather than a success-path transport check.
-- Keep assertions minimal to reduce flake; these are availability smokes, not full contract tests.
+- Keep assertions structural where vendor content can change. Transport, protocol, pagination, bridge, replay, and
+  error-classification behavior are contracts and should still fail loudly.
