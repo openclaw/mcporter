@@ -83,6 +83,7 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@types/estree": "^1.0.9",
     "@types/express": "^5.0.6",
     "@types/node": "^26.1.1",
     "@typescript/native": "npm:typescript@^7.0.2",

@@ -52,6 +52,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(zod@4.4.3)
+      '@types/estree':
+        specifier: ^1.0.9
+        version: 1.0.9
       '@types/express':
         specifier: ^5.0.6
         version: 5.0.6
