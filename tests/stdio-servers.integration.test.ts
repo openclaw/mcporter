@@ -6,6 +6,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ensureDistBuilt } from './helpers/dist.js';
+import { budget } from './helpers/timing.js';
 
 const CLI_ENTRY = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 
@@ -72,22 +73,26 @@ describe('stdio MCP servers (filesystem + memory)', () => {
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   });
 
-  it('lists filesystem tools and reads files via stdio MCP', async () => {
-    const listResult = await runCli(['list', 'fs-test'], configPath);
-    expect(listResult.stdout).toContain('Filesystem MCP for stdio e2e tests');
-    const callResult = await runCli(
-      [
-        'call',
-        'fs-test.read_text_file',
-        '--output',
-        'json',
-        '--args',
-        JSON.stringify({ path: path.join(fsRoot, 'hello.txt') }),
-      ],
-      configPath
-    );
-    expect(callResult.stdout).toContain('hello from stdio mcp');
-  }, 20000);
+  it(
+    'lists filesystem tools and reads files via stdio MCP',
+    async () => {
+      const listResult = await runCli(['list', 'fs-test'], configPath);
+      expect(listResult.stdout).toContain('Filesystem MCP for stdio e2e tests');
+      const callResult = await runCli(
+        [
+          'call',
+          'fs-test.read_text_file',
+          '--output',
+          'json',
+          '--args',
+          JSON.stringify({ path: path.join(fsRoot, 'hello.txt') }),
+        ],
+        configPath
+      );
+      expect(callResult.stdout).toContain('hello from stdio mcp');
+    },
+    budget(20_000)
+  );
 
   const memoryTest = process.platform === 'win32' ? it.skip : it;
 

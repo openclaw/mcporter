@@ -587,14 +587,21 @@ describeUnixSocket('isDaemonResponding', () => {
     expect(await isDaemonResponding(p)).toBe(true);
   });
 
-  it('returns false when the socket accepts but never responds (hung daemon)', async () => {
-    const p = socketPath();
-    await listen(
-      net.createServer((socket) => socket.pause()),
-      p
-    );
-    expect(await isDaemonResponding(p)).toBe(false);
-  }, 5_000);
+  it(
+    'returns false when the socket accepts but never responds (hung daemon)',
+    async () => {
+      const p = socketPath();
+      await listen(
+        net.createServer((socket) => socket.pause()),
+        p
+      );
+      expect(await isDaemonResponding(p)).toBe(false);
+      // isDaemonResponding must give up after its internal probe timeout
+      // (DAEMON_PROBE_TIMEOUT_MS) rather than hang on the paused socket. Derive
+      // the test budget from that constant so it tracks the timeout it exercises.
+    },
+    __daemonHostInternals.DAEMON_PROBE_TIMEOUT_MS * 2 + 1_000
+  );
 
   it('returns false when status reports a different socket (foreign listener)', async () => {
     const p = socketPath();

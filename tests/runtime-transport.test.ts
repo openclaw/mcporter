@@ -44,6 +44,7 @@ import type { ServerDefinition } from '../src/config.js';
 import * as oauthModule from '../src/oauth.js';
 import { markOAuthFlowError, markPostAuthConnectError } from '../src/runtime/oauth.js';
 import { createClientContext } from '../src/runtime/transport.js';
+import { budget } from './helpers/timing.js';
 import {
   clientInfo,
   createLogger,
@@ -728,25 +729,29 @@ describe('createClientContext (stdio negotiation)', () => {
     }
   });
 
-  it('waits longer than three seconds for a slow modern discovery response', async () => {
-    const baseDefinition = stdioDefinition('modern');
-    if (baseDefinition.command.kind !== 'stdio') throw new Error('Expected stdio fixture definition.');
-    const definition: ServerDefinition = {
-      ...baseDefinition,
-      command: {
-        ...baseDefinition.command,
-        args: [...(baseDefinition.command.args ?? []), '3200'],
-      },
-    };
+  it(
+    'waits longer than three seconds for a slow modern discovery response',
+    async () => {
+      const baseDefinition = stdioDefinition('modern');
+      if (baseDefinition.command.kind !== 'stdio') throw new Error('Expected stdio fixture definition.');
+      const definition: ServerDefinition = {
+        ...baseDefinition,
+        command: {
+          ...baseDefinition.command,
+          args: [...(baseDefinition.command.args ?? []), '3200'],
+        },
+      };
 
-    const context = await createClientContext(definition, logger, clientInfo);
-    try {
-      expect(context.client.getProtocolEra()).toBe('modern');
-      await expect(context.client.listTools()).resolves.toMatchObject({
-        tools: [expect.objectContaining({ name: 'modern_ping' })],
-      });
-    } finally {
-      await context.client.close();
-    }
-  }, 10_000);
+      const context = await createClientContext(definition, logger, clientInfo);
+      try {
+        expect(context.client.getProtocolEra()).toBe('modern');
+        await expect(context.client.listTools()).resolves.toMatchObject({
+          tools: [expect.objectContaining({ name: 'modern_ping' })],
+        });
+      } finally {
+        await context.client.close();
+      }
+    },
+    budget(10_000)
+  );
 });

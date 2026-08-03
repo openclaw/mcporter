@@ -13,12 +13,13 @@ import { createInteractiveElicitationResponder } from './runtime/elicitation.js'
 
 export { parseCallArguments } from './cli/call-arguments.js';
 export { extractListFlags } from './cli/list-flags.js';
-export { resolveCallTimeout } from './cli/timeouts.js';
+export { resolveCallTimeout, STDOUT_FLUSH_TIMEOUT_MS } from './cli/timeouts.js';
+
+import { STDOUT_FLUSH_TIMEOUT_MS } from './cli/timeouts.js';
 
 configureAutoSelectFamilyAttemptTimeout();
 
 const FORCE_EXIT_GRACE_MS = 50;
-const STDOUT_FLUSH_TIMEOUT_MS = 2000;
 const DAEMON_FAST_PATH_SERVERS = new Set(['chrome-devtools', 'mobile-mcp', 'playwright']);
 
 function handleStdioError(error: Error): void {

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ensureDistBuilt } from './helpers/dist.js';
+import { budget } from './helpers/timing.js';
 
 const CLI_ENTRY = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 const testRequire = createRequire(import.meta.url);
@@ -79,14 +80,16 @@ function parseCliJson(output: string): { instanceId: string; count: number } {
 }
 
 describeDaemon('daemon keep-alive integration', () => {
-  it('reuses stdio servers across mcporter invocations', async () => {
-    await ensureDistBuilt(CLI_ENTRY);
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-e2e-'));
-    const scriptPath = path.join(tempDir, 'daemon-server.mjs');
-    const configPath = path.join(tempDir, 'mcporter.daemon.json');
-    const launchLogPath = path.join(tempDir, 'launches.log');
+  it(
+    'reuses stdio servers across mcporter invocations',
+    async () => {
+      await ensureDistBuilt(CLI_ENTRY);
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-e2e-'));
+      const scriptPath = path.join(tempDir, 'daemon-server.mjs');
+      const configPath = path.join(tempDir, 'mcporter.daemon.json');
+      const launchLogPath = path.join(tempDir, 'launches.log');
 
-    const stdioServerSource = `import { randomUUID } from 'node:crypto';
+      const stdioServerSource = `import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { McpServer } from '${MCP_SERVER_MODULE}';
 import { StdioServerTransport } from '${STDIO_SERVER_MODULE}';
@@ -123,71 +126,75 @@ await new Promise((resolve) => {
 });
 `;
 
-    await fs.writeFile(scriptPath, stdioServerSource, 'utf8');
-    await fs.writeFile(
-      configPath,
-      JSON.stringify(
-        {
-          mcpServers: {
-            'daemon-e2e': {
-              description: 'E2E daemon test server',
-              command: 'node',
-              args: [scriptPath],
-              lifecycle: 'keep-alive',
+      await fs.writeFile(scriptPath, stdioServerSource, 'utf8');
+      await fs.writeFile(
+        configPath,
+        JSON.stringify(
+          {
+            mcpServers: {
+              'daemon-e2e': {
+                description: 'E2E daemon test server',
+                command: 'node',
+                args: [scriptPath],
+                lifecycle: 'keep-alive',
+              },
             },
           },
-        },
-        null,
-        2
-      ),
-      'utf8'
-    );
+          null,
+          2
+        ),
+        'utf8'
+      );
 
-    const logPath = path.join(tempDir, 'daemon.log');
-    const cliEnv = {
-      MCPORTER_DAEMON_LOG: '1',
-      MCPORTER_DAEMON_LOG_PATH: logPath,
-      MCPORTER_DAEMON_LOG_SERVERS: 'daemon-e2e',
-      MCPORTER_TEST_LAUNCH_LOG: launchLogPath,
-    };
-    const cli = (args: string[]) => runCli(args, configPath, cliEnv);
+      const logPath = path.join(tempDir, 'daemon.log');
+      const cliEnv = {
+        MCPORTER_DAEMON_LOG: '1',
+        MCPORTER_DAEMON_LOG_PATH: logPath,
+        MCPORTER_DAEMON_LOG_SERVERS: 'daemon-e2e',
+        MCPORTER_TEST_LAUNCH_LOG: launchLogPath,
+      };
+      const cli = (args: string[]) => runCli(args, configPath, cliEnv);
 
-    try {
-      await cli(['daemon', 'stop']);
+      try {
+        await cli(['daemon', 'stop']);
 
-      await cli(['list', 'daemon-e2e', '--json']);
-      await cli(['list', 'daemon-e2e', '--json']);
+        await cli(['list', 'daemon-e2e', '--json']);
+        await cli(['list', 'daemon-e2e', '--json']);
 
-      const first = await cli(['call', 'daemon-e2e.next_value', '--output', 'json']);
-      const firstResult = parseCliJson(first.stdout);
-      expect(firstResult.count).toBe(1);
+        const first = await cli(['call', 'daemon-e2e.next_value', '--output', 'json']);
+        const firstResult = parseCliJson(first.stdout);
+        expect(firstResult.count).toBe(1);
 
-      const second = await cli(['call', 'daemon-e2e.next_value', '--output', 'json']);
-      const secondResult = parseCliJson(second.stdout);
-      expect(secondResult.count).toBe(2);
-      expect(secondResult.instanceId).toBe(firstResult.instanceId);
+        const second = await cli(['call', 'daemon-e2e.next_value', '--output', 'json']);
+        const secondResult = parseCliJson(second.stdout);
+        expect(secondResult.count).toBe(2);
+        expect(secondResult.instanceId).toBe(firstResult.instanceId);
 
-      const launchLog = await readFileWithRetries(launchLogPath);
-      expect(launchLog.trim().split('\n')).toEqual([firstResult.instanceId]);
+        const launchLog = await readFileWithRetries(launchLogPath);
+        expect(launchLog.trim().split('\n')).toEqual([firstResult.instanceId]);
 
-      const logContents = await readFileWithRetries(logPath);
-      expect(logContents).toContain('listTools start server=daemon-e2e');
-      expect(logContents).toContain('listTools success server=daemon-e2e');
-      expect(logContents).toContain('callTool start server=daemon-e2e tool=next_value');
-      expect(logContents).toContain('callTool success server=daemon-e2e tool=next_value');
-    } finally {
-      await cli(['daemon', 'stop']).catch(() => {});
-      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-    }
-  }, 40_000);
+        const logContents = await readFileWithRetries(logPath);
+        expect(logContents).toContain('listTools start server=daemon-e2e');
+        expect(logContents).toContain('listTools success server=daemon-e2e');
+        expect(logContents).toContain('callTool start server=daemon-e2e tool=next_value');
+        expect(logContents).toContain('callTool success server=daemon-e2e tool=next_value');
+      } finally {
+        await cli(['daemon', 'stop']).catch(() => {});
+        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      }
+    },
+    budget(40_000)
+  );
 
-  it('refuses duplicate binds when foreground starts race outside the client lock', async () => {
-    await ensureDistBuilt(CLI_ENTRY);
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-bind-'));
-    const scriptPath = path.join(tempDir, 'bind-server.mjs');
-    const configPath = path.join(tempDir, 'mcporter.bind.json');
+  it(
+    'refuses duplicate binds when foreground starts race outside the client lock',
+    async () => {
+      await ensureDistBuilt(CLI_ENTRY);
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-bind-'));
+      const scriptPath = path.join(tempDir, 'bind-server.mjs');
+      const configPath = path.join(tempDir, 'mcporter.bind.json');
 
-    const serverSource = `import { McpServer } from '${MCP_SERVER_MODULE}';
+      const serverSource = `import { McpServer } from '${MCP_SERVER_MODULE}';
 import { StdioServerTransport } from '${STDIO_SERVER_MODULE}';
 const server = new McpServer({ name: 'bind-e2e', version: '1.0.0' });
 server.registerTool('ping', { title: 'ping', description: 'ping', inputSchema: {} }, async () => ({
@@ -196,199 +203,13 @@ server.registerTool('ping', { title: 'ping', description: 'ping', inputSchema: {
 await server.connect(new StdioServerTransport());
 await new Promise(() => {});
 `;
-    await fs.writeFile(scriptPath, serverSource, 'utf8');
-    await fs.writeFile(
-      configPath,
-      JSON.stringify({
-        mcpServers: {
-          'bind-e2e': { description: 'bind race server', command: 'node', args: [scriptPath], lifecycle: 'keep-alive' },
-        },
-      }),
-      'utf8'
-    );
-
-    const children: ChildProcess[] = [];
-    try {
-      await runCli(['daemon', 'stop'], configPath).catch(() => {});
-      for (let i = 0; i < 4; i++) {
-        children.push(
-          spawn(process.execPath, [CLI_ENTRY, '--config', configPath, 'daemon', 'start', '--foreground'], {
-            env: { ...process.env, MCPORTER_NO_FORCE_EXIT: '1' },
-            stdio: 'ignore',
-          })
-        );
-      }
-      await new Promise((resolve) => setTimeout(resolve, 4_000));
-      const alive = children.filter((child) => child.exitCode === null && child.signalCode === null);
-      expect(alive).toHaveLength(1);
-    } finally {
-      for (const child of children) {
-        child.kill('SIGKILL');
-      }
-      await runCli(['daemon', 'stop'], configPath).catch(() => {});
-      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-    }
-  }, 40_000);
-
-  it('repairs metadata when a live daemon owns the socket and metadata is missing', async () => {
-    await ensureDistBuilt(CLI_ENTRY);
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-meta-'));
-    const scriptPath = path.join(tempDir, 'meta-server.mjs');
-    const configPath = path.join(tempDir, 'mcporter.meta.json');
-    const metadataPath = path.join(tempDir, 'daemon.json');
-
-    const serverSource = `import { McpServer } from '${MCP_SERVER_MODULE}';
-import { StdioServerTransport } from '${STDIO_SERVER_MODULE}';
-const server = new McpServer({ name: 'meta-e2e', version: '1.0.0' });
-server.registerTool('ping', { title: 'ping', description: 'ping', inputSchema: {} }, async () => ({
-  content: [{ type: 'text', text: 'pong' }],
-}));
-await server.connect(new StdioServerTransport());
-await new Promise(() => {});
-`;
-    await fs.writeFile(scriptPath, serverSource, 'utf8');
-    await fs.writeFile(
-      configPath,
-      JSON.stringify({
-        mcpServers: {
-          'meta-e2e': { description: 'meta server', command: 'node', args: [scriptPath], lifecycle: 'keep-alive' },
-        },
-      }),
-      'utf8'
-    );
-
-    // Pin only the metadata path (not the socket, to stay under the unix socket length limit).
-    const env = { ...process.env, MCPORTER_NO_FORCE_EXIT: '1', MCPORTER_DAEMON_METADATA: metadataPath };
-    const children: ChildProcess[] = [];
-    const startForeground = (): ChildProcess => {
-      const child = spawn(process.execPath, [CLI_ENTRY, '--config', configPath, 'daemon', 'start', '--foreground'], {
-        env,
-        stdio: 'ignore',
-      });
-      children.push(child);
-      return child;
-    };
-
-    try {
-      const first = startForeground();
-      const firstPid = JSON.parse(await readFileWithRetries(metadataPath, 50)).pid as number;
-      expect(firstPid).toBe(first.pid);
-
-      await fs.rm(metadataPath, { force: true });
-
-      const replacement = startForeground();
-      await waitForExit(replacement);
-
-      const ownerPid = JSON.parse(await readFileWithRetries(metadataPath, 50)).pid as number;
-      expect(ownerPid).toBe(first.pid);
-      expect(first.exitCode).toBeNull();
-    } finally {
-      for (const child of children) {
-        child.kill('SIGKILL');
-      }
-      await runCli(['daemon', 'stop'], configPath, { MCPORTER_DAEMON_METADATA: metadataPath }).catch(() => {});
-      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-    }
-  }, 40_000);
-
-  it('stops a live daemon with stale config before rebinding', async () => {
-    await ensureDistBuilt(CLI_ENTRY);
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-stale-'));
-    const scriptPath = path.join(tempDir, 'stale-server.mjs');
-    const configPath = path.join(tempDir, 'mcporter.stale.json');
-    const metadataPath = path.join(tempDir, 'daemon.json');
-
-    const serverSource = `import { McpServer } from '${MCP_SERVER_MODULE}';
-import { StdioServerTransport } from '${STDIO_SERVER_MODULE}';
-const server = new McpServer({ name: 'stale-e2e', version: '1.0.0' });
-server.registerTool('ping', { title: 'ping', description: 'ping', inputSchema: {} }, async () => ({
-  content: [{ type: 'text', text: 'pong' }],
-}));
-await server.connect(new StdioServerTransport());
-await new Promise(() => {});
-`;
-    await fs.writeFile(scriptPath, serverSource, 'utf8');
-    const writeConfig = async (description: string): Promise<void> => {
+      await fs.writeFile(scriptPath, serverSource, 'utf8');
       await fs.writeFile(
         configPath,
         JSON.stringify({
           mcpServers: {
-            'stale-e2e': { description, command: 'node', args: [scriptPath], lifecycle: 'keep-alive' },
-          },
-        }),
-        'utf8'
-      );
-    };
-    await writeConfig('stale server v1');
-
-    const env = { ...process.env, MCPORTER_NO_FORCE_EXIT: '1', MCPORTER_DAEMON_METADATA: metadataPath };
-    const children: ChildProcess[] = [];
-    const startForeground = (): ChildProcess => {
-      const child = spawn(process.execPath, [CLI_ENTRY, '--config', configPath, 'daemon', 'start', '--foreground'], {
-        env,
-        stdio: 'ignore',
-      });
-      children.push(child);
-      return child;
-    };
-
-    try {
-      const first = startForeground();
-      const firstPid = JSON.parse(await readFileWithRetries(metadataPath, 50)).pid as number;
-      expect(firstPid).toBe(first.pid);
-
-      await delay(20);
-      await writeConfig('stale server v2');
-      const staleConfigTime = new Date(Date.now() + 5_000);
-      await fs.utimes(configPath, staleConfigTime, staleConfigTime);
-
-      const replacement = startForeground();
-      await waitForExit(first);
-
-      const ownerPid = JSON.parse(await readFileWithRetries(metadataPath, 50)).pid as number;
-      expect(ownerPid).toBe(replacement.pid);
-      expect(replacement.exitCode).toBeNull();
-    } finally {
-      for (const child of children) {
-        child.kill('SIGKILL');
-      }
-      await runCli(['daemon', 'stop'], configPath, { MCPORTER_DAEMON_METADATA: metadataPath }).catch(() => {});
-      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-    }
-  }, 40_000);
-
-  it('stops a live daemon when imported root definitions change', async () => {
-    await ensureDistBuilt(CLI_ENTRY);
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-root-'));
-    const scriptPath = path.join(tempDir, 'root-server.mjs');
-    const configPath = path.join(tempDir, 'mcporter.root.json');
-    const metadataPath = path.join(tempDir, 'daemon.json');
-    const socketPath = path.join(tempDir, 'daemon.sock');
-    const rootA = path.join(tempDir, 'root-a');
-    const rootB = path.join(tempDir, 'root-b');
-    const fakeHome = path.join(tempDir, 'home');
-
-    const serverSource = `import { McpServer } from '${MCP_SERVER_MODULE}';
-import { StdioServerTransport } from '${STDIO_SERVER_MODULE}';
-const server = new McpServer({ name: 'root-e2e', version: '1.0.0' });
-server.registerTool('ping', { title: 'ping', description: 'ping', inputSchema: {} }, async () => ({
-  content: [{ type: 'text', text: 'pong' }],
-}));
-await server.connect(new StdioServerTransport());
-await new Promise(() => {});
-`;
-    await fs.writeFile(scriptPath, serverSource, 'utf8');
-    await fs.writeFile(configPath, JSON.stringify({ imports: ['cursor'], mcpServers: {} }), 'utf8');
-
-    const writeCursorImport = async (rootDir: string, name: string): Promise<void> => {
-      const importPath = path.join(rootDir, '.cursor', 'mcp.json');
-      await fs.mkdir(path.dirname(importPath), { recursive: true });
-      await fs.writeFile(
-        importPath,
-        JSON.stringify({
-          mcpServers: {
-            [name]: {
-              description: name,
+            'bind-e2e': {
+              description: 'bind race server',
               command: 'node',
               args: [scriptPath],
               lifecycle: 'keep-alive',
@@ -397,66 +218,273 @@ await new Promise(() => {});
         }),
         'utf8'
       );
-    };
-    await writeCursorImport(rootA, 'root-a-e2e');
-    await writeCursorImport(rootB, 'root-b-e2e');
 
-    const env = {
-      ...process.env,
-      MCPORTER_NO_FORCE_EXIT: '1',
-      MCPORTER_DAEMON_METADATA: metadataPath,
-      MCPORTER_DAEMON_SOCKET: socketPath,
-      MCPORTER_KEEPALIVE: '*',
-      HOME: fakeHome,
-      XDG_CONFIG_HOME: path.join(tempDir, 'xdg'),
-      APPDATA: path.join(tempDir, 'appdata'),
-    };
-    const children: ChildProcess[] = [];
-    const startForeground = (rootDir: string): ChildProcess => {
-      const child = spawn(
-        process.execPath,
-        [CLI_ENTRY, '--config', configPath, '--root', rootDir, 'daemon', 'start', '--foreground'],
-        {
+      const children: ChildProcess[] = [];
+      try {
+        await runCli(['daemon', 'stop'], configPath).catch(() => {});
+        for (let i = 0; i < 4; i++) {
+          children.push(
+            spawn(process.execPath, [CLI_ENTRY, '--config', configPath, 'daemon', 'start', '--foreground'], {
+              env: { ...process.env, MCPORTER_NO_FORCE_EXIT: '1' },
+              stdio: 'ignore',
+            })
+          );
+        }
+        // Give the racing foreground starts time to settle so exactly one wins the
+        // bind; a hang-catcher, so scale for slow platforms.
+        await new Promise((resolve) => setTimeout(resolve, budget(4_000)));
+        const alive = children.filter((child) => child.exitCode === null && child.signalCode === null);
+        expect(alive).toHaveLength(1);
+      } finally {
+        for (const child of children) {
+          child.kill('SIGKILL');
+        }
+        await runCli(['daemon', 'stop'], configPath).catch(() => {});
+        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      }
+    },
+    budget(40_000)
+  );
+
+  it(
+    'repairs metadata when a live daemon owns the socket and metadata is missing',
+    async () => {
+      await ensureDistBuilt(CLI_ENTRY);
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-meta-'));
+      const scriptPath = path.join(tempDir, 'meta-server.mjs');
+      const configPath = path.join(tempDir, 'mcporter.meta.json');
+      const metadataPath = path.join(tempDir, 'daemon.json');
+
+      const serverSource = `import { McpServer } from '${MCP_SERVER_MODULE}';
+import { StdioServerTransport } from '${STDIO_SERVER_MODULE}';
+const server = new McpServer({ name: 'meta-e2e', version: '1.0.0' });
+server.registerTool('ping', { title: 'ping', description: 'ping', inputSchema: {} }, async () => ({
+  content: [{ type: 'text', text: 'pong' }],
+}));
+await server.connect(new StdioServerTransport());
+await new Promise(() => {});
+`;
+      await fs.writeFile(scriptPath, serverSource, 'utf8');
+      await fs.writeFile(
+        configPath,
+        JSON.stringify({
+          mcpServers: {
+            'meta-e2e': { description: 'meta server', command: 'node', args: [scriptPath], lifecycle: 'keep-alive' },
+          },
+        }),
+        'utf8'
+      );
+
+      // Pin only the metadata path (not the socket, to stay under the unix socket length limit).
+      const env = { ...process.env, MCPORTER_NO_FORCE_EXIT: '1', MCPORTER_DAEMON_METADATA: metadataPath };
+      const children: ChildProcess[] = [];
+      const startForeground = (): ChildProcess => {
+        const child = spawn(process.execPath, [CLI_ENTRY, '--config', configPath, 'daemon', 'start', '--foreground'], {
           env,
           stdio: 'ignore',
+        });
+        children.push(child);
+        return child;
+      };
+
+      try {
+        const first = startForeground();
+        const firstPid = JSON.parse(await readFileWithRetries(metadataPath, 50)).pid as number;
+        expect(firstPid).toBe(first.pid);
+
+        await fs.rm(metadataPath, { force: true });
+
+        const replacement = startForeground();
+        await waitForExit(replacement);
+
+        const ownerPid = JSON.parse(await readFileWithRetries(metadataPath, 50)).pid as number;
+        expect(ownerPid).toBe(first.pid);
+        expect(first.exitCode).toBeNull();
+      } finally {
+        for (const child of children) {
+          child.kill('SIGKILL');
         }
-      );
-      children.push(child);
-      return child;
-    };
-
-    try {
-      const first = startForeground(rootA);
-      const firstMetadata = JSON.parse(await readFileWithRetries(metadataPath, 50)) as {
-        pid: number;
-        definitionHash?: string;
-      };
-      expect(firstMetadata.pid).toBe(first.pid);
-      expect(typeof firstMetadata.definitionHash).toBe('string');
-
-      const replacement = startForeground(rootB);
-      await waitForExit(first);
-
-      const replacementMetadata = JSON.parse(await readFileWithRetries(metadataPath, 50)) as {
-        pid: number;
-        definitionHash?: string;
-      };
-      expect(replacementMetadata.pid).toBe(replacement.pid);
-      expect(replacementMetadata.definitionHash).not.toBe(firstMetadata.definitionHash);
-      expect(replacement.exitCode).toBeNull();
-    } finally {
-      for (const child of children) {
-        child.kill('SIGKILL');
+        await runCli(['daemon', 'stop'], configPath, { MCPORTER_DAEMON_METADATA: metadataPath }).catch(() => {});
+        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
       }
-      await runCli(['daemon', 'stop'], configPath, {
+    },
+    budget(40_000)
+  );
+
+  it(
+    'stops a live daemon with stale config before rebinding',
+    async () => {
+      await ensureDistBuilt(CLI_ENTRY);
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-stale-'));
+      const scriptPath = path.join(tempDir, 'stale-server.mjs');
+      const configPath = path.join(tempDir, 'mcporter.stale.json');
+      const metadataPath = path.join(tempDir, 'daemon.json');
+
+      const serverSource = `import { McpServer } from '${MCP_SERVER_MODULE}';
+import { StdioServerTransport } from '${STDIO_SERVER_MODULE}';
+const server = new McpServer({ name: 'stale-e2e', version: '1.0.0' });
+server.registerTool('ping', { title: 'ping', description: 'ping', inputSchema: {} }, async () => ({
+  content: [{ type: 'text', text: 'pong' }],
+}));
+await server.connect(new StdioServerTransport());
+await new Promise(() => {});
+`;
+      await fs.writeFile(scriptPath, serverSource, 'utf8');
+      const writeConfig = async (description: string): Promise<void> => {
+        await fs.writeFile(
+          configPath,
+          JSON.stringify({
+            mcpServers: {
+              'stale-e2e': { description, command: 'node', args: [scriptPath], lifecycle: 'keep-alive' },
+            },
+          }),
+          'utf8'
+        );
+      };
+      await writeConfig('stale server v1');
+
+      const env = { ...process.env, MCPORTER_NO_FORCE_EXIT: '1', MCPORTER_DAEMON_METADATA: metadataPath };
+      const children: ChildProcess[] = [];
+      const startForeground = (): ChildProcess => {
+        const child = spawn(process.execPath, [CLI_ENTRY, '--config', configPath, 'daemon', 'start', '--foreground'], {
+          env,
+          stdio: 'ignore',
+        });
+        children.push(child);
+        return child;
+      };
+
+      try {
+        const first = startForeground();
+        const firstPid = JSON.parse(await readFileWithRetries(metadataPath, 50)).pid as number;
+        expect(firstPid).toBe(first.pid);
+
+        await delay(20);
+        await writeConfig('stale server v2');
+        const staleConfigTime = new Date(Date.now() + 5_000);
+        await fs.utimes(configPath, staleConfigTime, staleConfigTime);
+
+        const replacement = startForeground();
+        await waitForExit(first);
+
+        const ownerPid = JSON.parse(await readFileWithRetries(metadataPath, 50)).pid as number;
+        expect(ownerPid).toBe(replacement.pid);
+        expect(replacement.exitCode).toBeNull();
+      } finally {
+        for (const child of children) {
+          child.kill('SIGKILL');
+        }
+        await runCli(['daemon', 'stop'], configPath, { MCPORTER_DAEMON_METADATA: metadataPath }).catch(() => {});
+        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      }
+    },
+    budget(40_000)
+  );
+
+  it(
+    'stops a live daemon when imported root definitions change',
+    async () => {
+      await ensureDistBuilt(CLI_ENTRY);
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-root-'));
+      const scriptPath = path.join(tempDir, 'root-server.mjs');
+      const configPath = path.join(tempDir, 'mcporter.root.json');
+      const metadataPath = path.join(tempDir, 'daemon.json');
+      const socketPath = path.join(tempDir, 'daemon.sock');
+      const rootA = path.join(tempDir, 'root-a');
+      const rootB = path.join(tempDir, 'root-b');
+      const fakeHome = path.join(tempDir, 'home');
+
+      const serverSource = `import { McpServer } from '${MCP_SERVER_MODULE}';
+import { StdioServerTransport } from '${STDIO_SERVER_MODULE}';
+const server = new McpServer({ name: 'root-e2e', version: '1.0.0' });
+server.registerTool('ping', { title: 'ping', description: 'ping', inputSchema: {} }, async () => ({
+  content: [{ type: 'text', text: 'pong' }],
+}));
+await server.connect(new StdioServerTransport());
+await new Promise(() => {});
+`;
+      await fs.writeFile(scriptPath, serverSource, 'utf8');
+      await fs.writeFile(configPath, JSON.stringify({ imports: ['cursor'], mcpServers: {} }), 'utf8');
+
+      const writeCursorImport = async (rootDir: string, name: string): Promise<void> => {
+        const importPath = path.join(rootDir, '.cursor', 'mcp.json');
+        await fs.mkdir(path.dirname(importPath), { recursive: true });
+        await fs.writeFile(
+          importPath,
+          JSON.stringify({
+            mcpServers: {
+              [name]: {
+                description: name,
+                command: 'node',
+                args: [scriptPath],
+                lifecycle: 'keep-alive',
+              },
+            },
+          }),
+          'utf8'
+        );
+      };
+      await writeCursorImport(rootA, 'root-a-e2e');
+      await writeCursorImport(rootB, 'root-b-e2e');
+
+      const env = {
+        ...process.env,
+        MCPORTER_NO_FORCE_EXIT: '1',
         MCPORTER_DAEMON_METADATA: metadataPath,
         MCPORTER_DAEMON_SOCKET: socketPath,
         MCPORTER_KEEPALIVE: '*',
         HOME: fakeHome,
         XDG_CONFIG_HOME: path.join(tempDir, 'xdg'),
         APPDATA: path.join(tempDir, 'appdata'),
-      }).catch(() => {});
-      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-    }
-  }, 40_000);
+      };
+      const children: ChildProcess[] = [];
+      const startForeground = (rootDir: string): ChildProcess => {
+        const child = spawn(
+          process.execPath,
+          [CLI_ENTRY, '--config', configPath, '--root', rootDir, 'daemon', 'start', '--foreground'],
+          {
+            env,
+            stdio: 'ignore',
+          }
+        );
+        children.push(child);
+        return child;
+      };
+
+      try {
+        const first = startForeground(rootA);
+        const firstMetadata = JSON.parse(await readFileWithRetries(metadataPath, 50)) as {
+          pid: number;
+          definitionHash?: string;
+        };
+        expect(firstMetadata.pid).toBe(first.pid);
+        expect(typeof firstMetadata.definitionHash).toBe('string');
+
+        const replacement = startForeground(rootB);
+        await waitForExit(first);
+
+        const replacementMetadata = JSON.parse(await readFileWithRetries(metadataPath, 50)) as {
+          pid: number;
+          definitionHash?: string;
+        };
+        expect(replacementMetadata.pid).toBe(replacement.pid);
+        expect(replacementMetadata.definitionHash).not.toBe(firstMetadata.definitionHash);
+        expect(replacement.exitCode).toBeNull();
+      } finally {
+        for (const child of children) {
+          child.kill('SIGKILL');
+        }
+        await runCli(['daemon', 'stop'], configPath, {
+          MCPORTER_DAEMON_METADATA: metadataPath,
+          MCPORTER_DAEMON_SOCKET: socketPath,
+          MCPORTER_KEEPALIVE: '*',
+          HOME: fakeHome,
+          XDG_CONFIG_HOME: path.join(tempDir, 'xdg'),
+          APPDATA: path.join(tempDir, 'appdata'),
+        }).catch(() => {});
+        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      }
+    },
+    budget(40_000)
+  );
 });

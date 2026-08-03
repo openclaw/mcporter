@@ -6,7 +6,9 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { STDOUT_FLUSH_TIMEOUT_MS } from '../src/cli/timeouts.js';
 import { ensureDistBuilt } from './helpers/dist.js';
+import { budget } from './helpers/timing.js';
 
 const CLI_ENTRY = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 const testRequire = createRequire(import.meta.url);
@@ -16,6 +18,16 @@ const STDIO_SERVER_MODULE = pathToFileURL(testRequire.resolve('@modelcontextprot
 // Payload comfortably larger than the OS pipe buffer (~64KB) so that a forced
 // exit which does not wait for stdout to drain would truncate the output.
 const LARGE_TEXT_BYTES = 200_000;
+
+// The "consumer never reads" test must terminate via the CLI's stdout flush
+// fallback deadline rather than hanging. Derive the bounds from the real
+// STDOUT_FLUSH_TIMEOUT_MS so the assertion tracks the budget it polices: the
+// process should exit shortly after one flush deadline, and must never take so
+// long that it looks hung. Scale by platform — process teardown is far slower
+// on Windows.
+const FLUSH_DEADLINE_MS = STDOUT_FLUSH_TIMEOUT_MS;
+const FORCE_EXIT_UPPER_MS = budget(FLUSH_DEADLINE_MS * 4);
+const FORCE_EXIT_TEST_TIMEOUT_MS = budget(FLUSH_DEADLINE_MS * 10);
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
@@ -176,28 +188,33 @@ await server.connect(transport);
     expect(pipeBytes).toBe(fileBytes);
   }, 30000);
 
-  it('still force-exits when stdout is piped to a consumer that never reads', async () => {
-    // A consumer that keeps stdout open but never reads fills the pipe buffer
-    // and blocks the drain callback. The fallback deadline must still terminate
-    // the process instead of hanging indefinitely.
-    const start = Date.now();
-    const child = spawn(
-      process.execPath,
-      [CLI_ENTRY, '--config', configPath, 'call', 'large-output.big', '--output', 'json'],
-      { cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'ignore'] }
-    );
-    // Intentionally never consume stdout so the OS pipe buffer stays full.
-    child.stdout.pause();
+  it(
+    'still force-exits when stdout is piped to a consumer that never reads',
+    async () => {
+      // A consumer that keeps stdout open but never reads fills the pipe buffer
+      // and blocks the drain callback. The fallback deadline must still terminate
+      // the process instead of hanging indefinitely.
+      const start = Date.now();
+      const child = spawn(
+        process.execPath,
+        [CLI_ENTRY, '--config', configPath, 'call', 'large-output.big', '--output', 'json'],
+        { cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'ignore'] }
+      );
+      // Intentionally never consume stdout so the OS pipe buffer stays full.
+      child.stdout.pause();
 
-    const code = await new Promise<number>((resolve) => {
-      child.on('exit', (exitCode) => resolve(exitCode ?? -1));
-    });
-    const elapsed = Date.now() - start;
+      const code = await new Promise<number>((resolve) => {
+        child.on('exit', (exitCode) => resolve(exitCode ?? -1));
+      });
+      const elapsed = Date.now() - start;
 
-    expect(code).toBe(0);
-    // Terminates via the fallback deadline (~2s) rather than hanging.
-    expect(elapsed).toBeLessThan(8000);
-  }, 20000);
+      expect(code).toBe(0);
+      // Terminates via the stdout flush fallback deadline rather than hanging;
+      // derived from STDOUT_FLUSH_TIMEOUT_MS above.
+      expect(elapsed).toBeLessThan(FORCE_EXIT_UPPER_MS);
+    },
+    FORCE_EXIT_TEST_TIMEOUT_MS
+  );
 
   it('does not crash when a piped consumer closes stdout early (EPIPE)', async () => {
     const command = [

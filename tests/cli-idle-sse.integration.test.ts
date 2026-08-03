@@ -7,6 +7,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { budget } from './helpers/timing.js';
 
 const CLI_ENTRY = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 const SINGLE_CONNECTION_FETCH = String.raw`
@@ -69,7 +70,7 @@ function runCli(args: string[], configPath: string, preloadPath: string): Promis
           NODE_OPTIONS: `--import=${pathToFileURL(preloadPath).href}`,
         },
         maxBuffer: 1024 * 1024,
-        timeout: 10_000,
+        timeout: budget(10_000),
       },
       (error, stdout, stderr) => {
         if (error) {

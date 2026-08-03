@@ -452,6 +452,9 @@ async function prepareSocket(socketPath: string): Promise<void> {
 
 export const __daemonHostInternals = {
   prepareSocket,
+  // Exposed so tests can derive their liveness bound from the real probe
+  // timeout instead of hardcoding a parallel constant.
+  DAEMON_PROBE_TIMEOUT_MS,
 };
 
 async function cleanupArtifacts(options: DaemonHostOptions): Promise<void> {

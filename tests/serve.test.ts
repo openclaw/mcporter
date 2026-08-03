@@ -381,6 +381,11 @@ describe('mcporter serve bridge', () => {
         closePromise.then(() => true),
         new Promise<false>((resolve) => setTimeout(() => resolve(false), 750)),
       ]);
+      // This is a genuine real-time performance assertion, not a hang-catcher:
+      // server.close() must release active SSE listen streams and settle promptly
+      // rather than waiting out a request timeout. Deliberately NOT scaled by
+      // platform — closing an in-process HTTP server has no per-platform cost, so
+      // a fixed bound keeps the check meaningful everywhere.
       expect(closedPromptly).toBe(true);
     } finally {
       await subscription?.close().catch(() => {});

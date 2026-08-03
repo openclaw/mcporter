@@ -11,6 +11,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import express from 'express';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ensureDistBuilt } from './helpers/dist.js';
+import { budget } from './helpers/timing.js';
 
 const CLI_ENTRY = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 
@@ -23,7 +24,7 @@ function runCli(args: string[], configPath: string): Promise<{ stdout: string; s
         cwd: process.cwd(),
         env: { ...process.env, MCPORTER_NO_FORCE_EXIT: '1' },
         maxBuffer: 1024 * 1024,
-        timeout: 15_000,
+        timeout: budget(15_000),
       },
       (error, stdout, stderr) => {
         if (error) {
@@ -139,77 +140,81 @@ describe('mcporter HTTP selector CLI integration', () => {
     });
   });
 
-  it('routes configured and ad-hoc HTTP selectors to the intended literal tool names', async () => {
-    const cases: Array<{ args: string[]; configPath: string; expectedTool: string }> = [
-      {
-        args: ['call', 'xhs.check_login_status', '--output', 'json'],
-        configPath: configuredPath,
-        expectedTool: 'check_login_status',
-      },
-      {
-        args: ['call', 'xhs.check_login_status', '--http-url', baseUrl.href, '--allow-http', '--output', 'json'],
-        configPath: configuredPath,
-        expectedTool: 'check_login_status',
-      },
-      {
-        args: ['call', 'xhs.check_login_status', '--http-url', baseUrl.href, '--allow-http', '--output', 'json'],
-        configPath: emptyPath,
-        expectedTool: 'check_login_status',
-      },
-      {
-        args: [
-          'call',
-          'xhs.check_login_status',
-          '--http-url',
-          baseUrl.href,
-          '--allow-http',
-          '--name',
-          'xhs',
-          '--output',
-          'json',
-        ],
-        configPath: emptyPath,
-        expectedTool: 'check_login_status',
-      },
-      {
-        args: [
-          'call',
-          'xhs.selector_tool',
-          '--http-url',
-          baseUrl.href,
-          '--allow-http',
-          '--tool',
-          'check_login_status',
-          '--output',
-          'json',
-        ],
-        configPath: emptyPath,
-        expectedTool: 'check_login_status',
-      },
-      {
-        args: [
-          'call',
-          '--http-url',
-          baseUrl.href,
-          '--allow-http',
-          '--name',
-          'xhs',
-          '--tool',
-          'xhs.check_login_status',
-          '--output',
-          'json',
-        ],
-        configPath: emptyPath,
-        expectedTool: 'xhs.check_login_status',
-      },
-    ];
+  it(
+    'routes configured and ad-hoc HTTP selectors to the intended literal tool names',
+    async () => {
+      const cases: Array<{ args: string[]; configPath: string; expectedTool: string }> = [
+        {
+          args: ['call', 'xhs.check_login_status', '--output', 'json'],
+          configPath: configuredPath,
+          expectedTool: 'check_login_status',
+        },
+        {
+          args: ['call', 'xhs.check_login_status', '--http-url', baseUrl.href, '--allow-http', '--output', 'json'],
+          configPath: configuredPath,
+          expectedTool: 'check_login_status',
+        },
+        {
+          args: ['call', 'xhs.check_login_status', '--http-url', baseUrl.href, '--allow-http', '--output', 'json'],
+          configPath: emptyPath,
+          expectedTool: 'check_login_status',
+        },
+        {
+          args: [
+            'call',
+            'xhs.check_login_status',
+            '--http-url',
+            baseUrl.href,
+            '--allow-http',
+            '--name',
+            'xhs',
+            '--output',
+            'json',
+          ],
+          configPath: emptyPath,
+          expectedTool: 'check_login_status',
+        },
+        {
+          args: [
+            'call',
+            'xhs.selector_tool',
+            '--http-url',
+            baseUrl.href,
+            '--allow-http',
+            '--tool',
+            'check_login_status',
+            '--output',
+            'json',
+          ],
+          configPath: emptyPath,
+          expectedTool: 'check_login_status',
+        },
+        {
+          args: [
+            'call',
+            '--http-url',
+            baseUrl.href,
+            '--allow-http',
+            '--name',
+            'xhs',
+            '--tool',
+            'xhs.check_login_status',
+            '--output',
+            'json',
+          ],
+          configPath: emptyPath,
+          expectedTool: 'xhs.check_login_status',
+        },
+      ];
 
-    for (const testCase of cases) {
-      const result = await runCli(testCase.args, testCase.configPath);
-      expect(result.stderr).toBe('');
-      expect(JSON.parse(result.stdout)).toEqual({ loggedIn: true, observedTool: testCase.expectedTool });
-    }
+      for (const testCase of cases) {
+        const result = await runCli(testCase.args, testCase.configPath);
+        expect(result.stderr).toBe('');
+        expect(JSON.parse(result.stdout)).toEqual({ loggedIn: true, observedTool: testCase.expectedTool });
+      }
 
-    expect(observedToolNames).toEqual(cases.map((testCase) => testCase.expectedTool));
-  }, 30_000);
+      expect(observedToolNames).toEqual(cases.map((testCase) => testCase.expectedTool));
+    },
+    budget(30_000)
+  );
 });

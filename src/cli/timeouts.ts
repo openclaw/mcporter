@@ -2,6 +2,12 @@ const DEFAULT_LIST_TIMEOUT_MS = 30_000;
 const DEFAULT_CALL_TIMEOUT_MS = 60_000;
 const POSITIVE_INTEGER_PATTERN = /^[1-9]\d*$/;
 
+// Deadline for the forced-exit path to flush stdout/stderr before calling
+// process.exit(). Lives here (a leaf module) rather than in cli.ts so tests can
+// derive their force-exit bounds from it without importing the CLI entrypoint,
+// which auto-runs main() on import.
+export const STDOUT_FLUSH_TIMEOUT_MS = 2000;
+
 export function parsePositiveInteger(raw: string | undefined): number | undefined {
   if (!raw || !POSITIVE_INTEGER_PATTERN.test(raw)) {
     return undefined;

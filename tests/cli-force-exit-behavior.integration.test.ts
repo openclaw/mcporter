@@ -7,6 +7,7 @@ import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ensureDistBuilt } from './helpers/dist.js';
+import { budget } from './helpers/timing.js';
 
 const CLI_ENTRY = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 const testRequire = createRequire(import.meta.url);
@@ -113,21 +114,29 @@ await server.connect(transport);
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   });
 
-  it('preserves non-zero exit codes for MCP isError tool results', async () => {
-    const result = await runCli(['call', 'force-exit.fail'], configPath);
-    expect(result.code).toBe(1);
-    expect(result.stdout).toContain('expected failure');
-    expect(result.stderr).toBe('');
-  }, 20000);
+  it(
+    'preserves non-zero exit codes for MCP isError tool results',
+    async () => {
+      const result = await runCli(['call', 'force-exit.fail'], configPath);
+      expect(result.code).toBe(1);
+      expect(result.stdout).toContain('expected failure');
+      expect(result.stderr).toBe('');
+    },
+    budget(20_000)
+  );
 
-  it('does not truncate large JSON output when force exit is enabled', async () => {
-    const result = await runCli(['list', 'force-exit', '--schema', '--output', 'json'], configPath);
-    expect(result.code).toBe(0);
-    expect(result.stderr).toBe('');
-    expect(Buffer.byteLength(result.stdout)).toBeGreaterThan(8192);
+  it(
+    'does not truncate large JSON output when force exit is enabled',
+    async () => {
+      const result = await runCli(['list', 'force-exit', '--schema', '--output', 'json'], configPath);
+      expect(result.code).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(Buffer.byteLength(result.stdout)).toBeGreaterThan(8192);
 
-    const payload = JSON.parse(result.stdout) as { tools: Array<{ name: string }> };
-    expect(payload.tools).toHaveLength(65);
-    expect(payload.tools.at(-1)?.name).toBe('tool_63');
-  }, 20000);
+      const payload = JSON.parse(result.stdout) as { tools: Array<{ name: string }> };
+      expect(payload.tools).toHaveLength(65);
+      expect(payload.tools.at(-1)?.name).toBe('tool_63');
+    },
+    budget(20_000)
+  );
 });

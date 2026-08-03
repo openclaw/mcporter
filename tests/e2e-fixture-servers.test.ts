@@ -14,13 +14,12 @@ import type { ServerDefinition } from '../src/config.js';
 import { waitForChildExit } from '../src/process-utils.js';
 import { createRuntime } from '../src/runtime.js';
 import { makeShortTempDir } from './fixtures/test-helpers.js';
+import { budget } from './helpers/timing.js';
 
 // These tests spawn the real CLI repeatedly, and Windows pays a far higher
 // process-startup cost: the same suite runs ~25s locally and ~100s on a Windows
-// runner. Scale the per-test budgets rather than tuning them one flake at a
-// time — they exist to catch hangs, not to measure machine speed.
-const CI_SLOWDOWN = process.platform === 'win32' ? 3 : 1;
-const budget = (ms: number): number => ms * CI_SLOWDOWN;
+// runner. The per-test budgets use the shared `budget()` helper, which scales
+// by platform — they exist to catch hangs, not to measure machine speed.
 
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CLI_ENTRY = path.join(REPO_ROOT, 'dist', 'cli.js');
@@ -205,7 +204,9 @@ it(
 
       try {
         await client.callTool({ name: 'toggle_tool', arguments: {} });
-        await expect.poll(() => toolListChanges, { timeout: 2_000 }).toBeGreaterThan(0);
+        // Guards against a dropped list_changed notification; the poll fails if
+        // the notification never arrives, so scale the wait for slow platforms.
+        await expect.poll(() => toolListChanges, { timeout: budget(2_000) }).toBeGreaterThan(0);
         const refreshed = await client.listTools(undefined, { cacheMode: 'refresh' });
         expect(refreshed).toMatchObject({ ttlMs: 1_000, cacheScope: 'private' });
         expect(refreshed.tools.some((tool) => tool.name === 'runtime_tool')).toBe(!initiallyEnabled);
@@ -371,7 +372,7 @@ async function runCli(args: string[], configPath: string, env: NodeJS.ProcessEnv
     execFile(
       process.execPath,
       [CLI_ENTRY, '--config', configPath, ...args],
-      { cwd: REPO_ROOT, env, timeout: 20_000, maxBuffer: 5 * 1024 * 1024 },
+      { cwd: REPO_ROOT, env, timeout: budget(20_000), maxBuffer: 5 * 1024 * 1024 },
       (error, stdout, stderr) => {
         const code = error && typeof error.code === 'number' ? error.code : error ? 1 : 0;
         resolve({ stdout, stderr, exitCode: code });
@@ -387,7 +388,7 @@ function parseJson<T = Record<string, unknown>>(value: string): T {
 async function startHttpFixture(
   fixture: FixtureKind,
   serverPath: string,
-  readyTimeoutMs = 10_000
+  readyTimeoutMs = budget(10_000)
 ): Promise<RunningFixture> {
   const child = trackChild(
     spawn(process.execPath, [TSX_CLI, serverPath, '--http', '0'], {
@@ -437,7 +438,10 @@ async function startBridge(configPath: string, env: NodeJS.ProcessEnv): Promise<
   let captured = '';
   try {
     const url = await new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`mcporter serve did not become ready:\n${captured}`)), 15_000);
+      const timer = setTimeout(
+        () => reject(new Error(`mcporter serve did not become ready:\n${captured}`)),
+        budget(15_000)
+      );
       child.stderr?.on('data', (chunk: string) => {
         captured += chunk;
         const match = captured.match(/bridge (http:\/\/127\.0\.0\.1:\d+\/mcp)/);
@@ -467,10 +471,10 @@ async function stopChild(child: ChildProcess | undefined): Promise<void> {
   if (!child || child.exitCode !== null || child.signalCode !== null) return;
   child.kill('SIGTERM');
   try {
-    await waitForChildExit(child, 2_000);
+    await waitForChildExit(child, budget(2_000));
   } catch {
     child.kill('SIGKILL');
-    await waitForChildExit(child, 2_000).catch(() => {});
+    await waitForChildExit(child, budget(2_000)).catch(() => {});
   }
 }
 
