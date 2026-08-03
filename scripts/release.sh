@@ -2,7 +2,12 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-RUNNER=${MCP_RUNNER:-"$ROOT/runner"}
+# The repo's ./runner wrapper was removed; run gates directly unless a caller
+# supplies one via MCP_RUNNER.
+RUNNER=${MCP_RUNNER:-}
+if [[ -z "$RUNNER" && -x "$ROOT/runner" ]]; then
+  RUNNER="$ROOT/runner"
+fi
 VERSION=${VERSION:-$(node -p "require('$ROOT/package.json').version")}
 TAG="v$VERSION"
 REPOSITORY=openclaw/mcporter
@@ -20,15 +25,16 @@ trap '[[ -z "${MCPORTER_RELEASE_TMP:-}" ]] || rm -rf "$MCPORTER_RELEASE_TMP"' EX
 
 banner() { printf '\n==== %s ====\n' "$1"; }
 run() { printf '>>' >&2; printf ' %q' "$@" >&2; printf '\n' >&2; "$@"; }
+run_gate() { if [[ -n "$RUNNER" ]]; then run "$RUNNER" "$@"; else run "$@"; fi; }
 
 phase_gates() {
   banner "Credential-free gates"
-  run "$RUNNER" pnpm check
-  run "$RUNNER" pnpm test
-  run "$RUNNER" pnpm build
-  run "$RUNNER" pnpm build:bun
+  run_gate pnpm check
+  run_gate pnpm test
+  run_gate pnpm build
+  run_gate pnpm build:bun
   run "$ROOT/scripts/test-release.sh"
-  run "$RUNNER" pnpm audit
+  run_gate pnpm audit
 }
 
 phase_native() {
@@ -203,7 +209,7 @@ NODE
   existing_version=$(npm view "mcporter@$VERSION" version 2>/dev/null || true)
   if [[ "$existing_version" == "$VERSION" ]]; then
     echo "mcporter@$VERSION already exists; verifying immutable registry metadata instead of republishing."
-  elif ! NPM_CONFIG_IGNORE_SCRIPTS=true run "$RUNNER" pnpm publish "$npm_archive" --tag latest; then
+  elif ! NPM_CONFIG_IGNORE_SCRIPTS=true run_gate pnpm publish "$npm_archive" --tag latest; then
     echo "npm publish returned non-zero; checking whether the immutable version was accepted before retrying." >&2
   fi
 
