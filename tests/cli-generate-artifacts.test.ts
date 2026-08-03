@@ -57,11 +57,14 @@ describe('computeCompileTarget', () => {
 
 describe('resolveBundleTarget', () => {
   it('derives compile intermediates without overwriting the requested binary', () => {
+    // The implementation joins with the platform separator, so compare against a
+    // platform-native expectation rather than a hardcoded POSIX string.
+    const distCustomJs = path.join('dist', 'custom.js');
     expect(resolveBundleTarget({ bundle: 'dist/custom.js', compile: 'dist/custom', outputPath: 'source.ts' })).toBe(
       'dist/custom.js'
     );
-    expect(resolveBundleTarget({ compile: 'dist/custom.bin', outputPath: 'source.ts' })).toBe('dist/custom.js');
-    expect(resolveBundleTarget({ compile: 'dist/custom', outputPath: 'source.ts' })).toBe('dist/custom.js');
+    expect(resolveBundleTarget({ compile: 'dist/custom.bin', outputPath: 'source.ts' })).toBe(distCustomJs);
+    expect(resolveBundleTarget({ compile: 'dist/custom', outputPath: 'source.ts' })).toBe(distCustomJs);
     expect(resolveBundleTarget({ compile: true, outputPath: 'dist/source.ts' })).toMatch(
       /tmp[/\\]mcporter-cli-bundles[/\\]source-\d+\.bundle\.js$/
     );
