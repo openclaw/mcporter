@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { buildDaemonLaunchInvocation, type DaemonLaunchOptions } from '../src/daemon/launch.js';
+import { describe, expect, it, vi } from 'vitest';
+import { buildDaemonLaunchInvocation, launchDaemonDetached, type DaemonLaunchOptions } from '../src/daemon/launch.js';
 
 const options: DaemonLaunchOptions = {
   configPath: '/tmp/mcporter/config.json',
@@ -12,6 +12,20 @@ const options: DaemonLaunchOptions = {
 };
 
 describe('buildDaemonLaunchInvocation', () => {
+  it('spawns and unreferences the detached daemon', () => {
+    const unref = vi.fn();
+    const launch = vi.fn(() => ({ unref }));
+
+    launchDaemonDetached(options, launch as unknown as typeof import('node:child_process').spawn);
+
+    expect(launch).toHaveBeenCalledWith(
+      process.execPath,
+      expect.arrayContaining(['daemon', 'start', '--foreground']),
+      expect.objectContaining({ detached: true, stdio: 'ignore' })
+    );
+    expect(unref).toHaveBeenCalled();
+  });
+
   it('launches Node entrypoints directly with the CLI script path', () => {
     const invocation = buildDaemonLaunchInvocation(options, {
       argvEntry: '/repo/dist/cli.js',

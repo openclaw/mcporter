@@ -439,6 +439,10 @@ async function prepareSocket(socketPath: string): Promise<void> {
   await fs.mkdir(path.dirname(socketPath), { recursive: true });
 }
 
+export const __daemonHostInternals = {
+  prepareSocket,
+};
+
 async function cleanupArtifacts(options: DaemonHostOptions): Promise<void> {
   await cleanupDaemonArtifactsIfOwned(options, process.pid);
 }

@@ -7,6 +7,21 @@ describe('openExternal', () => {
     vi.restoreAllMocks();
   });
 
+  it('opens the browser with the macOS open command', () => {
+    const child = new EventEmitter() as EventEmitter & { unref: () => void };
+    child.unref = vi.fn();
+    const launch = vi.fn(() => child as unknown as ReturnType<typeof import('node:child_process').spawn>);
+    const url = 'https://example.com/auth';
+
+    __oauthInternals.openExternal(url, 'darwin', launch as unknown as typeof import('node:child_process').spawn);
+
+    expect(launch).toHaveBeenCalledWith('open', [url], {
+      stdio: 'ignore',
+      detached: true,
+    });
+    expect(child.unref).toHaveBeenCalled();
+  });
+
   it('swallows xdg-open error events on linux', () => {
     const child = new EventEmitter() as EventEmitter & { unref: () => void };
     child.unref = vi.fn();

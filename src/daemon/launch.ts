@@ -24,9 +24,9 @@ interface DaemonLaunchInvocation {
   readonly env: NodeJS.ProcessEnv;
 }
 
-export function launchDaemonDetached(options: DaemonLaunchOptions): void {
+export function launchDaemonDetached(options: DaemonLaunchOptions, launch: typeof spawn = spawn): void {
   const invocation = buildDaemonLaunchInvocation(options);
-  const child = spawn(invocation.command, invocation.args, {
+  const child = launch(invocation.command, invocation.args, {
     detached: true,
     stdio: 'ignore',
     env: invocation.env,

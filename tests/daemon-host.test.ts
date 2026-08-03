@@ -6,6 +6,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerDefinition } from '../src/config.js';
 import {
+  __daemonHostInternals,
   __testProcessRequest,
   cleanupDaemonArtifactsIfOwned,
   isDaemonResponding,
@@ -547,6 +548,38 @@ describe('daemon artifact cleanup', () => {
 
     await expect(fs.access(metadataPath)).resolves.toBeUndefined();
     await expect(fs.access(socketPath)).resolves.toBeUndefined();
+  });
+
+  it('preserves the named pipe while removing owned metadata on Windows', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+    await fs.writeFile(metadataPath, JSON.stringify({ pid: 4321, socketPath }), 'utf8');
+
+    await cleanupDaemonArtifactsIfOwned({ metadataPath, socketPath }, 4321);
+
+    await expect(fs.access(metadataPath)).rejects.toThrow();
+    await expect(fs.access(socketPath)).resolves.toBeUndefined();
+  });
+
+  it('skips filesystem socket preparation on Windows', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+    const nestedSocket = path.join(dir, 'missing-parent', 'daemon.sock');
+
+    await __daemonHostInternals.prepareSocket(nestedSocket);
+
+    await expect(fs.access(path.dirname(nestedSocket))).rejects.toThrow();
+  });
+
+  it('removes stale sockets and creates their parent directory on POSIX', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
+    const nestedDir = path.join(dir, 'nested');
+    const nestedSocket = path.join(nestedDir, 'daemon.sock');
+    await fs.mkdir(nestedDir);
+    await fs.writeFile(nestedSocket, 'stale', 'utf8');
+
+    await __daemonHostInternals.prepareSocket(nestedSocket);
+
+    await expect(fs.access(nestedSocket)).rejects.toThrow();
+    await expect(fs.access(nestedDir)).resolves.toBeUndefined();
   });
 });
 

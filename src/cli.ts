@@ -424,6 +424,14 @@ function wrapperArgsBeforeSeparator(args: readonly string[]): string[] {
   return separatorIndex === -1 ? [...args] : args.slice(0, separatorIndex);
 }
 
+export const __cliInternals = {
+  flushStdioThenForceExit,
+  flushWriteStreamForExit,
+  handleStdioError,
+  installStdioErrorHandlers,
+  wrapperArgsBeforeSeparator,
+};
+
 // main parses CLI flags and dispatches to list/call commands.
 async function main(): Promise<void> {
   await runCli(process.argv.slice(2));
