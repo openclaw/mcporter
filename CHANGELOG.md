@@ -43,6 +43,10 @@
 
 - Export connection metadata and the named option/result types reachable through the package-root API.
 
+### Docs
+
+- Rewrite the README around a verified quick start and move protocol and daemon details into focused guides.
+
 ### Tooling / Dependencies
 
 - Migrate mcporter runtime and serve bridges to the MCP TypeScript SDK v2 client/server packages while retaining SDK v1 as a legacy test fixture.
