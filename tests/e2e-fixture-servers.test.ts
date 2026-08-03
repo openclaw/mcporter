@@ -15,6 +15,13 @@ import { waitForChildExit } from '../src/process-utils.js';
 import { createRuntime } from '../src/runtime.js';
 import { makeShortTempDir } from './fixtures/test-helpers.js';
 
+// These tests spawn the real CLI repeatedly, and Windows pays a far higher
+// process-startup cost: the same suite runs ~25s locally and ~100s on a Windows
+// runner. Scale the per-test budgets rather than tuning them one flake at a
+// time — they exist to catch hangs, not to measure machine speed.
+const CI_SLOWDOWN = process.platform === 'win32' ? 3 : 1;
+const budget = (ms: number): number => ms * CI_SLOWDOWN;
+
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CLI_ENTRY = path.join(REPO_ROOT, 'dist', 'cli.js');
 const LEGACY_SERVER = path.join(REPO_ROOT, 'tests', 'servers', 'legacy', 'server.ts');
@@ -46,7 +53,7 @@ beforeAll(async () => {
     startHttpFixture('legacy', LEGACY_SERVER),
     startHttpFixture('modern', MODERN_SERVER),
   ]);
-}, 20_000);
+}, budget(20_000));
 
 afterAll(async () => {
   await Promise.allSettled([...spawnedChildren].map((child) => stopChild(child)));
@@ -54,64 +61,68 @@ afterAll(async () => {
 
 describe.each(fixtureKinds)('%s fixture through the real CLI', (fixture) => {
   describe.each(transports)('%s', (transport) => {
-    it('lists, calls, fails, reports structured output, completes progress work, and reads resources', async () => {
-      await withConfig({ fixture: configFor(fixture, transport) }, async (configPath, env) => {
-        const listed = await runCli(['list', 'fixture', '--json', '--verbose', '--no-oauth'], configPath, env);
-        expect(listed.exitCode, listed.stderr).toBe(0);
-        const listPayload = parseJson<{
-          tools: Array<{ name: string }>;
-          protocolVersion?: string;
-          era?: string;
-        }>(listed.stdout);
-        expect(listPayload.tools.map((tool) => tool.name)).toContain('echo');
-        if (fixture === 'legacy') {
-          expect(listPayload.tools.length).toBeGreaterThan(60);
-          expect(listPayload.tools.at(-1)?.name).toBe('many_tools_60');
-        } else {
-          expect(listPayload.protocolVersion).toBe('2026-07-28');
-          expect(listPayload.era).toBe('modern');
-        }
+    it(
+      'lists, calls, fails, reports structured output, completes progress work, and reads resources',
+      async () => {
+        await withConfig({ fixture: configFor(fixture, transport) }, async (configPath, env) => {
+          const listed = await runCli(['list', 'fixture', '--json', '--verbose', '--no-oauth'], configPath, env);
+          expect(listed.exitCode, listed.stderr).toBe(0);
+          const listPayload = parseJson<{
+            tools: Array<{ name: string }>;
+            protocolVersion?: string;
+            era?: string;
+          }>(listed.stdout);
+          expect(listPayload.tools.map((tool) => tool.name)).toContain('echo');
+          if (fixture === 'legacy') {
+            expect(listPayload.tools.length).toBeGreaterThan(60);
+            expect(listPayload.tools.at(-1)?.name).toBe('many_tools_60');
+          } else {
+            expect(listPayload.protocolVersion).toBe('2026-07-28');
+            expect(listPayload.era).toBe('modern');
+          }
 
-        const echo = await runCli(['call', 'fixture.echo', 'text=fixture-echo', '--output', 'json'], configPath, env);
-        expect(echo.exitCode, echo.stderr).toBe(0);
-        expect(echo.stdout).toContain('fixture-echo');
+          const echo = await runCli(['call', 'fixture.echo', 'text=fixture-echo', '--output', 'json'], configPath, env);
+          expect(echo.exitCode, echo.stderr).toBe(0);
+          expect(echo.stdout).toContain('fixture-echo');
 
-        const add = await runCli(['call', 'fixture.add', 'a=19', 'b=23', '--output', 'json'], configPath, env);
-        expect(add.exitCode, add.stderr).toBe(0);
-        expect(parseJson<{ result: number }>(add.stdout)).toEqual({ result: 42 });
+          const add = await runCli(['call', 'fixture.add', 'a=19', 'b=23', '--output', 'json'], configPath, env);
+          expect(add.exitCode, add.stderr).toBe(0);
+          expect(parseJson<{ result: number }>(add.stdout)).toEqual({ result: 42 });
 
-        const failed = await runCli(['call', 'fixture.fail', '--output', 'json'], configPath, env);
-        expect(failed.exitCode).not.toBe(0);
-        expect(`${failed.stdout}\n${failed.stderr}`).toContain(`${fixture} requested failure`);
+          const failed = await runCli(['call', 'fixture.fail', '--output', 'json'], configPath, env);
+          expect(failed.exitCode).not.toBe(0);
+          expect(`${failed.stdout}\n${failed.stderr}`).toContain(`${fixture} requested failure`);
 
-        const longTask = await runCli(['call', 'fixture.long_task', 'steps=3', '--output', 'text'], configPath, env);
-        expect(longTask.exitCode, longTask.stderr).toBe(0);
-        expect(longTask.stdout).toContain(`${fixture} long task completed 3 steps`);
+          const longTask = await runCli(['call', 'fixture.long_task', 'steps=3', '--output', 'text'], configPath, env);
+          expect(longTask.exitCode, longTask.stderr).toBe(0);
+          expect(longTask.stdout).toContain(`${fixture} long task completed 3 steps`);
 
-        const resources = await runCli(['resource', 'fixture', '--json'], configPath, env);
-        expect(resources.exitCode, resources.stderr).toBe(0);
-        const resourcePayload = parseJson<{ resources: Array<{ uri: string }> }>(resources.stdout);
-        expect(resourcePayload.resources.map((resource) => resource.uri)).toContain(`fixture://${fixture}/welcome`);
+          const resources = await runCli(['resource', 'fixture', '--json'], configPath, env);
+          expect(resources.exitCode, resources.stderr).toBe(0);
+          const resourcePayload = parseJson<{ resources: Array<{ uri: string }> }>(resources.stdout);
+          expect(resourcePayload.resources.map((resource) => resource.uri)).toContain(`fixture://${fixture}/welcome`);
 
-        const welcome = await runCli(
-          ['resource', 'fixture', `fixture://${fixture}/welcome`, '--output', 'text'],
-          configPath,
-          env
-        );
-        expect(welcome.exitCode, welcome.stderr).toBe(0);
-        expect(welcome.stdout).toContain(`hello from the ${fixture} fixture`);
-
-        if (fixture === 'legacy') {
-          const binary = await runCli(
-            ['resource', 'fixture', 'fixture://legacy/binary', '--output', 'json'],
+          const welcome = await runCli(
+            ['resource', 'fixture', `fixture://${fixture}/welcome`, '--output', 'text'],
             configPath,
             env
           );
-          expect(binary.exitCode, binary.stderr).toBe(0);
-          expect(binary.stdout).toContain('AAEC/f7/');
-        }
-      });
-    }, 30_000);
+          expect(welcome.exitCode, welcome.stderr).toBe(0);
+          expect(welcome.stdout).toContain(`hello from the ${fixture} fixture`);
+
+          if (fixture === 'legacy') {
+            const binary = await runCli(
+              ['resource', 'fixture', 'fixture://legacy/binary', '--output', 'json'],
+              configPath,
+              env
+            );
+            expect(binary.exitCode, binary.stderr).toBe(0);
+            expect(binary.stdout).toContain('AAEC/f7/');
+          }
+        });
+      },
+      budget(30_000)
+    );
   });
 });
 
@@ -172,81 +183,89 @@ describe.each(transports)('modern MRTR and identity over %s', (transport) => {
   });
 });
 
-it('streams modern tool-list changes and exposes cache metadata', async () => {
-  const client = new ModernClient(
-    { name: 'fixture-modern-subscription-client', version: '1.0.0' },
-    { versionNegotiation: { mode: { pin: '2026-07-28' } } }
-  );
-  let toolListChanges = 0;
-  client.setNotificationHandler('notifications/tools/list_changed', () => {
-    toolListChanges += 1;
-  });
-
-  try {
-    await client.connect(new ModernHttpTransport(new URL(modernHttp.url)));
-    const initial = await client.listTools(undefined, { cacheMode: 'refresh' });
-    expect(initial).toMatchObject({ ttlMs: 1_000, cacheScope: 'private' });
-    const initiallyEnabled = initial.tools.some((tool) => tool.name === 'runtime_tool');
-    const subscription = await client.listen({ toolsListChanged: true });
-    expect(subscription.honoredFilter).toEqual({ toolsListChanged: true });
+it(
+  'streams modern tool-list changes and exposes cache metadata',
+  async () => {
+    const client = new ModernClient(
+      { name: 'fixture-modern-subscription-client', version: '1.0.0' },
+      { versionNegotiation: { mode: { pin: '2026-07-28' } } }
+    );
+    let toolListChanges = 0;
+    client.setNotificationHandler('notifications/tools/list_changed', () => {
+      toolListChanges += 1;
+    });
 
     try {
-      await client.callTool({ name: 'toggle_tool', arguments: {} });
-      await expect.poll(() => toolListChanges, { timeout: 2_000 }).toBeGreaterThan(0);
-      const refreshed = await client.listTools(undefined, { cacheMode: 'refresh' });
-      expect(refreshed).toMatchObject({ ttlMs: 1_000, cacheScope: 'private' });
-      expect(refreshed.tools.some((tool) => tool.name === 'runtime_tool')).toBe(!initiallyEnabled);
-    } finally {
-      await subscription.close();
-    }
-  } finally {
-    await client.close();
-  }
-}, 20_000);
+      await client.connect(new ModernHttpTransport(new URL(modernHttp.url)));
+      const initial = await client.listTools(undefined, { cacheMode: 'refresh' });
+      expect(initial).toMatchObject({ ttlMs: 1_000, cacheScope: 'private' });
+      const initiallyEnabled = initial.tools.some((tool) => tool.name === 'runtime_tool');
+      const subscription = await client.listen({ toolsListChanged: true });
+      expect(subscription.honoredFilter).toEqual({ toolsListChanged: true });
 
-it('bridges both fixtures to pinned modern and legacy HTTP clients through mcporter serve', async () => {
-  await withConfig(
-    {
-      legacy: { ...configFor('legacy', 'http'), lifecycle: 'keep-alive' },
-      modern: { ...configFor('modern', 'http'), lifecycle: 'keep-alive' },
-    },
-    async (configPath, env, tempDir) => {
-      const daemon = await runCli(['daemon', 'start', '--log'], configPath, env);
-      const daemonLogs = daemon.exitCode === 0 ? '' : await readDaemonLogs(path.join(tempDir, 'daemon'));
-      expect(daemon.exitCode, `${daemon.stdout}\n${daemon.stderr}\n${daemonLogs}`).toBe(0);
-      const bridge = await startBridge(configPath, env);
-      const modernClient = new ModernClient(
-        { name: 'fixture-modern-bridge-client', version: '1.0.0' },
-        { versionNegotiation: { mode: { pin: '2026-07-28' } } }
-      );
-      const legacyClient = new LegacyClient({ name: 'fixture-legacy-bridge-client', version: '1.0.0' });
       try {
-        await modernClient.connect(new ModernHttpTransport(new URL(bridge.url)));
-        expect(modernClient.getProtocolEra()).toBe('modern');
-        const modernTools = await modernClient.listTools();
-        expect(modernTools.tools.map((tool) => tool.name)).toEqual(
-          expect.arrayContaining(['legacy__echo', 'modern__echo'])
-        );
-        await expect(
-          modernClient.callTool({ name: 'modern__echo', arguments: { text: 'modern bridge' } })
-        ).resolves.toMatchObject({ content: [{ type: 'text', text: 'modern bridge' }] });
-
-        await legacyClient.connect(new LegacyHttpTransport(new URL(bridge.url)));
-        const legacyTools = await legacyClient.listTools();
-        expect(legacyTools.tools.map((tool) => tool.name)).toEqual(
-          expect.arrayContaining(['legacy__echo', 'modern__echo'])
-        );
-        await expect(
-          legacyClient.callTool({ name: 'legacy__echo', arguments: { text: 'legacy bridge' } })
-        ).resolves.toMatchObject({ content: [{ type: 'text', text: 'legacy bridge' }] });
+        await client.callTool({ name: 'toggle_tool', arguments: {} });
+        await expect.poll(() => toolListChanges, { timeout: 2_000 }).toBeGreaterThan(0);
+        const refreshed = await client.listTools(undefined, { cacheMode: 'refresh' });
+        expect(refreshed).toMatchObject({ ttlMs: 1_000, cacheScope: 'private' });
+        expect(refreshed.tools.some((tool) => tool.name === 'runtime_tool')).toBe(!initiallyEnabled);
       } finally {
-        await Promise.allSettled([modernClient.close(), legacyClient.close()]);
-        await stopChild(bridge.child);
-        await runCli(['daemon', 'stop'], configPath, { ...env, MCPORTER_DAEMON_DIR: path.join(tempDir, 'daemon') });
+        await subscription.close();
       }
+    } finally {
+      await client.close();
     }
-  );
-}, 40_000);
+  },
+  budget(20_000)
+);
+
+it(
+  'bridges both fixtures to pinned modern and legacy HTTP clients through mcporter serve',
+  async () => {
+    await withConfig(
+      {
+        legacy: { ...configFor('legacy', 'http'), lifecycle: 'keep-alive' },
+        modern: { ...configFor('modern', 'http'), lifecycle: 'keep-alive' },
+      },
+      async (configPath, env, tempDir) => {
+        const daemon = await runCli(['daemon', 'start', '--log'], configPath, env);
+        const daemonLogs = daemon.exitCode === 0 ? '' : await readDaemonLogs(path.join(tempDir, 'daemon'));
+        expect(daemon.exitCode, `${daemon.stdout}\n${daemon.stderr}\n${daemonLogs}`).toBe(0);
+        const bridge = await startBridge(configPath, env);
+        const modernClient = new ModernClient(
+          { name: 'fixture-modern-bridge-client', version: '1.0.0' },
+          { versionNegotiation: { mode: { pin: '2026-07-28' } } }
+        );
+        const legacyClient = new LegacyClient({ name: 'fixture-legacy-bridge-client', version: '1.0.0' });
+        try {
+          await modernClient.connect(new ModernHttpTransport(new URL(bridge.url)));
+          expect(modernClient.getProtocolEra()).toBe('modern');
+          const modernTools = await modernClient.listTools();
+          expect(modernTools.tools.map((tool) => tool.name)).toEqual(
+            expect.arrayContaining(['legacy__echo', 'modern__echo'])
+          );
+          await expect(
+            modernClient.callTool({ name: 'modern__echo', arguments: { text: 'modern bridge' } })
+          ).resolves.toMatchObject({ content: [{ type: 'text', text: 'modern bridge' }] });
+
+          await legacyClient.connect(new LegacyHttpTransport(new URL(bridge.url)));
+          const legacyTools = await legacyClient.listTools();
+          expect(legacyTools.tools.map((tool) => tool.name)).toEqual(
+            expect.arrayContaining(['legacy__echo', 'modern__echo'])
+          );
+          await expect(
+            legacyClient.callTool({ name: 'legacy__echo', arguments: { text: 'legacy bridge' } })
+          ).resolves.toMatchObject({ content: [{ type: 'text', text: 'legacy bridge' }] });
+        } finally {
+          await Promise.allSettled([modernClient.close(), legacyClient.close()]);
+          await stopChild(bridge.child);
+          await runCli(['daemon', 'stop'], configPath, { ...env, MCPORTER_DAEMON_DIR: path.join(tempDir, 'daemon') });
+        }
+      }
+    );
+  },
+  budget(40_000)
+);
 
 describe('fixture child lifecycle', () => {
   it('kills a fixture child when readiness times out', async () => {
