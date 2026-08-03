@@ -30,7 +30,7 @@ name, standalone SSE fallback, OAuth-required classification, modern/legacy down
 rendering and deprecated-endpoint classification check.
 
 The full endpoint survey, expected drift, and weekly failure triage live in
-[`tests/live/README.md`](../tests/live/README.md).
+[`tests/live/README.md`](https://github.com/openclaw/mcporter/blob/main/tests/live/README.md).
 
 ## Notes
 
