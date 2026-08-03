@@ -7,6 +7,10 @@
 - Treat the daemon socket timeout as an idle liveness budget refreshed by progress frames, so interactive OAuth can outlive 30 seconds without restarting the daemon and opening a duplicate prompt. (PR #241, thanks @umutkeltek)
 - Keep daemon protocol v1 and v2 interoperable while returning daemon-owned operation timeouts as non-retryable errors. (PR #241, thanks @umutkeltek)
 
+### Tooling / Dependencies
+
+- Refresh Acorn, Rolldown, Vite, Oxlint, Oxfmt, Node types, and security overrides within the repository's release-age policy.
+
 ## [0.13.0] - 2026-08-02
 
 ### MCP 2.0
