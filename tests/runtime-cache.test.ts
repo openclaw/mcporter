@@ -1,15 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createRuntime } from '../src/runtime.js';
+import { getRuntimeConnectionCache } from './helpers/runtime-test-helpers.js';
 
 type TestRuntime = Awaited<ReturnType<typeof createRuntime>>;
 type ClientContext = Awaited<ReturnType<TestRuntime['connect']>>;
-type CachedClientEntry = {
-  readonly server: string;
-  readonly promise: Promise<ClientContext>;
-  readonly allowCachedAuth: boolean | undefined;
-  readonly disableOAuth: boolean;
-};
-
 function fakeContext(instructions: string): ClientContext {
   return {
     client: {
@@ -32,24 +26,21 @@ describe('runtime cache entries', () => {
     const runtime = await createRuntime({ servers: [] });
     const older = fakeContext('older instructions');
     const active = fakeContext('active instructions');
-    const internals = runtime as unknown as {
-      clients: Map<string, CachedClientEntry>;
-      activeClientKeys: Map<string, string>;
-    };
+    const cache = getRuntimeConnectionCache(runtime);
 
-    internals.clients.set('temp:older', {
+    cache.clients.set('temp:older', {
       server: 'temp',
       promise: Promise.resolve(older),
       allowCachedAuth: true,
       disableOAuth: false,
     });
-    internals.clients.set('temp:active', {
+    cache.clients.set('temp:active', {
       server: 'temp',
       promise: Promise.resolve(active),
       allowCachedAuth: true,
       disableOAuth: true,
     });
-    internals.activeClientKeys.set('temp', 'temp:active');
+    cache.activeClientKeys.set('temp', 'temp:active');
 
     await expect(runtime.getInstructions?.('temp')).resolves.toBe('active instructions');
   });
@@ -58,18 +49,15 @@ describe('runtime cache entries', () => {
     const runtime = await createRuntime({ servers: [] });
     const context = fakeContext('old instructions');
     const transport = context.transport as unknown as { close: ReturnType<typeof vi.fn> };
-    const internals = runtime as unknown as {
-      clients: Map<string, CachedClientEntry>;
-      contextCacheKeys: WeakMap<ClientContext, string>;
-    };
+    const cache = getRuntimeConnectionCache(runtime);
 
-    internals.clients.set('temp:old', {
+    cache.clients.set('temp:old', {
       server: 'temp',
       promise: Promise.resolve(context),
       allowCachedAuth: undefined,
       disableOAuth: false,
     });
-    internals.contextCacheKeys.set(context, 'temp:old');
+    cache.contextCacheKeys.set(context, 'temp:old');
 
     runtime.registerDefinition(
       {
@@ -81,7 +69,7 @@ describe('runtime cache entries', () => {
     );
 
     await vi.waitFor(() => expect(transport.close).toHaveBeenCalled());
-    expect(internals.clients.has('temp:old')).toBe(false);
+    expect(cache.clients.has('temp:old')).toBe(false);
   });
 
   it('removes cached entries before awaiting shutdown', async () => {
@@ -100,24 +88,20 @@ describe('runtime cache entries', () => {
         getInstructions: vi.fn(() => 'closing instructions'),
       },
     } as unknown as ClientContext;
-    const internals = runtime as unknown as {
-      clients: Map<string, CachedClientEntry>;
-      activeClientKeys: Map<string, string>;
-      contextCacheKeys: WeakMap<ClientContext, string>;
-    };
-    internals.clients.set('temp:closing', {
+    const cache = getRuntimeConnectionCache(runtime);
+    cache.clients.set('temp:closing', {
       server: 'temp',
       promise: Promise.resolve(context),
       allowCachedAuth: undefined,
       disableOAuth: false,
     });
-    internals.activeClientKeys.set('temp', 'temp:closing');
-    internals.contextCacheKeys.set(context, 'temp:closing');
+    cache.activeClientKeys.set('temp', 'temp:closing');
+    cache.contextCacheKeys.set(context, 'temp:closing');
 
     const closing = runtime.close('temp');
 
-    expect(internals.clients.has('temp:closing')).toBe(false);
-    expect(internals.activeClientKeys.has('temp')).toBe(false);
+    expect(cache.clients.has('temp:closing')).toBe(false);
+    expect(cache.activeClientKeys.has('temp')).toBe(false);
     await vi.waitFor(() => expect(clientClose).toHaveBeenCalled());
     releaseClose();
     await closing;
@@ -132,16 +116,14 @@ describe('runtime cache entries', () => {
     const pendingContext = fakeContext('pending instructions');
     const readyContext = fakeContext('ready instructions');
     const readyTransport = readyContext.transport as unknown as { close: ReturnType<typeof vi.fn> };
-    const internals = runtime as unknown as {
-      clients: Map<string, CachedClientEntry>;
-    };
-    internals.clients.set('temp:pending', {
+    const cache = getRuntimeConnectionCache(runtime);
+    cache.clients.set('temp:pending', {
       server: 'temp',
       promise: pending,
       allowCachedAuth: false,
       disableOAuth: false,
     });
-    internals.clients.set('temp:ready', {
+    cache.clients.set('temp:ready', {
       server: 'temp',
       promise: Promise.resolve(readyContext),
       allowCachedAuth: true,

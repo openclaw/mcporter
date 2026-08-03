@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { ensureDistBuilt } from './helpers/dist.js';
 
 const CLI_ENTRY = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 const testRequire = createRequire(import.meta.url);
@@ -43,14 +44,6 @@ async function waitForExit(child: ChildProcess, retries = 50, delayMs = 100): Pr
   throw new Error(`Process ${child.pid ?? '<unknown>'} did not exit.`);
 }
 
-async function ensureDistBuilt(): Promise<void> {
-  try {
-    await fs.access(CLI_ENTRY);
-  } catch {
-    throw new Error('dist/cli.js is missing; run `pnpm build` before invoking this integration test directly.');
-  }
-}
-
 async function runCli(
   args: string[],
   configPath: string,
@@ -87,7 +80,7 @@ function parseCliJson(output: string): { instanceId: string; count: number } {
 
 describeDaemon('daemon keep-alive integration', () => {
   it('reuses stdio servers across mcporter invocations', async () => {
-    await ensureDistBuilt();
+    await ensureDistBuilt(CLI_ENTRY);
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-e2e-'));
     const scriptPath = path.join(tempDir, 'daemon-server.mjs');
     const configPath = path.join(tempDir, 'mcporter.daemon.json');
@@ -189,7 +182,7 @@ await new Promise((resolve) => {
   }, 40_000);
 
   it('refuses duplicate binds when foreground starts race outside the client lock', async () => {
-    await ensureDistBuilt();
+    await ensureDistBuilt(CLI_ENTRY);
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-bind-'));
     const scriptPath = path.join(tempDir, 'bind-server.mjs');
     const configPath = path.join(tempDir, 'mcporter.bind.json');
@@ -238,7 +231,7 @@ await new Promise(() => {});
   }, 40_000);
 
   it('repairs metadata when a live daemon owns the socket and metadata is missing', async () => {
-    await ensureDistBuilt();
+    await ensureDistBuilt(CLI_ENTRY);
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-meta-'));
     const scriptPath = path.join(tempDir, 'meta-server.mjs');
     const configPath = path.join(tempDir, 'mcporter.meta.json');
@@ -299,7 +292,7 @@ await new Promise(() => {});
   }, 40_000);
 
   it('stops a live daemon with stale config before rebinding', async () => {
-    await ensureDistBuilt();
+    await ensureDistBuilt(CLI_ENTRY);
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-stale-'));
     const scriptPath = path.join(tempDir, 'stale-server.mjs');
     const configPath = path.join(tempDir, 'mcporter.stale.json');
@@ -365,7 +358,7 @@ await new Promise(() => {});
   }, 40_000);
 
   it('stops a live daemon when imported root definitions change', async () => {
-    await ensureDistBuilt();
+    await ensureDistBuilt(CLI_ENTRY);
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-root-'));
     const scriptPath = path.join(tempDir, 'root-server.mjs');
     const configPath = path.join(tempDir, 'mcporter.root.json');

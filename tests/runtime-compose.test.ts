@@ -120,6 +120,7 @@ vi.mock('../src/oauth-persistence.js', () => ({
 }));
 
 import { callOnce, createRuntime } from '../src/runtime.js';
+import { getRuntimeConnectionCache } from './helpers/runtime-test-helpers.js';
 
 describe('mcporter composability', () => {
   beforeEach(() => {
@@ -562,17 +563,8 @@ describe('mcporter composability', () => {
     try {
       await runtime.connect('oauth');
       await runtime.connect('oauth', { disableOAuth: true });
-      const internals = runtime as unknown as {
-        activeClientKeys: Map<string, string>;
-        clients: Map<
-          string,
-          {
-            allowCachedAuth: boolean | undefined;
-            disableOAuth: boolean;
-          }
-        >;
-      };
-      const disabledKey = [...internals.clients.entries()].find(
+      const cache = getRuntimeConnectionCache(runtime);
+      const disabledKey = [...cache.clients.entries()].find(
         ([, cached]) => cached.disableOAuth && cached.allowCachedAuth === true
       )?.[0];
 
@@ -581,7 +573,7 @@ describe('mcporter composability', () => {
         'connect boom'
       );
 
-      expect(internals.activeClientKeys.get('oauth')).toBe(disabledKey);
+      expect(cache.activeClientKeys.get('oauth')).toBe(disabledKey);
     } finally {
       await runtime.close();
     }
@@ -663,20 +655,7 @@ describe('mcporter composability', () => {
     type ClientContext = Awaited<ReturnType<typeof runtime.connect>>;
     const rejected = Promise.reject(new Error('retire boom')) as Promise<ClientContext>;
     void rejected.catch(() => {});
-    (
-      runtime as unknown as {
-        clients: Map<
-          string,
-          {
-            server: string;
-            promise: Promise<ClientContext>;
-            contextPromise: Promise<ClientContext>;
-            allowCachedAuth: boolean | undefined;
-            disableOAuth: boolean;
-          }
-        >;
-      }
-    ).clients.set('oauth:conflict', {
+    getRuntimeConnectionCache(runtime).clients.set('oauth:conflict', {
       server: 'oauth',
       promise: rejected,
       contextPromise: rejected,

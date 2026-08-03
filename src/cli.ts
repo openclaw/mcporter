@@ -398,8 +398,8 @@ async function closeRuntimeAfterCommand(
     }
   } finally {
     terminateChildProcesses('runtime.finally');
-    // By default we force an exit after cleanup so Node doesn't hang on lingering stdio handles
-    // (see typescript-sdk#579/#780/#1049). Opt out by exporting MCPORTER_NO_FORCE_EXIT=1.
+    // Force an exit after cleanup as a final guard against lingering third-party handles.
+    // Opt out by exporting MCPORTER_NO_FORCE_EXIT=1.
     const disableForceExit = process.env.MCPORTER_NO_FORCE_EXIT === '1';
     const shouldForceExit = !disableForceExit || process.env.MCPORTER_FORCE_EXIT === '1';
     const scheduleForcedExit = () => {

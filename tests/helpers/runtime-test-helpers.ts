@@ -4,6 +4,8 @@ import { vi } from 'vitest';
 import type { ServerDefinition } from '../../src/config.js';
 import type { Logger } from '../../src/logging.js';
 import type { OAuthSession } from '../../src/oauth.js';
+import type { Runtime } from '../../src/runtime.js';
+import type { RuntimeConnectionCache } from '../../src/runtime/connection-cache.js';
 
 export const clientInfo = { name: 'mcporter', version: '0.0.0-test' };
 
@@ -25,6 +27,10 @@ export function resetLogger(logger: LoggerSpy): void {
   logger.info.mockReset();
   logger.warn.mockReset();
   logger.error.mockReset();
+}
+
+export function getRuntimeConnectionCache(runtime: Runtime): RuntimeConnectionCache {
+  return (runtime as unknown as { connectionCache: RuntimeConnectionCache }).connectionCache;
 }
 
 export function stubHttpDefinition(url: string): ServerDefinition {

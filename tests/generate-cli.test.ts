@@ -9,20 +9,13 @@ import { z } from 'zod';
 import { readCliMetadata } from '../src/cli-metadata.js';
 import { generateCli, __test as generateCliInternals } from '../src/generate-cli.js';
 import type { ServerToolInfo } from '../src/runtime.js';
+import { ensureDistBuilt } from './helpers/dist.js';
 
 const describeGenerateCli = process.platform === 'win32' ? describe.skip : describe;
 
 let baseUrl: URL;
 const tmpDir = path.join(process.cwd(), 'tmp', 'mcporter-cli-tests');
 const CLI_ENTRY = path.join(process.cwd(), 'dist', 'cli.js');
-
-async function ensureDistBuilt(): Promise<void> {
-  try {
-    await fs.access(CLI_ENTRY);
-  } catch {
-    throw new Error('dist/cli.js is missing; run `pnpm build` before invoking this integration test directly.');
-  }
-}
 
 if (process.platform !== 'win32') {
   beforeAll(async () => {
@@ -208,7 +201,7 @@ describeGenerateCli('generateCli', () => {
       console.warn('bun-compiled binaries cannot run on this runner; skipping compilation checks.');
       return;
     }
-    await ensureDistBuilt();
+    await ensureDistBuilt(CLI_ENTRY);
 
     const expectedBinaryPath = path.join(tmpDir, 'integration');
     const {
@@ -417,7 +410,7 @@ describeGenerateCli('generateCli', () => {
     });
     const bundlePath = path.join(tmpDir, 'integration-mjs.mjs');
     await fs.rm(bundlePath, { force: true });
-    await ensureDistBuilt();
+    await ensureDistBuilt(CLI_ENTRY);
 
     const { outputPath: generated, bundlePath: bundled } = await generateCli({
       serverRef: inline,
@@ -479,7 +472,7 @@ describeGenerateCli('generateCli', () => {
     const secondBundlePath = path.join(tmpDir, 'deterministic-b.js');
     await fs.rm(firstBundlePath, { force: true });
     await fs.rm(secondBundlePath, { force: true });
-    await ensureDistBuilt();
+    await ensureDistBuilt(CLI_ENTRY);
 
     await generateCli({
       serverRef: inline,

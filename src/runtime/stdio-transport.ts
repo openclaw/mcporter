@@ -3,7 +3,6 @@ import { StdioClientTransport, type StdioServerParameters } from '@modelcontextp
 import {
   flushStdioLogs,
   ignoreStdioEmitterError,
-  registerTransportStreamMeta,
   STDIO_TRACE_ENABLED,
   type ProcessStreamMeta,
 } from '../sdk-stdio-logging.js';
@@ -37,9 +36,7 @@ export class McporterStdioTransport extends StdioClientTransport {
       command: parameters.command,
       code: null,
       listeners: [],
-      transport: this,
     };
-    registerTransportStreamMeta(this.meta);
 
     const stderr = this.stderr;
     if (stderr) {

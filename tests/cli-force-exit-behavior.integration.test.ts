@@ -6,20 +6,13 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ensureDistBuilt } from './helpers/dist.js';
 
 const CLI_ENTRY = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 const testRequire = createRequire(import.meta.url);
 const MCP_SERVER_MODULE = pathToFileURL(testRequire.resolve('@modelcontextprotocol/sdk/server/mcp.js')).href;
 const STDIO_SERVER_MODULE = pathToFileURL(testRequire.resolve('@modelcontextprotocol/sdk/server/stdio.js')).href;
 const ZOD_MODULE = pathToFileURL(path.join(process.cwd(), 'node_modules', 'zod', 'index.js')).href;
-
-async function ensureDistBuilt(): Promise<void> {
-  try {
-    await fs.access(CLI_ENTRY);
-  } catch {
-    throw new Error('dist/cli.js is missing; run `pnpm build` before invoking this integration test directly.');
-  }
-}
 
 function runCli(args: string[], configPath: string): Promise<{ stdout: string; stderr: string; code: number }> {
   return new Promise((resolve) => {
@@ -44,7 +37,7 @@ describe('mcporter forced exit behavior', () => {
   let configPath: string;
 
   beforeAll(async () => {
-    await ensureDistBuilt();
+    await ensureDistBuilt(CLI_ENTRY);
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-force-exit-'));
     const serverScriptPath = path.join(tempDir, 'force-exit-server.mjs');
     configPath = path.join(tempDir, 'config.json');

@@ -1,6 +1,7 @@
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createRuntime } from '../src/runtime.js';
+import { getRuntimeConnectionCache } from './helpers/runtime-test-helpers.js';
 
 describe('runtime connection resets', () => {
   afterEach(() => {
@@ -27,35 +28,15 @@ describe('runtime connection resets', () => {
     } as unknown as ClientContext;
     vi.spyOn(runtime, 'connect').mockResolvedValue(context);
     const promise = Promise.resolve(context);
-    (
-      runtime as unknown as {
-        clients: Map<
-          string,
-          {
-            server: string;
-            promise: Promise<ClientContext>;
-            allowCachedAuth: boolean | undefined;
-            disableOAuth: boolean;
-          }
-        >;
-      }
-    ).clients.set('temp:test', {
+    const cache = getRuntimeConnectionCache(runtime);
+    cache.clients.set('temp:test', {
       server: 'temp',
       promise,
       allowCachedAuth: true,
       disableOAuth: false,
     });
-    (
-      runtime as unknown as {
-        contextCacheKeys: WeakMap<ClientContext, string>;
-        contextCachePromises: WeakMap<ClientContext, Promise<ClientContext>>;
-      }
-    ).contextCacheKeys.set(context, 'temp:test');
-    (
-      runtime as unknown as {
-        contextCachePromises: WeakMap<ClientContext, Promise<ClientContext>>;
-      }
-    ).contextCachePromises.set(context, promise);
+    cache.contextCacheKeys.set(context, 'temp:test');
+    cache.contextCachePromises.set(context, promise);
     const closeSpy = vi.spyOn(runtime, 'close').mockResolvedValue();
 
     await expect(runtime.callTool('temp', 'list_pages')).rejects.toThrow('Connection closed');
@@ -83,34 +64,15 @@ describe('runtime connection resets', () => {
     } as unknown as ClientContext;
     vi.spyOn(runtime, 'connect').mockResolvedValue(context);
     const promise = Promise.resolve(context);
-    (
-      runtime as unknown as {
-        clients: Map<
-          string,
-          {
-            server: string;
-            promise: Promise<ClientContext>;
-            allowCachedAuth: boolean | undefined;
-            disableOAuth: boolean;
-          }
-        >;
-      }
-    ).clients.set('temp:test', {
+    const cache = getRuntimeConnectionCache(runtime);
+    cache.clients.set('temp:test', {
       server: 'temp',
       promise,
       allowCachedAuth: true,
       disableOAuth: false,
     });
-    (
-      runtime as unknown as {
-        contextCacheKeys: WeakMap<ClientContext, string>;
-      }
-    ).contextCacheKeys.set(context, 'temp:test');
-    (
-      runtime as unknown as {
-        contextCachePromises: WeakMap<ClientContext, Promise<ClientContext>>;
-      }
-    ).contextCachePromises.set(context, promise);
+    cache.contextCacheKeys.set(context, 'temp:test');
+    cache.contextCachePromises.set(context, promise);
     const closeSpy = vi.spyOn(runtime, 'close').mockResolvedValue();
 
     await expect(runtime.callTool('temp', 'help')).rejects.toThrow('Tool help not found');
@@ -138,39 +100,27 @@ describe('runtime connection resets', () => {
     } as unknown as ClientContext;
     const unresolved = new Promise<ClientContext>(() => {});
     const failedPromise = Promise.resolve(context);
-    const internals = runtime as unknown as {
-      clients: Map<
-        string,
-        {
-          server: string;
-          promise: Promise<ClientContext>;
-          allowCachedAuth: boolean | undefined;
-          disableOAuth: boolean;
-        }
-      >;
-      contextCacheKeys: WeakMap<ClientContext, string>;
-      contextCachePromises: WeakMap<ClientContext, Promise<ClientContext>>;
-    };
-    internals.clients.set('temp:unrelated', {
+    const cache = getRuntimeConnectionCache(runtime);
+    cache.clients.set('temp:unrelated', {
       server: 'temp',
       promise: unresolved,
       allowCachedAuth: true,
       disableOAuth: false,
     });
-    internals.clients.set('temp:failed', {
+    cache.clients.set('temp:failed', {
       server: 'temp',
       promise: failedPromise,
       allowCachedAuth: true,
       disableOAuth: true,
     });
-    internals.contextCacheKeys.set(context, 'temp:failed');
-    internals.contextCachePromises.set(context, failedPromise);
+    cache.contextCacheKeys.set(context, 'temp:failed');
+    cache.contextCachePromises.set(context, failedPromise);
     vi.spyOn(runtime, 'connect').mockResolvedValue(context);
 
     await expect(runtime.callTool('temp', 'list_pages')).rejects.toThrow('Connection closed');
     expect(transport.close).toHaveBeenCalled();
-    expect(internals.clients.has('temp:failed')).toBe(false);
-    expect(internals.clients.has('temp:unrelated')).toBe(true);
+    expect(cache.clients.has('temp:failed')).toBe(false);
+    expect(cache.clients.has('temp:unrelated')).toBe(true);
   });
 
   it('leaves cached entries alone when an uncached list operation fails', async () => {
@@ -203,32 +153,20 @@ describe('runtime connection resets', () => {
       },
       oauthSession: undefined,
     } as unknown as ClientContext;
-    const internals = runtime as unknown as {
-      clients: Map<
-        string,
-        {
-          server: string;
-          promise: Promise<ClientContext>;
-          allowCachedAuth: boolean | undefined;
-          disableOAuth: boolean;
-        }
-      >;
-      contextCacheKeys: WeakMap<ClientContext, string>;
-      contextCachePromises: WeakMap<ClientContext, Promise<ClientContext>>;
-    };
-    internals.clients.set('temp:cached', {
+    const cache = getRuntimeConnectionCache(runtime);
+    cache.clients.set('temp:cached', {
       server: 'temp',
       promise: Promise.resolve(cachedContext),
       allowCachedAuth: true,
       disableOAuth: false,
     });
-    internals.contextCacheKeys.set(cachedContext, 'temp:cached');
+    cache.contextCacheKeys.set(cachedContext, 'temp:cached');
     vi.spyOn(runtime, 'connect').mockResolvedValue(uncachedContext);
 
     await expect(runtime.listTools('temp', { autoAuthorize: false })).rejects.toThrow('Connection closed');
     expect(uncachedTransport.close).toHaveBeenCalled();
     expect(cachedTransport.close).not.toHaveBeenCalled();
-    expect(internals.clients.has('temp:cached')).toBe(true);
+    expect(cache.clients.has('temp:cached')).toBe(true);
   });
 
   it('does not evict a replacement while closing a failed stdio context', async () => {
@@ -259,27 +197,15 @@ describe('runtime connection resets', () => {
       oauthSession: undefined,
     } as unknown as ClientContext;
     const promise = Promise.resolve(context);
-    const internals = runtime as unknown as {
-      clients: Map<
-        string,
-        {
-          server: string;
-          promise: Promise<ClientContext>;
-          allowCachedAuth: boolean | undefined;
-          disableOAuth: boolean;
-        }
-      >;
-      contextCacheKeys: WeakMap<ClientContext, string>;
-      contextCachePromises: WeakMap<ClientContext, Promise<ClientContext>>;
-    };
-    internals.clients.set('temp:stdio', {
+    const cache = getRuntimeConnectionCache(runtime);
+    cache.clients.set('temp:stdio', {
       server: 'temp',
       promise,
       allowCachedAuth: undefined,
       disableOAuth: false,
     });
-    internals.contextCacheKeys.set(context, 'temp:stdio');
-    internals.contextCachePromises.set(context, promise);
+    cache.contextCacheKeys.set(context, 'temp:stdio');
+    cache.contextCachePromises.set(context, promise);
     vi.spyOn(runtime, 'connect').mockResolvedValue(context);
 
     const call = runtime.callTool('temp', 'list_pages');
@@ -289,7 +215,7 @@ describe('runtime connection resets', () => {
       ...context,
       transport: { close: vi.fn().mockResolvedValue(undefined) },
     } as unknown as ClientContext);
-    internals.clients.set('temp:stdio', {
+    cache.clients.set('temp:stdio', {
       server: 'temp',
       promise: replacement,
       allowCachedAuth: true,
@@ -298,6 +224,6 @@ describe('runtime connection resets', () => {
     releaseClose();
 
     await expectation;
-    expect(internals.clients.get('temp:stdio')?.promise).toBe(replacement);
+    expect(cache.clients.get('temp:stdio')?.promise).toBe(replacement);
   });
 });

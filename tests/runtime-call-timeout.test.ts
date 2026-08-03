@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createRuntime } from '../src/runtime.js';
+import { getRuntimeConnectionCache } from './helpers/runtime-test-helpers.js';
 
 describe('runtime callTool timeouts', () => {
   afterEach(() => {
@@ -58,34 +59,15 @@ describe('runtime callTool timeouts', () => {
     } as unknown as ClientContext;
     vi.spyOn(runtime, 'connect').mockResolvedValue(fakeContext);
     const cachedPromise = Promise.resolve(fakeContext);
-    (
-      runtime as unknown as {
-        clients: Map<
-          string,
-          {
-            server: string;
-            promise: Promise<ClientContext>;
-            allowCachedAuth: boolean | undefined;
-            disableOAuth: boolean;
-          }
-        >;
-      }
-    ).clients.set('temp:test', {
+    const cache = getRuntimeConnectionCache(runtime);
+    cache.clients.set('temp:test', {
       server: 'temp',
       promise: cachedPromise,
       allowCachedAuth: true,
       disableOAuth: false,
     });
-    (
-      runtime as unknown as {
-        contextCacheKeys: WeakMap<ClientContext, string>;
-      }
-    ).contextCacheKeys.set(fakeContext, 'temp:test');
-    (
-      runtime as unknown as {
-        contextCachePromises: WeakMap<ClientContext, Promise<ClientContext>>;
-      }
-    ).contextCachePromises.set(fakeContext, cachedPromise);
+    cache.contextCacheKeys.set(fakeContext, 'temp:test');
+    cache.contextCachePromises.set(fakeContext, cachedPromise);
     const closeSpy = vi.spyOn(runtime, 'close').mockResolvedValue();
 
     const promise = runtime.callTool('temp', 'ping', { timeoutMs: 123 });

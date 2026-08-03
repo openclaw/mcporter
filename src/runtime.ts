@@ -202,23 +202,6 @@ class McpRuntime implements Runtime {
     });
   }
 
-  // Legacy test probes resolve through accessors while the cache remains the sole state owner.
-  private get clients(): RuntimeConnectionCache['clients'] {
-    return this.connectionCache.clients;
-  }
-
-  private get activeClientKeys(): RuntimeConnectionCache['activeClientKeys'] {
-    return this.connectionCache.activeClientKeys;
-  }
-
-  private get contextCacheKeys(): RuntimeConnectionCache['contextCacheKeys'] {
-    return this.connectionCache.contextCacheKeys;
-  }
-
-  private get contextCachePromises(): RuntimeConnectionCache['contextCachePromises'] {
-    return this.connectionCache.contextCachePromises;
-  }
-
   // listServers returns configured names sorted alphabetically for stable CLI output.
   listServers(): string[] {
     return [...this.definitions.keys()].toSorted((a, b) => a.localeCompare(b));

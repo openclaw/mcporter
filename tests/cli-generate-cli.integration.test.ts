@@ -11,6 +11,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import express from 'express';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { ensureDistBuilt } from './helpers/dist.js';
 
 const CLI_ENTRY = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 const testRequire = createRequire(import.meta.url);
@@ -22,14 +23,6 @@ const PNPM_ARGS_PREFIX = process.platform === 'win32' ? ['/d', '/s', '/c', 'pnpm
 
 function pnpmArgs(args: string[]): string[] {
   return [...PNPM_ARGS_PREFIX, ...args];
-}
-
-async function ensureDistBuilt(): Promise<void> {
-  try {
-    await fs.access(CLI_ENTRY);
-  } catch {
-    throw new Error('dist/cli.js is missing; run `pnpm build` before invoking this integration test directly.');
-  }
 }
 
 async function hasBun(): Promise<boolean> {
@@ -132,7 +125,7 @@ describe('mcporter CLI integration', () => {
   let shutdown: (() => Promise<void>) | undefined;
 
   beforeAll(async () => {
-    await ensureDistBuilt();
+    await ensureDistBuilt(CLI_ENTRY);
     const app = express();
     app.use(express.json());
     const server = new McpServer({ name: 'context7', title: 'Context7 integration harness', version: '1.0.0' });

@@ -10,16 +10,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import express from 'express';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ensureDistBuilt } from './helpers/dist.js';
 
 const CLI_ENTRY = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
-
-async function ensureDistBuilt(): Promise<void> {
-  try {
-    await fs.access(CLI_ENTRY);
-  } catch {
-    throw new Error('dist/cli.js is missing; run `pnpm build` before invoking this integration test directly.');
-  }
-}
 
 function runCli(args: string[], configPath: string): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
@@ -52,7 +45,7 @@ describe('mcporter HTTP selector CLI integration', () => {
   const observedToolNames: string[] = [];
 
   beforeAll(async () => {
-    await ensureDistBuilt();
+    await ensureDistBuilt(CLI_ENTRY);
 
     const app = express();
     app.use(express.json());

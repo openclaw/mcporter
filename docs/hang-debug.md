@@ -74,15 +74,3 @@ child process, which mcporter will now terminate during shutdown.
 - Stdio servers have their stderr output suppressed by default; set
   `MCPORTER_STDIO_LOGS=1` to print their logs (they’re also surfaced whenever a
   child exits with a non-zero status).
-
-## Upstream Tracking
-
-- `@modelcontextprotocol/sdk` **1.21.0** is the latest release pulled into mcporter.
-- Open SDK issues related to stdio shutdown:
-  - [#579 StdioClientTransport does not follow the spec on close](https://github.com/modelcontextprotocol/typescript-sdk/issues/579)
-  - [#780 onerror listeners not removed after client close (stdio)](https://github.com/modelcontextprotocol/typescript-sdk/issues/780)
-  - [#1049 stdio client crashes when spawned server exits unexpectedly](https://github.com/modelcontextprotocol/typescript-sdk/issues/1049)
-
-We keep a local checkout of the SDK under `~/Projects/typescript-sdk/` so we can
-diff against upstream and craft repros/patches quickly. Any mcporter-specific
-workarounds live in `src/sdk-patches.ts` until the upstream fixes land.

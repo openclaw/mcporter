@@ -5,7 +5,6 @@ export interface ProcessStreamMeta {
   command?: string;
   code?: number | null;
   flushed?: boolean;
-  transport?: object;
   listeners: Array<{
     stream: NodeJS.EventEmitter & { removeListener?: (event: string, listener: (...args: unknown[]) => void) => void };
     event: string;
@@ -13,7 +12,6 @@ export interface ProcessStreamMeta {
   }>;
 }
 
-const transportBuffers = new WeakMap<object, ProcessStreamMeta>();
 const STDIO_LOGS_FORCED = process.env.MCPORTER_STDIO_LOGS === '1';
 export const STDIO_TRACE_ENABLED = process.env.MCPORTER_STDIO_TRACE === '1';
 
@@ -43,12 +41,6 @@ if (STDIO_TRACE_ENABLED) {
 }
 
 export function ignoreStdioEmitterError(): void {}
-export function getTransportStreamMeta(transport: object): ProcessStreamMeta | undefined {
-  return transportBuffers.get(transport);
-}
-export function registerTransportStreamMeta(meta: ProcessStreamMeta): void {
-  if (meta.transport) transportBuffers.set(meta.transport, meta);
-}
 
 export function flushStdioLogs(meta: ProcessStreamMeta): void {
   if (meta.flushed) return;
@@ -78,5 +70,4 @@ export function flushStdioLogs(meta: ProcessStreamMeta): void {
     console.log(meta.command ? `[mcporter] stdin to ${meta.command}` : '[mcporter] stdin to stdio server');
     for (const entry of meta.stdinChunks) console.log(entry);
   }
-  if (meta.transport) transportBuffers.delete(meta.transport);
 }

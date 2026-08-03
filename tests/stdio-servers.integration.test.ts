@@ -5,16 +5,9 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ensureDistBuilt } from './helpers/dist.js';
 
 const CLI_ENTRY = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
-
-async function ensureDistBuilt(): Promise<void> {
-  try {
-    await fs.access(CLI_ENTRY);
-  } catch {
-    throw new Error('dist/cli.js is missing; run `pnpm build` before invoking this integration test directly.');
-  }
-}
 
 async function runCli(args: string[], configPath: string): Promise<{ stdout: string; stderr: string }> {
   return await new Promise((resolve, reject) => {
@@ -45,7 +38,7 @@ describe('stdio MCP servers (filesystem + memory)', () => {
   const memoryServerScript = fileURLToPath(new URL('./fixtures/stdio-memory-server.mjs', import.meta.url));
 
   beforeAll(async () => {
-    await ensureDistBuilt();
+    await ensureDistBuilt(CLI_ENTRY);
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-stdio-e2e-'));
     fsRoot = path.join(tempDir, 'fs-root');
     await fs.mkdir(fsRoot, { recursive: true });

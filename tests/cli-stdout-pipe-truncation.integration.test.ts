@@ -6,6 +6,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ensureDistBuilt } from './helpers/dist.js';
 
 const CLI_ENTRY = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 const testRequire = createRequire(import.meta.url);
@@ -15,14 +16,6 @@ const STDIO_SERVER_MODULE = pathToFileURL(testRequire.resolve('@modelcontextprot
 // Payload comfortably larger than the OS pipe buffer (~64KB) so that a forced
 // exit which does not wait for stdout to drain would truncate the output.
 const LARGE_TEXT_BYTES = 200_000;
-
-async function ensureDistBuilt(): Promise<void> {
-  try {
-    await fs.access(CLI_ENTRY);
-  } catch {
-    throw new Error('dist/cli.js is missing; run `pnpm build` before invoking this integration test directly.');
-  }
-}
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
@@ -77,7 +70,7 @@ function runCliToFile(args: string[], configPath: string, outFile: string): Prom
 
 describe('mcporter broken pipe handling', () => {
   it('handles asynchronous EPIPE before runtime cleanup begins', async () => {
-    await ensureDistBuilt();
+    await ensureDistBuilt(CLI_ENTRY);
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-early-epipe-'));
     const preloadPath = path.join(tempDir, 'inject-epipe.cjs');
     await fs.writeFile(
@@ -121,7 +114,7 @@ describe.skipIf(process.platform === 'win32')('mcporter stdout pipe truncation o
   let configPath: string;
 
   beforeAll(async () => {
-    await ensureDistBuilt();
+    await ensureDistBuilt(CLI_ENTRY);
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-pipe-truncation-'));
     const serverScriptPath = path.join(tempDir, 'large-output-server.mjs');
     configPath = path.join(tempDir, 'config.json');
