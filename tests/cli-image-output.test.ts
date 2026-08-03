@@ -62,4 +62,23 @@ describe('saveCallImagesIfRequested', () => {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  it('uses binary extensions for unknown MIME types and avoids filename collisions', () => {
+    const wrapped = createCallResult({
+      content: [{ type: 'image', mimeType: 'application/octet-stream', data: 'aGVsbG8=' }],
+    });
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcporter-images-'));
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1234);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      fs.writeFileSync(path.join(tempDir, 'mcp-image-1234-1.bin'), 'existing');
+      fs.writeFileSync(path.join(tempDir, 'mcp-image-1234-1-2.bin'), 'existing');
+      saveCallImagesIfRequested(wrapped, tempDir);
+      expect(fs.readFileSync(path.join(tempDir, 'mcp-image-1234-1-3.bin'), 'utf8')).toBe('hello');
+    } finally {
+      nowSpy.mockRestore();
+      errorSpy.mockRestore();
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });

@@ -22,6 +22,80 @@ function fakeContext(instructions: string): ClientContext {
 }
 
 describe('runtime cache entries', () => {
+  it('returns connection metadata from the active entry and tolerates rejected cached contexts', async () => {
+    const runtime = await createRuntime({ servers: [] });
+    const cache = getRuntimeConnectionCache(runtime);
+    const context = fakeContext('metadata');
+    Object.assign(context.client, {
+      getNegotiatedProtocolVersion: () => '2026-07-28',
+      getProtocolEra: () => 'modern',
+    });
+    cache.clients.set('temp:active', {
+      server: 'temp',
+      promise: Promise.resolve(context),
+      allowCachedAuth: true,
+      disableOAuth: false,
+    });
+    cache.activeClientKeys.set('temp', 'temp:active');
+
+    await expect(runtime.getConnectionInfo?.(' temp ')).resolves.toEqual({
+      protocolVersion: '2026-07-28',
+      era: 'modern',
+    });
+
+    const rejected = Promise.reject(new Error('connection failed'));
+    rejected.catch(() => {});
+    cache.clients.set('broken:only', {
+      server: 'broken',
+      promise: rejected,
+      allowCachedAuth: true,
+      disableOAuth: false,
+    });
+    await expect(runtime.getInstructions?.('broken')).resolves.toBeUndefined();
+    await expect(runtime.getConnectionInfo?.('broken')).resolves.toBeUndefined();
+  });
+
+  it('reports unknown servers and ignores resets without a failed context', async () => {
+    const runtime = await createRuntime({ servers: [] });
+    const cache = getRuntimeConnectionCache(runtime);
+
+    await expect(runtime.connect('missing')).rejects.toThrow("Unknown MCP server 'missing'");
+    await expect(cache.resetConnectionOnError('missing', new Error('Connection closed'))).resolves.toBeUndefined();
+  });
+
+  it('warns when superseded connection retirement fails', async () => {
+    const warn = vi.fn();
+    const runtime = await createRuntime({
+      servers: [],
+      logger: { debug: vi.fn(), info: vi.fn(), warn, error: vi.fn() },
+    });
+    const cache = getRuntimeConnectionCache(runtime);
+    const rejected = Promise.reject(new Error('connection setup failed'));
+    rejected.catch(() => {});
+    cache.clients.set('temp:old', {
+      server: 'temp',
+      promise: rejected,
+      allowCachedAuth: true,
+      disableOAuth: false,
+    });
+
+    cache.supersedeDefinition('temp', () => {});
+
+    await vi.waitFor(() =>
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("Failed to close retired 'temp'"))
+    );
+  });
+
+  it('makes connection setup release callbacks idempotent', async () => {
+    const runtime = await createRuntime({ servers: [] });
+    const cache = getRuntimeConnectionCache(runtime);
+    const release = await (
+      cache as unknown as { enterConnectionSetup(server: string): Promise<() => void> }
+    ).enterConnectionSetup('temp');
+    release();
+    expect(() => release()).not.toThrow();
+  });
+
   it('reads instructions from the active cached entry', async () => {
     const runtime = await createRuntime({ servers: [] });
     const older = fakeContext('older instructions');

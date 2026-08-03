@@ -8,6 +8,28 @@ import { serializeDefinition } from '../src/cli-metadata.js';
 const FIXTURE_CONFIG = path.resolve(__dirname, 'fixtures', 'mcporter.json');
 
 describe('resolveServerDefinition HTTP selectors', () => {
+  it('rejects inline and file definitions without usable server entries', async () => {
+    await expect(resolveServerDefinition('{"name":"","command":"node"}')).rejects.toThrow(
+      "Inline server definition must include a 'name' field"
+    );
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-empty-definition-'));
+    try {
+      const missingMap = path.join(tempDir, 'missing-map.json');
+      const emptyMap = path.join(tempDir, 'empty-map.json');
+      await fs.writeFile(missingMap, '{}');
+      await fs.writeFile(emptyMap, '{"mcpServers":{}}');
+      await expect(resolveServerDefinition(missingMap)).rejects.toThrow('does not contain mcpServers');
+      await expect(resolveServerDefinition(emptyMap)).rejects.toThrow('does not define any servers');
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects unknown names after config discovery', async () => {
+    await expect(resolveServerDefinition('definitely-missing', FIXTURE_CONFIG)).rejects.toThrow(
+      "Unknown MCP server 'definitely-missing'"
+    );
+  });
   it('resolves configured servers by HTTPS URL', async () => {
     const { name } = await resolveServerDefinition('https://www.shadcn.io/api/mcp', FIXTURE_CONFIG);
     expect(name).toBe('shadcn');
@@ -185,5 +207,6 @@ describe('normalizeDefinition', () => {
     expect(definition.refresh).toBeUndefined();
     expect(definition.oauthCommand).toBeUndefined();
     expect(definition.logging).toEqual({ daemon: {} });
+    expect(normalizeDefinition({ name: 'no-daemon-log', command: 'node', logging: {} }).logging).toBeUndefined();
   });
 });

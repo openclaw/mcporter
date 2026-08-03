@@ -183,4 +183,21 @@ describe('analyzeConnectionError', () => {
       }
     );
   });
+
+  it('handles signal-only STDIO exits and non-Error values', () => {
+    expect(analyzeConnectionError(new Error('STDIO transport terminated by signal SIGKILL'))).toMatchObject({
+      kind: 'stdio-exit',
+      stdioSignal: 'SIGKILL',
+    });
+    expect(analyzeConnectionError('HTTP status 418')).toMatchObject({ kind: 'http', statusCode: 418 });
+    expect(analyzeConnectionError(null)).toMatchObject({ kind: 'other', rawMessage: '' });
+  });
+
+  it('extracts nested string status codes and tolerates malformed JSON', () => {
+    expect(analyzeConnectionError(new Error('{"error":{"code":"502"}}'))).toMatchObject({
+      kind: 'http',
+      statusCode: 502,
+    });
+    expect(analyzeConnectionError(new Error('{not-json'))).toMatchObject({ kind: 'other' });
+  });
 });

@@ -149,6 +149,78 @@ describe('nodeHttp1Fetch', () => {
     expect(response.status).toBe(204);
     expect(response.body).toBeNull();
   });
+
+  it('rejects unsupported protocols and already-aborted requests', async () => {
+    await expect(nodeHttp1Fetch('file:///tmp/example')).rejects.toThrow('only supports http: and https:');
+    const controller = new AbortController();
+    controller.abort();
+    await expect(nodeHttp1Fetch('http://127.0.0.1', { signal: controller.signal })).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+  });
+
+  it('turns POST redirects into bodyless GET requests for 302 responses', async () => {
+    const { baseUrl, close } = await serve((request, response) => {
+      if (request.url === '/start') {
+        response.writeHead(302, { location: '/target' });
+        response.end();
+        return;
+      }
+      let body = '';
+      request.setEncoding('utf8');
+      request.on('data', (chunk: string) => (body += chunk));
+      request.on('end', () => response.end(JSON.stringify({ method: request.method, body })));
+    });
+    cleanup = close;
+
+    const response = await nodeHttp1Fetch(new URL('/start', baseUrl), {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain', 'content-length': '7' },
+      body: 'payload',
+    });
+
+    await expect(response.json()).resolves.toEqual({ method: 'GET', body: '' });
+  });
+
+  it('rejects redirects when redirect mode is error', async () => {
+    const { baseUrl, close } = await serve((_request, response) => {
+      response.writeHead(301, { location: '/target' });
+      response.end();
+    });
+    cleanup = close;
+
+    await expect(nodeHttp1Fetch(baseUrl, { redirect: 'error' })).rejects.toThrow('Redirect encountered');
+  });
+
+  it.each([
+    ['search params', new URLSearchParams({ one: 'two' }), 'one=two'],
+    ['blob', new Blob(['blob-body']), 'blob-body'],
+    ['array buffer', new TextEncoder().encode('array-body').buffer, 'array-body'],
+    ['typed array', new TextEncoder().encode('view-body'), 'view-body'],
+  ])('materializes %s request bodies', async (_case, body, expected) => {
+    const { baseUrl, close } = await serve((request, response) => {
+      let received = '';
+      request.setEncoding('utf8');
+      request.on('data', (chunk: string) => (received += chunk));
+      request.on('end', () => response.end(received));
+    });
+    cleanup = close;
+
+    const response = await nodeHttp1Fetch(baseUrl, { method: 'POST', body: body as BodyInit });
+
+    expect(await response.text()).toBe(expected);
+  });
+
+  it('rejects streaming request bodies explicitly', async () => {
+    const body = new ReadableStream({
+      start(controller) {
+        controller.close();
+      },
+    });
+    await expect(nodeHttp1Fetch('http://127.0.0.1', { method: 'POST', body: body as BodyInit })).rejects.toThrow(
+      'does not support streaming request bodies'
+    );
+  });
 });
 
 type HttpHandler = (request: IncomingMessage, response: ServerResponse) => void;

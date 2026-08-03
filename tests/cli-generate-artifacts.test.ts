@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { bundleOutput, computeCompileTarget } from '../src/cli/generate/artifacts.js';
+import { bundleOutput, computeCompileTarget, resolveBundleTarget } from '../src/cli/generate/artifacts.js';
 
 const TMP_PREFIX = path.join(os.tmpdir(), 'mcporter-artifacts-test-');
 
@@ -48,5 +48,31 @@ describe('computeCompileTarget', () => {
       process.chdir(originalCwd);
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
+  });
+
+  it('honors an explicit compile target', () => {
+    expect(computeCompileTarget('dist/custom-cli', '/tmp/bundle.js', 'ignored')).toBe('dist/custom-cli');
+  });
+});
+
+describe('resolveBundleTarget', () => {
+  it('derives compile intermediates without overwriting the requested binary', () => {
+    expect(resolveBundleTarget({ bundle: 'dist/custom.js', compile: 'dist/custom', outputPath: 'source.ts' })).toBe(
+      'dist/custom.js'
+    );
+    expect(resolveBundleTarget({ compile: 'dist/custom.bin', outputPath: 'source.ts' })).toBe('dist/custom.js');
+    expect(resolveBundleTarget({ compile: 'dist/custom', outputPath: 'source.ts' })).toBe('dist/custom.js');
+    expect(resolveBundleTarget({ compile: true, outputPath: 'dist/source.ts' })).toMatch(
+      /tmp[/\\]mcporter-cli-bundles[/\\]source-\d+\.bundle\.js$/
+    );
+  });
+
+  it('rejects ambiguous and missing compile destinations', () => {
+    expect(() => resolveBundleTarget({ bundle: true, compile: true, outputPath: 'source.ts' })).toThrow(
+      '--bundle requires an explicit output path'
+    );
+    expect(() => resolveBundleTarget({ outputPath: 'source.ts' })).toThrow(
+      '--compile requires an explicit bundle target'
+    );
   });
 });

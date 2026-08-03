@@ -45,6 +45,81 @@ function createMockRuntime(
 }
 
 describe('createServerProxy', () => {
+  it('exposes direct call and listTools methods without proxy name mapping', async () => {
+    const runtime = createMockRuntime();
+    const proxy = createServerProxy(runtime as unknown as Runtime, 'direct', { cacheSchemas: false });
+
+    await proxy.call('literal.tool', { args: { value: 1 } });
+    await proxy.listTools({ includeSchema: true });
+
+    expect(runtime.callTool).toHaveBeenCalledWith('direct', 'literal.tool', { args: { value: 1 } });
+    expect(runtime.listTools).toHaveBeenCalledWith('direct', { includeSchema: true });
+  });
+
+  it('supports both custom mapper signatures and rejects symbol tool names', async () => {
+    const runtime = createMockRuntime();
+    const legacy = createServerProxy(
+      runtime as unknown as Runtime,
+      'mapped',
+      (property) => `legacy-${String(property)}`,
+      {
+        cacheSchemas: false,
+      }
+    ) as unknown as Record<string, () => Promise<CallResult>>;
+    await legacy.action!();
+
+    const configured = createServerProxy(runtime as unknown as Runtime, 'mapped', {
+      cacheSchemas: false,
+      mapPropertyToTool: (property) => `configured-${String(property)}`,
+    }) as unknown as Record<string, () => Promise<CallResult>>;
+    await configured.action!();
+
+    expect(runtime.callTool).toHaveBeenCalledWith('mapped', 'legacy-action', {});
+    expect(runtime.callTool).toHaveBeenCalledWith('mapped', 'configured-action', {});
+    const defaultProxy = createServerProxy(runtime as unknown as Runtime, 'mapped', { cacheSchemas: false });
+    expect(() => Reflect.get(defaultProxy, Symbol('tool'))).toThrow('Tool name must be a string');
+  });
+
+  it('applies defaults without arguments and rejects missing or excessive positional values', async () => {
+    const runtime = createMockRuntime({
+      defaults: {
+        type: 'object',
+        properties: { mode: { type: 'string', default: 'safe' } },
+      },
+      required: {
+        type: 'object',
+        properties: { first: { type: 'string' }, second: { type: 'string' } },
+        required: ['first', 'second'],
+      },
+    });
+    const proxy = createServerProxy(runtime as unknown as Runtime, 'mock', {
+      cacheSchemas: false,
+      initialSchemas: { invalid: null, defaults: { type: 'object', properties: { mode: { default: 'safe' } } } },
+    }) as unknown as Record<string, (...args: unknown[]) => Promise<CallResult>>;
+
+    await proxy.defaults!();
+    expect(runtime.callTool).toHaveBeenCalledWith('mock', 'defaults', { args: { mode: 'safe' } });
+
+    const discovered = createServerProxy(runtime as unknown as Runtime, 'mock', {
+      cacheSchemas: false,
+    }) as unknown as Record<string, (...args: unknown[]) => Promise<CallResult>>;
+    await expect(discovered.required!('one')).rejects.toThrow('Missing required arguments: second');
+    await expect(discovered.required!('one', 'two', 'three')).rejects.toThrow(
+      'Too many positional arguments for tool "required"'
+    );
+  });
+
+  it('passes positional arguments through as an array when metadata is unavailable', async () => {
+    const runtime = createMockRuntime({}, async () => Promise.reject(new Error('offline')));
+    const proxy = createServerProxy(runtime as unknown as Runtime, 'mock', {
+      cacheSchemas: false,
+    }) as unknown as Record<string, (...args: unknown[]) => Promise<CallResult>>;
+
+    await proxy.unknown!('one', 2);
+
+    expect(runtime.callTool).toHaveBeenCalledWith('mock', 'unknown', { args: ['one', 2] });
+  });
+
   it('maps camelCase property names to kebab-case tool names', async () => {
     const runtime = createMockRuntime({
       'resolve-library-id': {

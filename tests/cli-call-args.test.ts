@@ -62,6 +62,45 @@ describe('CLI call argument parsing', () => {
     );
   });
 
+  it('rejects conflicting tool names between flags and call syntax', async () => {
+    const { parseCallArguments } = await cliModulePromise;
+    expect(() => parseCallArguments(['--tool', 'delete', 'linear.create(issueId: "123")'])).toThrow(
+      /Conflicting tool names/
+    );
+  });
+
+  it('validates server and tool aliases as strings', async () => {
+    const { parseCallArguments } = await cliModulePromise;
+    expect(() => parseCallArguments(['linear', 'tool=42'])).toThrow("Argument 'tool' must be a string value");
+    expect(() => parseCallArguments(['selector', 'server=42'])).toThrow("Argument 'server' must be a string value");
+  });
+
+  it('parses runtime toggles and ignores compatibility flags', async () => {
+    const { parseCallArguments } = await cliModulePromise;
+    const parsed = parseCallArguments([
+      '',
+      'linear.search',
+      '--tail-log',
+      '--no-oauth',
+      '--yes',
+      '--raw-strings',
+      'id=123',
+    ]);
+    expect(parsed).toMatchObject({
+      tailLog: true,
+      disableOAuth: true,
+      rawStrings: true,
+      args: { id: '123' },
+    });
+  });
+
+  it('reports invalid JSON argument payloads and malformed long flags', async () => {
+    const { parseCallArguments } = await cliModulePromise;
+    expect(() => parseCallArguments(['linear.search', '--args', '{bad'])).toThrow('Unable to parse --args');
+    expect(() => parseCallArguments(['linear.search', '--json', '[]'])).toThrow('--json must be a JSON object');
+    expect(() => parseCallArguments(['linear.search', '---bad', 'value'])).toThrow(CliUsageError);
+  });
+
   it('surfaces a helpful error when function-call syntax cannot be parsed', async () => {
     const { parseCallArguments } = await cliModulePromise;
     expect(() => parseCallArguments(['linear.create_comment(oops)'])).toThrow(CliUsageError);

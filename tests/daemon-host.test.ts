@@ -345,9 +345,74 @@ describe('daemon host request handling', () => {
       consoleSpy.mockRestore();
     }
   });
+
+  it('logs successful and failed resource lifecycle requests through the daemon protocol', async () => {
+    const runtime = createFullRuntimeDouble();
+    const managedServers = createManagedServers();
+    const logged = { enabled: true, logAllServers: true, servers: new Set<string>() };
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const activity = new Map();
+
+    const request = (id: string, method: DaemonRequest['method'], params: Record<string, unknown>) =>
+      __testProcessRequest('', runtime as unknown as Runtime, managedServers, activity, metadata, logged, {
+        id,
+        method,
+        params,
+      } as DaemonRequest);
+
+    await request('call', 'callTool', { server: 'oauth', tool: 'ping' });
+    await request('list', 'listTools', { server: 'oauth' });
+    await request('resources', 'listResources', { server: 'oauth' });
+    await request('read', 'readResource', { server: 'oauth', uri: 'memo://one' });
+    await request('close', 'closeServer', { server: 'oauth' });
+
+    runtime.listResources.mockRejectedValueOnce(new Error('resources failed'));
+    runtime.readResource.mockRejectedValueOnce(new Error('read failed'));
+    runtime.close.mockRejectedValueOnce(new Error('close failed'));
+    await request('resources-error', 'listResources', { server: 'oauth' });
+    await request('read-error', 'readResource', { server: 'oauth', uri: 'memo://one' });
+    await request('close-error', 'closeServer', { server: 'oauth' });
+
+    const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    for (const fragment of [
+      'callTool success',
+      'listTools success',
+      'listResources success',
+      'readResource success',
+      'closeServer success',
+      'listResources error',
+      'readResource error',
+      'closeServer error',
+    ]) {
+      expect(output).toContain(fragment);
+    }
+  });
 });
 
 describeUnixSocket('runDaemonHost lifecycle', () => {
+  it('refuses to start when no configured server requires keep-alive', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-host-empty-'));
+    const configPath = path.join(dir, 'mcporter.json');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({ mcpServers: { local: { command: 'node', args: ['server.js'] } } }),
+      'utf8'
+    );
+    try {
+      await expect(
+        runDaemonHost({
+          socketPath: path.join(dir, 'daemon.sock'),
+          metadataPath: path.join(dir, 'daemon.json'),
+          configPath,
+          configExplicit: true,
+          rootDir: dir,
+        })
+      ).rejects.toThrow('No MCP servers require keep-alive');
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('claims a socket, serves split status requests, repairs metadata, and stops cleanly', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-host-lifecycle-'));
     const configPath = path.join(dir, 'mcporter.json');
@@ -357,7 +422,12 @@ describeUnixSocket('runDaemonHost lifecycle', () => {
       configPath,
       JSON.stringify({
         mcpServers: {
-          local: { command: 'node', args: ['unused-server.js'], lifecycle: 'keep-alive' },
+          local: {
+            command: 'node',
+            args: ['unused-server.js'],
+            lifecycle: 'keep-alive',
+            logging: { daemon: { enabled: true } },
+          },
         },
       }),
       'utf8'

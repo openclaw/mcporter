@@ -31,14 +31,14 @@ export default defineConfig({
       reporter: ['text-summary', 'json-summary', 'lcov'],
       // A ratchet, not a target. Calibrate against LINUX, where the CI coverage job
       // runs: the prior macOS-to-ubuntu deltas were 0.85/0.50/1.08/0.88 points.
-      // Current macOS coverage is 86.5/79.2/90.5/86.7, projecting to roughly
-      // 85.7/78.7/89.4/85.8 on ubuntu. These thresholds sit about 1 point below
+      // Current macOS coverage is 91.2/84.3/92.7/91.4, projecting to roughly
+      // 90.4/83.8/91.6/90.5 on ubuntu. These thresholds sit about 1 point below
       // that projection; raise them deliberately when coverage climbs.
       thresholds: {
-        statements: 84.5,
-        branches: 77.5,
-        functions: 88.5,
-        lines: 84.5,
+        statements: 89.4,
+        branches: 82.7,
+        functions: 90.5,
+        lines: 89.5,
       },
     },
   },

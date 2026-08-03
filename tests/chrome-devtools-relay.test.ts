@@ -1,4 +1,7 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { rewriteChromeDevtoolsArgsForRelay, shouldAttemptChromeDevtoolsRelay } from '../src/chrome-devtools-relay.js';
 
 const TOKEN = 'a'.repeat(64);
@@ -8,6 +11,7 @@ describe('chrome-devtools OpenClaw relay rewrite', () => {
   afterEach(() => {
     delete process.env.MCPORTER_DISABLE_CHROME_DEVTOOLS_RELAY;
     delete process.env.MCPORTER_CHROME_DEVTOOLS_RELAY_URL;
+    vi.unstubAllGlobals();
   });
 
   it('only considers autoConnect chrome-devtools commands', () => {
@@ -71,6 +75,67 @@ describe('chrome-devtools OpenClaw relay rewrite', () => {
     );
 
     expect(result).toEqual({ args: AUTO_ARGS, applied: false });
+  });
+
+  it('rejects malformed relay URLs', async () => {
+    await expect(
+      rewriteChromeDevtoolsArgsForRelay(
+        'npx',
+        AUTO_ARGS,
+        { MCPORTER_CHROME_DEVTOOLS_RELAY_URL: 'not a url' },
+        { readToken: () => TOKEN, probe: async () => true }
+      )
+    ).resolves.toEqual({ args: AUTO_ARGS, applied: false });
+  });
+
+  it('reads and validates the default relay secret from OpenClaw state', async () => {
+    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-relay-secret-'));
+    const credentials = path.join(stateDir, 'credentials');
+    await fs.mkdir(credentials);
+    const secretPath = path.join(credentials, 'browser-extension-relay.secret');
+    try {
+      await fs.writeFile(secretPath, 'invalid');
+      await expect(
+        rewriteChromeDevtoolsArgsForRelay(
+          'npx',
+          AUTO_ARGS,
+          { OPENCLAW_STATE_DIR: stateDir },
+          { probe: async () => true }
+        )
+      ).resolves.toEqual({ args: AUTO_ARGS, applied: false });
+
+      await fs.writeFile(secretPath, ` ${TOKEN}\n`);
+      const result = await rewriteChromeDevtoolsArgsForRelay(
+        'npx',
+        AUTO_ARGS,
+        { OPENCLAW_STATE_DIR: stateDir },
+        { probe: async () => true }
+      );
+      expect(result.applied).toBe(true);
+    } finally {
+      await fs.rm(stateDir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses the default authenticated probe and handles network failures', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('{}', { status: 200 }))
+      .mockRejectedValueOnce(new Error('offline'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      rewriteChromeDevtoolsArgsForRelay('npx', AUTO_ARGS, {}, { readToken: () => TOKEN })
+    ).resolves.toMatchObject({ applied: true });
+    await expect(rewriteChromeDevtoolsArgsForRelay('npx', AUTO_ARGS, {}, { readToken: () => TOKEN })).resolves.toEqual({
+      args: AUTO_ARGS,
+      applied: false,
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'http://127.0.0.1:18799/json/version',
+      expect.objectContaining({ headers: { Authorization: `Bearer ${TOKEN}` }, signal: expect.any(AbortSignal) })
+    );
   });
 
   it('keeps autoConnect when the relay secret is missing', async () => {

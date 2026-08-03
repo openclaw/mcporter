@@ -110,12 +110,14 @@ describe('generate helpers', () => {
   });
 
   it('derives helper metadata', () => {
+    expect(getEnumValues(null)).toBeUndefined();
     expect(getEnumValues({ enum: ['a', 'b', 1] })).toEqual(['a', 'b']);
     expect(getEnumValues({ type: 'array', items: { enum: ['x', 'y'] } })).toEqual(['x', 'y']);
     expect(getEnumValues({ type: 'string' })).toBeUndefined();
 
     expect(getDescriptorDefault({ default: 'inline' })).toBe('inline');
     expect(getDescriptorDefault({ type: 'array', default: ['alpha'] })).toEqual(['alpha']);
+    expect(getDescriptorDefault(null)).toBeUndefined();
 
     expect(buildPlaceholder('myPath', 'string', ['s1', 's2'])).toBe('<my-path:s1|s2>');
     expect(buildPlaceholder('createdAt', 'string', undefined, 'iso-8601')).toBe('<created-at:iso-8601>');
@@ -133,22 +135,65 @@ describe('generate helpers', () => {
     expect(inferType({ type: ['null', 'array'] })).toBe('array');
     expect(inferType({ type: 'object' })).toBe('object');
     expect(inferType({})).toBe('unknown');
+    expect(inferType(null)).toBe('unknown');
+    expect(inferType({ type: ['null', 'future'] })).toBe('unknown');
 
     expect(inferArrayItemType({ type: 'array', items: { type: 'integer' } })).toBe('number');
     expect(inferArrayItemType({ type: 'array', items: { type: ['null', 'boolean'] } })).toBe('boolean');
     expect(inferArrayItemType({ type: 'array', items: { type: 'object' } })).toBe('object');
+    expect(inferArrayItemType(null)).toBe('unknown');
+    expect(inferArrayItemType({ type: 'string' })).toBe('unknown');
+    expect(inferArrayItemType({ type: 'array', items: { type: ['null', 'future'] } })).toBe('unknown');
 
     expect(getDescriptorDescription({ description: 'hi' })).toBe('hi');
     expect(getDescriptorDescription({})).toBeUndefined();
+    expect(getDescriptorDescription(null)).toBeUndefined();
     expect(getDescriptorFormatHint({ format: 'uuid' })).toEqual({ display: 'UUID', slug: 'uuid' });
     expect(getDescriptorFormatHint({ description: 'Provide an ISO format timestamp' })?.slug).toBe('iso-8601');
     expect(getDescriptorFormatHint({ description: 'plain string' })).toBeUndefined();
+    expect(getDescriptorFormatHint(null)).toBeUndefined();
+    expect(getDescriptorFormatHint({ format: 'uri-template' })).toEqual({
+      display: 'Uri Template',
+      slug: 'uri-template',
+    });
 
     expect(toProxyMethodName('some-tool_name')).toBe('someToolName');
     expect(toCliOption('inputValue')).toBe('input-value');
   });
 
   it('picks example literals and fallbacks consistently', () => {
+    const cyclic: unknown[] = [];
+    cyclic.push(cyclic);
+    expect(
+      pickExampleLiteral({
+        type: 'array',
+        defaultValue: cyclic,
+        property: 'items',
+        cliName: 'items',
+        required: false,
+        placeholder: '<items>',
+      })
+    ).toBeUndefined();
+    expect(
+      pickExampleLiteral({
+        type: 'array',
+        exampleValue: ' , ',
+        property: 'items',
+        cliName: 'items',
+        required: false,
+        placeholder: '<items>',
+      })
+    ).toBeUndefined();
+    expect(
+      pickExampleLiteral({
+        type: 'string',
+        exampleValue: '42',
+        property: 'value',
+        cliName: 'value',
+        required: false,
+        placeholder: '<value>',
+      })
+    ).toBe('42');
     expect(
       pickExampleLiteral({
         type: 'number',
@@ -243,6 +288,15 @@ describe('generate helpers', () => {
         placeholder: '<issue-id>',
       })
     ).toBe('"example-id"');
+    expect(
+      buildFallbackLiteral({
+        type: 'string',
+        property: 'callbackUrl',
+        cliName: 'callback-url',
+        required: true,
+        placeholder: '<callback-url>',
+      })
+    ).toBe('"https://example.com"');
     expect(
       buildFallbackLiteral({
         type: 'array',

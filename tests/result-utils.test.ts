@@ -422,6 +422,35 @@ describe('createCallResult resource extraction', () => {
 });
 
 describe('createCallResult structured accessors', () => {
+  it('stops envelope traversal at the documented wrapper depth', () => {
+    const tooDeep = [{ type: 'text', text: 'hidden' }];
+    const result = createCallResult({ raw: { result: { raw: { content: tooDeep } } } });
+    expect(result.content()).toBeNull();
+    expect(result.text()).toBeNull();
+  });
+
+  it('collects bare JSON strings while ignoring malformed and unknown content entries', () => {
+    const result = createCallResult({
+      content: [
+        '{"ok":true}',
+        'not-json',
+        null,
+        { value: 'missing type' },
+        { type: 'audio', data: 'ignored' },
+        { type: 'text', text: 42 },
+        { type: 'resource' },
+      ],
+    });
+    expect(result.json()).toEqual({ ok: true });
+    expect(result.text()).toBeNull();
+  });
+
+  it('parses raw and structured JSON strings but rejects structured primitives', () => {
+    expect(createCallResult('{"raw":true}').json()).toEqual({ raw: true });
+    expect(createCallResult({ structuredContent: '{"structured":true}' }).json()).toEqual({ structured: true });
+    expect(createCallResult({ structuredContent: 42 }).json()).toBeNull();
+  });
+
   it('content() returns nested raw content array', () => {
     const nested = [{ type: 'text', text: 'Hello' }];
     const response = {
