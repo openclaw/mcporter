@@ -349,15 +349,22 @@ function formatMcporterInstallSpec(installSpec: string): string {
 }
 
 function resolveDependencyDirectory(specifier: (typeof BUNDLED_DEPENDENCIES)[number]): string | undefined {
+  if (specifier === 'mcporter') {
+    return packageRoot;
+  }
   try {
-    if (specifier === 'mcporter') {
-      return packageRoot;
+    const entryPath = localRequire.resolve(specifier);
+    let candidate = path.dirname(entryPath);
+    while (candidate !== path.dirname(candidate)) {
+      if (fsSync.existsSync(path.join(candidate, 'package.json'))) {
+        return candidate;
+      }
+      candidate = path.dirname(candidate);
     }
-    const pkgPath = localRequire.resolve(path.join(specifier, 'package.json'));
-    return path.dirname(pkgPath);
   } catch {
     return undefined;
   }
+  return undefined;
 }
 
 async function linkOrCopyDependency(sourceDir: string, targetDir: string): Promise<void> {
@@ -396,3 +403,21 @@ function resolveUniquePath(directory: string, baseName: string): string {
   }
   return attempt;
 }
+
+// Kept off the package export map: these hooks let tests drive platform-specific
+// filesystem and subprocess failures that cannot be induced portably through the CLI.
+export const artifactsTestHooks = {
+  buildEsmRequireBanner,
+  createLocalDependencyAliasPlugin,
+  ensureBundlerDeps,
+  findMissingBundlerDeps,
+  formatMcporterInstallSpec,
+  installPublishedBundlerDeps,
+  isExpectedNodeBuiltinWarning,
+  linkOrCopyDependency,
+  outputFormatForTarget,
+  resolveDependencyDirectory,
+  resolveLocalDependency,
+  resolveUniquePath,
+  sanitizeFileName,
+};
