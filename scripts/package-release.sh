@@ -3,7 +3,13 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 VERSION=${1:-}
-RUNNER=${MCP_RUNNER:-"$ROOT/runner"}
+# The repo's ./runner wrapper was removed; run build steps directly unless a
+# caller supplies one via MCP_RUNNER (scripts/test-release.sh passes `env`).
+RUNNER=${MCP_RUNNER:-}
+if [[ -z "$RUNNER" && -x "$ROOT/runner" ]]; then
+  RUNNER="$ROOT/runner"
+fi
+run_build() { if [[ -n "$RUNNER" ]]; then "$RUNNER" "$@"; else "$@"; fi; }
 OUT_DIR=${MCPORTER_RELEASE_OUT_DIR:-"$ROOT/dist-release"}
 TEAM_ID=FWJYW4S8P8
 EXPECTED_AUTHORITY="Developer ID Application: OpenClaw Foundation ($TEAM_ID)"
@@ -82,8 +88,8 @@ mkdir -p "$PAYLOAD" "$BUILD_ROOT"
 # dist/ is ignored, so never trust whatever happens to be present in the
 # checkout. Finish the credential-free npm payload before any signing or Apple
 # submission, then carry those exact bytes through every later gate.
-"$RUNNER" pnpm clean
-"$RUNNER" pnpm build
+run_build pnpm clean
+run_build pnpm build
 for required_file in dist/cli.js dist/cli.d.ts dist/index.js dist/index.d.ts; do
   [[ -s "$required_file" ]] || {
     echo "required npm package output is missing: $required_file" >&2
@@ -95,7 +101,7 @@ done
   exit 1
 }
 
-NPM_CONFIG_IGNORE_SCRIPTS=true "$RUNNER" pnpm pack --pack-destination "$PAYLOAD"
+NPM_CONFIG_IGNORE_SCRIPTS=true run_build pnpm pack --pack-destination "$PAYLOAD"
 npm_archive="mcporter-${release_version}.tgz"
 [[ -f "$PAYLOAD/$npm_archive" ]] || {
   echo "pnpm pack did not create $npm_archive" >&2
@@ -112,7 +118,7 @@ for index in "${!architectures[@]}"; do
   archive_name="mcporter_${release_version}_darwin_${release_arch}.tar.gz"
   mkdir -p "$build_dir"
 
-  "$RUNNER" bun scripts/build-bun.ts --target "$target" --output "$binary"
+  run_build bun scripts/build-bun.ts --target "$target" --output "$binary"
   MCPORTER_OFFICIAL_RELEASE=1 "$ROOT/scripts/codesign-native.sh" "$binary"
   tar -czf "$PAYLOAD/$archive_name" -C "$build_dir" mcporter
 done
