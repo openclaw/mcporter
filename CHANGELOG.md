@@ -1,40 +1,45 @@
 # mcporter Changelog
 
-## [0.12.5] - Unreleased
+## [0.13.0] - 2026-08-02
+
+### MCP 2.0
+
+- Support MCP protocol revision `2026-07-28` — the stateless core, `server/discover` negotiation, per-request identity, and multi round-trip requests — while continuing to speak every legacy revision from `2024-10-07` to `2025-11-25`.
+- Negotiate each server automatically: probe with `server/discover`, fall back to the legacy `initialize` handshake, and keep stdio probing in-process instead of spawning a second server.
+- Add per-server `protocolVersion` / `protocol_version` overrides for `auto`, `legacy`, and pinned `2026-07-28` connections, surfaced by `mcporter list <server> --verbose`.
+- Bridge both generations at once through `mcporter serve`: a single endpoint answers 2026-07-28 and 2025-era clients, preserving primitive tool output schemas and projecting structured results per era.
+- Support interactive form and URL elicitation in terminals across legacy and 2026-07-28 multi-round-trip servers, with immediate declines and a terminal hint in headless or daemon-managed contexts.
+- Attribute elicitation prompts and public handler callbacks to their requesting server, and neutralize terminal control sequences in server-supplied prompt text.
+- Migrate the runtime and serve bridges to the MCP TypeScript SDK v2 client and server packages, keeping SDK v1 only as a legacy test fixture.
 
 ### CLI
 
-- Keep listing and calling usable when a server advertises the same tool name twice or two names that map to one proxy method.
-- Follow `resources/list` cursors automatically so paginated MCP resources are returned in full.
-- Raise Node's untouched Happy-Eyeballs connect-attempt timeout from 250 ms to 1500 ms while preserving explicit user overrides, including quoted `NODE_OPTIONS` values.
-- Keep replay recordings usable across MCP protocol-version and mcporter client-version changes.
-- Preserve protocol-version pins and supported snake_case config aliases when generating or regenerating standalone CLIs.
-- Support MCP protocol revision 2026-07-28 with automatic modern/legacy negotiation while preserving legacy server compatibility.
-- Support interactive form and URL elicitation in terminals across legacy and 2026-07-28 multi-round-trip servers, with immediate declines and a terminal hint in headless or daemon-managed contexts.
-- Attribute elicitation prompts and public handler callbacks to their requesting server, and neutralize terminal control sequences in server-supplied prompt text.
-- Close bridge subscription handlers before the HTTP listener so active `subscriptions/listen` streams cannot deadlock shutdown.
-- Restore bounded stdio process-tree teardown with pre-close PID capture, SIGTERM/SIGKILL escalation, and explicit stream destruction.
-- Cancel in-flight connection handshakes during `runtime.close()` instead of waiting for the full negotiation timeout.
-- Canonicalize decoded bridge server paths so percent-encoded aliases share one handler instead of allocating permanent duplicates.
 - Keep legacy SSE fallback on legacy negotiation and preserve pinned modern-version negotiation errors instead of masking them with a secondary SSE failure.
 - Recover legacy stdio servers that exit on modern discovery by retrying initialization once with a fresh legacy-mode process.
 - Use the SDK's 60-second stdio discovery timeout for slow-starting modern servers, configurable with `MCPORTER_STDIO_PROBE_TIMEOUT_MS`.
+- Keep listing and calling usable when a server advertises the same tool name twice or two names that map to one proxy method.
+- Follow `resources/list` cursors automatically so paginated MCP resources are returned in full, and stop when a server repeats its cursor instead of churning duplicate pages.
+- Raise Node's untouched Happy-Eyeballs connect-attempt timeout from 250 ms to 1500 ms while preserving explicit user overrides, including quoted `NODE_OPTIONS` values.
+- Restore bounded stdio process-tree teardown with pre-close PID capture, SIGTERM/SIGKILL escalation, and explicit stream destruction.
+- Cancel in-flight connection handshakes during `runtime.close()` instead of waiting for the full negotiation timeout.
+- Close bridge subscription handlers before the HTTP listener so active `subscriptions/listen` streams cannot deadlock shutdown.
+- Canonicalize decoded bridge server paths so percent-encoded aliases share one handler instead of allocating permanent duplicates.
+- Preserve protocol-version pins and supported snake_case config aliases when generating or regenerating standalone CLIs.
+- Normalize `--compile` bundle targets consistently instead of returning a platform-native path only when an extension was supplied.
+- Resolve bundled dependency roots for packages whose `package.json` is hidden behind export maps, avoiding an unnecessary npm fallback.
+
+### Record and replay
+
+- Keep replay recordings usable across MCP protocol-version and mcporter client-version changes.
 - Preserve transport capabilities and request metadata through recording wrappers so modern HTTP cancellation remains stream-based.
 - Replay accepted modern elicitation rounds with the caller's handler instead of unconditionally declining them.
-- Preserve primitive tool output schemas through `mcporter serve` and project structured results correctly for both legacy and modern clients.
-- Stop resource pagination when a server repeats its cursor, returning the bounded partial result without duplicate-page churn.
 - Re-emit recorded progress, logging, and list-change notifications during replay in their recorded order relative to responses.
-
-### Config
-
-- Add per-server `protocolVersion` / `protocol_version` overrides for `auto`, `legacy`, and pinned `2026-07-28` connections.
-- Add per-server `oauthClientMetadataUrl` / `oauth_client_metadata_url` configuration for Client ID Metadata Documents, with SDK-managed DCR fallback.
 
 ### OAuth
 
-- Validate RFC 9207 authorization-response issuers before redeeming callback codes, with server-specific mismatch errors.
+- Validate RFC 9207 authorization-response issuers before redeeming callback codes, with server-specific mismatch errors, and preserve that validation while OAuth traffic is wrapped in recording mode.
 - Bind persisted tokens and client registrations to their authorization-server issuer across interactive and silent refresh flows, discarding mismatches before credentials are transmitted and stamping successful refreshes.
-- Preserve RFC 9207 authorization-response issuer validation while OAuth traffic is wrapped in recording mode.
+- Add per-server `oauthClientMetadataUrl` / `oauth_client_metadata_url` configuration for Client ID Metadata Documents, with SDK-managed DCR fallback.
 - Reject invalid Client ID Metadata Document configuration before binding the loopback OAuth callback listener.
 - Stop reflecting authorization-server callback errors into executable HTML or terminal-facing error messages.
 - Validate imported and persisted OAuth credential shapes so malformed issuer stamps trigger reauthorization instead of runtime crashes.
@@ -43,14 +48,16 @@
 
 - Export connection metadata and the named option/result types reachable through the package-root API.
 
+### Testing
+
+- Add committed MCP 2025-11-25 and 2026-07-28 fixture servers with end-to-end CLI and bridge coverage over stdio and Streamable HTTP.
+- Add an opt-in live conformance suite covering four protocol revisions against public servers, scheduled weekly rather than gating pull requests.
+- Enforce coverage thresholds in CI, publishing the summary and report from the Linux job.
+- Stop the test suite writing into the developer's real `~/.mcporter` by isolating `HOME` and every XDG root.
+
 ### Docs
 
 - Rewrite the README around a verified quick start and move protocol and daemon details into focused guides.
-
-### Tooling / Dependencies
-
-- Migrate mcporter runtime and serve bridges to the MCP TypeScript SDK v2 client/server packages while retaining SDK v1 as a legacy test fixture.
-- Add committed MCP 2025-11-25 and 2026-07-28 fixture servers with end-to-end CLI and bridge coverage over stdio and Streamable HTTP.
 
 ## [0.12.4] - 2026-08-02
 
