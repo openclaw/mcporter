@@ -302,11 +302,12 @@ assert_fails env \
   "$ROOT/scripts/package-release.sh" "$TAG"
 [[ ! -e "$rejected_out" ]] || fail 'rejected notarization published release output'
 
-# The happy path exercises dual builds, signing/notary calls, packaging, provenance,
-# basename-only checksums, and the token-free exact-inventory verifier.
+# The happy path exercises the packager's default runner path, dual builds,
+# signing/notary calls, packaging, provenance, basename-only checksums, and the
+# token-free exact-inventory verifier.
 : >"$MOCK_LOG"
 release_out="$WORK/release-output"
-MCP_RUNNER=env \
+env -u MCP_RUNNER \
   MCPORTER_RELEASE_OUT_DIR="$release_out" \
   MAC_RELEASE_CODESIGN_IDENTITY="$EXPECTED_IDENTITY" \
   NOTARYTOOL_KEYCHAIN_PROFILE=mock-profile \
