@@ -1,3 +1,4 @@
+import { DEFAULT_REQUEST_TIMEOUT_MSEC, SdkErrorCode } from '@modelcontextprotocol/client';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -10,6 +11,8 @@ import { configureAutoSelectFamilyAttemptTimeout } from '../network-family-autos
 import { isProcessRunning } from '../process-utils.js';
 import { createRuntime, type Runtime } from '../runtime.js';
 import { createNonInteractiveElicitationResponder, NON_INTERACTIVE_ELICITATION_HINT } from '../runtime/elicitation.js';
+import { OAuthTimeoutError, resolveOAuthTimeoutFromEnv } from '../runtime/oauth.js';
+import { raceWithTimeout } from '../runtime/utils.js';
 import { collectConfigLayers, normalizeConfigLayers, statConfigMtime } from './config-layers.js';
 import { hashDaemonDefinitions } from './definition-hash.js';
 import {
@@ -20,15 +23,19 @@ import {
   logEvent,
   shouldLogServer,
 } from './log-context.js';
-import type {
-  CallToolParams,
-  CloseServerParams,
-  DaemonRequest,
-  DaemonResponse,
-  ListResourcesParams,
-  ListToolsParams,
-  ReadResourceParams,
-  StatusResult,
+import {
+  DAEMON_OPERATION_TIMEOUT_CODE,
+  DAEMON_PROGRESS_INTERVAL_MS,
+  DAEMON_PROTOCOL_VERSION,
+  encodeDaemonFrame,
+  type DaemonRequest,
+  type DaemonResponse,
+  type CallToolParams,
+  type CloseServerParams,
+  type ListResourcesParams,
+  type ListToolsParams,
+  type ReadResourceParams,
+  type StatusResult,
 } from './protocol.js';
 import {
   buildErrorResponse,
@@ -168,6 +175,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
           configPath: options.configPath,
           configLayers,
           socketPath: options.socketPath,
+          protocolVersion: DAEMON_PROTOCOL_VERSION,
           startedAt,
           logPath: options.logPath ?? null,
           configMtimeMs,
@@ -218,6 +226,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
     });
     await writeJsonFile(options.metadataPath, {
       pid: process.pid,
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
       socketPath: options.socketPath,
       configPath: options.configPath,
       configLayers,
@@ -287,6 +296,7 @@ function metadataFromStatus(
   fallbackConfigLayers: Array<{ path: string; mtimeMs: number | null }>
 ): {
   pid: number;
+  protocolVersion?: number;
   socketPath: string;
   configPath: string;
   configLayers?: StatusResult['configLayers'];
@@ -297,6 +307,7 @@ function metadataFromStatus(
 } {
   return {
     pid: status.pid,
+    protocolVersion: status.protocolVersion,
     socketPath: status.socketPath,
     configPath: status.configPath,
     configLayers: status.configLayers && status.configLayers.length > 0 ? status.configLayers : fallbackConfigLayers,
@@ -475,6 +486,7 @@ async function handleSocketRequest(
     configLayers: Array<{ path: string; mtimeMs: number | null }>;
     configMtimeMs: number | null;
     socketPath: string;
+    protocolVersion?: number;
     startedAt: number;
     logPath: string | null;
     definitionHash?: string;
@@ -483,16 +495,23 @@ async function handleSocketRequest(
   shutdown: () => Promise<void>,
   preParsedRequest?: DaemonRequest
 ): Promise<void> {
-  const { response, shouldShutdown } = await processRequestWithNotices(
-    rawPayload,
-    runtime,
-    managedServers,
-    activity,
-    metadata,
-    logContext,
-    preParsedRequest
-  );
-  socket.write(JSON.stringify(response), () => {
+  const stopProgress = startProgressFrames(socket, preParsedRequest);
+  let response: DaemonResponse;
+  let shouldShutdown: boolean;
+  try {
+    ({ response, shouldShutdown } = await processRequestWithNotices(
+      rawPayload,
+      runtime,
+      managedServers,
+      activity,
+      metadata,
+      logContext,
+      preParsedRequest
+    ));
+  } finally {
+    stopProgress();
+  }
+  socket.write(encodeDaemonFrame(response), () => {
     socket.end(() => {
       if (shouldShutdown) {
         void shutdown();
@@ -501,11 +520,54 @@ async function handleSocketRequest(
   });
 }
 
+function startProgressFrames(socket: net.Socket, request?: DaemonRequest): () => void {
+  // Protocol v1 clients parse the entire socket as one JSON value. Only clients
+  // that explicitly advertise v2 may receive additional newline-delimited frames.
+  if (
+    request?.protocolVersion !== DAEMON_PROTOCOL_VERSION ||
+    typeof request.progressIntervalMs !== 'number' ||
+    !Number.isFinite(request.progressIntervalMs) ||
+    request.progressIntervalMs <= 0
+  ) {
+    return () => {};
+  }
+  const intervalMs = Math.min(request.progressIntervalMs, DAEMON_PROGRESS_INTERVAL_MS);
+  const emit = (): void => {
+    if (!socket.destroyed && !socket.writableEnded) {
+      socket.write(encodeDaemonFrame({ type: 'progress', id: request.id }));
+    }
+  };
+  emit();
+  const timer = setInterval(emit, intervalMs);
+  timer.unref();
+  return () => clearInterval(timer);
+}
+
 function normalizeDaemonDisableOAuth(value: boolean | undefined): boolean {
   // Daemon messages are independent requests. Omission means the caller did
   // not request OAuth suppression, so a previous --no-oauth pooled transport
   // must not make later ordinary calls inherit the no-OAuth posture.
   return value === true;
+}
+
+function operationCeilingMs(requestTimeoutMs?: number): number {
+  const requestPhase =
+    typeof requestTimeoutMs === 'number' && Number.isFinite(requestTimeoutMs) && requestTimeoutMs > 0
+      ? requestTimeoutMs
+      : DEFAULT_REQUEST_TIMEOUT_MSEC;
+  return resolveOAuthTimeoutFromEnv() + requestPhase;
+}
+
+function daemonRuntimeErrorCode(error: unknown): string {
+  const errorCode = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
+  if (
+    error instanceof OAuthTimeoutError ||
+    errorCode === SdkErrorCode.RequestTimeout ||
+    (error instanceof Error && error.message === 'Timeout')
+  ) {
+    return DAEMON_OPERATION_TIMEOUT_CODE;
+  }
+  return 'runtime_error';
 }
 
 async function processRequestWithNotices(
@@ -532,6 +594,7 @@ async function processRequest(
     configLayers: Array<{ path: string; mtimeMs: number | null }>;
     configMtimeMs: number | null;
     socketPath: string;
+    protocolVersion?: number;
     startedAt: number;
     logPath: string | null;
     definitionHash?: string;
@@ -570,11 +633,14 @@ async function processRequest(
           logEvent(logContext, `callTool start server=${params.server} tool=${params.tool}`);
         }
         try {
-          const result = await runtime.callTool(params.server, params.tool, {
-            args: params.args ?? {},
-            timeoutMs: params.timeoutMs,
-            disableOAuth: normalizeDaemonDisableOAuth(params.disableOAuth),
-          });
+          const result = await raceWithTimeout(
+            runtime.callTool(params.server, params.tool, {
+              args: params.args ?? {},
+              timeoutMs: params.timeoutMs,
+              disableOAuth: normalizeDaemonDisableOAuth(params.disableOAuth),
+            }),
+            operationCeilingMs(params.timeoutMs)
+          );
           markActivity(params.server, activity);
           if (loggable) {
             logEvent(logContext, `callTool success server=${params.server} tool=${params.tool}`);
@@ -597,12 +663,16 @@ async function processRequest(
           logEvent(logContext, `listTools start server=${params.server}`);
         }
         try {
-          const result = await runtime.listTools(params.server, {
-            includeSchema: params.includeSchema,
-            autoAuthorize: resolveDaemonListToolsAutoAuthorize(params, definition),
-            allowCachedAuth: params.allowCachedAuth ?? true,
-            disableOAuth: normalizeDaemonDisableOAuth(params.disableOAuth),
-          });
+          const result = await raceWithTimeout(
+            runtime.listTools(params.server, {
+              includeSchema: params.includeSchema,
+              autoAuthorize: resolveDaemonListToolsAutoAuthorize(params, definition),
+              allowCachedAuth: params.allowCachedAuth ?? true,
+              disableOAuth: normalizeDaemonDisableOAuth(params.disableOAuth),
+              timeoutMs: params.timeoutMs,
+            }),
+            operationCeilingMs(params.timeoutMs)
+          );
           markActivity(params.server, activity);
           if (loggable) {
             logEvent(logContext, `listTools success server=${params.server}`);
@@ -624,11 +694,14 @@ async function processRequest(
           logEvent(logContext, `listResources start server=${params.server}`);
         }
         try {
-          const result = await runtime.listResources(params.server, {
-            ...params.params,
-            allowCachedAuth: params.allowCachedAuth,
-            disableOAuth: normalizeDaemonDisableOAuth(params.disableOAuth),
-          });
+          const result = await raceWithTimeout(
+            runtime.listResources(params.server, {
+              ...params.params,
+              allowCachedAuth: params.allowCachedAuth,
+              disableOAuth: normalizeDaemonDisableOAuth(params.disableOAuth),
+            }),
+            operationCeilingMs()
+          );
           markActivity(params.server, activity);
           if (loggable) {
             logEvent(logContext, `listResources success server=${params.server}`);
@@ -650,10 +723,13 @@ async function processRequest(
           logEvent(logContext, `readResource start server=${params.server} uri=${params.uri}`);
         }
         try {
-          const result = await runtime.readResource(params.server, params.uri, {
-            allowCachedAuth: params.allowCachedAuth,
-            disableOAuth: normalizeDaemonDisableOAuth(params.disableOAuth),
-          });
+          const result = await raceWithTimeout(
+            runtime.readResource(params.server, params.uri, {
+              allowCachedAuth: params.allowCachedAuth,
+              disableOAuth: normalizeDaemonDisableOAuth(params.disableOAuth),
+            }),
+            operationCeilingMs()
+          );
           markActivity(params.server, activity);
           if (loggable) {
             logEvent(logContext, `readResource success server=${params.server}`);
@@ -675,7 +751,7 @@ async function processRequest(
           logEvent(logContext, `closeServer start server=${params.server}`);
         }
         try {
-          await runtime.close(params.server);
+          await raceWithTimeout(runtime.close(params.server), operationCeilingMs());
           activity.set(params.server, { connected: false });
           if (loggable) {
             logEvent(logContext, `closeServer success server=${params.server}`);
@@ -695,6 +771,7 @@ async function processRequest(
       case 'status': {
         const result: StatusResult = {
           pid: process.pid,
+          protocolVersion: metadata.protocolVersion ?? DAEMON_PROTOCOL_VERSION,
           startedAt: metadata.startedAt,
           configPath: metadata.configPath,
           configLayers: metadata.configLayers,
@@ -728,7 +805,7 @@ async function processRequest(
     }
   } catch (error) {
     return {
-      response: buildErrorResponse(id, 'runtime_error', error),
+      response: buildErrorResponse(id, daemonRuntimeErrorCode(error), error),
       shouldShutdown: false,
     };
   }
@@ -769,5 +846,32 @@ export async function __testProcessRequest(
     metadata,
     logContext,
     preParsedRequest
+  );
+}
+
+export async function __testHandleSocketRequest(
+  socket: net.Socket,
+  request: DaemonRequest,
+  runtime: Runtime,
+  managedServers: Map<string, ServerDefinition>,
+  metadata: {
+    configPath: string;
+    configLayers: Array<{ path: string; mtimeMs: number | null }>;
+    configMtimeMs: number | null;
+    socketPath: string;
+    startedAt: number;
+    logPath: string | null;
+  }
+): Promise<void> {
+  await handleSocketRequest(
+    JSON.stringify(request),
+    socket,
+    runtime,
+    managedServers,
+    new Map(),
+    { ...metadata, protocolVersion: DAEMON_PROTOCOL_VERSION },
+    createLogContext({ enabled: false, logAllServers: false, servers: new Set() }),
+    async () => {},
+    request
   );
 }

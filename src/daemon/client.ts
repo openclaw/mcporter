@@ -6,6 +6,12 @@ import { withFileLock } from '../fs-json.js';
 import { isProcessRunning } from '../process-utils.js';
 import { collectConfigLayers, normalizeConfigLayers } from './config-layers.js';
 import { getDaemonMetadataPath, getDaemonSocketPath } from './paths.js';
+import {
+  DAEMON_PROTOCOL_VERSION,
+  DaemonFrameDecoder,
+  isDaemonProgressFrame,
+  resolveProgressInterval,
+} from './protocol.js';
 import { delay } from './request-utils.js';
 import type {
   CallToolParams,
@@ -36,6 +42,7 @@ export interface DaemonPaths {
 
 interface DaemonMetadata {
   readonly pid: number;
+  readonly protocolVersion?: number;
   readonly socketPath: string;
   readonly configPath: string;
   readonly configMtimeMs?: number | null;
@@ -71,7 +78,7 @@ export class DaemonClient {
   }
 
   async listTools(params: ListToolsParams): Promise<unknown> {
-    return this.invoke('listTools', params);
+    return this.invoke('listTools', params, params.timeoutMs);
   }
 
   async listResources(params: ListResourcesParams): Promise<unknown> {
@@ -260,15 +267,19 @@ export class DaemonClient {
   }
 
   private async sendRequest<T>(method: DaemonRequestMethod, params: unknown, timeoutOverrideMs?: number): Promise<T> {
+    const idleTimeoutMs = resolveDaemonTimeout(timeoutOverrideMs);
     const request: DaemonRequest = {
       id: randomUUID(),
       method,
       params,
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      progressIntervalMs: resolveProgressInterval(idleTimeoutMs),
     };
     const payload = JSON.stringify(request);
-    const timeoutMs = resolveDaemonTimeout(timeoutOverrideMs);
-    const response = await new Promise<string>((resolve, reject) => {
+    const parsed = await new Promise<DaemonResponse<T>>((resolve, reject) => {
       const socket = net.createConnection(this.socketPath);
+      const decoder = new DaemonFrameDecoder();
+      let response: DaemonResponse<T> | undefined;
       let settled = false;
       const finishReject = (error: Error): void => {
         if (settled) {
@@ -277,23 +288,31 @@ export class DaemonClient {
         settled = true;
         reject(error);
       };
-      const finishResolve = (value: string): void => {
+      const finishResolve = (value: DaemonResponse<T>): void => {
         if (settled) {
           return;
         }
         settled = true;
         resolve(value);
       };
-      socket.setTimeout(timeoutMs, () => {
-        // If the daemon doesn't answer in time we treat it as a transport error, destroy the socket,
-        // and let invoke() restart the daemon so hung keep-alive servers get a fresh start.
-        socket.destroy(
-          Object.assign(new Error('Daemon request timed out.'), {
-            code: 'ETIMEDOUT',
-          })
-        );
+      socket.setTimeout(idleTimeoutMs);
+      socket.on('timeout', () => {
+        // Progress makes this an idle budget. Silence remains a transport failure and keeps the
+        // existing restart-and-retry recovery for a genuinely wedged daemon.
+        socket.destroy(transportError('Daemon request timed out.', 'ETIMEDOUT'));
       });
-      let buffer = '';
+      const consume = (frames: ReturnType<DaemonFrameDecoder['push']>): void => {
+        for (const frame of frames) {
+          if (isDaemonProgressFrame(frame)) {
+            if (frame.id === request.id) {
+              socket.setTimeout(idleTimeoutMs);
+            }
+            continue;
+          }
+          response = frame as DaemonResponse<T>;
+          socket.setTimeout(0);
+        }
+      };
       socket.on('connect', () => {
         socket.write(payload, (error) => {
           if (error) {
@@ -303,27 +322,24 @@ export class DaemonClient {
         });
       });
       socket.on('data', (chunk) => {
-        buffer += chunk.toString();
+        consume(decoder.push(chunk.toString()));
       });
-      socket.on('end', () => finishResolve(buffer));
+      socket.on('end', () => {
+        consume(decoder.flush());
+        if (response) {
+          finishResolve(response);
+          return;
+        }
+        finishReject(
+          decoder.malformed
+            ? transportError('Failed to parse daemon response.', 'ECONNRESET')
+            : transportError('Empty daemon response.', 'ECONNRESET')
+        );
+      });
       socket.on('error', (error) => {
         finishReject(error as Error);
       });
     });
-    const trimmed = response.trim();
-    if (!trimmed) {
-      const error = new Error('Empty daemon response.');
-      (error as NodeJS.ErrnoException).code = 'ECONNRESET';
-      throw error;
-    }
-    let parsed: DaemonResponse<T>;
-    try {
-      parsed = JSON.parse(trimmed) as DaemonResponse<T>;
-    } catch {
-      const parseError = new Error('Failed to parse daemon response.');
-      (parseError as NodeJS.ErrnoException).code = 'ECONNRESET';
-      throw parseError;
-    }
     for (const notice of parsed.notices ?? []) {
       console.warn(`[mcporter] ${notice}`);
     }
@@ -334,6 +350,12 @@ export class DaemonClient {
     }
     return parsed.result as T;
   }
+}
+
+function transportError(message: string, code: string): Error {
+  const error = new Error(message);
+  (error as NodeJS.ErrnoException).code = code;
+  return error;
 }
 
 function deriveConfigKey(configPath: string): string {

@@ -67,7 +67,7 @@ describe('CLI auth helper and validation behavior', () => {
 
     await handleAuth(runtimeFor(definition, listTools), ['linear', '--reset']);
 
-    expect(listTools).toHaveBeenCalledWith('linear', { autoAuthorize: true });
+    expect(listTools).toHaveBeenCalledWith('linear', { autoAuthorize: true, timeoutMs: 300_000 });
   });
 
   it('rejects missing targets and incomplete browser aliases', async () => {
@@ -91,6 +91,6 @@ describe('CLI auth helper and validation behavior', () => {
 
     await handleAuth(runtimeFor(definition, listTools), ['linear']);
 
-    expect(listTools).toHaveBeenCalledWith('linear', { autoAuthorize: true });
+    expect(listTools).toHaveBeenCalledWith('linear', { autoAuthorize: true, timeoutMs: 300_000 });
   });
 });

@@ -174,7 +174,11 @@ describe('CLI entrypoint dispatch coverage', () => {
 
     await runCli([command]);
 
-    expect(handler).toHaveBeenCalledWith(expect.any(Object), []);
+    if (command === 'auth') {
+      expect(handler).toHaveBeenCalledWith(expect.any(Object), [], { oauthTimeoutMs: undefined });
+    } else {
+      expect(handler).toHaveBeenCalledWith(expect.any(Object), []);
+    }
     expect(mocks.close).toHaveBeenCalled();
   });
 
@@ -277,7 +281,7 @@ describe('CLI entrypoint dispatch coverage', () => {
 
     await runCli(['config', 'auth', 'demo']);
 
-    expect(mocks.handleAuth).toHaveBeenCalledWith(expect.any(Object), ['demo']);
+    expect(mocks.handleAuth).toHaveBeenCalledWith(expect.any(Object), ['demo'], { oauthTimeoutMs: undefined });
     expect(mocks.close).toHaveBeenCalledOnce();
   });
 

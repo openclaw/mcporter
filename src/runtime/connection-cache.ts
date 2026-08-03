@@ -299,7 +299,7 @@ export class RuntimeConnectionCache {
     const contextRef: { current?: ClientContext } = {};
     let contextPromise = createClientContext(definition, this.logger, this.clientInfo, {
       maxOAuthAttempts: options.maxOAuthAttempts,
-      oauthTimeoutMs: this.oauthTimeoutMs,
+      oauthTimeoutMs: options.oauthTimeoutMs ?? this.oauthTimeoutMs,
       onDefinitionPromoted: (promoted) => {
         if (
           this.serverGeneration(normalized) === generation &&

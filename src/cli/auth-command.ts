@@ -4,7 +4,7 @@ import type { OAuthAuthorizationRequest, OAuthSessionOptions } from '../oauth.js
 import { analyzeConnectionError } from '../error-classifier.js';
 import { clearOAuthCaches } from '../oauth-persistence.js';
 import type { Runtime } from '../runtime.js';
-import { isOAuthFlowError } from '../runtime/oauth.js';
+import { isOAuthFlowError, resolveOAuthTimeoutFromEnv } from '../runtime/oauth.js';
 import { renderAdhocServerHelpLines } from './adhoc-help.js';
 import type { EphemeralServerSpec } from './adhoc-server.js';
 import { extractEphemeralServerFlags } from './ephemeral-flags.js';
@@ -16,12 +16,17 @@ import { consumeOutputFormat } from './output-format.js';
 
 type BrowserSuppression = 'default' | 'no-browser';
 
+export interface AuthCommandOptions {
+  readonly oauthTimeoutMs?: number;
+}
+
 const TRUE_VALUES = new Set(['1', 'true', 'yes']);
 const FALSE_VALUES = new Set(['0', 'false', 'no']);
 
-export async function handleAuth(runtime: Runtime, args: string[]): Promise<void> {
+export async function handleAuth(runtime: Runtime, args: string[], options: AuthCommandOptions = {}): Promise<void> {
   const browserSuppression = consumeBrowserSuppression(args, process.env);
   const noBrowser = browserSuppression === 'no-browser';
+  const oauthTimeoutMs = options.oauthTimeoutMs ?? resolveOAuthTimeoutFromEnv();
   let authorizationOutputEmitted = false;
   const markAuthorizationOutputEmitted = () => {
     authorizationOutputEmitted = true;
@@ -84,6 +89,7 @@ export async function handleAuth(runtime: Runtime, args: string[]): Promise<void
       const tools = await withInfoLogsSuppressed(noBrowser, () =>
         runtime.listTools(target, {
           autoAuthorize: true,
+          timeoutMs: oauthTimeoutMs,
           ...(noBrowser
             ? {
                 oauthSessionOptions: buildNoBrowserOAuthOptions(format, markAuthorizationOutputEmitted),

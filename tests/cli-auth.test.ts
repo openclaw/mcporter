@@ -34,7 +34,7 @@ describe('mcporter auth ad-hoc support', () => {
 
     await handleAuth(runtime, ['--http-url', 'https://mcp.deepwiki.com/sse']);
 
-    expect(listTools).toHaveBeenCalledWith('mcp-deepwiki-com-sse', { autoAuthorize: true });
+    expect(listTools).toHaveBeenCalledWith('mcp-deepwiki-com-sse', { autoAuthorize: true, timeoutMs: 300_000 });
   });
 
   it('accepts bare URLs as the auth target', async () => {
@@ -43,7 +43,7 @@ describe('mcporter auth ad-hoc support', () => {
 
     await handleAuth(runtime, ['https://mcp.supabase.com/mcp']);
 
-    expect(listTools).toHaveBeenCalledWith('mcp-supabase-com-mcp', { autoAuthorize: true });
+    expect(listTools).toHaveBeenCalledWith('mcp-supabase-com-mcp', { autoAuthorize: true, timeoutMs: 300_000 });
   });
 
   it('reuses configured servers when auth target is a URL', async () => {
@@ -64,7 +64,7 @@ describe('mcporter auth ad-hoc support', () => {
 
     await handleAuth(runtime, ['https://mcp.vercel.com']);
 
-    expect(listTools).toHaveBeenCalledWith('vercel', { autoAuthorize: true });
+    expect(listTools).toHaveBeenCalledWith('vercel', { autoAuthorize: true, timeoutMs: 300_000 });
     expect(registerDefinition).not.toHaveBeenCalled();
   });
 

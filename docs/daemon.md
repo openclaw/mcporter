@@ -45,6 +45,8 @@ Eligible servers start the daemon automatically when a list or call needs them. 
 
 Daemon calls are non-interactive. If a server requests elicitation, the call is declined with a hint to use an ephemeral terminal call instead. See [protocols and interactive requests](protocols.md).
 
+The local socket timeout is an idle liveness budget rather than a cap on the whole operation. A current daemon emits progress frames while work is in flight, allowing interactive OAuth to run to its own deadline without causing a daemon restart or a duplicate browser prompt. Mixed versions remain compatible: a current client falls back to the previous flat deadline with an older daemon, while a current daemon sends the single-response format expected by older clients unless the caller explicitly opts into progress frames.
+
 ## Expose servers to another MCP client
 
 `mcporter serve` turns the daemon's keep-alive servers back into an MCP server:

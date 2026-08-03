@@ -148,6 +148,17 @@ describe('DaemonClient timeouts', () => {
     expect(callRecord?.timeout).toBe(12_345);
   });
 
+  it('honors per-listTools timeout overrides', async () => {
+    const configPath = 'mcporter.config.json';
+    await writeFreshMetadata(configPath);
+    const client = new DaemonClient({ configPath, configExplicit: true });
+    await client.listTools({ server: 'foo', timeoutMs: 300_000 });
+    const statusRecord = timeoutRecords.find((entry) => entry.method === 'status');
+    const listRecord = timeoutRecords.find((entry) => entry.method === 'listTools');
+    expect(statusRecord?.timeout).toBe(300_000);
+    expect(listRecord?.timeout).toBe(300_000);
+  });
+
   it('clamps daemon status preflight timeout for tiny per-call timeouts', async () => {
     const configPath = 'mcporter.config.json';
     await writeFreshMetadata(configPath);

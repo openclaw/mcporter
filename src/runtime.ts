@@ -68,6 +68,8 @@ export interface ListToolsOptions {
    * headless callers that need cached-token-only behavior.
    */
   readonly disableOAuth?: boolean;
+  /** Per-request and interactive OAuth timeout in milliseconds. */
+  readonly timeoutMs?: number;
 }
 
 export type ListResourcesOptions = Partial<ListResourcesRequest['params']> & {
@@ -84,6 +86,7 @@ export interface ReadResourceOptions {
 
 export interface ConnectOptions {
   readonly maxOAuthAttempts?: number;
+  readonly oauthTimeoutMs?: number;
   readonly skipCache?: boolean;
   readonly allowCachedAuth?: boolean;
   readonly oauthSessionOptions?: OAuthSessionOptions;
@@ -253,17 +256,23 @@ class McpRuntime implements Runtime {
       true
     );
     const useLegacyNoAuthorize = !autoAuthorize && disableOAuth !== true;
+    const timeoutMs = normalizeTimeout(options.timeoutMs);
     const context = await this.connect(server, {
       maxOAuthAttempts: useLegacyNoAuthorize ? 0 : undefined,
       skipCache: useLegacyNoAuthorize,
       allowCachedAuth,
       oauthSessionOptions: options.oauthSessionOptions,
       disableOAuth,
+      oauthTimeoutMs: timeoutMs,
     });
     let closeError: unknown;
     let tools: ServerToolInfo[] = [];
     try {
-      const response = await context.client.listTools();
+      const listPromise = context.client.listTools(
+        undefined,
+        timeoutMs ? { timeout: timeoutMs, resetTimeoutOnProgress: true, maxTotalTimeout: timeoutMs } : undefined
+      );
+      const response = timeoutMs ? await raceWithTimeout(listPromise, timeoutMs) : await listPromise;
       tools = (response.tools ?? []).map((tool) => ({
         name: tool.name,
         description: tool.description ?? undefined,

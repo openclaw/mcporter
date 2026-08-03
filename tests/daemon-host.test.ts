@@ -15,6 +15,7 @@ import {
 } from '../src/daemon/host.js';
 import type { DaemonRequest, DaemonResponse, StatusResult } from '../src/daemon/protocol.js';
 import type { Runtime } from '../src/runtime.js';
+import { OAuthTimeoutError } from '../src/runtime/oauth.js';
 
 const describeUnixSocket = process.platform === 'win32' ? describe.skip : describe;
 
@@ -72,6 +73,7 @@ describe('daemon host request handling', () => {
       autoAuthorize: undefined,
       allowCachedAuth: true,
       disableOAuth: false,
+      timeoutMs: undefined,
     });
   });
 
@@ -90,6 +92,7 @@ describe('daemon host request handling', () => {
       autoAuthorize: undefined,
       allowCachedAuth: true,
       disableOAuth: false,
+      timeoutMs: undefined,
     });
   });
 
@@ -108,6 +111,7 @@ describe('daemon host request handling', () => {
       autoAuthorize: false,
       allowCachedAuth: true,
       disableOAuth: false,
+      timeoutMs: undefined,
     });
   });
 
@@ -138,6 +142,7 @@ describe('daemon host request handling', () => {
       autoAuthorize: undefined,
       allowCachedAuth: true,
       disableOAuth: true,
+      timeoutMs: undefined,
     });
   });
 
@@ -156,7 +161,65 @@ describe('daemon host request handling', () => {
       autoAuthorize: undefined,
       allowCachedAuth: false,
       disableOAuth: false,
+      timeoutMs: undefined,
     });
+  });
+
+  it('returns a non-retryable operation timeout when OAuth reaches its deadline', async () => {
+    const runtime = createRuntimeDouble();
+    vi.mocked(runtime.listTools).mockRejectedValue(new OAuthTimeoutError('oauth', 5_000));
+
+    const result = await __testProcessRequest(
+      '',
+      runtime as unknown as Runtime,
+      createManagedServers(),
+      new Map(),
+      metadata,
+      logContext,
+      {
+        id: 'oauth-timeout',
+        method: 'listTools',
+        params: { server: 'oauth', timeoutMs: 5_000 },
+      }
+    );
+
+    expect(result.response).toMatchObject({
+      id: 'oauth-timeout',
+      ok: false,
+      error: { code: 'operation_timeout' },
+    });
+  });
+
+  it('bounds an operation even when its runtime promise never settles', async () => {
+    const previousOAuthTimeout = process.env.MCPORTER_OAUTH_TIMEOUT_MS;
+    process.env.MCPORTER_OAUTH_TIMEOUT_MS = '10';
+    vi.useFakeTimers();
+    try {
+      const runtime = createRuntimeDouble();
+      vi.mocked(runtime.listTools).mockImplementation(() => new Promise(() => {}));
+      const pending = __testProcessRequest(
+        '',
+        runtime as unknown as Runtime,
+        createManagedServers(),
+        new Map(),
+        metadata,
+        logContext,
+        {
+          id: 'wedged-operation',
+          method: 'listTools',
+          params: { server: 'oauth', timeoutMs: 5 },
+        }
+      );
+
+      await vi.advanceTimersByTimeAsync(15);
+      await expect(pending).resolves.toMatchObject({
+        response: { ok: false, error: { code: 'operation_timeout' } },
+      });
+    } finally {
+      vi.useRealTimers();
+      if (previousOAuthTimeout === undefined) delete process.env.MCPORTER_OAUTH_TIMEOUT_MS;
+      else process.env.MCPORTER_OAUTH_TIMEOUT_MS = previousOAuthTimeout;
+    }
   });
 
   it('dispatches resource, close, status, stop, and malformed requests with observable state', async () => {

@@ -1,5 +1,12 @@
 # mcporter Changelog
 
+## [0.13.1] - Unreleased
+
+### Daemon
+
+- Treat the daemon socket timeout as an idle liveness budget refreshed by progress frames, so interactive OAuth can outlive 30 seconds without restarting the daemon and opening a duplicate prompt. (PR #241, thanks @umutkeltek)
+- Keep daemon protocol v1 and v2 interoperable while returning daemon-owned operation timeouts as non-retryable errors. (PR #241, thanks @umutkeltek)
+
 ## [0.13.0] - 2026-08-02
 
 ### MCP 2.0

@@ -113,6 +113,7 @@ describe('createKeepAliveRuntime', () => {
       autoAuthorize: undefined,
       allowCachedAuth: true,
       disableOAuth: undefined,
+      timeoutMs: undefined,
     });
 
     await keepAliveRuntime.listTools('alpha', { allowCachedAuth: false });
@@ -122,6 +123,7 @@ describe('createKeepAliveRuntime', () => {
       autoAuthorize: undefined,
       allowCachedAuth: false,
       disableOAuth: undefined,
+      timeoutMs: undefined,
     });
 
     await keepAliveRuntime.listResources('alpha', { cursor: '1' });
@@ -182,6 +184,7 @@ describe('createKeepAliveRuntime', () => {
       autoAuthorize: undefined,
       allowCachedAuth: true,
       disableOAuth: true,
+      timeoutMs: undefined,
     });
 
     await keepAliveRuntime.listResources('alpha', { cursor: '1', disableOAuth: true });
@@ -299,6 +302,26 @@ describe('createKeepAliveRuntime', () => {
 
     await expect(keepAliveRuntime.callTool('alpha', 'ping', {})).rejects.toThrow(/unauthorized/i);
     expect(daemon.callTool).toHaveBeenCalledTimes(1);
+    expect(daemon.closeServer).not.toHaveBeenCalled();
+  });
+
+  it('does not restart or replay daemon operation timeouts', async () => {
+    const runtime = new FakeRuntime(definitions);
+    const timeout = Object.assign(new Error('OAuth authorization timed out'), { code: 'operation_timeout' });
+    const daemon = {
+      callTool: vi.fn(),
+      closeServer: vi.fn().mockResolvedValue(undefined),
+      listTools: vi.fn().mockRejectedValue(timeout),
+      listResources: vi.fn(),
+      readResource: vi.fn(),
+    };
+    const keepAliveRuntime = createKeepAliveRuntime(runtime as unknown as Runtime, {
+      daemonClient: daemon as never,
+      keepAliveServers: new Set(['alpha']),
+    });
+
+    await expect(keepAliveRuntime.listTools('alpha', { timeoutMs: 5_000 })).rejects.toThrow('timed out');
+    expect(daemon.listTools).toHaveBeenCalledTimes(1);
     expect(daemon.closeServer).not.toHaveBeenCalled();
   });
 });
