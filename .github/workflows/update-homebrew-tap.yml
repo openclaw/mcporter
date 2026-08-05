@@ -51,14 +51,14 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "request_id=mcporter-${tag}-${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
 
-      - name: Verify npm publication
-        shell: bash
-        env:
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
-        run: |
-          set -euo pipefail
-          version="${RELEASE_TAG#v}"
-          [[ "$(npm view "mcporter@$version" version)" == "$version" ]]
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          check-latest: true
 
       - name: Dispatch tap update
         env:
@@ -176,12 +176,7 @@ jobs:
           process.stdout.write(`sha512-${digest}`);
           NODE
           )
-          registry_npm_integrity=$(npm view "mcporter@$version" dist.integrity)
-          [[ "$registry_npm_integrity" == "$verified_npm_integrity" ]] || {
-            echo "npm registry integrity does not match the verified GitHub tarball" >&2
-            exit 1
-          }
-          [[ "$(npm view mcporter dist-tags.latest)" == "$version" ]]
+          node scripts/verify-npm-publication.mjs mcporter "$version" "$verified_npm_integrity"
 
           gh workflow run update-formula.yml \
             --repo steipete/homebrew-tap \

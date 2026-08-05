@@ -193,7 +193,7 @@ phase_publish_npm() {
   banner "Publish npm after native proof"
   phase_verify_local
   verify_public_native_proof
-  local npm_archive local_integrity existing_version registry_version registry_integrity registry_ready
+  local npm_archive local_integrity existing_version
   npm_archive=$VERIFIED_PUBLIC_NPM_ARCHIVE
   [[ -f "$npm_archive" ]] || {
     echo "missing verified npm artifact: $npm_archive" >&2
@@ -213,28 +213,7 @@ NODE
     echo "npm publish returned non-zero; checking whether the immutable version was accepted before retrying." >&2
   fi
 
-  registry_ready=0
-  for _ in {1..20}; do
-    registry_version=$(npm view "mcporter@$VERSION" version 2>/dev/null || true)
-    registry_integrity=$(npm view "mcporter@$VERSION" dist.integrity 2>/dev/null || true)
-    if [[ "$registry_version" == "$VERSION" && "$registry_integrity" == "$local_integrity" ]]; then
-      registry_ready=1
-      break
-    fi
-    if [[ "$registry_version" == "$VERSION" && -n "$registry_integrity" && "$registry_integrity" != "$local_integrity" ]]; then
-      echo "npm registry integrity does not match the verified release tarball" >&2
-      exit 1
-    fi
-    sleep 3
-  done
-  [[ "$registry_ready" == 1 ]] || {
-    echo "npm registry did not expose the verified release artifact before timeout" >&2
-    exit 1
-  }
-  [[ "$(npm view mcporter dist-tags.latest)" == "$VERSION" ]] || {
-    echo "npm latest dist-tag does not point to $VERSION" >&2
-    exit 1
-  }
+  run node "$ROOT/scripts/verify-npm-publication.mjs" mcporter "$VERSION" "$local_integrity"
   run npm view "mcporter@$VERSION" dist.tarball dist.integrity time
 }
 

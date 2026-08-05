@@ -29,6 +29,7 @@ for script in \
   "$ROOT/scripts/verify-release.sh"; do
   bash -n "$script"
 done
+node --check "$ROOT/scripts/verify-npm-publication.mjs"
 plutil -lint "$ROOT/scripts/macos-release.entitlements" >/dev/null
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/mcporter-release-contract.XXXXXX")
@@ -161,13 +162,33 @@ MOCK
 cat >"$MOCK_BIN/npm" <<'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
-[[ "${1:-}" == install ]]
-archive=${!#}
-stage=$(mktemp -d "${TMPDIR:-/tmp}/mcporter-mock-install.XXXXXX")
-trap 'rm -rf "$stage"' EXIT
-tar -xzf "$archive" -C "$stage"
-mkdir -p node_modules/mcporter
-cp -R "$stage/package/." node_modules/mcporter/
+case "${1:-}" in
+  install)
+    archive=${!#}
+    stage=$(mktemp -d "${TMPDIR:-/tmp}/mcporter-mock-install.XXXXXX")
+    trap 'rm -rf "$stage"' EXIT
+    tar -xzf "$archive" -C "$stage"
+    mkdir -p node_modules/mcporter
+    cp -R "$stage/package/." node_modules/mcporter/
+    ;;
+  view)
+    case "${3:-}" in
+      version) value=${MOCK_NPM_VERSION:-} ;;
+      dist.integrity) value=${MOCK_NPM_INTEGRITY:-} ;;
+      dist-tags.latest) value=${MOCK_NPM_LATEST:-} ;;
+      *) echo "unexpected mock npm view field: ${3:-<missing>}" >&2; exit 64 ;;
+    esac
+    if [[ -z "$value" ]]; then
+      echo 'npm error code E404' >&2
+      exit 1
+    fi
+    node -e 'process.stdout.write(JSON.stringify(process.argv[1]))' "$value"
+    ;;
+  *)
+    echo "unexpected mock npm arguments: $*" >&2
+    exit 64
+    ;;
+esac
 MOCK
 
 cat >"$MOCK_BIN/codesign" <<'MOCK'
@@ -248,6 +269,23 @@ MOCK
 
 chmod 755 "$MOCK_BIN"/*
 export PATH="$MOCK_BIN:$PATH"
+
+# Immutable npm metadata mismatches are hard failures, not propagation retries.
+mock_integrity=sha512-protected-release
+MOCK_NPM_VERSION="$VERSION" \
+MOCK_NPM_INTEGRITY="$mock_integrity" \
+MOCK_NPM_LATEST="$VERSION" \
+  node "$ROOT/scripts/verify-npm-publication.mjs" mcporter "$VERSION" "$mock_integrity" >/dev/null
+assert_fails env \
+  MOCK_NPM_VERSION="$VERSION" \
+  MOCK_NPM_INTEGRITY="$mock_integrity" \
+  MOCK_NPM_LATEST="$VERSION" \
+  node "$ROOT/scripts/verify-npm-publication.mjs" mcporter "$VERSION" sha512-mutated
+assert_fails env \
+  MOCK_NPM_VERSION="$VERSION" \
+  MOCK_NPM_INTEGRITY="$mock_integrity" \
+  MOCK_NPM_LATEST=0.0.0 \
+  node "$ROOT/scripts/verify-npm-publication.mjs" mcporter "$VERSION" "$mock_integrity"
 
 # Ordinary builds never enter signing or notarization code.
 MCPORTER_OFFICIAL_RELEASE=0 "$ROOT/scripts/codesign-native.sh" "$WORK/missing"
@@ -416,7 +454,12 @@ grep -Fq 'ACTIONS_ID_TOKEN_REQUEST_URL' "$publish_workflow"
 grep -Fq 'secrets.HOMEBREW_TAP_TOKEN' "$publish_workflow"
 grep -Fq 'workflow run update-homebrew-tap.yml' "$publish_workflow"
 grep -Fq 'verify-published-release-proof.mjs' "$publish_workflow"
+grep -Fq 'verify-npm-publication.mjs' "$publish_workflow"
 grep -Fq 'validate-release-metadata.mjs' "$publish_workflow"
+grep -Eq '^  verify-npm:$' "$publish_workflow"
+grep -Eq '^  dispatch-homebrew:$' "$publish_workflow"
+[[ "$(grep -Ec '^    needs: release$' "$publish_workflow")" == 2 ]] || fail 'npm verification and Homebrew dispatch no longer depend independently on publication'
+! grep -Eq 'needs: verify-npm' "$publish_workflow" || fail 'Homebrew dispatch became downstream of npm propagation verification'
 ! grep -Eq 'secrets\.(NPM_TOKEN|NODE_AUTH_TOKEN)' "$publish_workflow" || fail 'automated release regained a persistent npm token'
 
 ! grep -Eq '\bspctl\b' "$ROOT/scripts/codesign-native.sh" "$ROOT/scripts/verify-release.sh" || \
@@ -438,7 +481,7 @@ grep -Eq 'verified-assets-arm64' "$homebrew_workflow"
 grep -Eq 'verified-assets-x86_64' "$homebrew_workflow"
 grep -Eq 'native proof artifacts disagree on the verified asset set' "$homebrew_workflow"
 grep -Eq 'published asset digest changed after native verification' "$homebrew_workflow"
-grep -Eq 'npm registry integrity does not match the verified GitHub tarball' "$homebrew_workflow"
+grep -Fq 'verify-npm-publication.mjs' "$homebrew_workflow"
 grep -Eq 'codesign-run --' "$ROOT/scripts/release.sh"
 grep -Eq 'command -v mac-release' "$ROOT/scripts/release.sh"
 grep -Eq 'MAC_RELEASE_HELPER' "$ROOT/scripts/release.sh"
@@ -447,7 +490,7 @@ grep -Eq 'verified-assets-arm64' "$ROOT/scripts/release.sh"
 grep -Eq 'verified-assets-x86_64' "$ROOT/scripts/release.sh"
 grep -Eq 'native proof artifacts disagree on the verified asset set' "$ROOT/scripts/release.sh"
 grep -Eq 'immutable registry metadata' "$ROOT/scripts/release.sh"
-grep -Eq 'registry did not expose the verified release artifact before timeout' "$ROOT/scripts/release.sh"
+grep -Fq 'verify-npm-publication.mjs' "$ROOT/scripts/release.sh"
 ! grep -Eq '^  all|git push|git tag ' "$ROOT/scripts/release.sh" || fail 'release helper regained combined/tag/push path'
 grep -Eq 'pnpm clean' "$ROOT/scripts/package-release.sh"
 grep -Eq 'pnpm build' "$ROOT/scripts/package-release.sh"

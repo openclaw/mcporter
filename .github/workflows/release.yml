@@ -31,6 +31,12 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    outputs:
+      default_branch: ${{ steps.release.outputs.default_branch }}
+      npm_integrity: ${{ steps.publish.outputs.integrity }}
+      native_verifier_run_id: ${{ steps.proof.outputs.native_verifier_run_id }}
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
     steps:
       - name: Resolve real published release
         id: release
@@ -247,57 +253,55 @@ jobs:
           }
 
       - name: Publish verified npm archive with provenance
+        id: publish
         shell: bash
         env:
           NPM_ARCHIVE: ${{ steps.proof.outputs.npm_archive }}
           NPM_CONFIG_IGNORE_SCRIPTS: 'true'
         run: |
           set -euo pipefail
+          expected_integrity="sha512-$(openssl dgst -sha512 -binary "$NPM_ARCHIVE" | openssl base64 -A)"
+          echo "integrity=$expected_integrity" >> "$GITHUB_OUTPUT"
           if ! npm publish --access public --provenance "$NPM_ARCHIVE"; then
             echo "::error::npm trusted publishing failed. Configure the mcporter package on npmjs.com with openclaw/mcporter and .github/workflows/release.yml; this workflow intentionally has no NPM_TOKEN."
             exit 1
           fi
 
+  verify-npm:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
+
       - name: Verify immutable npm publication
-        shell: bash
         env:
-          NPM_ARCHIVE: ${{ steps.proof.outputs.npm_archive }}
-          PACKAGE_VERSION: ${{ steps.tag.outputs.version }}
-        run: |
-          set -euo pipefail
-          expected_integrity="sha512-$(openssl dgst -sha512 -binary "$NPM_ARCHIVE" | openssl base64 -A)"
-          registry_ready=0
+          EXPECTED_INTEGRITY: ${{ needs.release.outputs.npm_integrity }}
+          PACKAGE_VERSION: ${{ needs.release.outputs.version }}
+        run: node scripts/verify-npm-publication.mjs mcporter "$PACKAGE_VERSION" "$EXPECTED_INTEGRITY"
 
-          for _ in {1..20}; do
-            registry_version="$(npm view "mcporter@$PACKAGE_VERSION" version 2>/dev/null || true)"
-            registry_integrity="$(npm view "mcporter@$PACKAGE_VERSION" dist.integrity 2>/dev/null || true)"
-            if [[ "$registry_version" == "$PACKAGE_VERSION" && "$registry_integrity" == "$expected_integrity" ]]; then
-              registry_ready=1
-              break
-            fi
-            if [[ "$registry_version" == "$PACKAGE_VERSION" && -n "$registry_integrity" && "$registry_integrity" != "$expected_integrity" ]]; then
-              echo "::error::npm registry integrity does not match the protected GitHub Release tarball."
-              exit 1
-            fi
-            sleep 3
-          done
-
-          [[ "$registry_ready" == 1 ]] || {
-            echo "::error::npm did not expose the verified release artifact before timeout."
-            exit 1
-          }
-          [[ "$(npm view mcporter dist-tags.latest)" == "$PACKAGE_VERSION" ]] || {
-            echo "::error::npm latest does not point to $PACKAGE_VERSION."
-            exit 1
-          }
-
+  dispatch-homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
       - name: Dispatch protected Homebrew update
         shell: bash
         env:
-          DEFAULT_BRANCH: ${{ steps.release.outputs.default_branch }}
+          DEFAULT_BRANCH: ${{ needs.release.outputs.default_branch }}
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          NATIVE_VERIFIER_RUN_ID: ${{ steps.proof.outputs.native_verifier_run_id }}
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          NATIVE_VERIFIER_RUN_ID: ${{ needs.release.outputs.native_verifier_run_id }}
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
         run: |
           set -euo pipefail
           [[ -n "$GH_TOKEN" ]]
