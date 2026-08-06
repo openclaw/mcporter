@@ -104,7 +104,6 @@ describe('idle standalone SSE CLI integration', () => {
           connection: 'keep-alive',
           'content-type': 'text/event-stream',
         });
-        response.flushHeaders();
         return;
       }
 
@@ -184,7 +183,7 @@ describe('idle standalone SSE CLI integration', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  it('lists tools while a standalone SSE stream is open and byte-idle', async () => {
+  it('lists tools while a standalone SSE response leaves its headers pending', async () => {
     const result = await runCli(['list', 'idle', '--json', '--timeout', '2000'], configPath, preloadPath);
 
     expect(result.stderr).toBe('');

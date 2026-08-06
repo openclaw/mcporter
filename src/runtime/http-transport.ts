@@ -69,6 +69,7 @@ function removeAuthorizationHeader(headers: Record<string, string> | undefined):
 }
 
 const NODE_HTTP1_FETCH_HOSTS: ReadonlySet<string> = new Set(['api.sunsama.com']);
+const STANDALONE_SSE_START_GRACE_MS = 250;
 
 function resolveHttpFetchOverride(definition: ServerDefinition): typeof nodeHttp1Fetch | undefined {
   if (definition.command.kind !== 'http' || definition.httpFetch === 'default') return undefined;
@@ -118,6 +119,16 @@ function trackStandaloneSseFetch(fetchOverride: FetchLike | undefined): {
       }
     },
   };
+}
+
+function waitForStandaloneSseStart(started: Promise<void>): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, STANDALONE_SSE_START_GRACE_MS);
+    void started.then(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
 }
 
 async function closeOAuthSession(oauthSession?: OAuthSession): Promise<void> {
@@ -268,10 +279,10 @@ async function connectPrimaryHttpTransport(
     recreateTransport: async () => createStreamableTransport(),
   });
   // v2 starts the legacy standalone SSE receive channel asynchronously from
-  // notifications/initialized. Wait for its fetch to receive headers so
-  // callers cannot race their first request ahead of that channel.
+  // notifications/initialized. Give its fetch a bounded chance to receive
+  // headers without blocking servers that leave the response header-idle.
   if (typeof client.getProtocolEra === 'function' && client.getProtocolEra() === 'legacy') {
-    await transportOptions.standaloneSseStarted;
+    await waitForStandaloneSseStart(transportOptions.standaloneSseStarted);
   }
   return { client, transport, definition, oauthSession };
 }

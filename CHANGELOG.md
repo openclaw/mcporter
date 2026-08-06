@@ -2,6 +2,10 @@
 
 ## [0.13.1] - Unreleased
 
+### CLI
+
+- Allow tool requests to proceed after starting a legacy standalone SSE fetch instead of waiting indefinitely for response headers from idle streams.
+
 ## [0.13.0] - 2026-08-02
 
 ### MCP 2.0
