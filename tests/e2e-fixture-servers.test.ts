@@ -1,6 +1,8 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs/promises';
+import { createServer, request as httpRequest } from 'node:http';
 import { createRequire } from 'node:module';
+import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -36,12 +38,19 @@ type CliResult = { stdout: string; stderr: string; exitCode: number };
 
 let legacyHttp: RunningFixture;
 let modernHttp: RunningFixture;
+let delayedLegacyHeadersProxy: RunningHttpProxy;
 const spawnedChildren = new Set<ChildProcess>();
+const DELAYED_LEGACY_SSE_HEADERS_MS = 500;
 
 interface RunningFixture {
   child: ChildProcess;
   url: string;
   stderr: () => string;
+}
+
+interface RunningHttpProxy {
+  url: string;
+  close: () => Promise<void>;
 }
 
 beforeAll(async () => {
@@ -52,9 +61,11 @@ beforeAll(async () => {
     startHttpFixture('legacy', LEGACY_SERVER),
     startHttpFixture('modern', MODERN_SERVER),
   ]);
+  delayedLegacyHeadersProxy = await startDelayedSseHeadersProxy(legacyHttp.url, DELAYED_LEGACY_SSE_HEADERS_MS);
 }, budget(20_000));
 
 afterAll(async () => {
+  await delayedLegacyHeadersProxy.close();
   await Promise.allSettled([...spawnedChildren].map((child) => stopChild(child)));
 });
 
@@ -138,6 +149,23 @@ describe.each(transports)('legacy long-tail over %s', (transport) => {
       expect(sampled.stdout).toContain('sampling declined or unsupported by client');
     });
   });
+});
+
+it('handles legacy elicitation when standalone SSE headers arrive after the startup grace', async () => {
+  await withConfig(
+    {
+      fixture: {
+        ...configFor('legacy', 'http'),
+        baseUrl: delayedLegacyHeadersProxy.url,
+      },
+    },
+    async (configPath, env) => {
+      const elicited = await runCli(['call', 'fixture.elicit_name', '--output', 'text'], configPath, env);
+      expect(elicited.exitCode, elicited.stderr).toBe(0);
+      expect(elicited.stderr).toContain('Server requested interactive input; run mcporter in a terminal.');
+      expect(elicited.stdout).toContain('elicitation decline');
+    }
+  );
 });
 
 describe.each(transports)('modern MRTR and identity over %s', (transport) => {
@@ -423,6 +451,52 @@ async function startHttpFixture(
     await stopChild(child);
     throw error;
   }
+}
+
+async function startDelayedSseHeadersProxy(targetUrl: string, delayMs: number): Promise<RunningHttpProxy> {
+  const target = new URL(targetUrl);
+  const proxy = createServer((request, response) => {
+    const upstreamRequest = httpRequest(
+      target,
+      {
+        method: request.method,
+        headers: request.headers,
+      },
+      (upstreamResponse) => {
+        const forwardResponse = () => {
+          if (response.destroyed) {
+            upstreamResponse.destroy();
+            return;
+          }
+          response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
+          upstreamResponse.pipe(response);
+        };
+        if (request.method === 'GET') {
+          setTimeout(forwardResponse, delayMs);
+        } else {
+          forwardResponse();
+        }
+      }
+    );
+    upstreamRequest.on('error', (error) => {
+      if (!response.headersSent) response.writeHead(502);
+      response.end(error.message);
+    });
+    request.pipe(upstreamRequest);
+  });
+  await new Promise<void>((resolve, reject) => {
+    proxy.once('error', reject);
+    proxy.listen(0, '127.0.0.1', resolve);
+  });
+  const address = proxy.address() as AddressInfo;
+  return {
+    url: `http://127.0.0.1:${address.port}/mcp`,
+    close: async () => {
+      await new Promise<void>((resolve, reject) => {
+        proxy.close((error) => (error ? reject(error) : resolve()));
+      });
+    },
+  };
 }
 
 async function startBridge(configPath: string, env: NodeJS.ProcessEnv): Promise<RunningFixture> {
