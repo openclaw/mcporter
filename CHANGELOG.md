@@ -6,6 +6,10 @@
 
 - Allow tool requests to proceed after starting a legacy standalone SSE fetch instead of waiting indefinitely for response headers from idle streams.
 
+### Tooling
+
+- Remove the obsolete scoped-commit helper and use standard Git commands in isolated worktrees.
+
 ## [0.13.0] - 2026-08-02
 
 ### MCP 2.0
