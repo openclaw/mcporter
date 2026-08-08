@@ -97,6 +97,7 @@ describe('normalizeDefinition', () => {
       token_cache_dir: '/tmp/tokens',
       client_name: 'client',
       protocol_version: 'legacy',
+      chrome_devtools_relay: 'require',
       oauth_client_id: 'id',
       oauth_client_secret: 'secret',
       oauth_client_secret_env: 'SECRET_ENV',
@@ -132,6 +133,7 @@ describe('normalizeDefinition', () => {
       tokenCacheDir: '/tmp/tokens',
       clientName: 'client',
       protocolVersion: 'legacy',
+      chromeDevtoolsRelay: 'require',
       oauthClientId: 'id',
       oauthClientSecret: 'secret',
       oauthClientSecretEnv: 'SECRET_ENV',
@@ -153,6 +155,7 @@ describe('normalizeDefinition', () => {
       logging: { daemon: { enabled: true } },
       allowedTools: ['read', 'write'],
     });
+    expect(serializeDefinition(definition).chromeDevtoolsRelay).toBe('require');
   });
 
   it('normalizes stdio object, command-array, and string forms', () => {

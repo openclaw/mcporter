@@ -59,11 +59,42 @@ mcporter serve --http 3000 --servers chrome-devtools,playwright
 
 The stdio form is suitable for clients such as Claude Code and Codex. HTTP mode binds to `127.0.0.1` by default and serves an aggregate endpoint at `/mcp`, with namespaced tools such as `chrome-devtools__list_pages`. It also serves `/mcp/<server>` with that server's original tool names.
 
-## Chrome DevTools without repeated approval dialogs
+## Chrome DevTools through the OpenClaw extension relay
 
-`chrome-devtools-mcp --autoConnect` uses Chrome's remote-debugging handshake, which can display an “Allow remote debugging?” dialog for each session. When the [OpenClaw Chrome extension relay](https://docs.openclaw.ai/tools/chrome-extension/) is paired on the same host, MCPorter probes its loopback endpoint and rewrites `--autoConnect` to the relay's authenticated WebSocket endpoint.
+`chrome-devtools-mcp --autoConnect` uses Chrome's remote-debugging handshake, which can display an “Allow remote debugging?” dialog for each session. When the [OpenClaw Chrome extension relay](https://docs.openclaw.ai/tools/chrome-extension/) is paired on the same host, MCPorter can use that extension-backed Chrome control path instead. Automatic rewriting supports direct `chrome-devtools-mcp` commands and the standard `npx`/`bunx` launch forms used by MCPorter definitions. Other shell and package-manager wrappers remain unchanged under `prefer`; `require` rejects recognizable Chrome auto-connect commands behind those unsupported wrappers instead of silently launching the legacy path.
 
-The rewrite is best-effort. If the host-local relay secret is missing, the relay is unavailable or unpaired, or the endpoint is not loopback-only, MCPorter keeps the original arguments. Set `MCPORTER_DISABLE_CHROME_DEVTOOLS_RELAY=1` to disable relay detection. Set `MCPORTER_CHROME_DEVTOOLS_RELAY_URL` only to another loopback HTTP endpoint.
+MCPorter requires an OpenClaw relay that implements **Browser Relay Authentication v2**, including the connection-bound challenge, completion, authenticated `/json/version`, and same-connection `/cdp` upgrade sequence. An older OpenClaw relay is unsupported: `require` fails with `unsupported-auth`, while `prefer` may launch the original Chrome `--autoConnect` path. MCPorter never retries an old Bearer, Basic, or raw-token relay handshake, even when the v2 endpoint returns `404`, `401`, or `426`, a proof fails, or the handshake times out. During OpenClaw's dual-stack migration window, legacy acceptance exists only for older clients; current MCPorter always uses v2.
+
+The mode-`0600`, current-user relay key never enters an HTTP header, URL, WebSocket subprotocol, application frame, child command line, or child environment. MCPorter derives its non-secret `keyId`, connects once to a numeric loopback address, verifies the connected peer, and keeps that exact raw TCP socket from the HMAC challenge through completion, `/json/version`, and the `/cdp` WebSocket upgrade. It does not follow redirects, reconnect, re-resolve, or hand the key to the proxy. Only after both server proofs verify does MCPorter start a short-lived downstream proxy bound strictly to `127.0.0.1`; that proxy wraps the already-authenticated and already-upgraded socket rather than opening another upstream connection.
+
+The same raw client supports the protocol's separate `json-list` flow: it authenticates one `/json/list` request on the retained socket, reads a bounded response, and closes instead of upgrading.
+
+Each downstream proxy retains the protections introduced for the child handoff: it gets a fresh 256-bit authorization bearer, MCPorter writes that ephemeral value to an exclusively created mode-`0600` file inside a mode-`0700` temporary directory, and only the protected file path reaches a Node preload through the child environment. The preload validates and consumes the file, removes the handoff variable, and appends `--wsHeaders` only to JavaScript's `process.argv`; the OS command line contains only the credential-free loopback WebSocket endpoint. The proxy accepts exactly one authorized downstream WebSocket, synthesizes that child's `101` response, and then bridges frames to the retained upstream socket. Losing either side retires the proxy and its authenticated connection.
+
+The preload composes with existing `NODE_OPTIONS`, including MCPorter's separate Chrome compatibility preload. The proxy, handoff file, preload, and temporary directory are closed or removed on normal shutdown, setup failure, abort, and negotiation retry. On POSIX systems, ownership and permissions are checked before the handoff is consumed. On Windows, MCPorter creates the temporary directory atomically with a verified current-user-only ACL before its path exists; setup fails closed if that security descriptor cannot be established. Plaintext relay URLs remain limited to loopback, including custom URLs set with `MCPORTER_CHROME_DEVTOOLS_RELAY_URL`; remote HTTP relay targets and URLs containing credentials are rejected.
+
+Choose routing with `chromeDevtoolsRelay` (or `chrome_devtools_relay`) on the server definition, or override it for the process with `MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY`:
+
+- `prefer` is the default. It uses the v2 extension relay when authentication and the protected child handoff succeed; otherwise it may keep only the original Chrome `--autoConnect` behavior. It never falls back to legacy relay authentication.
+- `require` fails before any legacy auto-connect process is launched if the endpoint, credential, probe, authentication, extension connection, local proxy, or protected handoff is unavailable. Retries remain fail-closed.
+- `off` disables relay probing and rewriting. The older `MCPORTER_DISABLE_CHROME_DEVTOOLS_RELAY=1` switch remains an alias for `off`.
+
+```jsonc
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest", "--autoConnect"],
+      "lifecycle": "keep-alive",
+      "chromeDevtoolsRelay": "require",
+    },
+  },
+}
+```
+
+The authenticated `/json/version` probe waits 5 seconds by default. `MCPORTER_CHROME_DEVTOOLS_RELAY_TIMEOUT_MS` accepts milliseconds, clamped to 100–30000; unset, zero, non-integer, and otherwise invalid values use 5000. Credential discovery follows OpenClaw: `OPENCLAW_OAUTH_DIR` wins, otherwise credentials live under `OPENCLAW_STATE_DIR` (or `$OPENCLAW_HOME/.openclaw`) in `credentials/browser-extension-relay.secret`.
+
+Keep-alive daemons include the effective policy, URL, timeout, state directory, credential directory, v2 protocol marker, and derived `keyId` in their runtime identity. Rotating the key at the same path therefore replaces stale daemon state on the next operation without exposing key material; no manual restart is required. `mcporter daemon status` shows the current or last redacted decision with route, policy, reason, safe logical upstream endpoint, and probe status/duration. Set `MCPORTER_LOG_LEVEL=info` to see the same structured decision during ordinary connection setup. Diagnostics distinguish unsupported v2 authentication, bad server proofs, unauthenticated server failures, replay, protocol, freshness, and sequence failures, disconnected extensions (an authenticated `503`), timeouts, network errors, protected handoff failures, and success. They never print keys, proofs, nonces, stable or ephemeral bearers, handoff paths, headers, pairing strings, or child arguments.
 
 MCPorter also applies its Chrome DevTools auto-connect compatibility patch when relevant. Set `MCPORTER_DISABLE_CHROME_DEVTOOLS_COMPAT=1` to disable that separate behavior.
 

@@ -21,7 +21,7 @@ export function expandHome(input: string): string {
 }
 
 // resolveEnvValue interprets ${VAR:-default} syntax and other primitive values for env overrides.
-export function resolveEnvValue(raw: unknown): string {
+export function resolveEnvValue(raw: unknown, env: NodeJS.ProcessEnv = process.env): string {
   if (typeof raw !== 'string') {
     return String(raw);
   }
@@ -33,7 +33,7 @@ export function resolveEnvValue(raw: unknown): string {
     if (!envName) {
       return raw;
     }
-    const existing = process.env[envName];
+    const existing = env[envName];
     if (existing && existing !== '') {
       return existing;
     }
@@ -41,17 +41,17 @@ export function resolveEnvValue(raw: unknown): string {
   }
 
   if (raw.startsWith('$')) {
-    return resolveEnvPlaceholders(raw);
+    return resolveEnvPlaceholders(raw, env);
   }
 
   return raw;
 }
 
-// resolveEnvPlaceholders replaces ${VAR} or $env:VAR references using process.env, enforcing required values.
-export function resolveEnvPlaceholders(value: string): string {
+// resolveEnvPlaceholders replaces ${VAR} or $env:VAR references using the supplied environment.
+export function resolveEnvPlaceholders(value: string, env: NodeJS.ProcessEnv = process.env): string {
   if (value.startsWith(ENV_DIRECT_PREFIX)) {
     const envName = value.slice(ENV_DIRECT_PREFIX.length);
-    const envValue = process.env[envName];
+    const envValue = env[envName];
     if (envValue === undefined) {
       throw new Error(`Environment variable '${envName}' is required for MCP header substitution.`);
     }
@@ -60,7 +60,7 @@ export function resolveEnvPlaceholders(value: string): string {
 
   const missing = new Set<string>();
   const replaced = value.replace(ENV_INTERPOLATION_PATTERN, (placeholder, envName: string, fallback?: string) => {
-    const envValue = process.env[envName];
+    const envValue = env[envName];
     if (envValue !== undefined && envValue !== '') {
       return envValue;
     }

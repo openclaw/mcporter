@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import type {
   CallResult,
+  ChromeDevtoolsRelayPolicy,
   ClientContext,
   ConnectionInfo,
   ConnectionIssueKind,
@@ -33,6 +34,7 @@ type CallLogEntry = {
 };
 
 type PublicApiTypes = {
+  chromeDevtoolsRelayPolicy: ChromeDevtoolsRelayPolicy;
   clientContext: ClientContext;
   connectionInfo: ConnectionInfo;
   connectionIssueKind: ConnectionIssueKind;

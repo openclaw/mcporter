@@ -5,6 +5,11 @@
 ### CLI
 
 - Allow tool requests to proceed after starting a legacy standalone SSE fetch instead of waiting indefinitely for response headers from idle streams.
+- Authenticate OpenClaw extension-backed Chrome control with Browser Relay Authentication v2 over one retained loopback socket from HMAC challenge through CDP upgrade, never transmitting the host key or retrying legacy relay auth, while preserving configurable `prefer` / `require` / `off` routing and the OS-protected one-use child handoff.
+
+### Daemon
+
+- Invalidate keep-alive Chrome DevTools state when relay policy, URL, timeout, OpenClaw credential paths, or the derived relay `keyId` change, keep `require` fail-closed across retries, and expose the last safe relay decision in `mcporter daemon status`.
 
 ### Tooling
 

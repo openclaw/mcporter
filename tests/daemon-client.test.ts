@@ -3,6 +3,7 @@ import os from 'node:os';
 import net from 'node:net';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { hashChromeDevtoolsRelayProcessEnvironment } from '../src/chrome-devtools-relay.js';
 import { DaemonClient, resolveDaemonPaths } from '../src/daemon/client.js';
 import { makeShortTempDir } from './fixtures/test-helpers.js';
 
@@ -110,6 +111,8 @@ describe('daemon client', () => {
         socketPath,
         configPath,
         configLayers: [{ path: configPath, mtimeMs: configStats.mtimeMs }],
+        relayEnvironmentHash: hashChromeDevtoolsRelayProcessEnvironment([], {}),
+        relayEnvironmentKeys: [],
         startedAt: Date.now(),
       })
     );

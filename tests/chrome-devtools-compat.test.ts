@@ -21,6 +21,18 @@ describe('chrome-devtools compatibility', () => {
   it('enables the patch for autoConnect chrome-devtools commands', () => {
     expect(shouldApplyChromeDevtoolsCompat('npx', ['-y', 'chrome-devtools-mcp@latest', '--autoConnect'])).toBe(true);
     expect(shouldApplyChromeDevtoolsCompat('npx', ['-y', 'chrome-devtools-mcp', '--auto-connect'])).toBe(true);
+    expect(shouldApplyChromeDevtoolsCompat('npx', ['chrome-devtools-mcp', '--autoConnect=true'])).toBe(true);
+    expect(shouldApplyChromeDevtoolsCompat('npx', ['chrome-devtools-mcp', '--auto-connect=TRUE'])).toBe(false);
+    expect(shouldApplyChromeDevtoolsCompat('npx', ['chrome-devtools-mcp', '--autoConnect', 'true'])).toBe(true);
+    expect(shouldApplyChromeDevtoolsCompat('npx', ['chrome-devtools-mcp', '--autoConnect=false'])).toBe(false);
+    expect(shouldApplyChromeDevtoolsCompat('npx', ['chrome-devtools-mcp', '--autoConnect', 'false'])).toBe(false);
+    expect(shouldApplyChromeDevtoolsCompat('npx', ['chrome-devtools-mcp', '--no-autoConnect'])).toBe(false);
+    expect(shouldApplyChromeDevtoolsCompat('npm', ['exec', '--', 'chrome-devtools-mcp@latest', '--autoConnect'])).toBe(
+      false
+    );
+    expect(
+      shouldApplyChromeDevtoolsCompat('npm', ['exec', '--', 'chrome-devtools-mcp@latest', '--', '--autoConnect'])
+    ).toBe(false);
   });
 
   it('does not patch non-autoConnect commands', () => {

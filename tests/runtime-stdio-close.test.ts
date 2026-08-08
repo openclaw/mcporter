@@ -35,10 +35,12 @@ describe('stdio runtime close', () => {
       name: 'resistant-tree',
       command: { kind: 'stdio', command: process.execPath, args: [fixture, pidFile], cwd: tempDir },
     };
+    const cleanup = vi.fn(async () => {});
     const transport = new McporterStdioTransport({
       command: process.execPath,
       args: [fixture, pidFile],
       cwd: tempDir,
+      cleanup,
     });
     await transport.start();
     const rootPid = transport.pid;
@@ -63,6 +65,7 @@ describe('stdio runtime close', () => {
     expect(Date.now() - started).toBeLessThan(TEARDOWN_BUDGET_MS);
     await expectProcessExit(rootPid);
     await expectProcessExit(descendantPid);
+    expect(cleanup).toHaveBeenCalledOnce();
     cleanupPids.delete(rootPid);
     cleanupPids.delete(descendantPid);
     await fs.rm(tempDir, { recursive: true, force: true });

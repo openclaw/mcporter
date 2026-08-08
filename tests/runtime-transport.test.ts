@@ -57,6 +57,7 @@ import {
 
 const logger = createLogger();
 const STDIO_NEGOTIATION_FIXTURE = fileURLToPath(new URL('./servers/stdio-negotiation.mjs', import.meta.url));
+const AUTO_CONNECT_ARGS = ['-y', 'chrome-devtools-mcp@latest', '--autoConnect'];
 
 beforeEach(() => {
   resetLogger(logger);
@@ -73,6 +74,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe('createClientContext (HTTP)', () => {
@@ -152,6 +154,23 @@ describe('createClientContext (HTTP)', () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+
+  it('fails require routing before creating a legacy auto-connect transport', async () => {
+    const definition: ServerDefinition = {
+      name: 'chrome-devtools',
+      command: { kind: 'stdio', command: 'npx', args: [...AUTO_CONNECT_ARGS], cwd: '/tmp' },
+      chromeDevtoolsRelay: 'require',
+      env: { OPENCLAW_OAUTH_DIR: `/tmp/mcporter-missing-relay-${Date.now()}` },
+    };
+    const onTransportCreated = vi.fn();
+
+    await expect(createClientContext(definition, logger, clientInfo, { onTransportCreated })).rejects.toThrow(
+      "relay policy 'require'"
+    );
+    expect(onTransportCreated).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('"route":"unavailable"'));
+    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('"reason":"missing-credential"'));
   });
 
   it('falls back to SSE when primary connect fails', async () => {

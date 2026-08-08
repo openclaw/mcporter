@@ -147,12 +147,27 @@ describe('daemon CLI restart', () => {
         pid: 8,
         socketPath: '/tmp/socket',
         servers: [
-          { name: 'active', connected: true, lastUsedAt: 0 },
+          {
+            name: 'active',
+            connected: true,
+            lastUsedAt: 0,
+            chromeDevtoolsRelay: {
+              route: 'relay',
+              reason: 'success',
+              policy: 'require',
+              endpoint: 'ws://127.0.0.1:18799/cdp',
+              probeDurationMs: 14,
+              probeStatus: 200,
+            },
+          },
           { name: 'idle', connected: false, lastUsedAt: Date.UTC(2026, 0, 2) },
         ],
       });
       await handleDaemonCli(['status'], { configPath: '/tmp/config.json' });
       expect(log).toHaveBeenCalledWith('- active: connected');
+      expect(log).toHaveBeenCalledWith(
+        '  chrome relay: route=relay policy=require reason=success endpoint=ws://127.0.0.1:18799/cdp probe=200/14ms'
+      );
       expect(log).toHaveBeenCalledWith('- idle: idle (last used 2026-01-02T00:00:00.000Z)');
     } finally {
       log.mockRestore();

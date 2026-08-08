@@ -14,6 +14,7 @@ import {
   runDaemonHost,
 } from '../src/daemon/host.js';
 import type { DaemonRequest, DaemonResponse, StatusResult } from '../src/daemon/protocol.js';
+import { recordChromeDevtoolsRelayDecision } from '../src/chrome-devtools-relay.js';
 import type { Runtime } from '../src/runtime.js';
 import { OAuthTimeoutError } from '../src/runtime/oauth.js';
 
@@ -509,6 +510,14 @@ describeUnixSocket('runDaemonHost lifecycle', () => {
       };
       expect(metadataFile).toMatchObject({ pid: process.pid, socketPath });
       expect(metadataFile.definitionHash).toMatch(/^[a-f0-9]+$/u);
+      recordChromeDevtoolsRelayDecision('local', {
+        route: 'legacy',
+        reason: 'extension-disconnected',
+        policy: 'prefer',
+        endpoint: 'ws://127.0.0.1:18799/cdp',
+        probeDurationMs: 5,
+        probeStatus: 503,
+      });
 
       const status = await requestDaemon<StatusResult>(
         socketPath,
@@ -526,7 +535,20 @@ describeUnixSocket('runDaemonHost lifecycle', () => {
           pid: process.pid,
           socketPath,
           configPath,
-          servers: [{ name: 'local', connected: false }],
+          servers: [
+            {
+              name: 'local',
+              connected: false,
+              chromeDevtoolsRelay: {
+                route: 'legacy',
+                reason: 'extension-disconnected',
+                policy: 'prefer',
+                endpoint: 'ws://127.0.0.1:18799/cdp',
+                probeDurationMs: 5,
+                probeStatus: 503,
+              },
+            },
+          ],
         },
       });
 

@@ -188,6 +188,7 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
   const tokenCacheDir = stringFromAliases(record, 'tokenCacheDir', 'token_cache_dir');
   const clientName = stringFromAliases(record, 'clientName', 'client_name');
   const protocolVersion = getProtocolVersion(record.protocolVersion ?? record.protocol_version);
+  const chromeDevtoolsRelay = getChromeDevtoolsRelayPolicy(record.chromeDevtoolsRelay ?? record.chrome_devtools_relay);
   const oauthClientId = stringFromAliases(record, 'oauthClientId', 'oauth_client_id');
   const oauthClientSecret = stringFromAliases(record, 'oauthClientSecret', 'oauth_client_secret');
   const oauthClientSecretEnv = stringFromAliases(record, 'oauthClientSecretEnv', 'oauth_client_secret_env');
@@ -218,6 +219,7 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
     tokenCacheDir,
     clientName,
     protocolVersion,
+    chromeDevtoolsRelay,
     oauthClientId,
     oauthClientSecret,
     oauthClientSecretEnv,
@@ -410,6 +412,10 @@ function normalizeHttpFetch(value: string | undefined): ServerDefinition['httpFe
 
 function getProtocolVersion(value: unknown): ServerDefinition['protocolVersion'] | undefined {
   return value === 'auto' || value === 'legacy' || value === '2026-07-28' ? value : undefined;
+}
+
+function getChromeDevtoolsRelayPolicy(value: unknown): ServerDefinition['chromeDevtoolsRelay'] | undefined {
+  return value === 'off' || value === 'prefer' || value === 'require' ? value : undefined;
 }
 
 function stringFromAliases(record: Record<string, unknown>, ...keys: string[]): string | undefined {

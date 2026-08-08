@@ -1,3 +1,5 @@
+import type { ChromeDevtoolsRelayDecision } from '../chrome-devtools-relay.js';
+
 export const DAEMON_PROTOCOL_VERSION = 2;
 export const DAEMON_OPERATION_TIMEOUT_CODE = 'operation_timeout';
 export const DAEMON_PROGRESS_INTERVAL_MS = 250;
@@ -143,11 +145,14 @@ export interface StatusResult {
     readonly mtimeMs: number | null;
   }>;
   readonly definitionHash?: string;
+  readonly relayEnvironmentHash?: string;
+  readonly relayEnvironmentKeys?: string[];
   readonly socketPath: string;
   readonly logPath?: string;
   readonly servers: Array<{
     readonly name: string;
     readonly connected: boolean;
     readonly lastUsedAt?: number;
+    readonly chromeDevtoolsRelay?: ChromeDevtoolsRelayDecision;
   }>;
 }

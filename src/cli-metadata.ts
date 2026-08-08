@@ -25,6 +25,7 @@ export interface SerializedServerDefinition {
   readonly tokenCacheDir?: string;
   readonly clientName?: string;
   readonly protocolVersion?: ServerDefinition['protocolVersion'];
+  readonly chromeDevtoolsRelay?: ServerDefinition['chromeDevtoolsRelay'];
   readonly oauthClientId?: string;
   readonly oauthClientSecretEnv?: string;
   readonly oauthTokenEndpointAuthMethod?: string;

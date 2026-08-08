@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { hashChromeDevtoolsRelayProcessEnvironment } from '../src/chrome-devtools-relay.js';
 import { NON_INTERACTIVE_ELICITATION_HINT } from '../src/runtime/elicitation.js';
 import { makeShortTempDir } from './fixtures/test-helpers.js';
 
@@ -42,7 +43,8 @@ let noticeOnCall = false;
 const responseOverrides = new Map<string, string>();
 let activeConfigPath = path.resolve('mcporter.config.json');
 let activeSocketPath = '';
-const createConnection = vi.fn(() => {
+const createConnection = vi.hoisted(() => vi.fn());
+createConnection.mockImplementation(() => {
   const socket = new MockSocket();
   setTimeout(() => socket.emit('connect'), 0);
   return socket;
@@ -262,6 +264,8 @@ async function writeFreshMetadata(configPath: string): Promise<void> {
       socketPath: paths.socketPath,
       configPath,
       configLayers: [{ path: activeConfigPath, mtimeMs: null }],
+      relayEnvironmentHash: hashChromeDevtoolsRelayProcessEnvironment([], {}),
+      relayEnvironmentKeys: [],
       startedAt: Date.now(),
     }),
     'utf8'

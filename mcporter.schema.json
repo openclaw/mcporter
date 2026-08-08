@@ -113,6 +113,16 @@
             "type": "string",
             "enum": ["auto", "legacy", "2026-07-28"]
           },
+          "chromeDevtoolsRelay": {
+            "description": "OpenClaw Chrome extension relay policy for chrome-devtools-mcp (camelCase)",
+            "type": "string",
+            "enum": ["off", "prefer", "require"]
+          },
+          "chrome_devtools_relay": {
+            "description": "OpenClaw Chrome extension relay policy for chrome-devtools-mcp (snake_case)",
+            "type": "string",
+            "enum": ["off", "prefer", "require"]
+          },
           "oauthClientId": {
             "description": "Pre-registered OAuth client id (camelCase)",
             "type": "string"

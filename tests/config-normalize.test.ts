@@ -209,6 +209,25 @@ describe('config normalization', () => {
     expect(servers.find((entry) => entry.name === 'modern')?.protocolVersion).toBe('2026-07-28');
   });
 
+  it('normalizes Chrome relay policy from camelCase and snake_case keys', async () => {
+    await fs.mkdir(TEMP_DIR, { recursive: true });
+    const configPath = path.join(TEMP_DIR, 'mcporter-chrome-relay.json');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          strict: { command: 'npx', args: ['chrome-devtools-mcp', '--autoConnect'], chromeDevtoolsRelay: 'require' },
+          disabled: { command: 'npx', args: ['chrome-devtools-mcp', '--autoConnect'], chrome_devtools_relay: 'off' },
+        },
+      }),
+      'utf8'
+    );
+
+    const servers = await loadServerDefinitions({ configPath });
+    expect(servers.find((entry) => entry.name === 'strict')?.chromeDevtoolsRelay).toBe('require');
+    expect(servers.find((entry) => entry.name === 'disabled')?.chromeDevtoolsRelay).toBe('off');
+  });
+
   it('loads daemon idle timeout from config layers', async () => {
     const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-idle-'));
     const configDir = path.join(rootDir, 'config');
