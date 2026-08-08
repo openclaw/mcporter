@@ -1,5 +1,6 @@
 import http from 'node:http';
 import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import {
   createMcpHandler,
   McpServer,
@@ -232,8 +233,25 @@ async function handleNodeRequest(
     return;
   }
   const body = Readable.fromWeb(webResponse.body as never);
-  body.on('error', (error) => response.destroy(error));
-  body.pipe(response);
+  await pipeHttpResponseBody(body, response);
+}
+
+/**
+ * Pipe an MCP response body into a Node HTTP response with bidirectional
+ * error cleanup. Client abort must destroy the body; body failure must
+ * destroy the response. Bare `body.pipe(response)` only handles one direction.
+ */
+export async function pipeHttpResponseBody(body: Readable, response: http.ServerResponse): Promise<void> {
+  try {
+    await pipeline(body, response);
+  } catch {
+    if (!response.destroyed) {
+      response.destroy();
+    }
+    if (!body.destroyed) {
+      body.destroy();
+    }
+  }
 }
 
 function toWebRequest(request: http.IncomingMessage): Request {

@@ -23,9 +23,18 @@ export function createLogContext(options: {
   if (derivedEnabled && options.logPath) {
     try {
       fsSync.mkdirSync(path.dirname(options.logPath), { recursive: true });
-      context.writer = fsSync.createWriteStream(options.logPath, {
+      const writer = fsSync.createWriteStream(options.logPath, {
         flags: 'a',
       });
+      // Attach before any write: a long-lived WriteStream with no error
+      // listener turns ENOSPC/EIO into an uncaughtException and kills the daemon.
+      writer.on('error', (error) => {
+        console.warn(`[daemon] Log file write error (${options.logPath}): ${error.message}`);
+        if (context.writer === writer) {
+          context.writer = undefined;
+        }
+      });
+      context.writer = writer;
     } catch (error) {
       console.warn(`[daemon] Failed to open log file ${options.logPath}: ${(error as Error).message}`);
     }
