@@ -53,10 +53,12 @@ export function createChromeDevtoolsRelayHandoff(
         cleanupHandoff(directory!, handoffPath, preloadPath);
       },
     };
-  } catch {
+  } catch (error) {
     if (directory)
       cleanupHandoff(directory, path.join(directory, HANDOFF_FILENAME), path.join(directory, PRELOAD_FILENAME));
-    throw new Error('Unable to install secure Chrome relay authorization handoff.');
+    const diagnostic =
+      error instanceof Error && error.message.startsWith('Windows ACL setup failed:') ? ` ${error.message}` : '';
+    throw new Error(`Unable to install secure Chrome relay authorization handoff.${diagnostic}`, { cause: error });
   }
 }
 
@@ -64,28 +66,41 @@ function createWindowsHandoffDirectory(): string {
   const directory = path.join(os.tmpdir(), `${HANDOFF_DIR_PREFIX}${randomBytes(16).toString('hex')}`);
   const script = String.raw`
 $ErrorActionPreference = 'Stop'
+$stage = 'identity'
+try {
 $target = $env:${WINDOWS_ACL_PATH_ENV}
 if ([System.IO.Directory]::Exists($target)) { throw 'handoff path already exists' }
 $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$stage = 'descriptor'
 $security = New-Object System.Security.AccessControl.DirectorySecurity
 $sidValue = $sid.Value
 $security.SetSecurityDescriptorSddlForm("O:$($sidValue)G:$($sidValue)D:P(A;OICI;FA;;;$($sidValue))")
 $directory = New-Object System.IO.DirectoryInfo -ArgumentList @($target)
+$stage = 'create'
 $directory.Create($security)
+$stage = 'acl-read'
 $check = Get-Acl -LiteralPath $target
 $rules = @($check.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))
 $ownerSid = $check.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+$stage = 'acl-verify'
 if (-not $check.AreAccessRulesProtected -or $ownerSid -ne $sid.Value -or $rules.Count -ne 1) { throw 'unsafe ACL' }
 $ruleSid = $rules[0].IdentityReference.Value
 $hasFullControl = ($rules[0].FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl
 if ($ruleSid -ne $sid.Value -or $rules[0].IsInherited -or -not $hasFullControl -or $rules[0].AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) { throw 'unsafe ACL' }
+} catch {
+  $type = $_.Exception.GetType().FullName
+  $hresult = ('0x{0:X8}' -f ($_.Exception.HResult -band 0xffffffffL))
+  [Console]::Error.WriteLine("stage=$stage type=$type hresult=$hresult")
+  exit 1
+}
 `;
   const result = spawnSync(
     resolveSystemPowerShellPath(),
     ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
     {
+      encoding: 'utf8',
       env: { ...process.env, [WINDOWS_ACL_PATH_ENV]: directory },
-      stdio: 'ignore',
+      stdio: ['ignore', 'ignore', 'pipe'],
       windowsHide: true,
     }
   );
@@ -93,7 +108,11 @@ if ($ruleSid -ne $sid.Value -or $rules[0].IsInherited -or -not $hasFullControl -
     try {
       fs.rmdirSync(directory);
     } catch {}
-    throw new Error('unsafe Windows ACL');
+    const stderr = typeof result.stderr === 'string' ? result.stderr.trim() : '';
+    const safeDetail = /^[A-Za-z0-9_.:=\- ]{1,240}$/u.test(stderr)
+      ? stderr
+      : `stage=spawn type=${(result.error as NodeJS.ErrnoException | undefined)?.code ?? 'unknown'} hresult=unknown`;
+    throw new Error(`Windows ACL setup failed: ${safeDetail}`);
   }
   return directory;
 }
