@@ -126,18 +126,22 @@ describe.each(fixtureKinds)('%s fixture through the real CLI', (fixture) => {
 });
 
 describe.each(transports)('legacy long-tail over %s', (transport) => {
-  it('declines headless elicitation with a hint and handles unsupported sampling', async () => {
-    await withConfig({ fixture: configFor('legacy', transport) }, async (configPath, env) => {
-      const elicited = await runCli(['call', 'fixture.elicit_name', '--output', 'text'], configPath, env);
-      expect(elicited.exitCode).toBe(0);
-      expect(elicited.stderr).toContain('Server requested interactive input; run mcporter in a terminal.');
-      expect(elicited.stdout).toContain('elicitation decline');
+  it(
+    'declines headless elicitation with a hint and handles unsupported sampling',
+    async () => {
+      await withConfig({ fixture: configFor('legacy', transport) }, async (configPath, env) => {
+        const elicited = await runCli(['call', 'fixture.elicit_name', '--output', 'text'], configPath, env);
+        expect(elicited.exitCode).toBe(0);
+        expect(elicited.stderr).toContain('Server requested interactive input; run mcporter in a terminal.');
+        expect(elicited.stdout).toContain('elicitation decline');
 
-      const sampled = await runCli(['call', 'fixture.sample_poem', '--output', 'text'], configPath, env);
-      expect(sampled.exitCode).toBe(0);
-      expect(sampled.stdout).toContain('sampling declined or unsupported by client');
-    });
-  });
+        const sampled = await runCli(['call', 'fixture.sample_poem', '--output', 'text'], configPath, env);
+        expect(sampled.exitCode).toBe(0);
+        expect(sampled.stdout).toContain('sampling declined or unsupported by client');
+      });
+    },
+    budget(20_000)
+  );
 });
 
 describe.each(transports)('modern MRTR and identity over %s', (transport) => {

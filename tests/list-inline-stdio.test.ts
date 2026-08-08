@@ -5,16 +5,14 @@ import type { Runtime, ServerToolInfo } from '../src/runtime.js';
 
 function createRuntimeStub() {
   const definitions: ServerDefinition[] = [];
-  const listTools = vi.fn(
-    async (_server: string, _options?: unknown): Promise<ServerToolInfo[]> => [
-      {
-        name: 'doctor',
-        description: 'Runs diagnostics',
-        inputSchema: { type: 'object', properties: {}, required: [] },
-        outputSchema: undefined,
-      },
-    ]
-  );
+  const listTools = vi.fn(async (_server: string, _options?: unknown): Promise<ServerToolInfo[]> => [
+    {
+      name: 'doctor',
+      description: 'Runs diagnostics',
+      inputSchema: { type: 'object', properties: {}, required: [] },
+      outputSchema: undefined,
+    },
+  ]);
 
   const getDefinition = (name: string): ServerDefinition => {
     const found = definitions.find((entry) => entry.name === name);
@@ -25,7 +23,7 @@ function createRuntimeStub() {
   };
 
   const runtime: Runtime = {
-    listServers: () => definitions.map((entry) => entry.name).sort(),
+    listServers: () => definitions.map((entry) => entry.name).toSorted(),
     getDefinitions: () => definitions,
     getDefinition,
     registerDefinition: (definition: ServerDefinition, _options?: { overwrite?: boolean }): void => {

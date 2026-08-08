@@ -14,16 +14,14 @@ function buildServerDefinition(name: string): ServerDefinition {
 }
 
 function createRuntime(definitions: ServerDefinition[]) {
-  const listTools = vi.fn(
-    async (_name: string, _options?: unknown): Promise<ServerToolInfo[]> => [
-      {
-        name: 'doctor',
-        description: 'Runs diagnostics',
-        inputSchema: undefined,
-        outputSchema: undefined,
-      },
-    ]
-  );
+  const listTools = vi.fn(async (_name: string, _options?: unknown): Promise<ServerToolInfo[]> => [
+    {
+      name: 'doctor',
+      description: 'Runs diagnostics',
+      inputSchema: undefined,
+      outputSchema: undefined,
+    },
+  ]);
   const runtime: Runtime = {
     listServers: () => definitions.map((entry) => entry.name),
     getDefinitions: () => definitions,
