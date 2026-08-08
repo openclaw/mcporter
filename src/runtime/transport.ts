@@ -7,7 +7,15 @@ import {
   type VersionNegotiationMode,
 } from '@modelcontextprotocol/client';
 import { applyChromeDevtoolsCompat } from '../chrome-devtools-compat.js';
-import { rewriteChromeDevtoolsArgsForRelay } from '../chrome-devtools-relay.js';
+import { createChromeDevtoolsRelayHandoff, type ChromeDevtoolsRelayHandoff } from '../chrome-devtools-relay-handoff.js';
+import {
+  type ChromeDevtoolsRelayDecision,
+  ChromeDevtoolsRelayRequiredError,
+  type ChromeDevtoolsRelayRewrite,
+  formatChromeDevtoolsRelayDecision,
+  recordChromeDevtoolsRelayDecision,
+  rewriteChromeDevtoolsArgsForRelay,
+} from '../chrome-devtools-relay.js';
 import type { ServerDefinition } from '../config.js';
 import { resolveEnvValue, withEnvOverrides } from '../env.js';
 import type { Logger } from '../logging.js';
@@ -137,28 +145,85 @@ async function createStdioClientContext(
       : { ...process.env };
   const command = resolveCommandArgument(definition.command.command);
   const resolvedArgs = resolveCommandArguments(definition.command.args);
-  const relay = await rewriteChromeDevtoolsArgsForRelay(command, resolvedArgs, mergedEnv as NodeJS.ProcessEnv);
-  if (relay.applied) {
-    logger.info(`Routing chrome-devtools-mcp through the OpenClaw extension relay at ${relay.endpoint} (no dialog).`);
+  const publishRelayDecision = (decision: ChromeDevtoolsRelayDecision): void => {
+    if (decision.reason === 'not-eligible') return;
+    recordChromeDevtoolsRelayDecision(definition.name, decision);
+    logger.info(`Chrome DevTools relay decision ${formatChromeDevtoolsRelayDecision(decision)}`);
+  };
+  let relayDecision: ChromeDevtoolsRelayDecision | undefined;
+  let relay: ChromeDevtoolsRelayRewrite;
+  try {
+    relay = await rewriteChromeDevtoolsArgsForRelay(
+      command,
+      resolvedArgs,
+      mergedEnv as NodeJS.ProcessEnv,
+      { onDecision: (decision) => (relayDecision = decision) },
+      definition.chromeDevtoolsRelay
+    );
+  } catch (error) {
+    if (relayDecision) publishRelayDecision(relayDecision);
+    throw error;
   }
-  const commandArgs = [...relay.args];
-  const compat = applyChromeDevtoolsCompat(mergedEnv as Record<string, string>, command, commandArgs);
-  if (compat.applied) {
-    logger.info(`Injecting chrome-devtools-mcp --autoConnect compatibility patch from ${compat.patchPath}.`);
+  let commandArgs = [...relay.args];
+  let activeProxy = relay.proxy;
+  let handoff: ChromeDevtoolsRelayHandoff | undefined;
+  let rawTransport: McporterStdioTransport;
+  try {
+    if (activeProxy) {
+      try {
+        handoff = createChromeDevtoolsRelayHandoff(
+          mergedEnv as Record<string, string>,
+          activeProxy.consumeClientAuthorization()
+        );
+      } catch {
+        await activeProxy.close().catch(() => {});
+        activeProxy = undefined;
+        relayDecision = {
+          ...relay.decision,
+          route: relay.decision.policy === 'require' ? 'unavailable' : 'legacy',
+          reason: 'handoff-error',
+        };
+        if (relay.decision.policy === 'require') {
+          publishRelayDecision(relayDecision);
+          throw new ChromeDevtoolsRelayRequiredError(relayDecision);
+        }
+        commandArgs = [...resolvedArgs];
+      }
+    }
+    const transportEnv = handoff?.env ?? (mergedEnv as Record<string, string>);
+    const compat = applyChromeDevtoolsCompat(transportEnv, command, commandArgs);
+    if (compat.applied) {
+      logger.info(`Injecting chrome-devtools-mcp --autoConnect compatibility patch from ${compat.patchPath}.`);
+    }
+    if (relayDecision) publishRelayDecision(relayDecision);
+    rawTransport = new McporterStdioTransport({
+      command,
+      args: commandArgs,
+      cwd: definition.command.cwd,
+      env: compat.env,
+      cleanup: activeProxy
+        ? async () => {
+            await handoff?.close();
+            await activeProxy?.close();
+          }
+        : undefined,
+    });
+  } catch (error) {
+    await handoff?.close().catch(() => {});
+    await activeProxy?.close().catch(() => {});
+    throw error;
   }
-  const rawTransport = new McporterStdioTransport({
-    command,
-    args: commandArgs,
-    cwd: definition.command.cwd,
-    env: compat.env,
-  });
-  const transport = wrapRecordTransport(rawTransport, definition, options);
+  let transport: ClientContext['transport'];
+  try {
+    transport = wrapRecordTransport(rawTransport, definition, options);
+  } catch (error) {
+    await closeTransportAndWait(logger, rawTransport).catch(() => {});
+    throw error;
+  }
   try {
     await client.connect(transport, { signal: options.signal });
   } catch (error) {
-    if (!options.signal?.aborted) {
-      await closeTransportAndWait(logger, transport).catch(() => {});
-    }
+    await closeTransportAndWait(logger, transport).catch(() => {});
     throw error;
   }
   return { client, transport, definition, oauthSession: undefined };

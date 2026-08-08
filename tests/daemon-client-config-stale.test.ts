@@ -3,6 +3,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeShortTempDir } from './fixtures/test-helpers.js';
+import {
+  chromeDevtoolsRelayEnvironmentKeys,
+  hashChromeDevtoolsRelayEnvironment,
+} from '../src/chrome-devtools-relay.js';
+import type { ServerDefinition } from '../src/config.js';
 
 const sentMethods: string[] = [];
 const launchDaemonDetached = vi.hoisted(() => vi.fn());
@@ -45,11 +50,14 @@ function buildResponse(method: string, id: string) {
         configPath: activeConfigPath,
         configMtimeMs: activeConfigMtime,
         configLayers: activeLayers,
+        relayEnvironmentHash: activeRelayEnvironmentHash,
+        relayEnvironmentKeys: activeRelayEnvironmentKeys,
         socketPath: activeSocketPath,
         servers: [],
       },
     };
   }
+  if (method === 'stop') activeStatusPid = findNonRunningPid();
   return {
     id,
     ok: true,
@@ -63,6 +71,8 @@ let activeStatusPid = process.pid;
 let activeSocketPath: string;
 let previousDaemonDir: string | undefined;
 let activeLayers: Array<{ path: string; mtimeMs: number | null }> = [];
+let activeRelayEnvironmentHash = hashChromeDevtoolsRelayEnvironment([], {});
+let activeRelayEnvironmentKeys: string[] = [];
 
 vi.mock('node:net', () => {
   createConnection = vi.fn(() => {
@@ -84,6 +94,8 @@ describe('DaemonClient config freshness', () => {
     sentMethods.length = 0;
     previousDaemonDir = process.env.MCPORTER_DAEMON_DIR;
     activeLayers = [];
+    activeRelayEnvironmentHash = hashChromeDevtoolsRelayEnvironment([], {});
+    activeRelayEnvironmentKeys = [];
     launchDaemonDetached.mockClear();
     launchDaemonDetached.mockImplementation(
       (options: { metadataPath: string; socketPath: string; configPath: string }) => {
@@ -99,6 +111,8 @@ describe('DaemonClient config freshness', () => {
               logPath: null,
               configMtimeMs: activeConfigMtime,
               configLayers: activeLayers,
+              relayEnvironmentHash: activeRelayEnvironmentHash,
+              relayEnvironmentKeys: activeRelayEnvironmentKeys,
             },
             null,
             2
@@ -231,6 +245,8 @@ describe('DaemonClient config freshness', () => {
           logPath: null,
           configMtimeMs: stat.mtimeMs,
           configLayers: activeLayers,
+          relayEnvironmentHash: activeRelayEnvironmentHash,
+          relayEnvironmentKeys: activeRelayEnvironmentKeys,
         },
         null,
         2
@@ -244,6 +260,71 @@ describe('DaemonClient config freshness', () => {
     expect(sentMethods).toEqual(['status', 'listTools']);
     expect(sentMethods).not.toContain('stop');
     expect(launchDaemonDetached).not.toHaveBeenCalled();
+  });
+
+  it('restarts when relay policy environment changes without a config mtime change', async () => {
+    const tmpDir = await makeShortTempDir('daemon-relay-env');
+    process.env.MCPORTER_DAEMON_DIR = tmpDir;
+    const configPath = path.join(tmpDir, 'config.json');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          chrome: {
+            command: 'npx',
+            args: ['-y', 'chrome-devtools-mcp@latest', '--autoConnect'],
+            lifecycle: 'keep-alive',
+          },
+        },
+      }),
+      'utf8'
+    );
+    const stat = await fs.stat(configPath);
+    const { metadataPath, socketPath } = resolveDaemonPaths(configPath);
+    const definition: ServerDefinition = {
+      name: 'chrome',
+      command: {
+        kind: 'stdio',
+        command: 'npx',
+        args: ['-y', 'chrome-devtools-mcp@latest', '--autoConnect'],
+        cwd: tmpDir,
+      },
+    };
+    activeConfigPath = configPath;
+    activeSocketPath = socketPath;
+    activeConfigMtime = stat.mtimeMs;
+    activeStatusPid = process.pid;
+    activeLayers = [{ path: configPath, mtimeMs: stat.mtimeMs }];
+    activeRelayEnvironmentHash = hashChromeDevtoolsRelayEnvironment([definition], {});
+    activeRelayEnvironmentKeys = chromeDevtoolsRelayEnvironmentKeys([definition]);
+    await fs.mkdir(path.dirname(metadataPath), { recursive: true });
+    await fs.writeFile(
+      metadataPath,
+      JSON.stringify({
+        pid: process.pid,
+        socketPath,
+        configPath,
+        startedAt: Date.now() - 10_000,
+        configMtimeMs: stat.mtimeMs,
+        configLayers: activeLayers,
+        relayEnvironmentHash: activeRelayEnvironmentHash,
+        relayEnvironmentKeys: activeRelayEnvironmentKeys,
+      }),
+      'utf8'
+    );
+
+    const previousPolicy = process.env.MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY;
+    process.env.MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY = 'require';
+    try {
+      const client = new DaemonClient({ configPath, configExplicit: true, rootDir: tmpDir });
+      await client.listTools({ server: 'chrome' });
+      expect(sentMethods[0]).toBe('status');
+      expect(sentMethods).toContain('stop');
+      expect(launchDaemonDetached).toHaveBeenCalledOnce();
+    } finally {
+      if (previousPolicy === undefined) delete process.env.MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY;
+      else process.env.MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY = previousPolicy;
+    }
   });
 });
 

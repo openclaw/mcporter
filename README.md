@@ -72,6 +72,8 @@ MCPorter reads project and user config, then imports MCP servers from Cursor, Cl
 
 Config files accept JSONC, environment placeholders, HTTP and stdio definitions, OAuth settings, tool filters, and lifecycle policy. The [configuration guide](docs/config.md) defines precedence and the full schema; the [import reference](docs/import.md) lists every discovered client format.
 
+Chrome DevTools definitions using `--autoConnect` can control Chrome through a paired [OpenClaw extension relay](docs/daemon.md#chrome-devtools-through-the-openclaw-extension-relay). MCPorter probes the host-local relay, keeps its stable bearer credential out of the child process, and gives `chrome-devtools-mcp` a credential-free loopback URL plus ephemeral authorization through an OS-protected preload handoff. Relay routing defaults to the backward-compatible `prefer` policy; `require` fails closed and `off` keeps legacy auto-connect.
+
 ## TypeScript runtime
 
 Use `createRuntime()` when a process needs explicit server definitions, connection reuse, or several calls:

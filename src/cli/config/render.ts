@@ -10,6 +10,7 @@ export type SerializedServerDefinition = {
   auth?: ServerDefinition['auth'];
   tokenCacheDir?: string;
   clientName?: string;
+  chromeDevtoolsRelay?: ServerDefinition['chromeDevtoolsRelay'];
   oauthClientId?: string;
   oauthClientSecretEnv?: string;
   oauthTokenEndpointAuthMethod?: string;

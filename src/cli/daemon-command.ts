@@ -175,6 +175,17 @@ async function handleDaemonStatus(client: DaemonClient): Promise<void> {
     const state = server.connected ? 'connected' : 'idle';
     const lastUsed = server.lastUsedAt ? ` (last used ${new Date(server.lastUsedAt).toISOString()})` : '';
     console.log(`- ${server.name}: ${state}${lastUsed}`);
+    if (server.chromeDevtoolsRelay) {
+      const relay = server.chromeDevtoolsRelay;
+      const endpoint = relay.endpoint ? ` endpoint=${relay.endpoint}` : '';
+      const probe =
+        relay.probeDurationMs === undefined
+          ? ''
+          : ` probe=${relay.probeStatus ?? 'no-status'}/${relay.probeDurationMs}ms`;
+      console.log(
+        `  chrome relay: route=${relay.route} policy=${relay.policy} reason=${relay.reason}${endpoint}${probe}`
+      );
+    }
   });
 }
 

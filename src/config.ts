@@ -21,6 +21,7 @@ import { writeTextFileAtomic } from './fs-json.js';
 export { toFileUrl } from './config-imports.js';
 export { __configInternals } from './config-normalize.js';
 export type {
+  ChromeDevtoolsRelayPolicy,
   CommandSpec,
   HttpCommand,
   ImportKind,

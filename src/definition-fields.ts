@@ -5,6 +5,7 @@ const SHARED_DEFINITION_FIELDS = [
   'tokenCacheDir',
   'clientName',
   'protocolVersion',
+  'chromeDevtoolsRelay',
   'oauthClientId',
   'oauthClientSecretEnv',
   'oauthTokenEndpointAuthMethod',

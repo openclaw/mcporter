@@ -3,8 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { renderChromeDevtoolsAutoConnectPatchSource } from './chrome-devtools-auto-connect-patch.js';
+import { resolveChromeDevtoolsAutoConnectCommand } from './chrome-devtools-command.js';
 
-const AUTO_CONNECT_FLAGS = new Set(['--autoConnect', '--auto-connect']);
 const FALLBACK_PATCH_FILENAME = 'mcporter-chrome-devtools-auto-connect-patch.js';
 
 export interface ChromeDevtoolsCompatResult {
@@ -48,16 +48,7 @@ export function shouldApplyChromeDevtoolsCompat(
   if (env.MCPORTER_DISABLE_CHROME_DEVTOOLS_COMPAT === '1') {
     return false;
   }
-  const tokens = [command, ...args];
-  return tokens.some(isChromeDevtoolsToken) && args.some((arg) => AUTO_CONNECT_FLAGS.has(arg));
-}
-
-function isChromeDevtoolsToken(token: string): boolean {
-  return (
-    token === 'chrome-devtools-mcp' ||
-    token.startsWith('chrome-devtools-mcp@') ||
-    token.includes('/chrome-devtools-mcp')
-  );
+  return resolveChromeDevtoolsAutoConnectCommand(command, args).enabled;
 }
 
 export function resolveChromeDevtoolsCompatPatchPath(

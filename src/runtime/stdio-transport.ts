@@ -7,6 +7,10 @@ import {
   type ProcessStreamMeta,
 } from '../sdk-stdio-logging.js';
 
+export interface McporterStdioTransportParameters extends StdioServerParameters {
+  readonly cleanup?: () => Promise<void> | void;
+}
+
 /**
  * MCPorter's stdio transport keeps stderr diagnostics and optional trace data
  * without reaching into SDK internals. As a subclass it also makes v2's
@@ -20,6 +24,7 @@ export class McporterStdioTransport extends StdioClientTransport {
   private readonly closeInterceptor = () => {
     this.meta.code = this.closing ? 0 : 1;
     flushStdioLogs(this.meta);
+    void this.cleanup();
     this.closeDelegate?.();
   };
   private readonly messageInterceptor = (message: JSONRPCMessage) => {
@@ -27,7 +32,9 @@ export class McporterStdioTransport extends StdioClientTransport {
     this.messageDelegate?.(message);
   };
 
-  constructor(parameters: StdioServerParameters) {
+  private cleanupPromise: Promise<void> | undefined;
+
+  constructor(private readonly parameters: McporterStdioTransportParameters) {
     super({ ...parameters, stderr: 'pipe' });
     this.meta = {
       stderrChunks: [],
@@ -81,7 +88,13 @@ export class McporterStdioTransport extends StdioClientTransport {
     } finally {
       this.meta.code ??= 0;
       flushStdioLogs(this.meta);
+      await this.cleanup();
     }
+  }
+
+  private cleanup(): Promise<void> {
+    this.cleanupPromise ??= Promise.resolve(this.parameters.cleanup?.()).catch(() => {});
+    return this.cleanupPromise;
   }
 
   private installInterceptors(): void {

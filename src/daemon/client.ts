@@ -2,6 +2,7 @@ import crypto, { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
+import { hashChromeDevtoolsRelayProcessEnvironment } from '../chrome-devtools-relay.js';
 import { withFileLock } from '../fs-json.js';
 import { isProcessRunning } from '../process-utils.js';
 import { collectConfigLayers, normalizeConfigLayers } from './config-layers.js';
@@ -49,6 +50,8 @@ interface DaemonMetadata {
   readonly configLayers?: Array<{ path: string; mtimeMs: number | null }>;
   readonly startedAt: number;
   readonly logPath?: string | null;
+  readonly relayEnvironmentHash?: string;
+  readonly relayEnvironmentKeys?: string[];
 }
 
 type DaemonConfigState = 'missing' | 'fresh' | 'stale';
@@ -262,6 +265,12 @@ export class DaemonClient {
       if (!current || !previous || current.path !== previous.path || current.mtimeMs !== previous.mtimeMs) {
         return 'stale';
       }
+    }
+    if (
+      !metadata.relayEnvironmentKeys ||
+      metadata.relayEnvironmentHash !== hashChromeDevtoolsRelayProcessEnvironment(metadata.relayEnvironmentKeys)
+    ) {
+      return 'stale';
     }
     return 'fresh';
   }

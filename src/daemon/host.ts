@@ -4,6 +4,11 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
+import {
+  chromeDevtoolsRelayEnvironmentKeys,
+  getChromeDevtoolsRelayDecision,
+  hashChromeDevtoolsRelayProcessEnvironment,
+} from '../chrome-devtools-relay.js';
 import { loadConfigSnapshot, type DaemonConfig, type ServerDefinition } from '../config.js';
 import { readJsonFile, withFileLock, writeJsonFile } from '../fs-json.js';
 import { isKeepAliveServer } from '../lifecycle.js';
@@ -74,6 +79,8 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
   const { daemonConfig, runtime } = startup;
   const keepAliveDefinitions = runtime.getDefinitions().filter(isKeepAliveServer);
   const definitionHash = hashDaemonDefinitions(keepAliveDefinitions);
+  const relayEnvironmentKeys = chromeDevtoolsRelayEnvironmentKeys(keepAliveDefinitions);
+  const relayEnvironmentHash = hashChromeDevtoolsRelayProcessEnvironment(relayEnvironmentKeys);
   if (keepAliveDefinitions.length === 0) {
     throw new Error('No MCP servers require keep-alive; daemon will not start.');
   }
@@ -180,6 +187,8 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
           logPath: options.logPath ?? null,
           configMtimeMs,
           definitionHash,
+          relayEnvironmentHash,
+          relayEnvironmentKeys,
         },
         logContext,
         shutdown,
@@ -208,7 +217,17 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
   await withFileLock(`${options.metadataPath}.bind`, async () => {
     const live = await probeLiveDaemon(options.socketPath);
     if (live) {
-      if (daemonConfigMatches(live, configLayers, options.configPath, configMtimeMs, definitionHash)) {
+      if (
+        daemonConfigMatches(
+          live,
+          configLayers,
+          options.configPath,
+          configMtimeMs,
+          definitionHash,
+          relayEnvironmentHash,
+          relayEnvironmentKeys
+        )
+      ) {
         if (!(await metadataMatches(options.metadataPath, live))) {
           await writeJsonFile(options.metadataPath, metadataFromStatus(live, configLayers));
         }
@@ -234,6 +253,8 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
       logPath: options.logPath ?? null,
       configMtimeMs,
       definitionHash,
+      relayEnvironmentHash,
+      relayEnvironmentKeys,
     });
     claimed = true;
   });
@@ -304,6 +325,8 @@ function metadataFromStatus(
   logPath: string | null;
   configMtimeMs: number | null;
   definitionHash?: string;
+  relayEnvironmentHash?: string;
+  relayEnvironmentKeys?: string[];
 } {
   return {
     pid: status.pid,
@@ -315,6 +338,8 @@ function metadataFromStatus(
     logPath: status.logPath ?? null,
     configMtimeMs: status.configMtimeMs ?? null,
     definitionHash: status.definitionHash,
+    relayEnvironmentHash: status.relayEnvironmentHash,
+    relayEnvironmentKeys: status.relayEnvironmentKeys,
   };
 }
 
@@ -323,9 +348,17 @@ function daemonConfigMatches(
   currentLayers: Array<{ path: string; mtimeMs: number | null }>,
   currentConfigPath: string,
   currentConfigMtimeMs: number | null,
-  currentDefinitionHash: string
+  currentDefinitionHash: string,
+  currentRelayEnvironmentHash: string,
+  currentRelayEnvironmentKeys: readonly string[]
 ): boolean {
   if (live.definitionHash !== currentDefinitionHash) {
+    return false;
+  }
+  if (live.relayEnvironmentHash !== currentRelayEnvironmentHash) {
+    return false;
+  }
+  if (JSON.stringify(live.relayEnvironmentKeys) !== JSON.stringify(currentRelayEnvironmentKeys)) {
     return false;
   }
   const liveLayers = normalizeConfigLayers(
@@ -493,6 +526,8 @@ async function handleSocketRequest(
     startedAt: number;
     logPath: string | null;
     definitionHash?: string;
+    relayEnvironmentHash?: string;
+    relayEnvironmentKeys?: string[];
   },
   logContext: LogContext,
   shutdown: () => Promise<void>,
@@ -601,6 +636,8 @@ async function processRequest(
     startedAt: number;
     logPath: string | null;
     definitionHash?: string;
+    relayEnvironmentHash?: string;
+    relayEnvironmentKeys?: string[];
   },
   logContext: LogContext,
   preParsedRequest?: DaemonRequest
@@ -780,6 +817,8 @@ async function processRequest(
           configLayers: metadata.configLayers,
           configMtimeMs: metadata.configMtimeMs,
           definitionHash: metadata.definitionHash,
+          relayEnvironmentHash: metadata.relayEnvironmentHash,
+          relayEnvironmentKeys: metadata.relayEnvironmentKeys,
           socketPath: metadata.socketPath,
           logPath: metadata.logPath ?? undefined,
           servers: Array.from(managedServers.values()).map((def) => {
@@ -788,6 +827,7 @@ async function processRequest(
               name: def.name,
               connected: Boolean(entry?.connected),
               lastUsedAt: entry?.lastUsedAt,
+              chromeDevtoolsRelay: getChromeDevtoolsRelayDecision(def.name),
             };
           }),
         };
@@ -837,6 +877,8 @@ export async function __testProcessRequest(
     startedAt: number;
     logPath: string | null;
     definitionHash?: string;
+    relayEnvironmentHash?: string;
+    relayEnvironmentKeys?: string[];
   },
   logContext: LogContext,
   preParsedRequest?: DaemonRequest

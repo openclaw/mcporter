@@ -58,6 +58,12 @@ export const ProtocolVersionSchema = z
 
 export type ProtocolVersion = z.infer<typeof ProtocolVersionSchema>;
 
+export const ChromeDevtoolsRelayPolicySchema = z
+  .enum(['off', 'prefer', 'require'])
+  .describe('OpenClaw Chrome extension relay routing policy; defaults to prefer');
+
+export type ChromeDevtoolsRelayPolicy = z.infer<typeof ChromeDevtoolsRelayPolicySchema>;
+
 const RawRefreshSchema = z
   .object({
     tokenEndpoint: z.string().optional().describe('OAuth token endpoint used to refresh access tokens'),
@@ -120,6 +126,12 @@ export const RawEntrySchema = z
     client_name: z.string().optional().describe('Client identifier for server telemetry (snake_case)'),
     protocolVersion: ProtocolVersionSchema.optional().describe('MCP protocol negotiation mode (camelCase)'),
     protocol_version: ProtocolVersionSchema.optional().describe('MCP protocol negotiation mode (snake_case)'),
+    chromeDevtoolsRelay: ChromeDevtoolsRelayPolicySchema.optional().describe(
+      'OpenClaw Chrome extension relay policy for chrome-devtools-mcp (camelCase)'
+    ),
+    chrome_devtools_relay: ChromeDevtoolsRelayPolicySchema.optional().describe(
+      'OpenClaw Chrome extension relay policy for chrome-devtools-mcp (snake_case)'
+    ),
     oauthClientId: z.string().optional().describe('Pre-registered OAuth client id (camelCase)'),
     oauth_client_id: z.string().optional().describe('Pre-registered OAuth client id (snake_case)'),
     oauthClientSecret: z.string().optional().describe('Pre-registered OAuth client secret (camelCase)'),
@@ -262,6 +274,7 @@ export interface ServerDefinition {
   readonly tokenCacheDir?: string;
   readonly clientName?: string;
   readonly protocolVersion?: ProtocolVersion;
+  readonly chromeDevtoolsRelay?: ChromeDevtoolsRelayPolicy;
   readonly oauthClientId?: string;
   readonly oauthClientSecret?: string;
   readonly oauthClientSecretEnv?: string;

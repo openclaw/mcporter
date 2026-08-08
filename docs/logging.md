@@ -51,6 +51,7 @@ When combined with `--log`/`MCPORTER_DAEMON_LOG=1`, any server that has `logging
 ### Inspecting logs
 
 - `mcporter daemon status` prints both the socket path and the current log file (if logging is enabled) so you can `tail -f` the output quickly.
+- For Chrome DevTools definitions, status also prints the current or last OpenClaw extension-relay decision: `relay`, `legacy`, or `unavailable`, plus its policy, classified reason, logical upstream endpoint, and safe probe status/duration. Ordinary connection setup emits the same structured, redacted object at `MCPORTER_LOG_LEVEL=info`; it never includes stable or ephemeral bearers, protected handoff paths, headers, pairing strings, or rewritten child arguments.
 - Each call looks like:
   ```
   [daemon] 2025-11-10T15:08:21.123Z callTool start server=chrome-devtools tool=take_snapshot

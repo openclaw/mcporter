@@ -31,5 +31,7 @@ describe('generated config schema', () => {
     expect(entryProperties?.allowed_tools).toBeDefined();
     expect(entryProperties?.blockedTools).toBeDefined();
     expect(entryProperties?.blocked_tools).toBeDefined();
+    expect(entryProperties?.chromeDevtoolsRelay).toBeDefined();
+    expect(entryProperties?.chrome_devtools_relay).toBeDefined();
   });
 });
