@@ -9,6 +9,8 @@ interface VaultPayload {
   readonly clientInfo?: OAuthClientInformationMixed;
 }
 
+type VaultPayloadSource = { kind: 'file'; path: string } | { kind: 'stdin' };
+
 export interface VaultCommandOptions {
   readonly readStdin?: () => Promise<string>;
 }
@@ -44,7 +46,7 @@ async function handleVaultSet(
     throw new CliUsageError(`Unknown vault set argument '${args[0]}'.`);
   }
   const definition = runtime.getDefinition(server);
-  const payload = validateVaultPayload(JSON.parse(await readPayload(source, options)));
+  const payload = validateVaultPayload(parseVaultPayload(await readPayload(source, options), source));
   await saveVaultEntry(definition, {
     tokens: payload.tokens,
     ...(payload.clientInfo ? { clientInfo: payload.clientInfo } : {}),
@@ -65,7 +67,7 @@ async function handleVaultClear(runtime: Pick<Runtime, 'getDefinition'>, args: s
   console.log(`Cleared OAuth vault entry for '${definition.name}'`);
 }
 
-function consumeVaultPayloadSource(args: string[]): { kind: 'file'; path: string } | { kind: 'stdin' } {
+function consumeVaultPayloadSource(args: string[]): VaultPayloadSource {
   const fileIndex = args.indexOf('--tokens-file');
   const stdinIndex = args.indexOf('--stdin');
   if (fileIndex !== -1 && stdinIndex !== -1) {
@@ -86,10 +88,7 @@ function consumeVaultPayloadSource(args: string[]): { kind: 'file'; path: string
   throw new CliUsageError('Usage: mcporter vault set <server> (--tokens-file <path> | --stdin)');
 }
 
-async function readPayload(
-  source: { kind: 'file'; path: string } | { kind: 'stdin' },
-  options: VaultCommandOptions
-): Promise<string> {
+async function readPayload(source: VaultPayloadSource, options: VaultCommandOptions): Promise<string> {
   if (source.kind === 'file') {
     return fs.readFile(source.path, 'utf8');
   }
@@ -105,6 +104,20 @@ async function readPayload(
     process.stdin.on('end', () => resolve(data));
     process.stdin.on('error', reject);
   });
+}
+
+function parseVaultPayload(raw: string, source: VaultPayloadSource): unknown {
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    // The parser message quotes a prefix of the input, which for this command is a
+    // credential payload, so name the source instead of repeating the reason.
+    throw new CliUsageError(
+      source.kind === 'file'
+        ? `Vault payload file '${source.path}' is not valid JSON.`
+        : 'Vault payload from stdin is not valid JSON.'
+    );
+  }
 }
 
 function validateVaultPayload(value: unknown): VaultPayload {
@@ -143,18 +156,84 @@ function validateOAuthTokens(tokens: Record<string, unknown>): void {
       throw new CliUsageError(`Vault payload tokens.${key} must be a string.`);
     }
   }
-  if (
-    tokens.expires_in !== undefined &&
-    (!Number.isFinite(tokens.expires_in) || typeof tokens.expires_in !== 'number')
-  ) {
-    throw new CliUsageError('Vault payload tokens.expires_in must be a finite number.');
+  // expires_in, expires_at and expiresAt are what isStoredOAuthTokens reads back as
+  // finite numbers; a non-numeric one is dropped there together with the rest of the
+  // tokens, so reject it at the input boundary instead.
+  for (const key of ['expires_in', 'expires_at', 'expiresAt'] as const) {
+    if (tokens[key] !== undefined && (typeof tokens[key] !== 'number' || !Number.isFinite(tokens[key]))) {
+      throw new CliUsageError(`Vault payload tokens.${key} must be a finite number.`);
+    }
   }
 }
 
+interface ClientInfoFieldRule {
+  readonly description: string;
+  readonly matches: (value: unknown) => boolean;
+}
+
+const CLIENT_INFO_STRING: ClientInfoFieldRule = {
+  description: 'a string',
+  matches: (value) => typeof value === 'string',
+};
+
+const CLIENT_INFO_STRING_ARRAY: ClientInfoFieldRule = {
+  description: 'an array of strings',
+  matches: (value) => Array.isArray(value) && value.every((entry) => typeof entry === 'string'),
+};
+
+const CLIENT_INFO_FINITE_NUMBER: ClientInfoFieldRule = {
+  description: 'a finite number',
+  matches: (value) => typeof value === 'number' && Number.isFinite(value),
+};
+
+// Field types follow the JSON types OAuthClientInformationFullSchema (RFC 7591
+// dynamic client registration) declares in @modelcontextprotocol/sdk/shared/auth.js,
+// in its declaration order, with `issuer` appended because mcporter stores it and
+// isStoredOAuthClientInformation reads it back as a string. URL-shaped fields are
+// only checked for being strings; the SDK's stricter SafeUrlSchema would reject
+// redirect URIs that are legal in the wild, such as urn:ietf:wg:oauth:2.0:oob.
+//
+// `client_id` is required by both members of OAuthClientInformationMixed and is
+// checked separately. `redirect_uris` stays optional even though the schema's wide
+// member requires it, because the narrow member, OAuthClientInformation, is equally
+// valid here. Fields the schema leaves open (`jwks`) and provider extensions outside
+// it (`registration_client_uri`, `registration_access_token`) are deliberately
+// absent, so a complete registration response reaches the vault intact.
+const CLIENT_INFO_FIELD_RULES: Readonly<Record<string, ClientInfoFieldRule>> = {
+  redirect_uris: CLIENT_INFO_STRING_ARRAY,
+  token_endpoint_auth_method: CLIENT_INFO_STRING,
+  grant_types: CLIENT_INFO_STRING_ARRAY,
+  response_types: CLIENT_INFO_STRING_ARRAY,
+  client_name: CLIENT_INFO_STRING,
+  client_uri: CLIENT_INFO_STRING,
+  logo_uri: CLIENT_INFO_STRING,
+  scope: CLIENT_INFO_STRING,
+  contacts: CLIENT_INFO_STRING_ARRAY,
+  tos_uri: CLIENT_INFO_STRING,
+  policy_uri: CLIENT_INFO_STRING,
+  jwks_uri: CLIENT_INFO_STRING,
+  software_id: CLIENT_INFO_STRING,
+  software_version: CLIENT_INFO_STRING,
+  software_statement: CLIENT_INFO_STRING,
+  client_secret: CLIENT_INFO_STRING,
+  client_id_issued_at: CLIENT_INFO_FINITE_NUMBER,
+  client_secret_expires_at: CLIENT_INFO_FINITE_NUMBER,
+  issuer: CLIENT_INFO_STRING,
+};
+
 function validateOAuthClientInfo(clientInfo: Record<string, unknown>): void {
-  for (const [key, value] of Object.entries(clientInfo)) {
-    if (value !== undefined && value !== null && typeof value !== 'string') {
-      throw new CliUsageError(`Vault payload clientInfo.${key} must be a string.`);
+  if (typeof clientInfo.client_id !== 'string' || clientInfo.client_id.length === 0) {
+    throw new CliUsageError('Vault payload clientInfo.client_id must be a non-empty string.');
+  }
+  // Iterate the rules rather than the payload: unknown keys pass through, and the
+  // reported field no longer depends on JSON key order.
+  for (const [key, rule] of Object.entries(CLIENT_INFO_FIELD_RULES)) {
+    const value = clientInfo[key];
+    if (value === undefined || value === null) {
+      continue;
+    }
+    if (!rule.matches(value)) {
+      throw new CliUsageError(`Vault payload clientInfo.${key} must be ${rule.description}.`);
     }
   }
 }
@@ -170,6 +249,9 @@ export function printVaultHelp(): void {
     '',
     'Payload:',
     '  { "tokens": { "access_token": "...", "token_type": "Bearer" }, "clientInfo": { "client_id": "..." } }',
+    '',
+    '  clientInfo accepts a full dynamic client registration response, including',
+    '  redirect_uris, grant_types, response_types and the registration timestamps.',
   ];
   console.error(lines.join('\n'));
 }
