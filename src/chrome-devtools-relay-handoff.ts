@@ -79,7 +79,7 @@ $directory = New-Object System.IO.DirectoryInfo -ArgumentList @($target)
 $stage = 'create'
 $directory.Create($security)
 $stage = 'acl-read'
-$check = Get-Acl -LiteralPath $target
+$check = $directory.GetAccessControl([System.Security.AccessControl.AccessControlSections]::All)
 $rules = @($check.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))
 $ownerSid = $check.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
 $stage = 'acl-verify'

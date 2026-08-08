@@ -180,7 +180,8 @@ async function inspectWindowsAcl(directory: string): Promise<Record<string, unkn
       String.raw`
 $ErrorActionPreference = 'Stop'
 $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-$acl = Get-Acl -LiteralPath $env:MCPORTER_TEST_CHROME_RELAY_ACL_PATH
+$directory = New-Object System.IO.DirectoryInfo -ArgumentList @($env:MCPORTER_TEST_CHROME_RELAY_ACL_PATH)
+$acl = $directory.GetAccessControl([System.Security.AccessControl.AccessControlSections]::All)
 $rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))
 $rule = $rules[0]
 [PSCustomObject]@{
