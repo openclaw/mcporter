@@ -175,19 +175,19 @@ const OAUTH_CLIENT_NUMBER_FIELDS = ['client_id_issued_at', 'client_secret_expire
 
 function validateOAuthClientInfo(clientInfo: Record<string, unknown>): void {
   for (const key of OAUTH_CLIENT_STRING_FIELDS) {
-    if (clientInfo[key] !== undefined && typeof clientInfo[key] !== 'string') {
+    if (clientInfo[key] !== undefined && clientInfo[key] !== null && typeof clientInfo[key] !== 'string') {
       throw new CliUsageError(`Vault payload clientInfo.${key} must be a string.`);
     }
   }
   for (const key of OAUTH_CLIENT_STRING_ARRAY_FIELDS) {
     const value = clientInfo[key];
-    if (value !== undefined && (!Array.isArray(value) || value.some((item) => typeof item !== 'string'))) {
+    if (value !== undefined && value !== null && (!Array.isArray(value) || value.some((item) => typeof item !== 'string'))) {
       throw new CliUsageError(`Vault payload clientInfo.${key} must be an array of strings.`);
     }
   }
   for (const key of OAUTH_CLIENT_NUMBER_FIELDS) {
     const value = clientInfo[key];
-    if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value))) {
+    if (value !== undefined && value !== null && (typeof value !== 'number' || !Number.isFinite(value))) {
       throw new CliUsageError(`Vault payload clientInfo.${key} must be a finite number.`);
     }
   }
