@@ -392,15 +392,18 @@ export function chromeDevtoolsRelayEnvironmentKeys(
       continue;
     }
     for (const key of commandEnvironmentKeys) keys.add(key);
-    const resolvedDefinitionEnv = Object.fromEntries(
-      Object.entries(definition.env ?? {}).map(([key, raw]) => {
-        try {
-          return [key, resolveEnvValue(raw, env)];
-        } catch {
-          return [key, raw];
-        }
-      })
-    );
+    const definitionEnvEntries = Object.entries(definition.env ?? {});
+    const resolutionEnv = { ...env };
+    for (const [key, raw] of definitionEnvEntries) {
+      if (resolutionEnv[key]) continue;
+      const resolved = resolveRelayDefinitionEnvValue(raw, resolutionEnv);
+      if (resolved !== '') resolutionEnv[key] = resolved;
+    }
+    const resolvedDefinitionEnv: NodeJS.ProcessEnv = {};
+    for (const [key, raw] of definitionEnvEntries) {
+      const resolved = resolveRelayDefinitionEnvValue(raw, resolutionEnv);
+      if (resolved !== '') resolvedDefinitionEnv[key] = resolved;
+    }
     for (const pathKey of ['OPENCLAW_HOME', 'OPENCLAW_STATE_DIR', 'OPENCLAW_OAUTH_DIR'] as const) {
       const override = resolvedDefinitionEnv[pathKey]?.trim();
       if (
@@ -454,6 +457,14 @@ function referencedEnvironmentVariables(value: string): string[] {
     if (match[1]) names.add(match[1]);
   }
   return [...names];
+}
+
+function resolveRelayDefinitionEnvValue(raw: string, env: NodeJS.ProcessEnv): string {
+  try {
+    return resolveEnvValue(raw, env);
+  } catch {
+    return raw;
+  }
 }
 
 function isErrno(error: unknown, code: string): boolean {
