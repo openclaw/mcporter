@@ -67,26 +67,18 @@ $ErrorActionPreference = 'Stop'
 $target = $env:${WINDOWS_ACL_PATH_ENV}
 if ([System.IO.Directory]::Exists($target)) { throw 'handoff path already exists' }
 $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-$inheritance = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
-$rule = New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule -ArgumentList @(
-  $sid,
-  [System.Security.AccessControl.FileSystemRights]::FullControl,
-  $inheritance,
-  [System.Security.AccessControl.PropagationFlags]::None,
-  [System.Security.AccessControl.AccessControlType]::Allow
-)
 $security = New-Object System.Security.AccessControl.DirectorySecurity
-$security.SetAccessRuleProtection($true, $false)
-[void]$security.AddAccessRule($rule)
-$security.SetOwner($sid)
-[void][System.IO.Directory]::CreateDirectory($target, $security)
+$sidValue = $sid.Value
+$security.SetSecurityDescriptorSddlForm("O:$($sidValue)G:$($sidValue)D:P(A;OICI;FA;;;$($sidValue))")
+$directory = New-Object System.IO.DirectoryInfo -ArgumentList @($target)
+$directory.Create($security)
 $check = Get-Acl -LiteralPath $target
-$rules = @($check.Access)
+$rules = @($check.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))
 $ownerSid = $check.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
 if (-not $check.AreAccessRulesProtected -or $ownerSid -ne $sid.Value -or $rules.Count -ne 1) { throw 'unsafe ACL' }
-$ruleSid = $rules[0].IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+$ruleSid = $rules[0].IdentityReference.Value
 $hasFullControl = ($rules[0].FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl
-if ($ruleSid -ne $sid.Value -or -not $hasFullControl -or $rules[0].AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) { throw 'unsafe ACL' }
+if ($ruleSid -ne $sid.Value -or $rules[0].IsInherited -or -not $hasFullControl -or $rules[0].AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) { throw 'unsafe ACL' }
 `;
   const result = spawnSync(
     resolveSystemPowerShellPath(),
@@ -97,7 +89,12 @@ if ($ruleSid -ne $sid.Value -or -not $hasFullControl -or $rules[0].AccessControl
       windowsHide: true,
     }
   );
-  if (result.status !== 0) throw new Error('unsafe Windows ACL');
+  if (result.status !== 0) {
+    try {
+      fs.rmdirSync(directory);
+    } catch {}
+    throw new Error('unsafe Windows ACL');
+  }
   return directory;
 }
 

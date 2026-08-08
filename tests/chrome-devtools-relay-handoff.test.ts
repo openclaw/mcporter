@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -110,6 +110,30 @@ describe('chrome-devtools relay preload handoff', () => {
       await handoff.close();
     }
   });
+
+  it.runIf(process.platform === 'win32')(
+    'creates a current-user-only protected Windows directory and removes it',
+    async () => {
+      const handoff = createChromeDevtoolsRelayHandoff(
+        { ...process.env } as Record<string, string>,
+        `Bearer ${'j'.repeat(43)}`
+      );
+      const directory = path.dirname(handoff.handoffPath);
+      try {
+        expect(await inspectWindowsAcl(directory)).toEqual({
+          accessRuleCount: 1,
+          accessRuleType: 'Allow',
+          currentUserOwnsDirectory: true,
+          fullControl: true,
+          inherited: false,
+          protected: true,
+        });
+      } finally {
+        await handoff.close();
+      }
+      await expect(fs.stat(directory)).rejects.toMatchObject({ code: 'ENOENT' });
+    }
+  );
 });
 
 async function expectRejectedHandoff(mutate: (handoff: ChromeDevtoolsRelayHandoff) => Promise<void>): Promise<void> {
@@ -135,6 +159,48 @@ async function expectProtectedPath(filePath: string, kind: 'directory' | 'file',
     expect(stat.mode & 0o777).toBe(expectedMode);
     if (typeof process.getuid === 'function') expect(stat.uid).toBe(process.getuid());
   }
+}
+
+async function inspectWindowsAcl(directory: string): Promise<Record<string, unknown>> {
+  const systemRoot = process.env.SystemRoot?.trim() || process.env.WINDIR?.trim();
+  expect(systemRoot).toBeTruthy();
+  expect(path.win32.isAbsolute(systemRoot!)).toBe(true);
+  const powershell = path.win32.join(systemRoot!, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const stat = await fs.lstat(powershell);
+  expect(stat.isFile()).toBe(true);
+  expect(stat.isSymbolicLink()).toBe(false);
+
+  const result = spawnSync(
+    powershell,
+    [
+      '-NoLogo',
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      String.raw`
+$ErrorActionPreference = 'Stop'
+$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$acl = Get-Acl -LiteralPath $env:MCPORTER_TEST_CHROME_RELAY_ACL_PATH
+$rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))
+$rule = $rules[0]
+[PSCustomObject]@{
+  accessRuleCount = $rules.Count
+  accessRuleType = if ($rule) { $rule.AccessControlType.ToString() } else { '' }
+  currentUserOwnsDirectory = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -eq $sid.Value
+  fullControl = if ($rule) { ($rule.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl } else { $false }
+  inherited = if ($rule) { $rule.IsInherited } else { $false }
+  protected = $acl.AreAccessRulesProtected
+} | ConvertTo-Json -Compress
+`,
+    ],
+    {
+      encoding: 'utf8',
+      env: { ...process.env, MCPORTER_TEST_CHROME_RELAY_ACL_PATH: directory },
+      windowsHide: true,
+    }
+  );
+  expect(result.status, result.stderr).toBe(0);
+  return JSON.parse(result.stdout) as Record<string, unknown>;
 }
 
 async function runNode(
