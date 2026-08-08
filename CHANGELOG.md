@@ -16,6 +16,7 @@
 
 - Honor `MCPORTER_OAUTH_NO_BROWSER` across serve/daemon OAuth flows, fail once with actionable reauthorization guidance without logging authorization URLs, and restart daemons when the normalized setting changes. (PR #284 / issue #283, thanks @vitalijssilins)
 - Accept RFC 7591 dynamic-client-registration arrays and timestamps in `mcporter vault set` while preserving null-compatible partial client information and provider metadata. (PR #288 / issue #286, thanks @feniix)
+- Sanitize malformed `mcporter vault set` JSON diagnostics and reject non-finite `expires_at` / `expiresAt` token values before persistence. (Follow-up to PR #287, thanks @Yigtwxx)
 
 ### Tooling
 
