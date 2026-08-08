@@ -121,13 +121,21 @@ function trackStandaloneSseFetch(fetchOverride: FetchLike | undefined): {
   };
 }
 
-function waitForStandaloneSseStart(started: Promise<void>): Promise<void> {
+function waitForStandaloneSseStart(started: Promise<void>, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.resolve();
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, STANDALONE_SSE_START_GRACE_MS);
-    void started.then(() => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener('abort', finish);
       resolve();
-    });
+    };
+    const timer = setTimeout(finish, STANDALONE_SSE_START_GRACE_MS);
+    signal?.addEventListener('abort', finish, { once: true });
+    if (signal?.aborted) finish();
+    void started.then(finish);
   });
 }
 
@@ -282,7 +290,7 @@ async function connectPrimaryHttpTransport(
   // notifications/initialized. Give its fetch a bounded chance to receive
   // headers without blocking servers that leave the response header-idle.
   if (typeof client.getProtocolEra === 'function' && client.getProtocolEra() === 'legacy') {
-    await waitForStandaloneSseStart(transportOptions.standaloneSseStarted);
+    await waitForStandaloneSseStart(transportOptions.standaloneSseStarted, options.signal);
   }
   return { client, transport, definition, oauthSession };
 }
@@ -327,3 +335,5 @@ async function connectSseFallbackTransport(
     throw sseError;
   }
 }
+
+export const __test = { waitForStandaloneSseStart };

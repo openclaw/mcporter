@@ -42,6 +42,7 @@ vi.mock('../src/oauth-persistence.js', async () => {
 
 import type { ServerDefinition } from '../src/config.js';
 import * as oauthModule from '../src/oauth.js';
+import { __test as httpTransportTest } from '../src/runtime/http-transport.js';
 import { markOAuthFlowError, markPostAuthConnectError } from '../src/runtime/oauth.js';
 import { createClientContext } from '../src/runtime/transport.js';
 import { budget } from './helpers/timing.js';
@@ -78,6 +79,28 @@ afterEach(() => {
 });
 
 describe('createClientContext (HTTP)', () => {
+  it('stops waiting for standalone SSE startup when connection setup is aborted', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    let receiveStreamStarted = false;
+    const started = new Promise<void>(() => {});
+    void started.then(() => {
+      receiveStreamStarted = true;
+    });
+
+    try {
+      const waiting = httpTransportTest.waitForStandaloneSseStart(started, controller.signal);
+      await vi.advanceTimersByTimeAsync(0);
+      controller.abort();
+      await waiting;
+
+      expect(receiveStreamStarted).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('advertises both elicitation modes and registers the supplied handler', async () => {
     const definition = stubHttpDefinition('https://example.com/mcp');
     const elicitationHandler = vi.fn(async () => ({ action: 'decline' as const }));

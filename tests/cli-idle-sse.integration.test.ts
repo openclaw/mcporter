@@ -104,6 +104,7 @@ describe('idle standalone SSE CLI integration', () => {
           connection: 'keep-alive',
           'content-type': 'text/event-stream',
         });
+        response.flushHeaders();
         return;
       }
 
@@ -183,13 +184,132 @@ describe('idle standalone SSE CLI integration', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  it('lists tools while a standalone SSE response leaves its headers pending', async () => {
+  it('lists tools while a standalone SSE stream is open and byte-idle', async () => {
     const result = await runCli(['list', 'idle', '--json', '--timeout', '2000'], configPath, preloadPath);
 
     expect(result.stderr).toBe('');
     expect(JSON.parse(result.stdout)).toMatchObject({
       mode: 'server',
       name: 'idle',
+      status: 'ok',
+      tools: [expect.objectContaining({ name: 'ping' })],
+    });
+    expect(requestOrder).toEqual([
+      'server/discover',
+      'initialize',
+      'notifications/initialized',
+      'GET standalone-sse',
+      'tools/list',
+    ]);
+    expect(toolsListSawOpenSse).toBe(true);
+  });
+});
+
+describe('pending standalone SSE headers CLI integration', () => {
+  let httpServer: HttpServer;
+  let pendingResponse: ServerResponse | undefined;
+  let configPath: string;
+  let preloadPath: string;
+  let tempDir: string;
+  const requestOrder: string[] = [];
+  let toolsListSawOpenSse = false;
+
+  beforeAll(async () => {
+    await fs.access(CLI_ENTRY);
+
+    httpServer = createServer(async (request, response) => {
+      if (request.method === 'GET') {
+        requestOrder.push('GET standalone-sse');
+        pendingResponse = response;
+        response.writeHead(200, {
+          'cache-control': 'no-cache',
+          connection: 'keep-alive',
+          'content-type': 'text/event-stream',
+        });
+        return;
+      }
+
+      let body = '';
+      request.setEncoding('utf8');
+      for await (const chunk of request) body += chunk;
+      const message = JSON.parse(body) as { id?: number; method: string };
+      requestOrder.push(message.method);
+
+      if (message.method === 'initialize') {
+        response.writeHead(200, {
+          'content-type': 'application/json',
+          'mcp-session-id': 'pending-sse-session',
+        });
+        response.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: message.id,
+            result: {
+              capabilities: { tools: {} },
+              protocolVersion: '2025-11-25',
+              serverInfo: { name: 'pending-sse-test', version: '1.0.0' },
+            },
+          })
+        );
+        return;
+      }
+
+      if (message.method === 'notifications/initialized') {
+        response.writeHead(202).end();
+        return;
+      }
+
+      if (message.method === 'tools/list') {
+        toolsListSawOpenSse = Boolean(pendingResponse && !pendingResponse.writableEnded && !pendingResponse.destroyed);
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: message.id,
+            result: {
+              tools: [
+                {
+                  name: 'ping',
+                  description: 'Return pong',
+                  inputSchema: { type: 'object', properties: {} },
+                },
+              ],
+            },
+          })
+        );
+        return;
+      }
+
+      response.writeHead(404).end();
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      httpServer.once('error', reject);
+      httpServer.listen(0, '127.0.0.1', resolve);
+    });
+    const address = httpServer.address() as AddressInfo;
+    const baseUrl = `http://127.0.0.1:${address.port}/mcp`;
+
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-pending-sse-'));
+    configPath = path.join(tempDir, 'config.json');
+    preloadPath = path.join(tempDir, 'single-connection-fetch.mjs');
+    await fs.writeFile(configPath, JSON.stringify({ imports: [], mcpServers: { pending: { baseUrl } } }, null, 2));
+    await fs.writeFile(preloadPath, SINGLE_CONNECTION_FETCH);
+  });
+
+  afterAll(async () => {
+    pendingResponse?.end();
+    await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('lists tools while a standalone SSE response leaves its headers pending', async () => {
+    const result = await runCli(['list', 'pending', '--json', '--timeout', '2000'], configPath, preloadPath);
+
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      mode: 'server',
+      name: 'pending',
       status: 'ok',
       tools: [expect.objectContaining({ name: 'ping' })],
     });

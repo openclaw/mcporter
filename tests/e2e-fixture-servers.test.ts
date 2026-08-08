@@ -50,6 +50,7 @@ interface RunningFixture {
 
 interface RunningHttpProxy {
   url: string;
+  events: () => readonly string[];
   close: () => Promise<void>;
 }
 
@@ -168,6 +169,11 @@ it('handles legacy elicitation when standalone SSE headers arrive after the star
       expect(elicited.exitCode, elicited.stderr).toBe(0);
       expect(elicited.stderr).toContain('Server requested interactive input; run mcporter in a terminal.');
       expect(elicited.stdout).toContain('elicitation decline');
+      expect(delayedLegacyHeadersProxy.events()).toEqual([
+        'standalone GET arrived',
+        'tool POST arrived while headers held',
+        'standalone SSE headers released',
+      ]);
     }
   );
 });
@@ -459,7 +465,26 @@ async function startHttpFixture(
 
 async function startDelayedSseHeadersProxy(targetUrl: string, delayMs: number): Promise<RunningHttpProxy> {
   const target = new URL(targetUrl);
+  const events: string[] = [];
+  let headersReleased = false;
   const proxy = createServer((request, response) => {
+    let requestBody = '';
+    if (request.method === 'GET') {
+      events.push('standalone GET arrived');
+    } else if (request.method === 'POST') {
+      request.setEncoding('utf8');
+      request.on('data', (chunk: string) => {
+        requestBody += chunk;
+      });
+      request.once('end', () => {
+        const message = JSON.parse(requestBody) as { method?: string };
+        if (message.method === 'tools/call') {
+          events.push(
+            headersReleased ? 'tool POST arrived after headers released' : 'tool POST arrived while headers held'
+          );
+        }
+      });
+    }
     const upstreamRequest = httpRequest(
       target,
       {
@@ -476,7 +501,11 @@ async function startDelayedSseHeadersProxy(targetUrl: string, delayMs: number): 
           upstreamResponse.pipe(response);
         };
         if (request.method === 'GET') {
-          setTimeout(forwardResponse, delayMs);
+          setTimeout(() => {
+            headersReleased = true;
+            events.push('standalone SSE headers released');
+            forwardResponse();
+          }, delayMs);
         } else {
           forwardResponse();
         }
@@ -495,6 +524,7 @@ async function startDelayedSseHeadersProxy(targetUrl: string, delayMs: number): 
   const address = proxy.address() as AddressInfo;
   return {
     url: `http://127.0.0.1:${address.port}/mcp`,
+    events: () => events,
     close: async () => {
       await new Promise<void>((resolve, reject) => {
         proxy.close((error) => (error ? reject(error) : resolve()));

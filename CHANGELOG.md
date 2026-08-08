@@ -5,6 +5,7 @@
 ### CLI
 
 - Authenticate OpenClaw extension-backed Chrome control with Browser Relay Authentication v2 over one retained loopback socket from HMAC challenge through CDP upgrade, never transmitting the host key or retrying legacy relay auth, while preserving configurable `prefer` / `require` / `off` routing and the OS-protected one-use child handoff.
+- Keep legacy HTTP list and call operations moving when standalone SSE response headers remain pending, while preserving delayed server-to-client messages. (PR #282, thanks @Quack6765)
 - Tear down both sides of streamed `mcporter serve --http` responses on client aborts or body errors, preventing orphaned readers. (PR #280, thanks @SebTardif)
 
 ### Daemon
