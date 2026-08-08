@@ -3,6 +3,8 @@ import type { ServerDefinition } from '../src/config.js';
 import { buildStaticClientInformation, resolveOAuthClientSecret } from '../src/oauth-client-info.js';
 
 const SECRET_ENV = 'MCPORTER_TEST_CLIENT_INFO_SECRET';
+const originalSecretEnvPresent = Object.hasOwn(process.env, SECRET_ENV);
+const originalSecretEnvValue = process.env[SECRET_ENV];
 
 function definition(overrides: Partial<ServerDefinition> = {}): ServerDefinition {
   return {
@@ -14,7 +16,11 @@ function definition(overrides: Partial<ServerDefinition> = {}): ServerDefinition
 }
 
 afterEach(() => {
-  delete process.env[SECRET_ENV];
+  if (originalSecretEnvPresent) {
+    process.env[SECRET_ENV] = originalSecretEnvValue!;
+  } else {
+    delete process.env[SECRET_ENV];
+  }
 });
 
 describe('resolveOAuthClientSecret', () => {
@@ -24,6 +30,7 @@ describe('resolveOAuthClientSecret', () => {
   });
 
   it('throws when the referenced env var is unset', () => {
+    delete process.env[SECRET_ENV];
     expect(() => resolveOAuthClientSecret(definition({ oauthClientSecretEnv: SECRET_ENV }))).toThrow(SECRET_ENV);
   });
 
@@ -80,6 +87,7 @@ describe('buildStaticClientInformation', () => {
   });
 
   it('propagates the required-secret error when the configured env var is unset', () => {
+    delete process.env[SECRET_ENV];
     expect(() =>
       buildStaticClientInformation(definition({ oauthClientId: 'client-1', oauthClientSecretEnv: SECRET_ENV }))
     ).toThrow(SECRET_ENV);
