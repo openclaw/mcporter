@@ -71,12 +71,21 @@ describe('chrome-devtools authenticated relay proxy', () => {
       const first = await connectSocket(Number(endpoint.port));
       const second = await connectSocket(Number(endpoint.port));
       const firstResponse = collectUntilHeaders(first);
-      const secondResponse = collectUntilClose(second);
+      const secondOutcome = collectUntilClose(second).then(
+        (response) => ({ response }),
+        (error: unknown) => ({ error })
+      );
       const request = upgradeRequest([`Authorization: ${authorization}`]);
       first.write(request);
       second.write(request);
       await expect(firstResponse).resolves.toContain('101 Switching Protocols');
-      await expect(secondResponse).resolves.toContain('404 Not Found');
+      const outcome = await secondOutcome;
+      if ('response' in outcome) {
+        expect(outcome.response).toContain('404 Not Found');
+      } else {
+        // Node may reset an already-accepted idle socket when the one-use server closes.
+        expect(outcome.error).toMatchObject({ code: 'ECONNRESET' });
+      }
     } finally {
       await proxy.close();
     }
