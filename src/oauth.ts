@@ -14,6 +14,7 @@ import { validateClientMetadataUrl } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from './config.js';
 import { suppressBrowserLaunchFromEnv } from './oauth-browser-suppression.js';
 import { buildStaticClientInformation } from './oauth-client-info.js';
+import { assertOAuthDiscoveryIssuerPolicy } from './oauth-issuer-policy.js';
 import type { OAuthPersistence } from './oauth-persistence.js';
 import { buildOAuthPersistence } from './oauth-persistence.js';
 
@@ -412,11 +413,14 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   }
 
   async saveDiscoveryState(state: OAuthDiscoveryState): Promise<void> {
+    assertOAuthDiscoveryIssuerPolicy(state);
     await this.persistence.saveDiscoveryState(state);
   }
 
   async discoveryState(): Promise<OAuthDiscoveryState | undefined> {
-    return this.persistence.readDiscoveryState();
+    const state = await this.persistence.readDiscoveryState();
+    if (state) assertOAuthDiscoveryIssuerPolicy(state);
+    return state;
   }
 
   async saveAuthorizationServerUrl(url: string): Promise<void> {

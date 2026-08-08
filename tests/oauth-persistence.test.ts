@@ -373,7 +373,10 @@ describe('oauth persistence', () => {
 
     authMocks.discoverOAuthServerInfo.mockResolvedValue({
       authorizationServerUrl: 'https://auth.example.com',
-      authorizationServerMetadata: { token_endpoint: 'https://auth.example.com/token' },
+      authorizationServerMetadata: {
+        issuer: 'https://auth.example.com',
+        token_endpoint: 'https://auth.example.com/token',
+      },
       resourceMetadata: { resource: 'https://example.com/mcp' },
     });
     authMocks.refreshAuthorization.mockResolvedValue({
@@ -421,7 +424,10 @@ describe('oauth persistence', () => {
 
     authMocks.discoverOAuthServerInfo.mockResolvedValue({
       authorizationServerUrl: 'https://auth.example.com',
-      authorizationServerMetadata: { token_endpoint: 'https://auth.example.com/token' },
+      authorizationServerMetadata: {
+        issuer: 'https://auth.example.com',
+        token_endpoint: 'https://auth.example.com/token',
+      },
     });
     authMocks.refreshAuthorization.mockResolvedValue({
       access_token: 'fresh-token',
@@ -858,7 +864,10 @@ describe('oauth persistence', () => {
 
     authMocks.discoverOAuthServerInfo.mockResolvedValue({
       authorizationServerUrl: 'https://auth.example.com',
-      authorizationServerMetadata: { token_endpoint: 'https://auth.example.com/token' },
+      authorizationServerMetadata: {
+        issuer: 'https://auth.example.com',
+        token_endpoint: 'https://auth.example.com/token',
+      },
       resourceMetadata: { resource: 'https://example.com/mcp' },
     });
     authMocks.refreshAuthorization.mockResolvedValue({
@@ -911,7 +920,10 @@ describe('oauth persistence', () => {
     );
     authMocks.discoverOAuthServerInfo.mockResolvedValue({
       authorizationServerUrl: 'https://issuer-b.example',
-      authorizationServerMetadata: { token_endpoint: 'https://issuer-b.example/token' },
+      authorizationServerMetadata: {
+        issuer: 'https://issuer-b.example',
+        token_endpoint: 'https://issuer-b.example/token',
+      },
     });
 
     const definition = mkDef('issuer-bound-service', cacheDir);
@@ -924,7 +936,7 @@ describe('oauth persistence', () => {
     await expect(readJsonFile(path.join(cacheDir, 'client.json'))).resolves.toBeUndefined();
   });
 
-  it('stamps refreshed OAuth tokens with the discovered issuer', async () => {
+  it('refreshes an opaque authorization-server path under its canonical origin issuer', async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-refresh-issuer-stamp-'));
     tempRoots.push(tmp);
     homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
@@ -947,8 +959,12 @@ describe('oauth persistence', () => {
       JSON.stringify({ client_id: 'client-123', issuer: 'https://auth.example.com' })
     );
     authMocks.discoverOAuthServerInfo.mockResolvedValue({
-      authorizationServerUrl: 'https://auth.example.com',
-      authorizationServerMetadata: { token_endpoint: 'https://auth.example.com/token' },
+      authorizationServerUrl: 'https://auth.example.com/opaque-tenant',
+      authorizationServerMetadata: {
+        issuer: 'https://auth.example.com',
+        authorization_endpoint: 'https://auth.example.com/authorize',
+        token_endpoint: 'https://auth.example.com/token',
+      },
     });
     authMocks.refreshAuthorization.mockResolvedValue({
       access_token: 'fresh-token',
@@ -958,6 +974,10 @@ describe('oauth persistence', () => {
     });
 
     await expect(readCachedAccessToken(mkDef('issuer-stamp-service', cacheDir))).resolves.toBe('fresh-token');
+    expect(authMocks.refreshAuthorization).toHaveBeenCalledWith(
+      'https://auth.example.com/opaque-tenant',
+      expect.objectContaining({ refreshToken: 'refresh-123' })
+    );
     await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toMatchObject({
       access_token: 'fresh-token',
       issuer: 'https://auth.example.com',
@@ -985,7 +1005,10 @@ describe('oauth persistence', () => {
 
     authMocks.discoverOAuthServerInfo.mockResolvedValue({
       authorizationServerUrl: 'https://auth.example.com',
-      authorizationServerMetadata: { token_endpoint: 'https://auth.example.com/token' },
+      authorizationServerMetadata: {
+        issuer: 'https://auth.example.com',
+        token_endpoint: 'https://auth.example.com/token',
+      },
     });
     authMocks.refreshAuthorization.mockResolvedValue({
       access_token: 'fresh-token',

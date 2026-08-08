@@ -6,15 +6,15 @@ import type {
   StoredOAuthClientInformation,
   StoredOAuthTokens,
 } from '@modelcontextprotocol/client';
-import {
-  checkResourceAllowed,
-  discoverOAuthServerInfo,
-  refreshAuthorization,
-  resourceUrlFromServerUrl,
-} from '@modelcontextprotocol/client';
+import { checkResourceAllowed, refreshAuthorization, resourceUrlFromServerUrl } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from './config.js';
 import type { Logger } from './logging.js';
 import { buildStaticClientInformation, resolveOAuthClientSecret } from './oauth-client-info.js';
+import {
+  discoverOAuthServerInfoWithIssuerPolicy,
+  OAuthIssuerPolicyError,
+  oauthIssuerFromDiscovery,
+} from './oauth-issuer-policy.js';
 import { clearLegacyOAuthArtifacts } from './oauth-persistence-stores.js';
 import type { OAuthPersistence } from './oauth-persistence.js';
 import { sameOAuthTokenGeneration } from './oauth-token-generation.js';
@@ -169,14 +169,9 @@ export async function readCachedAccessTokenWithPersistence(
     if (definition.command.kind !== 'http') {
       return tokens.access_token;
     }
-    const serverInfo = await discoverOAuthServerInfo(definition.command.url);
-    await assertRefreshIssuerBinding(
-      definition,
-      persistence,
-      tokens,
-      clientInformation,
-      serverInfo.authorizationServerUrl
-    );
+    const serverInfo = await discoverOAuthServerInfoWithIssuerPolicy(definition.command.url);
+    const issuer = oauthIssuerFromDiscovery(serverInfo);
+    await assertRefreshIssuerBinding(definition, persistence, tokens, clientInformation, issuer);
     const resource = resourceForRefresh(definition.command.url, serverInfo.resourceMetadata);
     const refreshed = await refreshAuthorization(serverInfo.authorizationServerUrl, {
       metadata: serverInfo.authorizationServerMetadata,
@@ -184,7 +179,7 @@ export async function readCachedAccessTokenWithPersistence(
       refreshToken: tokens.refresh_token,
       ...(resource ? { resource } : {}),
     });
-    await persistence.saveTokens({ ...refreshed, issuer: serverInfo.authorizationServerUrl });
+    await persistence.saveTokens({ ...refreshed, issuer });
     logger?.debug?.(`Refreshed cached OAuth access token for '${definition.name}' (non-interactive).`);
     return refreshed.access_token;
   } catch (error) {
@@ -194,6 +189,9 @@ export async function readCachedAccessTokenWithPersistence(
       }`
     );
     if (error instanceof OAuthIssuerMismatchError) {
+      throw error;
+    }
+    if (error instanceof OAuthIssuerPolicyError) {
       throw error;
     }
     const unrecoverableCode = unrecoverableOAuthRefreshCode(error);

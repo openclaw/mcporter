@@ -699,8 +699,9 @@ describe('createClientContext (HTTP)', () => {
 
     const clientConnect = vi.spyOn(Client.prototype, 'connect').mockImplementationOnce(async (transport) => {
       expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
-      const requestInit = (transport as { _requestInit?: RequestInit })._requestInit;
-      expect(requestInit?.headers).toEqual({ 'X-Trace': 'keep-me' });
+      const internal = transport as { _requestInit?: RequestInit; _skipIssuerMetadataValidation?: boolean };
+      expect(internal._requestInit?.headers).toEqual({ 'X-Trace': 'keep-me' });
+      expect(internal._skipIssuerMetadataValidation).toBe(true);
     });
 
     const context = await createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 1 });

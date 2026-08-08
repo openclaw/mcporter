@@ -10,6 +10,7 @@ import type { ServerDefinition } from '../config.js';
 import { analyzeConnectionError } from '../error-classifier.js';
 import type { Logger } from '../logging.js';
 import { createOAuthSession, type OAuthSession } from '../oauth.js';
+import { OAUTH_ISSUER_POLICY_SDK_OPTIONS } from '../oauth-issuer-policy.js';
 import { materializeHeaders } from '../runtime-header-utils.js';
 import { isUnauthorizedError, maybeEnableOAuth } from '../runtime-oauth-support.js';
 import { closeTransportAndWait } from '../runtime-process-utils.js';
@@ -26,6 +27,7 @@ import type { ClientContext, CreateClientContextOptions, WrapRecordTransport } f
 interface ResolvedHttpTransportOptions {
   requestInit?: RequestInit;
   authProvider?: OAuthSession['provider'];
+  skipIssuerMetadataValidation?: boolean;
   fetch?: typeof nodeHttp1Fetch;
   standaloneSseStarted: Promise<void>;
 }
@@ -91,6 +93,7 @@ function createHttpTransportOptions(
   return {
     requestInit: effectiveHeaders ? { headers: effectiveHeaders as HeadersInit } : undefined,
     authProvider: oauthSession?.provider,
+    ...(oauthSession ? OAUTH_ISSUER_POLICY_SDK_OPTIONS : {}),
     fetch: trackedFetch.fetch,
     standaloneSseStarted: trackedFetch.started,
   };

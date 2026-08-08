@@ -7,6 +7,7 @@ import {
 } from '@modelcontextprotocol/client';
 import type { Logger } from '../logging.js';
 import type { OAuthAuthorizationResponse, OAuthSession } from '../oauth.js';
+import { OAUTH_ISSUER_POLICY_SDK_OPTIONS } from '../oauth-issuer-policy.js';
 import { isUnauthorizedError } from '../runtime-oauth-support.js';
 
 export const DEFAULT_OAUTH_CODE_TIMEOUT_MS = 300_000;
@@ -269,6 +270,7 @@ async function completeProactiveAuthorization(
     const result = await sdkAuth(session.provider, {
       serverUrl: options.serverUrl,
       fetchFn: options.fetchFn,
+      ...OAUTH_ISSUER_POLICY_SDK_OPTIONS,
     });
     if (result !== 'REDIRECT') {
       await session.close().catch(() => {});

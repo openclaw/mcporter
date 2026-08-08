@@ -210,6 +210,7 @@ describe('connectWithAuth', () => {
     expect(mocks.sdkAuth).toHaveBeenCalledWith(session.provider, {
       serverUrl: new URL('https://calendar.example/mcp'),
       fetchFn: undefined,
+      skipIssuerMetadataValidation: true,
     });
     expect(waitForAuthorizationCode).toHaveBeenCalledTimes(1);
     expect(transport.calls).toEqual(['proactive-code']);
@@ -294,6 +295,7 @@ describe('connectWithAuth', () => {
     expect(mocks.sdkAuth).toHaveBeenCalledWith(session.provider, {
       serverUrl: 'https://courtlistener.example/mcp',
       fetchFn: undefined,
+      skipIssuerMetadataValidation: true,
     });
     expect(waitForAuthorizationCode).not.toHaveBeenCalled();
     expect(transport.calls).toEqual([]);

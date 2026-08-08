@@ -4,7 +4,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resolveClientMetadata } from '@modelcontextprotocol/client';
+import { type OAuthDiscoveryState, resolveClientMetadata } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from '../src/config.js';
 import { __oauthInternals, createOAuthSession } from '../src/oauth.js';
 import { loadVaultEntry } from '../src/oauth-vault.js';
@@ -192,6 +192,42 @@ describe('FileOAuthClientProvider session lifecycle', () => {
       authorizationServerUrl: 'https://auth.example.com',
       resourceUrl: 'https://example.com/mcp',
     });
+    await session.close();
+  });
+
+  it('persists only discovery state accepted by the issuer policy', async () => {
+    const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+    tempDirs.push(tokenCacheDir);
+    const definition: ServerDefinition = {
+      name: 'test-oauth-origin-issuer-alias',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'oauth',
+      tokenCacheDir,
+    };
+    const session = await createOAuthSession(definition, { info: vi.fn(), warn: vi.fn(), error: vi.fn() });
+    const state = {
+      authorizationServerUrl: 'https://auth.example.com/opaque-tenant',
+      authorizationServerMetadata: {
+        issuer: 'https://auth.example.com',
+        authorization_endpoint: 'https://auth.example.com/authorize',
+        token_endpoint: 'https://auth.example.com/oauth/token',
+        registration_endpoint: 'https://auth.example.com/oauth/register',
+        response_types_supported: ['code'],
+      },
+    } as OAuthDiscoveryState;
+
+    await expect(session.provider.saveDiscoveryState?.(state)).resolves.toBeUndefined();
+    await expect(session.provider.discoveryState?.()).resolves.toEqual(state);
+
+    const unsafe = {
+      ...state,
+      authorizationServerMetadata: {
+        ...state.authorizationServerMetadata,
+        token_endpoint: 'https://attacker.example/oauth/token',
+      },
+    } as OAuthDiscoveryState;
+    await expect(session.provider.saveDiscoveryState?.(unsafe)).rejects.toThrow(/outside the trusted issuer origin/);
+    await expect(session.provider.discoveryState?.()).resolves.toEqual(state);
     await session.close();
   });
 

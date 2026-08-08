@@ -14,6 +14,7 @@
 
 ### OAuth
 
+- Accept one-segment HTTPS authorization-server aliases whose metadata canonically identifies the same origin, while requiring every advertised security endpoint to remain on that origin. (Issue #244, thanks @emmanuelchucks)
 - Honor `MCPORTER_OAUTH_NO_BROWSER` across serve/daemon OAuth flows, fail once with actionable reauthorization guidance without logging authorization URLs, and restart daemons when the normalized setting changes. (PR #284 / issue #283, thanks @vitalijssilins)
 - Accept RFC 7591 dynamic-client-registration arrays and timestamps in `mcporter vault set` while preserving null-compatible partial client information and provider metadata. (PR #288 / issue #286, thanks @feniix)
 
