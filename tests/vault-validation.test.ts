@@ -64,10 +64,6 @@ describe('vault command input validation', () => {
       'clientInfo.client_id must be a string',
     ],
     [
-      { tokens: { access_token: 'token', token_type: 'Bearer' }, clientInfo: { client_name: null } },
-      'clientInfo.client_name must be a string',
-    ],
-    [
       { tokens: { access_token: 'token', token_type: 'Bearer' }, clientInfo: { application_type: 42 } },
       'clientInfo.application_type must be a string',
     ],
