@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resolveClientMetadata } from '@modelcontextprotocol/client';
+import { auth as sdkAuth, resolveClientMetadata } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from '../src/config.js';
 import { __oauthInternals, createOAuthSession, OAuthRedirectUriMismatchError } from '../src/oauth.js';
 import { loadVaultEntry } from '../src/oauth-vault.js';
@@ -375,6 +376,118 @@ describe('FileOAuthClientProvider session lifecycle', () => {
     const pending = session.waitForAuthorizationCode().catch(() => undefined);
     await session.close();
     await pending;
+  });
+
+  it('repairs a stale DCR client when a configured metadata URL is unsupported', async () => {
+    const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+    tempDirs.push(tokenCacheDir);
+    const oauthServer = await startOAuthMetadataServer(false);
+    const metadataUrl = 'https://client.example.com/oauth/metadata.json';
+    const issuer = new URL(oauthServer.serverUrl).origin;
+    await fs.writeFile(
+      path.join(tokenCacheDir, 'tokens.json'),
+      JSON.stringify({ access_token: 'expired-token', token_type: 'Bearer', expires_at: 1, issuer }),
+      'utf8'
+    );
+    await fs.writeFile(
+      path.join(tokenCacheDir, 'client.json'),
+      JSON.stringify({
+        client_id: 'fallback-dcr-client',
+        redirect_uris: ['http://127.0.0.1:9999/callback'],
+        token_endpoint_auth_method: 'none',
+        issuer,
+      }),
+      'utf8'
+    );
+    const definition: ServerDefinition = {
+      name: 'test-oauth-cimd-dcr-fallback',
+      command: { kind: 'http', url: new URL(oauthServer.serverUrl) },
+      auth: 'oauth',
+      tokenCacheDir,
+      oauthClientMetadataUrl: metadataUrl,
+    };
+    const authorizationRequests: URL[] = [];
+    const session = await createOAuthSession(
+      definition,
+      { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      {
+        suppressBrowserLaunch: true,
+        onAuthorizationUrl: ({ authorizationUrl }) => {
+          authorizationRequests.push(new URL(authorizationUrl));
+        },
+      }
+    );
+
+    try {
+      await expect(sdkAuth(session.provider, { serverUrl: oauthServer.serverUrl })).rejects.toBeInstanceOf(
+        OAuthRedirectUriMismatchError
+      );
+      expect(oauthServer.registrationCount()).toBe(0);
+      await expect(fs.access(path.join(tokenCacheDir, 'client.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(fs.access(path.join(tokenCacheDir, 'tokens.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+
+      await expect(sdkAuth(session.provider, { serverUrl: oauthServer.serverUrl })).resolves.toBe('REDIRECT');
+      expect(oauthServer.registrationCount()).toBe(1);
+      expect(authorizationRequests).toHaveLength(1);
+      expect(authorizationRequests[0]?.searchParams.get('client_id')).toBe('replacement-dcr-client');
+      await expect(session.provider.clientInformation()).resolves.toMatchObject({
+        client_id: 'replacement-dcr-client',
+        redirect_uris: [String(session.provider.redirectUrl)],
+      });
+    } finally {
+      const pending = session.waitForAuthorizationCode().catch(() => undefined);
+      await session.close();
+      await pending;
+      await oauthServer.close();
+    }
+  });
+
+  it('preserves a genuine metadata-URL client identity across callback ports', async () => {
+    const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+    tempDirs.push(tokenCacheDir);
+    const oauthServer = await startOAuthMetadataServer(true);
+    const metadataUrl = 'https://client.example.com/oauth/metadata.json';
+    const issuer = new URL(oauthServer.serverUrl).origin;
+    await fs.writeFile(
+      path.join(tokenCacheDir, 'client.json'),
+      JSON.stringify({
+        client_id: metadataUrl,
+        redirect_uris: ['http://127.0.0.1:9999/callback'],
+        issuer,
+      }),
+      'utf8'
+    );
+    const definition: ServerDefinition = {
+      name: 'test-oauth-cimd-client',
+      command: { kind: 'http', url: new URL(oauthServer.serverUrl) },
+      auth: 'oauth',
+      tokenCacheDir,
+      oauthClientMetadataUrl: metadataUrl,
+    };
+    const authorizationRequests: URL[] = [];
+    const session = await createOAuthSession(
+      definition,
+      { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      {
+        suppressBrowserLaunch: true,
+        onAuthorizationUrl: ({ authorizationUrl }) => {
+          authorizationRequests.push(new URL(authorizationUrl));
+        },
+      }
+    );
+
+    try {
+      await expect(sdkAuth(session.provider, { serverUrl: oauthServer.serverUrl })).resolves.toBe('REDIRECT');
+      expect(oauthServer.registrationCount()).toBe(0);
+      expect(authorizationRequests).toHaveLength(1);
+      expect(authorizationRequests[0]?.searchParams.get('client_id')).toBe(metadataUrl);
+      await expect(session.provider.clientInformation()).resolves.toMatchObject({ client_id: metadataUrl });
+    } finally {
+      const pending = session.waitForAuthorizationCode().catch(() => undefined);
+      await session.close();
+      await pending;
+      await oauthServer.close();
+    }
   });
 
   it('closes the callback server when interactive stale-client reads have I/O errors', async () => {
@@ -785,3 +898,70 @@ describe('FileOAuthClientProvider session lifecycle', () => {
     }
   });
 });
+
+async function startOAuthMetadataServer(supportsUrlBasedClientId: boolean): Promise<{
+  serverUrl: string;
+  registrationCount: () => number;
+  close: () => Promise<void>;
+}> {
+  let origin = '';
+  let serverUrl = '';
+  let registrations = 0;
+  const server = http.createServer(async (request, response) => {
+    const url = new URL(request.url ?? '/', origin);
+    if (url.pathname.includes('.well-known/oauth-protected-resource')) {
+      sendJson(response, { resource: serverUrl, authorization_servers: [origin] });
+      return;
+    }
+    if (
+      url.pathname.includes('.well-known/oauth-authorization-server') ||
+      url.pathname.includes('openid-configuration')
+    ) {
+      sendJson(response, {
+        issuer: origin,
+        authorization_endpoint: `${origin}/authorize`,
+        token_endpoint: `${origin}/token`,
+        registration_endpoint: `${origin}/register`,
+        response_types_supported: ['code'],
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+        token_endpoint_auth_methods_supported: ['none'],
+        code_challenge_methods_supported: ['S256'],
+        client_id_metadata_document_supported: supportsUrlBasedClientId,
+      });
+      return;
+    }
+    if (url.pathname === '/register' && request.method === 'POST') {
+      registrations += 1;
+      const body = await readRequestJson(request);
+      sendJson(response, { ...body, client_id: 'replacement-dcr-client' });
+      return;
+    }
+    response.statusCode = 404;
+    response.end('not found');
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  serverUrl = `${origin}/mcp`;
+  return {
+    serverUrl,
+    registrationCount: () => registrations,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+}
+
+function sendJson(response: http.ServerResponse, body: unknown): void {
+  response.statusCode = 200;
+  response.setHeader('Content-Type', 'application/json');
+  response.end(JSON.stringify(body));
+}
+
+async function readRequestJson(request: http.IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.from(chunk));
+  }
+  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+}

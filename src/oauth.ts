@@ -481,7 +481,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   }
 
   private async invalidateObsoleteDynamicRegistration(): Promise<void> {
-    if (!this.usesDynamicPort || this.definition.oauthClientId || this.definition.oauthClientMetadataUrl) {
+    if (!this.usesDynamicPort || this.definition.oauthClientId) {
       return;
     }
     let snapshot: OAuthPersistenceSnapshot;
@@ -492,6 +492,12 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       throw error;
     }
     const cachedClient = snapshot.clientInfo;
+    // Configuring a metadata URL does not mean the authorization server accepted
+    // URL-based client IDs. The SDK falls back to DCR when support is absent, so
+    // only preserve the registration when that URL is the client identity in use.
+    if (cachedClient?.client_id === this.definition.oauthClientMetadataUrl) {
+      return;
+    }
     const cachedRedirect = firstRedirectUri(cachedClient);
     if (!cachedClient || !cachedRedirect || cachedRedirect === this.redirectUrlValue.toString()) {
       return;
