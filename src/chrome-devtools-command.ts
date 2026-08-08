@@ -1,5 +1,21 @@
 const AUTO_CONNECT_FLAGS = new Set(['--autoConnect', '--auto-connect']);
 const NEGATED_AUTO_CONNECT_FLAGS = new Set(['--no-autoConnect', '--no-auto-connect']);
+const CONNECTION_VALUE_FLAGS = new Set([
+  '--browserUrl',
+  '--browser-url',
+  '--channel',
+  '--executablePath',
+  '--executable-path',
+  '--userDataDir',
+  '--user-data-dir',
+  '--wsEndpoint',
+  '--ws-endpoint',
+  '--wsHeaders',
+  '--ws-headers',
+  '-e',
+  '-u',
+  '-w',
+]);
 const NPX_VALUE_OPTIONS = new Set([
   '--cache',
   '--package',
@@ -90,8 +106,9 @@ export function replaceChromeDevtoolsAutoConnectArgs(
   const target = resolveChromeDevtoolsTarget(command, args);
   if (!target) return args;
   const parsed = parseChromeDevtoolsAutoConnectArgs(target.args);
-  const targetArgs = [...parsed.withoutAutoConnect];
-  targetArgs.splice(parsed.insertionIndex, 0, ...replacement);
+  const stripped = stripConnectionSelectionArgs(parsed.withoutAutoConnect);
+  const targetArgs = [...stripped.args];
+  targetArgs.splice(stripped.insertionIndex, 0, ...replacement);
   return [...target.prefix, ...targetArgs];
 }
 
@@ -189,6 +206,29 @@ function commandBasename(command: string): string {
 function optionTerminator(args: readonly string[]): number {
   const index = args.indexOf('--');
   return index >= 0 ? index : args.length;
+}
+
+function stripConnectionSelectionArgs(args: readonly string[]): {
+  readonly args: readonly string[];
+  readonly insertionIndex: number;
+} {
+  const result: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === undefined) continue;
+    if (arg === '--') {
+      result.push(...args.slice(index));
+      break;
+    }
+    if (CONNECTION_VALUE_FLAGS.has(arg)) {
+      index += 1;
+      continue;
+    }
+    if ([...CONNECTION_VALUE_FLAGS].some((flag) => arg.startsWith(`${flag}=`))) continue;
+    result.push(arg);
+  }
+  const terminatorIndex = result.indexOf('--');
+  return { args: result, insertionIndex: terminatorIndex >= 0 ? terminatorIndex : result.length };
 }
 
 interface ParsedAutoConnectArgs extends ChromeDevtoolsAutoConnectArgs {

@@ -154,6 +154,29 @@ describe('chrome-devtools autoConnect argument resolution', () => {
     expect(
       replaceChromeDevtoolsAutoConnectArgs(
         'npx',
+        [
+          '-y',
+          'chrome-devtools-mcp@latest',
+          '--autoConnect',
+          '--userDataDir',
+          '/tmp/profile',
+          '--channel=canary',
+          '--logFile',
+          '/tmp/mcp.log',
+        ],
+        ['--wsEndpoint', 'ws://127.0.0.1:1234/cdp']
+      )
+    ).toEqual([
+      '-y',
+      'chrome-devtools-mcp@latest',
+      '--logFile',
+      '/tmp/mcp.log',
+      '--wsEndpoint',
+      'ws://127.0.0.1:1234/cdp',
+    ]);
+    expect(
+      replaceChromeDevtoolsAutoConnectArgs(
+        'npx',
         ['-y', 'chrome-devtools-mcp@latest', '--autoConnect', '--', 'positional'],
         ['--wsEndpoint', 'ws://127.0.0.1:1234/cdp']
       )
