@@ -245,12 +245,8 @@ export async function pipeHttpResponseBody(body: Readable, response: http.Server
   try {
     await pipeline(body, response);
   } catch {
-    if (!response.destroyed) {
-      response.destroy();
-    }
-    if (!body.destroyed) {
-      body.destroy();
-    }
+    // pipeline owns teardown for both streams; disconnects and body failures
+    // are terminal for this response and should not become a second 500 write.
   }
 }
 

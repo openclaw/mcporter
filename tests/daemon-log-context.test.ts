@@ -25,24 +25,20 @@ describe('daemon log context stream safety', () => {
       logPath,
     });
 
-    expect(context.writer).toBeDefined();
-    // Without an early error listener, ENOSPC / EIO on the long-lived stream
-    // becomes an uncaughtException and takes down the daemon.
-    expect(context.writer!.listenerCount('error')).toBeGreaterThan(0);
-
-    await disposeLogContext(context);
+    try {
+      expect(context.writer).toBeDefined();
+      // Without an early error listener, ENOSPC / EIO on the long-lived stream
+      // becomes an uncaughtException and takes down the daemon.
+      expect(context.writer!.listenerCount('error')).toBeGreaterThan(0);
+    } finally {
+      await disposeLogContext(context);
+    }
   });
 
-  it('swallows log stream errors without uncaughtException and stops writing', async () => {
+  it('handles log stream errors directly and stops writing', async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-log-context-'));
     const logPath = path.join(tempDir, 'daemon.log');
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const uncaught: Error[] = [];
-    const onUncaught = (error: Error) => {
-      uncaught.push(error);
-    };
-    process.on('uncaughtException', onUncaught);
-
     const context = createLogContext({
       enabled: true,
       logAllServers: true,
@@ -50,20 +46,32 @@ describe('daemon log context stream safety', () => {
       logPath,
     });
     expect(context.writer).toBeDefined();
+    const writer = context.writer!;
 
-    const streamError = Object.assign(new Error('no space left on device'), { code: 'ENOSPC' });
-    context.writer!.emit('error', streamError);
+    try {
+      const streamError = Object.assign(new Error('no space left on device'), { code: 'ENOSPC' });
+      expect(() => writer.emit('error', streamError)).not.toThrow();
 
-    await new Promise<void>((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(resolve));
 
-    expect(uncaught).toEqual([]);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('no space left on device'));
-    expect(context.writer).toBeUndefined();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('no space left on device'));
+      expect(context.writer).toBeUndefined();
 
-    // logEvent must not throw after the stream is dropped
-    expect(() => logEvent(context, 'after stream failure')).not.toThrow();
-
-    process.off('uncaughtException', onUncaught);
-    await disposeLogContext(context);
+      // logEvent must not throw after the stream is dropped.
+      expect(() => logEvent(context, 'after stream failure')).not.toThrow();
+    } finally {
+      await destroyWriter(writer);
+      await disposeLogContext(context);
+    }
   });
 });
+
+async function destroyWriter(writer: import('node:fs').WriteStream): Promise<void> {
+  if (writer.closed) {
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    writer.once('close', resolve);
+    writer.destroy();
+  });
+}
