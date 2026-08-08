@@ -6,7 +6,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveClientMetadata } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from '../src/config.js';
-import { __oauthInternals, createOAuthSession } from '../src/oauth.js';
+import { __oauthInternals, createOAuthSession, OAuthRedirectUriMismatchError } from '../src/oauth.js';
 import { loadVaultEntry } from '../src/oauth-vault.js';
 import { createIsolatedTestHome, type IsolatedTestHome } from './helpers/isolated-test-home.js';
 
@@ -265,12 +265,33 @@ describe('FileOAuthClientProvider session lifecycle', () => {
     await session.close();
   });
 
-  it('clears stale client registrations when redirect URI changes with dynamic ports', async () => {
+  it('preserves refreshable credentials when a new session allocates a different dynamic port', async () => {
     const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
     tempDirs.push(tokenCacheDir);
     await fs.writeFile(
+      path.join(tokenCacheDir, 'tokens.json'),
+      JSON.stringify(
+        {
+          access_token: 'expired-token',
+          token_type: 'Bearer',
+          refresh_token: 'refresh-token',
+          expires_at: 1,
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+    await fs.writeFile(
       path.join(tokenCacheDir, 'client.json'),
-      JSON.stringify({ redirect_uris: ['http://127.0.0.1:9999/callback'] }, null, 2),
+      JSON.stringify(
+        {
+          client_id: 'refreshable-client',
+          redirect_uris: ['http://127.0.0.1:9999/callback'],
+        },
+        null,
+        2
+      ),
       'utf8'
     );
     const definition: ServerDefinition = {
@@ -289,13 +310,74 @@ describe('FileOAuthClientProvider session lifecycle', () => {
     const session = await createOAuthSession(definition, logger);
     await session.close();
 
-    await expect(fs.readFile(path.join(tokenCacheDir, 'client.json'), 'utf8')).rejects.toMatchObject({
-      code: 'ENOENT',
+    await expect(fs.readFile(path.join(tokenCacheDir, 'client.json'), 'utf8').then(JSON.parse)).resolves.toMatchObject({
+      client_id: 'refreshable-client',
+      redirect_uris: ['http://127.0.0.1:9999/callback'],
     });
-    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('clearing stale client registration'));
+    await expect(fs.readFile(path.join(tokenCacheDir, 'tokens.json'), 'utf8').then(JSON.parse)).resolves.toMatchObject({
+      refresh_token: 'refresh-token',
+    });
+    expect(logger.info).not.toHaveBeenCalledWith(expect.stringContaining('clearing stale client registration'));
   });
 
-  it('closes the callback server when stale-client reads have I/O errors', async () => {
+  it('replaces an obsolete dynamic registration only when interactive authorization starts', async () => {
+    const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+    tempDirs.push(tokenCacheDir);
+    await fs.writeFile(
+      path.join(tokenCacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'rejected-refresh-token',
+        expires_at: 1,
+      }),
+      'utf8'
+    );
+    await fs.writeFile(
+      path.join(tokenCacheDir, 'client.json'),
+      JSON.stringify({
+        client_id: 'obsolete-client',
+        redirect_uris: ['http://127.0.0.1:9999/callback'],
+      }),
+      'utf8'
+    );
+    const definition: ServerDefinition = {
+      name: 'test-oauth-interactive-replacement',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'oauth',
+      tokenCacheDir,
+    };
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const onAuthorizationUrl = vi.fn();
+    const session = await createOAuthSession(definition, logger, {
+      suppressBrowserLaunch: true,
+      onAuthorizationUrl,
+    });
+    const provider = session.provider;
+    const authorizationUrl = new URL('https://auth.example.com/authorize');
+
+    await expect(provider.redirectToAuthorization(authorizationUrl)).rejects.toBeInstanceOf(
+      OAuthRedirectUriMismatchError
+    );
+    await expect(fs.access(path.join(tokenCacheDir, 'client.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fs.access(path.join(tokenCacheDir, 'tokens.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(onAuthorizationUrl).not.toHaveBeenCalled();
+
+    const replacement = {
+      client_id: 'replacement-client',
+      redirect_uris: [String(provider.redirectUrl)],
+    };
+    await provider.saveClientInformation?.(replacement);
+    await provider.redirectToAuthorization(authorizationUrl);
+
+    expect(onAuthorizationUrl).toHaveBeenCalledTimes(1);
+    await expect(provider.clientInformation()).resolves.toMatchObject(replacement);
+    const pending = session.waitForAuthorizationCode().catch(() => undefined);
+    await session.close();
+    await pending;
+  });
+
+  it('closes the callback server when interactive stale-client reads have I/O errors', async () => {
     const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
     tempDirs.push(tokenCacheDir);
     const definition: ServerDefinition = {
@@ -312,7 +394,6 @@ describe('FileOAuthClientProvider session lifecycle', () => {
     };
 
     const readError = Object.assign(new Error('permission denied'), { code: 'EACCES' });
-    const readFileSpy = vi.spyOn(fs, 'readFile').mockRejectedValueOnce(readError);
     const originalCreateServer = http.createServer.bind(http);
     const createdServers: http.Server[] = [];
     const createServerSpy = vi.spyOn(http, 'createServer').mockImplementation((...args) => {
@@ -322,12 +403,16 @@ describe('FileOAuthClientProvider session lifecycle', () => {
     });
 
     try {
-      await expect(createOAuthSession(definition, logger)).rejects.toMatchObject({ code: 'EACCES' });
+      const session = await createOAuthSession(definition, logger);
+      const readFileSpy = vi.spyOn(fs, 'readFile').mockRejectedValueOnce(readError);
+      await expect(
+        session.provider.redirectToAuthorization(new URL('https://auth.example.com/authorize'))
+      ).rejects.toMatchObject({ code: 'EACCES' });
+      readFileSpy.mockRestore();
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(createdServers).toHaveLength(1);
       expect(createdServers[0]?.listening).toBe(false);
     } finally {
-      readFileSpy.mockRestore();
       createServerSpy.mockRestore();
     }
   });
