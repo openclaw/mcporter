@@ -61,6 +61,14 @@ describe('vault command input validation', () => {
       { tokens: { access_token: 'token', token_type: 'Bearer', expires_in: Number.POSITIVE_INFINITY } },
       'tokens.expires_in must be a finite number',
     ],
+    [
+      { tokens: { access_token: 'token', token_type: 'Bearer', expires_at: 'soon' } },
+      'tokens.expires_at must be a finite number',
+    ],
+    [
+      { tokens: { access_token: 'token', token_type: 'Bearer', expiresAt: 'soon' } },
+      'tokens.expiresAt must be a finite number',
+    ],
     [{ tokens, clientInfo: [] }, "Vault payload 'clientInfo' must be an object"],
     [{ tokens, clientInfo: { client_id: 42 } }, 'clientInfo.client_id must be a non-empty string'],
   ])('rejects malformed payload %#', async (payload, message) => {
@@ -69,10 +77,19 @@ describe('vault command input validation', () => {
     );
   });
 
-  it('reports malformed JSON as a usage error', async () => {
+  it('reports malformed stdin JSON as a usage error without echoing the payload', async () => {
     await expect(
-      handleVault(runtime, ['set', 'calendar', '--stdin'], { readStdin: async () => '{"tokens":' })
-    ).rejects.toThrow('Vault payload is not valid JSON');
+      handleVault(runtime, ['set', 'calendar', '--stdin'], { readStdin: async () => 'sk-live-9f8e7d6c5b4a' })
+    ).rejects.toThrow('Vault payload from stdin is not valid JSON.');
+  });
+
+  it('names the file when its JSON is malformed', async () => {
+    const payloadPath = path.join(tempDir, 'tokens.json');
+    await fs.writeFile(payloadPath, '{"tokens":', 'utf8');
+
+    await expect(handleVault(runtime, ['set', 'calendar', '--tokens-file', payloadPath])).rejects.toThrow(
+      `Vault payload file '${payloadPath}' is not valid JSON.`
+    );
   });
 
   it('accepts a dynamic client registration clientInfo payload', async () => {
@@ -109,6 +126,7 @@ describe('vault command input validation', () => {
       tokens: { ...tokens, expires_in: 3600, expires_at: 1_754_600_000, id_token: 'id-token' },
       clientInfo: {
         client_id: 'abc',
+        issuer: 'https://issuer.example',
         registration_client_uri: 'https://example.test/register/abc',
         registration_access_token: 'registration-token',
       },
@@ -119,7 +137,7 @@ describe('vault command input validation', () => {
     await expect(loadVaultEntry(definition)).resolves.toMatchObject(payload);
   });
 
-  it('treats null clientInfo fields as absent', async () => {
+  it('persists null clientInfo fields verbatim', async () => {
     const clientInfo = { client_id: 'abc', client_secret: null, redirect_uris: null };
 
     await seed({ tokens, clientInfo });
@@ -134,6 +152,7 @@ describe('vault command input validation', () => {
     [{ client_id: 'abc', client_id_issued_at: 'yesterday' }, 'client_id_issued_at must be a finite number'],
     [{ client_id: 'abc', client_secret_expires_at: 'never' }, 'client_secret_expires_at must be a finite number'],
     [{ client_id: 'abc', client_name: 42 }, 'client_name must be a string'],
+    [{ client_id: 'abc', issuer: 42 }, 'clientInfo.issuer must be a string'],
     [{}, 'clientInfo.client_id must be a non-empty string'],
   ])('rejects malformed clientInfo %#', async (clientInfo, message) => {
     await expect(seed({ tokens, clientInfo })).rejects.toThrow(message as string);
