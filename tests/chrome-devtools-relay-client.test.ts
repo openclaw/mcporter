@@ -254,6 +254,18 @@ describe('Browser Relay Authentication v2 raw CDP client', () => {
     result.upstream?.socket.destroy();
   });
 
+  it('bounds loopback resolution by the configured timeout', async () => {
+    const result = await connectChromeDevtoolsRelayV2({
+      baseUrl: new URL('http://localhost:18799'),
+      credential: CREDENTIAL,
+      timeoutMs: 20,
+      resolve: (() => new Promise<never>(() => {})) as never,
+    });
+    expect(result.reason).toBe('timeout');
+    expect(result.durationMs).toBeGreaterThanOrEqual(10);
+    expect(result.durationMs).toBeLessThan(500);
+  });
+
   it('uses fresh nonces and closes each failed replay attempt instead of reconnecting', async () => {
     const nonces: string[] = [];
     const relay = await createRawServer((request, socket) => {

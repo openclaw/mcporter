@@ -81,14 +81,21 @@ export async function connectChromeDevtoolsRelayV2(options: {
   let socket: net.Socket | undefined;
   let timer: NodeJS.Timeout | undefined;
   try {
-    const addresses = await resolveLoopbackAddresses(options.baseUrl.hostname, options.resolve ?? lookup);
-    const port = resolvePort(options.baseUrl);
     let timedOut = false;
-    timer = setTimeout(() => {
-      timedOut = true;
-      socket?.destroy(new RelayV2Error('timeout'));
-    }, options.timeoutMs);
-    timer.unref?.();
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        const error = new RelayV2Error('timeout');
+        socket?.destroy(error);
+        reject(error);
+      }, options.timeoutMs);
+    });
+    timer?.unref();
+    const addresses = await Promise.race([
+      resolveLoopbackAddresses(options.baseUrl.hostname, options.resolve ?? lookup),
+      timeout,
+    ]);
+    const port = resolvePort(options.baseUrl);
     let lastConnectionError: unknown;
     for (const address of addresses) {
       socket = net.createConnection({ host: address.address, family: address.family, port });
