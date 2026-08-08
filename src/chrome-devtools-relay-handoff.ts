@@ -164,43 +164,20 @@ export function renderChromeDevtoolsRelayPreloadSource(): string {
   return `import fs from 'node:fs';
 import path from 'node:path';
 
-const installChromeDevtoolsRelayHeaders = ${installChromeDevtoolsRelayHeaders.toString()};
-
-installChromeDevtoolsRelayHeaders(fs, path, ${JSON.stringify(CHROME_RELAY_HANDOFF_ENV)});
-`;
-}
-
-interface PreloadFileSystem {
-  readonly constants: typeof fs.constants;
-  closeSync(descriptor: number): void;
-  fstatSync(descriptor: number): fs.Stats;
-  ftruncateSync(descriptor: number, length?: number): void;
-  lstatSync(filePath: string): fs.Stats;
-  openSync(filePath: string, flags: number): number;
-  readFileSync(descriptor: number, encoding: 'utf8'): string;
-  unlinkSync(filePath: string): void;
-}
-
-interface PreloadPath {
-  dirname(filePath: string): string;
-  isAbsolute(filePath: string): boolean;
-}
-
-function installChromeDevtoolsRelayHeaders(fsApi: PreloadFileSystem, pathApi: PreloadPath, envName: string): void {
-  const targetPath = process.argv[1]?.replaceAll('\\', '/').toLowerCase();
-  if (!targetPath?.includes('chrome-devtools-mcp')) return;
-
+const targetPath = process.argv[1]?.replaceAll('\\\\', '/').toLowerCase();
+if (targetPath?.includes('chrome-devtools-mcp')) {
   const failureMessage = 'MCPorter Chrome relay authorization handoff unavailable.';
-  const fail = (): never => {
+  const fail = () => {
     throw new Error(failureMessage);
   };
+  const envName = ${JSON.stringify(CHROME_RELAY_HANDOFF_ENV)};
   const handoffPath = process.env[envName];
   delete process.env[envName];
-  if (!handoffPath || !pathApi.isAbsolute(handoffPath)) return fail();
+  if (!handoffPath || !path.isAbsolute(handoffPath)) fail();
 
   const directoryStat = (() => {
     try {
-      return fsApi.lstatSync(pathApi.dirname(handoffPath));
+      return fs.lstatSync(path.dirname(handoffPath));
     } catch {
       return fail();
     }
@@ -213,7 +190,7 @@ function installChromeDevtoolsRelayHeaders(fsApi: PreloadFileSystem, pathApi: Pr
 
   const descriptor = (() => {
     try {
-      return fsApi.openSync(handoffPath, fsApi.constants.O_RDONLY | (fsApi.constants.O_NOFOLLOW ?? 0));
+      return fs.openSync(handoffPath, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
     } catch {
       return fail();
     }
@@ -222,37 +199,37 @@ function installChromeDevtoolsRelayHeaders(fsApi: PreloadFileSystem, pathApi: Pr
   let raw = '';
   let consumed = false;
   try {
-    const stat = fsApi.fstatSync(descriptor);
+    const stat = fs.fstatSync(descriptor);
     if (!stat.isFile() || stat.size <= 0 || stat.size > 4_096) fail();
     if (process.platform !== 'win32') {
       if ((stat.mode & 0o077) !== 0) fail();
       if (typeof process.getuid === 'function' && stat.uid !== process.getuid()) fail();
     }
-    raw = fsApi.readFileSync(descriptor, 'utf8');
+    raw = fs.readFileSync(descriptor, 'utf8');
     try {
-      fsApi.unlinkSync(handoffPath);
+      fs.unlinkSync(handoffPath);
       consumed = true;
     } catch {
       try {
-        fsApi.ftruncateSync(descriptor, 0);
+        fs.ftruncateSync(descriptor, 0);
         consumed = true;
       } catch {
         fail();
       }
     }
   } finally {
-    fsApi.closeSync(descriptor);
+    fs.closeSync(descriptor);
   }
   if (!consumed) fail();
 
-  let parsed: unknown;
+  let parsed;
   try {
     parsed = JSON.parse(raw);
   } catch {
     fail();
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) fail();
-  const entries = Object.entries(parsed as Record<string, unknown>);
+  const entries = Object.entries(parsed);
   if (entries.length !== 1 || entries[0]?.[0] !== 'Authorization') fail();
   const authorization = entries[0]?.[1];
   if (typeof authorization !== 'string' || !/^Bearer [A-Za-z0-9_-]{43}$/u.test(authorization)) fail();
@@ -260,4 +237,6 @@ function installChromeDevtoolsRelayHeaders(fsApi: PreloadFileSystem, pathApi: Pr
   const terminatorIndex = process.argv.indexOf('--', 2);
   const insertionIndex = terminatorIndex >= 0 ? terminatorIndex : process.argv.length;
   process.argv.splice(insertionIndex, 0, '--wsHeaders', JSON.stringify({ Authorization: authorization }));
+}
+`;
 }

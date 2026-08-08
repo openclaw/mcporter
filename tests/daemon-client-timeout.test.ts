@@ -43,7 +43,8 @@ let noticeOnCall = false;
 const responseOverrides = new Map<string, string>();
 let activeConfigPath = path.resolve('mcporter.config.json');
 let activeSocketPath = '';
-const createConnection = vi.fn(() => {
+const createConnection = vi.hoisted(() => vi.fn());
+createConnection.mockImplementation(() => {
   const socket = new MockSocket();
   setTimeout(() => socket.emit('connect'), 0);
   return socket;

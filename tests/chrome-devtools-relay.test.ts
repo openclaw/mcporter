@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -17,10 +18,14 @@ const TOKEN = 'a'.repeat(64);
 const FAKE_PROXY_AUTHORIZATION = `Bearer ${'c'.repeat(43)}`;
 const AUTO_ARGS = ['-y', 'chrome-devtools-mcp@latest', '--autoConnect'];
 
+function fakeUpstream() {
+  return { socket: new net.Socket(), head: Buffer.alloc(0) };
+}
+
 function successfulOptions(overrides: ChromeDevtoolsRelayProbeOptions = {}): ChromeDevtoolsRelayProbeOptions {
   return {
     readToken: () => TOKEN,
-    probe: async () => ({ reason: 'success', durationMs: 12, status: 200 }),
+    connect: async () => ({ reason: 'success', durationMs: 12, status: 200, upstream: fakeUpstream() }),
     startProxy: async () => ({
       endpoint: 'ws://127.0.0.1:45678/cdp',
       consumeClientAuthorization: () => FAKE_PROXY_AUTHORIZATION,
@@ -174,6 +179,26 @@ describe('chrome-devtools OpenClaw relay routing', () => {
     ).not.toBe(hashChromeDevtoolsRelayEnvironment([interpolated], { CDP_PACKAGE: 'chrome-devtools-mcp' }));
   });
 
+  it('changes daemon identity when the relay key rotates at the same credential path', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-relay-rotation-'));
+    const secretPath = path.join(directory, 'browser-extension-relay.secret');
+    const definition: ServerDefinition = {
+      name: 'chrome',
+      command: { kind: 'stdio', command: 'npx', args: AUTO_ARGS, cwd: '/tmp' },
+    };
+    try {
+      await fs.writeFile(secretPath, TOKEN, { mode: 0o600 });
+      const before = hashChromeDevtoolsRelayEnvironment([definition], { OPENCLAW_OAUTH_DIR: directory });
+      await fs.writeFile(secretPath, 'b'.repeat(64), { mode: 0o600 });
+      const after = hashChromeDevtoolsRelayEnvironment([definition], { OPENCLAW_OAUTH_DIR: directory });
+      expect(after).not.toBe(before);
+      expect(before).not.toContain(TOKEN);
+      expect(after).not.toContain('b'.repeat(64));
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('routes through the protected local proxy without putting either bearer in child argv', async () => {
     const observed: unknown[] = [];
     const close = vi.fn(async () => {});
@@ -182,9 +207,9 @@ describe('chrome-devtools OpenClaw relay routing', () => {
       AUTO_ARGS,
       {},
       successfulOptions({
-        probe: async (url, token, timeoutMs) => {
-          observed.push(url, token, timeoutMs);
-          return { reason: 'success', durationMs: 12, status: 200 };
+        connect: async (url, credential, timeoutMs) => {
+          observed.push(url.toString(), credential.keyId, timeoutMs);
+          return { reason: 'success', durationMs: 12, status: 200, upstream: fakeUpstream() };
         },
         startProxy: async (options) => {
           observed.push(options);
@@ -198,10 +223,10 @@ describe('chrome-devtools OpenClaw relay routing', () => {
     );
 
     expect(observed).toEqual([
-      'http://127.0.0.1:18799/json/version',
-      TOKEN,
+      'http://127.0.0.1:18799/',
+      '4Od6UHQSsSD27eYfYilbGn',
       5_000,
-      { upstreamEndpoint: new URL('ws://127.0.0.1:18799/cdp'), token: TOKEN },
+      { upstream: expect.objectContaining({ head: expect.any(Buffer), socket: expect.any(net.Socket) }) },
     ]);
     expect(result.args).toEqual(['-y', 'chrome-devtools-mcp@latest', '--wsEndpoint', 'ws://127.0.0.1:45678/cdp']);
     expect(JSON.stringify(result.args)).not.toContain(TOKEN);
@@ -226,7 +251,7 @@ describe('chrome-devtools OpenClaw relay routing', () => {
       {},
       {
         readToken: () => TOKEN,
-        probe: async () => ({ reason: 'success', durationMs: 1, status: 200 }),
+        connect: async () => ({ reason: 'success', durationMs: 1, status: 200, upstream: fakeUpstream() }),
       }
     );
     try {
@@ -268,20 +293,25 @@ describe('chrome-devtools OpenClaw relay routing', () => {
     }
   });
 
-  it('keeps prefer backward-compatible while classifying discovery and probe failures', async () => {
+  it('keeps prefer backward-compatible while classifying v2 authentication failures', async () => {
     const cases: Array<[ChromeDevtoolsRelayProbeResult['reason'], number | undefined]> = [
-      ['unauthorized', 401],
+      ['unsupported-auth', 401],
+      ['bad-server-proof', 200],
+      ['server-auth-failed', 503],
+      ['replay', 409],
+      ['protocol', 400],
+      ['freshness', 410],
+      ['sequence', 412],
       ['extension-disconnected', 503],
       ['timeout', undefined],
       ['network-error', undefined],
-      ['invalid-response', 500],
     ];
     for (const [reason, status] of cases) {
       const result = await rewriteChromeDevtoolsArgsForRelay(
         'npx',
         AUTO_ARGS,
         {},
-        successfulOptions({ probe: async () => ({ reason, durationMs: 8, status }) })
+        successfulOptions({ connect: async () => ({ reason, durationMs: 8, status }) })
       );
       expect(result.args).toBe(AUTO_ARGS);
       expect(result.decision).toEqual({
@@ -296,7 +326,13 @@ describe('chrome-devtools OpenClaw relay routing', () => {
   });
 
   it('classifies local proxy startup failure and keeps require fail-closed', async () => {
+    const upstreams: net.Socket[] = [];
     const options = successfulOptions({
+      connect: async () => {
+        const upstream = fakeUpstream();
+        upstreams.push(upstream.socket);
+        return { reason: 'success', durationMs: 2, status: 200, upstream };
+      },
       startProxy: async () => {
         throw new Error('bind failed');
       },
@@ -308,6 +344,8 @@ describe('chrome-devtools OpenClaw relay routing', () => {
     ).rejects.toMatchObject({
       decision: expect.objectContaining({ route: 'unavailable', reason: 'network-error', policy: 'require' }),
     });
+    expect(upstreams).toHaveLength(2);
+    expect(upstreams.every((socket) => socket.destroyed)).toBe(true);
   });
 
   it('closes the proxy when decision reporting fails after startup', async () => {
@@ -333,30 +371,35 @@ describe('chrome-devtools OpenClaw relay routing', () => {
   });
 
   it('makes off explicit and never probes', async () => {
-    const probe = vi.fn(async () => ({ reason: 'success' as const, durationMs: 1, status: 200 }));
+    const connect = vi.fn(async () => ({
+      reason: 'success' as const,
+      durationMs: 1,
+      status: 200,
+      upstream: fakeUpstream(),
+    }));
     const result = await rewriteChromeDevtoolsArgsForRelay(
       'npx',
       AUTO_ARGS,
       { MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'off' },
-      successfulOptions({ probe })
+      successfulOptions({ connect })
     );
     expect(result.args).toBe(AUTO_ARGS);
     expect(result.decision).toEqual({ route: 'legacy', reason: 'disabled', policy: 'off' });
-    expect(probe).not.toHaveBeenCalled();
+    expect(connect).not.toHaveBeenCalled();
   });
 
   it.each([
     ['missing-credential', successfulOptions({ readToken: () => undefined })],
     [
-      'unauthorized',
-      successfulOptions({ probe: async () => ({ reason: 'unauthorized', durationMs: 3, status: 401 }) }),
+      'unsupported-auth',
+      successfulOptions({ connect: async () => ({ reason: 'unsupported-auth', durationMs: 3, status: 401 }) }),
     ],
     [
       'extension-disconnected',
-      successfulOptions({ probe: async () => ({ reason: 'extension-disconnected', durationMs: 3, status: 503 }) }),
+      successfulOptions({ connect: async () => ({ reason: 'extension-disconnected', durationMs: 3, status: 503 }) }),
     ],
-    ['timeout', successfulOptions({ probe: async () => ({ reason: 'timeout', durationMs: 100 }) })],
-    ['network-error', successfulOptions({ probe: async () => ({ reason: 'network-error', durationMs: 2 }) })],
+    ['timeout', successfulOptions({ connect: async () => ({ reason: 'timeout', durationMs: 100 }) })],
+    ['network-error', successfulOptions({ connect: async () => ({ reason: 'network-error', durationMs: 2 }) })],
   ] as const)('require fails before legacy launch for %s', async (reason, options) => {
     const decisions: unknown[] = [];
     await expect(
@@ -371,80 +414,6 @@ describe('chrome-devtools OpenClaw relay routing', () => {
       decision: expect.objectContaining({ route: 'unavailable', reason, policy: 'require' }),
     });
     expect(decisions).toHaveLength(1);
-  });
-
-  it('uses the authenticated default probe and reports response, network, and timeout outcomes safely', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(new Response('{}', { status: 200 }))
-      .mockResolvedValueOnce(new Response('{}', { status: 401 }))
-      .mockResolvedValueOnce(new Response('{}', { status: 503 }))
-      .mockResolvedValueOnce(new Response('not-json', { status: 200 }))
-      .mockRejectedValueOnce(new Error('offline'))
-      .mockImplementationOnce((_url: string, init: RequestInit) => {
-        return new Promise((_resolve, reject) => {
-          init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
-        });
-      });
-    vi.stubGlobal('fetch', fetchMock);
-    const startProxy = successfulOptions().startProxy;
-
-    const success = await rewriteChromeDevtoolsArgsForRelay(
-      'npx',
-      AUTO_ARGS,
-      {},
-      { readToken: () => TOKEN, startProxy }
-    );
-    expect(success.decision).toMatchObject({ route: 'relay', reason: 'success', probeStatus: 200 });
-    for (const expected of ['unauthorized', 'extension-disconnected', 'invalid-response', 'network-error'] as const) {
-      const result = await rewriteChromeDevtoolsArgsForRelay(
-        'npx',
-        AUTO_ARGS,
-        {},
-        { readToken: () => TOKEN, startProxy }
-      );
-      expect(result.decision.reason).toBe(expected);
-    }
-    const timeout = await rewriteChromeDevtoolsArgsForRelay(
-      'npx',
-      AUTO_ARGS,
-      { MCPORTER_CHROME_DEVTOOLS_RELAY_TIMEOUT_MS: '100' },
-      { readToken: () => TOKEN, startProxy }
-    );
-    expect(timeout.decision).toMatchObject({ route: 'legacy', reason: 'timeout' });
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
-      'http://127.0.0.1:18799/json/version',
-      expect.objectContaining({ headers: { Authorization: `Bearer ${TOKEN}` }, signal: expect.any(AbortSignal) })
-    );
-  });
-
-  it('rejects oversized probe responses by header and bounded streaming reads', async () => {
-    let chunks = 0;
-    const oversizedStream = new ReadableStream<Uint8Array>({
-      pull(controller) {
-        if (chunks < 3) {
-          chunks += 1;
-          controller.enqueue(new Uint8Array(32 * 1024));
-        } else {
-          controller.close();
-        }
-      },
-    });
-    vi.stubGlobal(
-      'fetch',
-      vi
-        .fn()
-        .mockResolvedValueOnce(
-          new Response('ignored', { status: 200, headers: { 'Content-Length': String(64 * 1024 + 1) } })
-        )
-        .mockResolvedValueOnce(new Response(oversizedStream, { status: 200 }))
-    );
-
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const result = await rewriteChromeDevtoolsArgsForRelay('npx', AUTO_ARGS, {}, { readToken: () => TOKEN });
-      expect(result.decision).toMatchObject({ route: 'legacy', reason: 'invalid-response', probeStatus: 200 });
-    }
   });
 
   it('matches OpenClaw credential directory precedence and rejects insecure or malformed secret files', async () => {
@@ -514,16 +483,21 @@ describe('chrome-devtools OpenClaw relay routing', () => {
 
   it('leaves unrelated commands untouched without credential discovery or probing', async () => {
     const readToken = vi.fn(() => TOKEN);
-    const probe = vi.fn(async () => ({ reason: 'success' as const, durationMs: 1, status: 200 }));
+    const connect = vi.fn(async () => ({
+      reason: 'success' as const,
+      durationMs: 1,
+      status: 200,
+      upstream: fakeUpstream(),
+    }));
     const args = ['-y', 'some-mcp'];
     const result = await rewriteChromeDevtoolsArgsForRelay(
       'npx',
       args,
       { MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'invalid-for-unrelated-command' },
-      { readToken, probe }
+      { readToken, connect }
     );
     expect(result).toMatchObject({ args, applied: false, decision: { reason: 'not-eligible' } });
     expect(readToken).not.toHaveBeenCalled();
-    expect(probe).not.toHaveBeenCalled();
+    expect(connect).not.toHaveBeenCalled();
   });
 });

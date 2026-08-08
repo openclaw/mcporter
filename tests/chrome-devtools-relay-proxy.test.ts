@@ -1,194 +1,235 @@
-import http, { type IncomingHttpHeaders } from 'node:http';
+import { createHash } from 'node:crypto';
 import net, { type AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { startChromeDevtoolsRelayProxy, type ChromeDevtoolsRelayProxy } from '../src/chrome-devtools-relay-proxy.js';
+import { startChromeDevtoolsRelayProxy } from '../src/chrome-devtools-relay-proxy.js';
 
-const TOKEN = 'b'.repeat(64);
-const servers = new Set<http.Server>();
+const WEBSOCKET_KEY = Buffer.from('0123456789abcdef').toString('base64');
+const WEBSOCKET_ACCEPT = createHash('sha1')
+  .update(`${WEBSOCKET_KEY}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+  .digest('base64');
+const servers = new Set<net.Server>();
+const sockets = new Set<net.Socket>();
 
 afterEach(async () => {
+  for (const socket of sockets) socket.destroy();
+  sockets.clear();
   await Promise.all(
     [...servers].map(
       (server) =>
         new Promise<void>((resolve) => {
           server.close(() => resolve());
-          server.closeAllConnections();
         })
     )
   );
   servers.clear();
 });
 
-describe('chrome-devtools relay credential proxy', () => {
-  it('requires the ephemeral authorization and forwards only a minimal authenticated WebSocket handshake', async () => {
-    let upstreamHeaders: IncomingHttpHeaders | undefined;
-    let upstreamPath: string | undefined;
-    let upstreamUpgrades = 0;
-    const upstream = await createUpstream((request, socket) => {
-      upstreamUpgrades += 1;
-      upstreamHeaders = request.headers;
-      upstreamPath = request.url;
-      socket.end(
-        `HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: test\r\nSec-WebSocket-Protocol: cdp.v1\r\nSet-Cookie: relay=${TOKEN}\r\nX-Relay-Secret: ${TOKEN}\r\n\r\n`
-      );
+describe('chrome-devtools authenticated relay proxy', () => {
+  it('keeps the handoff authorization and bridges one child to the retained upstream socket', async () => {
+    const upstream = await createSocketPair();
+    const proxy = await startChromeDevtoolsRelayProxy({
+      upstream: { socket: upstream.client, head: Buffer.from('early-upstream-frame') },
     });
-    const proxy = await startProxyFor(upstream);
-
     try {
-      const clientAuthorization = proxy.consumeClientAuthorization();
+      const authorization = proxy.consumeClientAuthorization();
+      expectEphemeralAuthorization(authorization);
       const endpoint = new URL(proxy.endpoint);
-      expect(endpoint.hostname).toBe('127.0.0.1');
-      expect(endpoint.pathname).toBe('/cdp');
-      expectEphemeralAuthorization(clientAuthorization);
 
-      await expect(rawUpgrade(Number(endpoint.port), '/cdp')).resolves.toContain('404 Not Found');
+      await expect(rawClosedUpgrade(Number(endpoint.port), [])).resolves.toContain('404 Not Found');
       await expect(
-        rawUpgrade(Number(endpoint.port), '/cdp', [`Authorization: Bearer ${'x'.repeat(43)}`])
+        rawClosedUpgrade(Number(endpoint.port), [`Authorization: Bearer ${'x'.repeat(43)}`])
       ).resolves.toContain('404 Not Found');
       await expect(
-        rawUpgrade(Number(endpoint.port), '/cdp/guessed', [`Authorization: ${clientAuthorization}`])
+        rawClosedUpgrade(Number(endpoint.port), [`Authorization: ${authorization}`, `Authorization: ${authorization}`])
       ).resolves.toContain('404 Not Found');
-      expect(upstreamUpgrades).toBe(0);
 
-      const response = await rawUpgrade(Number(endpoint.port), endpoint.pathname, [
-        `Authorization: ${clientAuthorization}`,
-        'Cookie: local-session=attacker',
-        'Proxy-Authorization: Basic attacker',
-        'Origin: https://attacker.example',
-        'Sec-WebSocket-Extensions: permessage-deflate',
-        'Sec-WebSocket-Protocol: cdp.v1',
-        'X-Local-Secret: do-not-forward',
-      ]);
-      expect(response).toContain('101 Switching Protocols');
-      expect(response).not.toContain(TOKEN);
-      expect(response).not.toContain('Set-Cookie');
-      expect(response).not.toContain('X-Relay-Secret');
-      expect(upstreamUpgrades).toBe(1);
-      expect(upstreamPath).toBe('/cdp');
-      expect(upstreamHeaders).toMatchObject({
-        authorization: `Bearer ${TOKEN}`,
-        connection: 'Upgrade',
-        upgrade: 'websocket',
-        'sec-websocket-key': 'abc',
-        'sec-websocket-version': '13',
-        'sec-websocket-protocol': 'cdp.v1',
-      });
-      expect(upstreamHeaders?.host).toMatch(/^127\.0\.0\.1:\d+$/u);
-      expect(upstreamHeaders?.cookie).toBeUndefined();
-      expect(upstreamHeaders?.['proxy-authorization']).toBeUndefined();
-      expect(upstreamHeaders?.origin).toBeUndefined();
-      expect(upstreamHeaders?.['sec-websocket-extensions']).toBeUndefined();
-      expect(upstreamHeaders?.['x-local-secret']).toBeUndefined();
+      const downstream = await openUpgrade(Number(endpoint.port), [`Authorization: ${authorization}`]);
+      expect(downstream.response).toContain('101 Switching Protocols');
+      expect(downstream.response).toContain(`Sec-WebSocket-Accept: ${WEBSOCKET_ACCEPT}`);
+      expect(downstream.response).not.toContain(authorization);
+      expect(downstream.trailing).toBe('early-upstream-frame');
+
+      const upstreamData = onceData(upstream.peer);
+      downstream.socket.write('child-frame');
+      await expect(upstreamData).resolves.toBe('child-frame');
+
+      const downstreamData = onceData(downstream.socket);
+      upstream.peer.write('relay-frame');
+      await expect(downstreamData).resolves.toBe('relay-frame');
+      downstream.socket.destroy();
     } finally {
       await proxy.close();
     }
-
-    const endpoint = new URL(proxy.endpoint);
-    await expect(connect(Number(endpoint.port))).rejects.toMatchObject({ code: 'ECONNREFUSED' });
   });
 
-  it('generates distinct high-entropy authorization for each proxy instance', async () => {
-    const upstream = await createUpstream((_request, socket) => socket.destroy());
-    const first = await startProxyFor(upstream);
-    const second = await startProxyFor(upstream);
+  it('atomically accepts one downstream and rejects a concurrent replay', async () => {
+    const upstream = await createSocketPair();
+    const proxy = await startChromeDevtoolsRelayProxy({ upstream: { socket: upstream.client, head: Buffer.alloc(0) } });
+    try {
+      const endpoint = new URL(proxy.endpoint);
+      const authorization = proxy.consumeClientAuthorization();
+      const first = await connectSocket(Number(endpoint.port));
+      const second = await connectSocket(Number(endpoint.port));
+      const firstResponse = collectUntilHeaders(first);
+      const secondResponse = collectUntilClose(second);
+      const request = upgradeRequest([`Authorization: ${authorization}`]);
+      first.write(request);
+      second.write(request);
+      await expect(firstResponse).resolves.toContain('101 Switching Protocols');
+      await expect(secondResponse).resolves.toContain('404 Not Found');
+    } finally {
+      await proxy.close();
+    }
+  });
+
+  it('closes the proxy and child when the retained upstream is lost', async () => {
+    const upstream = await createSocketPair();
+    const proxy = await startChromeDevtoolsRelayProxy({ upstream: { socket: upstream.client, head: Buffer.alloc(0) } });
+    const endpoint = new URL(proxy.endpoint);
+    const downstream = await openUpgrade(Number(endpoint.port), [
+      `Authorization: ${proxy.consumeClientAuthorization()}`,
+    ]);
+    const closed = onceClose(downstream.socket);
+    upstream.peer.destroy();
+    await closed;
+    await expect(connectSocket(Number(endpoint.port))).rejects.toMatchObject({ code: 'ECONNREFUSED' });
+    await proxy.close();
+  });
+
+  it('generates distinct one-time high-entropy handoff authorization', async () => {
+    const firstPair = await createSocketPair();
+    const secondPair = await createSocketPair();
+    const first = await startChromeDevtoolsRelayProxy({
+      upstream: { socket: firstPair.client, head: Buffer.alloc(0) },
+    });
+    const second = await startChromeDevtoolsRelayProxy({
+      upstream: { socket: secondPair.client, head: Buffer.alloc(0) },
+    });
     try {
       const firstAuthorization = first.consumeClientAuthorization();
       const secondAuthorization = second.consumeClientAuthorization();
       expectEphemeralAuthorization(firstAuthorization);
       expectEphemeralAuthorization(secondAuthorization);
-      expect(firstAuthorization === secondAuthorization).toBe(false);
+      expect(firstAuthorization).not.toBe(secondAuthorization);
       expect(() => first.consumeClientAuthorization()).toThrow('already consumed');
     } finally {
       await Promise.all([first.close(), second.close()]);
     }
   });
 
-  it('closes downstream safely when a non-upgrade upstream response is truncated', async () => {
-    const upstream = await createUpstream((_request, socket) => {
-      socket.write(
-        `HTTP/1.1 503 Service Unavailable\r\nContent-Length: 100\r\nX-Relay-Secret: ${TOKEN}\r\nConnection: close\r\n\r\n${TOKEN}`
-      );
-      socket.destroy();
-    });
-    const proxy = await startProxyFor(upstream);
-    try {
-      const endpoint = new URL(proxy.endpoint);
-      const authorization = proxy.consumeClientAuthorization();
-      const response = await rawUpgrade(Number(endpoint.port), endpoint.pathname, [`Authorization: ${authorization}`]);
-      expect(response).toContain('502 Bad Gateway');
-      expect(response).not.toContain(TOKEN);
-    } finally {
-      await proxy.close();
-    }
+  it('closes an unattached authenticated upstream when the proxy is retired', async () => {
+    const upstream = await createSocketPair();
+    const proxy = await startChromeDevtoolsRelayProxy({ upstream: { socket: upstream.client, head: Buffer.alloc(0) } });
+    const peerClosed = onceClose(upstream.peer);
+    await proxy.close();
+    await peerClosed;
+    expect(upstream.client.destroyed).toBe(true);
   });
 });
 
-async function createUpstream(
-  onUpgrade: (request: http.IncomingMessage, socket: net.Socket) => void
-): Promise<http.Server> {
-  const server = http.createServer();
+async function createSocketPair(): Promise<{ client: net.Socket; peer: net.Socket }> {
+  let accept!: (socket: net.Socket) => void;
+  const accepted = new Promise<net.Socket>((resolve) => {
+    accept = resolve;
+  });
+  const server = net.createServer((socket) => {
+    sockets.add(socket);
+    socket.on('error', () => {});
+    accept(socket);
+  });
   servers.add(server);
-  server.on('upgrade', onUpgrade);
-  await listen(server);
-  return server;
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const port = (server.address() as AddressInfo).port;
+  const client = await connectSocket(port);
+  const peer = await accepted;
+  return { client, peer };
 }
 
-async function startProxyFor(upstream: http.Server): Promise<ChromeDevtoolsRelayProxy> {
-  const upstreamAddress = upstream.address() as AddressInfo;
-  return await startChromeDevtoolsRelayProxy({
-    upstreamEndpoint: new URL(`ws://127.0.0.1:${upstreamAddress.port}/cdp`),
-    token: TOKEN,
+async function connectSocket(port: number): Promise<net.Socket> {
+  return await new Promise<net.Socket>((resolve, reject) => {
+    const socket = net.createConnection({ host: '127.0.0.1', port });
+    sockets.add(socket);
+    socket.once('connect', () => resolve(socket));
+    socket.once('error', reject);
   });
+}
+
+async function rawClosedUpgrade(port: number, headers: readonly string[]): Promise<string> {
+  const socket = await connectSocket(port);
+  const response = collectUntilClose(socket);
+  socket.write(upgradeRequest(headers));
+  return await response;
+}
+
+async function openUpgrade(
+  port: number,
+  headers: readonly string[]
+): Promise<{ socket: net.Socket; response: string; trailing: string }> {
+  const socket = await connectSocket(port);
+  const raw = collectUntilHeaders(socket);
+  socket.write(upgradeRequest(headers));
+  const response = await raw;
+  const boundary = response.indexOf('\r\n\r\n');
+  return { socket, response: response.slice(0, boundary + 4), trailing: response.slice(boundary + 4) };
+}
+
+function upgradeRequest(headers: readonly string[]): string {
+  return [
+    'GET /cdp HTTP/1.1',
+    'Host: 127.0.0.1',
+    'Connection: Upgrade',
+    'Upgrade: websocket',
+    `Sec-WebSocket-Key: ${WEBSOCKET_KEY}`,
+    'Sec-WebSocket-Version: 13',
+    ...headers,
+    '',
+    '',
+  ].join('\r\n');
+}
+
+async function collectUntilHeaders(socket: net.Socket): Promise<string> {
+  return await new Promise<string>((resolve, reject) => {
+    let response = '';
+    socket.setEncoding('utf8');
+    socket.on('data', (chunk) => {
+      response += chunk;
+      if (response.includes('\r\n\r\n')) resolve(response);
+    });
+    socket.once('error', reject);
+    socket.once('close', () => {
+      if (!response.includes('\r\n\r\n')) reject(new Error('Socket closed before response headers.'));
+    });
+  });
+}
+
+async function collectUntilClose(socket: net.Socket): Promise<string> {
+  return await new Promise<string>((resolve, reject) => {
+    let response = '';
+    socket.setEncoding('utf8');
+    socket.on('data', (chunk) => {
+      response += chunk;
+    });
+    socket.once('error', reject);
+    socket.once('close', () => resolve(response));
+  });
+}
+
+async function onceData(socket: net.Socket): Promise<string> {
+  return await new Promise<string>((resolve, reject) => {
+    socket.once('data', (chunk) => resolve(chunk.toString()));
+    socket.once('error', reject);
+  });
+}
+
+async function onceClose(socket: net.Socket): Promise<void> {
+  await new Promise<void>((resolve) => socket.once('close', () => resolve()));
 }
 
 function expectEphemeralAuthorization(authorization: string): void {
   const match = /^Bearer ([A-Za-z0-9_-]+)$/u.exec(authorization);
   expect(match).not.toBeNull();
   expect(Buffer.from(match?.[1] ?? '', 'base64url').byteLength).toBeGreaterThanOrEqual(32);
-}
-
-async function listen(server: http.Server): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => resolve());
-  });
-}
-
-async function rawUpgrade(port: number, pathname: string, extraHeaders: readonly string[] = []): Promise<string> {
-  return await new Promise<string>((resolve, reject) => {
-    const socket = net.createConnection({ host: '127.0.0.1', port });
-    let response = '';
-    socket.setEncoding('utf8');
-    socket.once('error', reject);
-    socket.on('data', (chunk) => {
-      response += chunk;
-    });
-    socket.once('close', () => resolve(response));
-    socket.once('connect', () => {
-      socket.write(
-        [
-          `GET ${pathname} HTTP/1.1`,
-          'Host: 127.0.0.1',
-          'Connection: Upgrade',
-          'Upgrade: websocket',
-          'Sec-WebSocket-Key: abc',
-          'Sec-WebSocket-Version: 13',
-          ...extraHeaders,
-          '',
-          '',
-        ].join('\r\n')
-      );
-    });
-  });
-}
-
-async function connect(port: number): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const socket = net.createConnection({ host: '127.0.0.1', port });
-    socket.once('connect', () => {
-      socket.destroy();
-      resolve();
-    });
-    socket.once('error', reject);
-  });
 }

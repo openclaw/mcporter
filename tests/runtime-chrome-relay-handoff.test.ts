@@ -1,10 +1,13 @@
 import { Client, SdkError, SdkErrorCode, type Transport } from '@modelcontextprotocol/client';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
+import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CHROME_RELAY_HANDOFF_ENV } from '../src/chrome-devtools-relay-handoff.js';
+import { createBrowserRelayProof } from '../src/browser-relay-auth-v2.js';
 import type { ServerDefinition } from '../src/config.js';
 import { createClientContext } from '../src/runtime/transport.js';
 import { clientInfo, createLogger, resetLogger } from './helpers/runtime-test-helpers.js';
@@ -24,10 +27,6 @@ describe('runtime Chrome relay handoff lifecycle', () => {
   it('keeps both credentials out of spawn args and cleans the first handoff before negotiation retry', async () => {
     const fixture = await createRelayFixture();
     const attempts: SpawnShape[] = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response('{}', { status: 200 }))
-    );
     vi.spyOn(Client.prototype, 'connect')
       .mockImplementationOnce(async (transport) => {
         attempts.push(await inspectSpawnShape(transport));
@@ -40,6 +39,7 @@ describe('runtime Chrome relay handoff lifecycle', () => {
     try {
       const context = await createClientContext(fixture.definition, logger, clientInfo);
       expect(attempts).toHaveLength(2);
+      await vi.waitFor(() => expect(fixture.activeConnections).toBe(1));
       assertCredentialFreeSpawn(attempts[0]!);
       assertCredentialFreeSpawn(attempts[1]!);
       await expect(fs.stat(attempts[0]!.handoffPath)).rejects.toMatchObject({ code: 'ENOENT' });
@@ -50,6 +50,7 @@ describe('runtime Chrome relay handoff lifecycle', () => {
       await expect(fs.stat(attempts[1]!.handoffPath)).rejects.toMatchObject({ code: 'ENOENT' });
       await expect(connect(attempts[1]!.port)).rejects.toMatchObject({ code: 'ECONNREFUSED' });
     } finally {
+      await fixture.close();
       await fs.rm(fixture.directory, { recursive: true, force: true });
     }
   });
@@ -59,10 +60,6 @@ describe('runtime Chrome relay handoff lifecycle', () => {
     const controller = new AbortController();
     controller.abort();
     let attempt: SpawnShape | undefined;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response('{}', { status: 200 }))
-    );
     vi.spyOn(Client.prototype, 'connect').mockImplementationOnce(async (transport) => {
       attempt = await inspectSpawnShape(transport);
       throw new DOMException('aborted', 'AbortError');
@@ -76,6 +73,7 @@ describe('runtime Chrome relay handoff lifecycle', () => {
       await expect(fs.stat(attempt!.handoffPath)).rejects.toMatchObject({ code: 'ENOENT' });
       await expect(connect(attempt!.port)).rejects.toMatchObject({ code: 'ECONNREFUSED' });
     } finally {
+      await fixture.close();
       await fs.rm(fixture.directory, { recursive: true, force: true });
     }
   });
@@ -84,11 +82,6 @@ describe('runtime Chrome relay handoff lifecycle', () => {
     const fixture = await createRelayFixture();
     let handoffPath: string | undefined;
     let port: number | undefined;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response('{}', { status: 200 }))
-    );
-
     try {
       await expect(
         createClientContext(fixture.definition, logger, clientInfo, {
@@ -110,6 +103,7 @@ describe('runtime Chrome relay handoff lifecycle', () => {
       await expect(fs.stat(handoffPath!)).rejects.toMatchObject({ code: 'ENOENT' });
       await expect(connect(port!)).rejects.toMatchObject({ code: 'ECONNREFUSED' });
     } finally {
+      await fixture.close();
       await fs.rm(fixture.directory, { recursive: true, force: true });
     }
   });
@@ -119,10 +113,6 @@ describe('runtime Chrome relay handoff lifecycle', () => {
     const blocker = path.join(fixture.directory, 'not-a-directory');
     await fs.writeFile(blocker, 'block');
     vi.spyOn(os, 'tmpdir').mockReturnValue(blocker);
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response('{}', { status: 200 }))
-    );
     let preferredArgs: readonly string[] = [];
     const connectSpy = vi.spyOn(Client.prototype, 'connect').mockImplementationOnce(async (transport) => {
       preferredArgs =
@@ -148,6 +138,7 @@ describe('runtime Chrome relay handoff lifecycle', () => {
       });
       expect(connectSpy).toHaveBeenCalledOnce();
     } finally {
+      await fixture.close();
       await fs.rm(fixture.directory, { recursive: true, force: true });
     }
   });
@@ -161,9 +152,74 @@ interface SpawnShape {
   readonly port: number;
 }
 
-async function createRelayFixture(): Promise<{ directory: string; definition: ServerDefinition }> {
+async function createRelayFixture(): Promise<{
+  directory: string;
+  definition: ServerDefinition;
+  readonly activeConnections: number;
+  close(): Promise<void>;
+}> {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-runtime-relay-'));
   await fs.writeFile(path.join(directory, 'browser-extension-relay.secret'), STABLE_RELAY_TOKEN, { mode: 0o600 });
+  const key = Buffer.from(STABLE_RELAY_TOKEN, 'hex');
+  const states = new WeakMap<net.Socket, ReturnType<typeof createChallengeFields>>();
+  const relaySockets = new Set<net.Socket>();
+  const server = http.createServer(async (request, response) => {
+    const socket = request.socket;
+    if (request.url === '/_openclaw/relay/auth/v2/challenge') {
+      const body = await readRequestJson(request);
+      const fields = createChallengeFields(String(body.keyId), String(body.clientNonce));
+      states.set(socket, fields);
+      writeResponseJson(response, {
+        type: 'auth.challenge',
+        v: 2,
+        ...fields,
+        serverProof: createBrowserRelayProof(key, 'server', fields),
+      });
+      return;
+    }
+    if (request.url === '/_openclaw/relay/auth/v2/complete') {
+      const body = await readRequestJson(request);
+      const fields = states.get(socket);
+      if (!fields) {
+        response.writeHead(412).end();
+        return;
+      }
+      writeResponseJson(response, {
+        type: 'auth.ok',
+        v: 2,
+        sessionId: fields.sessionId,
+        acceptProof: createBrowserRelayProof(key, 'accept', fields, String(body.clientProof)),
+      });
+      return;
+    }
+    if (request.url === '/json/version' && states.has(socket)) {
+      writeResponseJson(response, { Browser: 'OpenClaw' });
+      return;
+    }
+    response.writeHead(404, { 'Content-Length': '0' }).end();
+  });
+  server.on('connection', (socket) => {
+    relaySockets.add(socket);
+    socket.on('error', () => {});
+    socket.once('close', () => relaySockets.delete(socket));
+  });
+  server.on('upgrade', (request, socket) => {
+    const relaySocket = socket as net.Socket;
+    if (request.url !== '/cdp' || !states.has(relaySocket)) {
+      relaySocket.destroy();
+      return;
+    }
+    const websocketKey = String(request.headers['sec-websocket-key'] ?? '');
+    const accept = createHash('sha1').update(`${websocketKey}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest('base64');
+    relaySocket.write(
+      `HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`
+    );
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const relayPort = (server.address() as net.AddressInfo).port;
   return {
     directory,
     definition: {
@@ -174,9 +230,55 @@ async function createRelayFixture(): Promise<{ directory: string; definition: Se
         args: ['-y', 'chrome-devtools-mcp@latest', '--autoConnect'],
         cwd: directory,
       },
-      env: { OPENCLAW_OAUTH_DIR: directory, NODE_OPTIONS: '--trace-warnings' },
+      env: {
+        OPENCLAW_OAUTH_DIR: directory,
+        NODE_OPTIONS: '--trace-warnings',
+        MCPORTER_CHROME_DEVTOOLS_RELAY_URL: `http://127.0.0.1:${relayPort}`,
+      },
+    },
+    get activeConnections() {
+      return relaySockets.size;
+    },
+    async close() {
+      for (const socket of relaySockets) socket.destroy();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
     },
   };
+}
+
+function createChallengeFields(keyId: string, clientNonce: string) {
+  const now = Date.now();
+  return {
+    keyId,
+    instanceId: Buffer.from('instance-id-0001').toString('base64url'),
+    sessionId: Buffer.from('session-id-00001').toString('base64url'),
+    clientNonce,
+    serverNonce: Buffer.alloc(32, 0x42).toString('base64url'),
+    issuedAtMs: now,
+    expiresAtMs: now + 10_000,
+    role: 'cdp',
+    transport: 'connection',
+    method: 'SEQUENCE',
+    resource: '/json/version -> /cdp',
+    flow: 'cdp',
+  } as const;
+}
+
+async function readRequestJson(request: http.IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) chunks.push(Buffer.from(chunk));
+  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
+}
+
+function writeResponseJson(response: http.ServerResponse, body: Record<string, unknown>): void {
+  const encoded = Buffer.from(JSON.stringify(body));
+  response.writeHead(200, {
+    'Content-Type': 'application/json',
+    'Content-Length': encoded.byteLength,
+    Connection: 'keep-alive',
+  });
+  response.end(encoded);
 }
 
 async function inspectSpawnShape(transport: Transport): Promise<SpawnShape> {
@@ -205,7 +307,9 @@ async function inspectSpawnShape(transport: Transport): Promise<SpawnShape> {
 function assertCredentialFreeSpawn(shape: SpawnShape): void {
   const renderedArgs = shape.args.join('\0');
   expect(renderedArgs).not.toContain(STABLE_RELAY_TOKEN);
+  expect(JSON.stringify(shape.env)).not.toContain(STABLE_RELAY_TOKEN);
   expect(renderedArgs).not.toContain(shape.ephemeralAuthorization);
+  expect(JSON.stringify(shape.env)).not.toContain(shape.ephemeralAuthorization);
   expect(shape.args).not.toContain('--wsHeaders');
   expect(shape.args.at(-1)).toMatch(/^ws:\/\/127\.0\.0\.1:\d+\/cdp$/u);
   expect(shape.env[CHROME_RELAY_HANDOFF_ENV]).toBe(shape.handoffPath);

@@ -11,7 +11,7 @@ import type { ServerDefinition } from '../src/config.js';
 
 const sentMethods: string[] = [];
 const launchDaemonDetached = vi.hoisted(() => vi.fn());
-let createConnection: ReturnType<typeof vi.fn>;
+const createConnection = vi.hoisted(() => vi.fn());
 
 class MockSocket extends EventEmitter {
   setTimeout(): this {
@@ -75,7 +75,7 @@ let activeRelayEnvironmentHash = hashChromeDevtoolsRelayEnvironment([], {});
 let activeRelayEnvironmentKeys: string[] = [];
 
 vi.mock('node:net', () => {
-  createConnection = vi.fn(() => {
+  createConnection.mockImplementation(() => {
     const socket = new MockSocket();
     queueMicrotask(() => socket.emit('connect'));
     return socket as unknown as import('node:net').Socket;
@@ -324,6 +324,74 @@ describe('DaemonClient config freshness', () => {
     } finally {
       if (previousPolicy === undefined) delete process.env.MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY;
       else process.env.MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY = previousPolicy;
+    }
+  });
+
+  it('restarts when the relay key rotates at the same credential path', async () => {
+    const tmpDir = await makeShortTempDir('daemon-relay-key');
+    process.env.MCPORTER_DAEMON_DIR = tmpDir;
+    const previousOauthDir = process.env.OPENCLAW_OAUTH_DIR;
+    process.env.OPENCLAW_OAUTH_DIR = tmpDir;
+    const configPath = path.join(tmpDir, 'config.json');
+    const secretPath = path.join(tmpDir, 'browser-extension-relay.secret');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          chrome: {
+            command: 'npx',
+            args: ['-y', 'chrome-devtools-mcp@latest', '--autoConnect'],
+            lifecycle: 'keep-alive',
+          },
+        },
+      }),
+      'utf8'
+    );
+    await fs.writeFile(secretPath, 'a'.repeat(64), { mode: 0o600 });
+    const stat = await fs.stat(configPath);
+    const { metadataPath, socketPath } = resolveDaemonPaths(configPath);
+    const definition: ServerDefinition = {
+      name: 'chrome',
+      command: {
+        kind: 'stdio',
+        command: 'npx',
+        args: ['-y', 'chrome-devtools-mcp@latest', '--autoConnect'],
+        cwd: tmpDir,
+      },
+    };
+    activeConfigPath = configPath;
+    activeSocketPath = socketPath;
+    activeConfigMtime = stat.mtimeMs;
+    activeStatusPid = process.pid;
+    activeLayers = [{ path: configPath, mtimeMs: stat.mtimeMs }];
+    activeRelayEnvironmentKeys = chromeDevtoolsRelayEnvironmentKeys([definition]);
+    activeRelayEnvironmentHash = hashChromeDevtoolsRelayEnvironment([definition]);
+    await fs.mkdir(path.dirname(metadataPath), { recursive: true });
+    await fs.writeFile(
+      metadataPath,
+      JSON.stringify({
+        pid: process.pid,
+        socketPath,
+        configPath,
+        startedAt: Date.now() - 10_000,
+        configMtimeMs: stat.mtimeMs,
+        configLayers: activeLayers,
+        relayEnvironmentHash: activeRelayEnvironmentHash,
+        relayEnvironmentKeys: activeRelayEnvironmentKeys,
+      }),
+      'utf8'
+    );
+
+    try {
+      await fs.writeFile(secretPath, 'b'.repeat(64), { mode: 0o600 });
+      const client = new DaemonClient({ configPath, configExplicit: true, rootDir: tmpDir });
+      await client.listTools({ server: 'chrome' });
+      expect(sentMethods[0]).toBe('status');
+      expect(sentMethods).toContain('stop');
+      expect(launchDaemonDetached).toHaveBeenCalledOnce();
+    } finally {
+      if (previousOauthDir === undefined) delete process.env.OPENCLAW_OAUTH_DIR;
+      else process.env.OPENCLAW_OAUTH_DIR = previousOauthDir;
     }
   });
 });

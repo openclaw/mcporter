@@ -9,13 +9,20 @@ import {
 } from './chrome-devtools-command.js';
 import type { ServerDefinition } from './config.js';
 import { startChromeDevtoolsRelayProxy, type ChromeDevtoolsRelayProxy } from './chrome-devtools-relay-proxy.js';
+import { deriveBrowserRelayKeyId } from './browser-relay-auth-v2.js';
+import {
+  connectChromeDevtoolsRelayV2,
+  type AuthenticatedChromeDevtoolsRelay,
+  type ChromeDevtoolsRelayCredential,
+  type ChromeDevtoolsRelayV2Result,
+} from './chrome-devtools-relay-client.js';
 
 const DEFAULT_RELAY_PROBE_TIMEOUT_MS = 5_000;
 const MIN_RELAY_PROBE_TIMEOUT_MS = 100;
 const MAX_RELAY_PROBE_TIMEOUT_MS = 30_000;
-const MAX_RELAY_PROBE_RESPONSE_BYTES = 64 * 1024;
 const DEFAULT_RELAY_URL = 'http://127.0.0.1:18799';
 const RELAY_CWD_SENTINEL = '$MCPORTER_CHROME_RELAY_CWD';
+const RELAY_CREDENTIAL_SENTINEL = '$MCPORTER_CHROME_RELAY_CREDENTIAL:';
 const RELAY_ENV_KEYS = [
   'MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY',
   'MCPORTER_DISABLE_CHROME_DEVTOOLS_RELAY',
@@ -35,12 +42,17 @@ export type ChromeDevtoolsRelayReason =
   | 'missing-credential'
   | 'invalid-endpoint'
   | 'invalid-credential'
-  | 'unauthorized'
+  | 'unsupported-auth'
+  | 'bad-server-proof'
+  | 'server-auth-failed'
+  | 'replay'
+  | 'protocol'
+  | 'freshness'
+  | 'sequence'
   | 'extension-disconnected'
   | 'timeout'
   | 'network-error'
   | 'handoff-error'
-  | 'invalid-response'
   | 'success';
 
 export interface ChromeDevtoolsRelayDecision {
@@ -60,19 +72,16 @@ export interface ChromeDevtoolsRelayRewrite {
   readonly proxy?: ChromeDevtoolsRelayProxy;
 }
 
-export interface ChromeDevtoolsRelayProbeResult {
-  readonly reason: Extract<
-    ChromeDevtoolsRelayReason,
-    'unauthorized' | 'extension-disconnected' | 'timeout' | 'network-error' | 'invalid-response' | 'success'
-  >;
-  readonly durationMs: number;
-  readonly status?: number;
-}
+export type ChromeDevtoolsRelayProbeResult = ChromeDevtoolsRelayV2Result;
 
 export interface ChromeDevtoolsRelayProbeOptions {
   readonly readToken?: () => string | undefined;
-  readonly probe?: (versionUrl: string, token: string, timeoutMs: number) => Promise<ChromeDevtoolsRelayProbeResult>;
-  readonly startProxy?: (options: { upstreamEndpoint: URL; token: string }) => Promise<ChromeDevtoolsRelayProxy>;
+  readonly connect?: (
+    baseUrl: URL,
+    credential: ChromeDevtoolsRelayCredential,
+    timeoutMs: number
+  ) => Promise<ChromeDevtoolsRelayProbeResult>;
+  readonly startProxy?: (options: { upstream: AuthenticatedChromeDevtoolsRelay }) => Promise<ChromeDevtoolsRelayProxy>;
   readonly onDecision?: (decision: ChromeDevtoolsRelayDecision) => void;
 }
 
@@ -172,8 +181,18 @@ function resolveOpenClawPath(value: string, env: NodeJS.ProcessEnv): string {
   return path.resolve(value);
 }
 
-function defaultReadToken(env: NodeJS.ProcessEnv): { token?: string; reason?: ChromeDevtoolsRelayReason } {
+function defaultReadCredential(env: NodeJS.ProcessEnv): {
+  credential?: ChromeDevtoolsRelayCredential;
+  reason?: ChromeDevtoolsRelayReason;
+} {
   const secretPath = path.join(resolveOpenClawCredentialDir(env), 'browser-extension-relay.secret');
+  return readCredentialPath(secretPath);
+}
+
+function readCredentialPath(secretPath: string): {
+  credential?: ChromeDevtoolsRelayCredential;
+  reason?: ChromeDevtoolsRelayReason;
+} {
   let descriptor: number;
   try {
     descriptor = fs.openSync(secretPath, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
@@ -188,8 +207,10 @@ function defaultReadToken(env: NodeJS.ProcessEnv): { token?: string; reason?: Ch
       if (typeof process.getuid === 'function' && stat.uid !== process.getuid())
         return { reason: 'invalid-credential' };
     }
-    const token = fs.readFileSync(descriptor, 'utf8').trim();
-    return /^[0-9a-f]{64}$/.test(token) ? { token } : { reason: 'invalid-credential' };
+    const encoded = fs.readFileSync(descriptor, 'utf8').trim();
+    if (!/^[0-9a-f]{64}$/.test(encoded)) return { reason: 'invalid-credential' };
+    const key = Buffer.from(encoded, 'hex');
+    return { credential: { key, keyId: deriveBrowserRelayKeyId(key) } };
   } catch {
     return { reason: 'invalid-credential' };
   } finally {
@@ -197,86 +218,12 @@ function defaultReadToken(env: NodeJS.ProcessEnv): { token?: string; reason?: Ch
   }
 }
 
-async function defaultProbe(
-  versionUrl: string,
-  token: string,
+async function defaultConnect(
+  baseUrl: URL,
+  credential: ChromeDevtoolsRelayCredential,
   timeoutMs: number
 ): Promise<ChromeDevtoolsRelayProbeResult> {
-  const startedAt = performance.now();
-  const durationMs = (): number => Math.max(0, Math.round(performance.now() - startedAt));
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  timer.unref?.();
-  try {
-    const response = await fetch(versionUrl, {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: controller.signal,
-    });
-    if (response.status === 401 || response.status === 403) {
-      return { reason: 'unauthorized', durationMs: durationMs(), status: response.status };
-    }
-    if (response.status === 503) {
-      return { reason: 'extension-disconnected', durationMs: durationMs(), status: response.status };
-    }
-    if (response.status !== 200) {
-      return { reason: 'invalid-response', durationMs: durationMs(), status: response.status };
-    }
-    try {
-      const payload: unknown = await readBoundedProbeJson(response);
-      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-        return { reason: 'invalid-response', durationMs: durationMs(), status: response.status };
-      }
-    } catch (error) {
-      if (isAbortError(error)) return { reason: 'timeout', durationMs: durationMs(), status: response.status };
-      if (error instanceof RelayProbeInvalidResponseError) {
-        return { reason: 'invalid-response', durationMs: durationMs(), status: response.status };
-      }
-      if (!(error instanceof SyntaxError)) {
-        return { reason: 'network-error', durationMs: durationMs(), status: response.status };
-      }
-      return { reason: 'invalid-response', durationMs: durationMs(), status: response.status };
-    }
-    return { reason: 'success', durationMs: durationMs(), status: response.status };
-  } catch (error) {
-    return { reason: isAbortError(error) ? 'timeout' : 'network-error', durationMs: durationMs() };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-class RelayProbeInvalidResponseError extends Error {}
-
-async function readBoundedProbeJson(response: Response): Promise<unknown> {
-  const contentLength = response.headers.get('content-length');
-  if (contentLength && /^\d+$/u.test(contentLength) && Number(contentLength) > MAX_RELAY_PROBE_RESPONSE_BYTES) {
-    await response.body?.cancel().catch(() => {});
-    throw new RelayProbeInvalidResponseError();
-  }
-  if (!response.body) throw new RelayProbeInvalidResponseError();
-
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      totalBytes += value.byteLength;
-      if (totalBytes > MAX_RELAY_PROBE_RESPONSE_BYTES) {
-        await reader.cancel().catch(() => {});
-        throw new RelayProbeInvalidResponseError();
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  return JSON.parse(
-    Buffer.concat(
-      chunks.map((chunk) => Buffer.from(chunk)),
-      totalBytes
-    ).toString('utf8')
-  );
+  return await connectChromeDevtoolsRelayV2({ baseUrl, credential, timeoutMs });
 }
 
 export function shouldAttemptChromeDevtoolsRelay(
@@ -335,46 +282,60 @@ export async function rewriteChromeDevtoolsArgsForRelay(
   upstreamEndpoint.protocol = 'ws:';
   const endpoint = upstreamEndpoint.toString();
 
-  const credential = options.readToken
+  const loaded = options.readToken
     ? (() => {
-        const token = options.readToken?.();
-        return token ? { token } : { reason: 'missing-credential' as const };
+        const encoded = options.readToken?.();
+        if (!encoded) return { reason: 'missing-credential' as const };
+        if (!/^[0-9a-f]{64}$/u.test(encoded)) return { reason: 'invalid-credential' as const };
+        const key = Buffer.from(encoded, 'hex');
+        return { credential: { key, keyId: deriveBrowserRelayKeyId(key) } };
       })()
-    : defaultReadToken(env);
-  if (!credential.token) {
-    return unavailableOrLegacy(args, policy, credential.reason ?? 'invalid-credential', endpoint, options);
+    : defaultReadCredential(env);
+  if (!loaded.credential) {
+    return unavailableOrLegacy(args, policy, loaded.reason ?? 'invalid-credential', endpoint, options);
   }
 
   const timeoutMs = resolveChromeDevtoolsRelayProbeTimeoutMs(env);
-  const versionUrl = new URL('/json/version', base).toString();
-  const probe = await (options.probe ?? defaultProbe)(versionUrl, credential.token, timeoutMs);
-  const probeDetails = { probeDurationMs: probe.durationMs, probeStatus: probe.status };
-  if (probe.reason !== 'success') {
-    return unavailableOrLegacy(args, policy, probe.reason, endpoint, options, probeDetails);
-  }
-
-  let proxy: ChromeDevtoolsRelayProxy;
   try {
-    proxy = await (options.startProxy ?? startChromeDevtoolsRelayProxy)({ upstreamEndpoint, token: credential.token });
-  } catch {
-    return unavailableOrLegacy(args, policy, 'network-error', endpoint, options, probeDetails);
-  }
+    let probe: ChromeDevtoolsRelayProbeResult;
+    try {
+      probe = await (options.connect ?? defaultConnect)(base, loaded.credential, timeoutMs);
+    } catch {
+      return unavailableOrLegacy(args, policy, 'network-error', endpoint, options);
+    }
+    const probeDetails = { probeDurationMs: probe.durationMs, probeStatus: probe.status };
+    if (probe.reason !== 'success' || !probe.upstream) {
+      probe.upstream?.socket.destroy();
+      const reason = probe.reason === 'success' ? 'protocol' : probe.reason;
+      return unavailableOrLegacy(args, policy, reason, endpoint, options, probeDetails);
+    }
 
-  const rewritten = replaceChromeDevtoolsAutoConnectArgs(command, args, ['--wsEndpoint', proxy.endpoint]);
-  try {
-    return decide(
-      {
-        args: rewritten,
-        applied: true,
-        endpoint: proxy.endpoint,
-        proxy,
-        decision: { route: 'relay', reason: 'success', policy, endpoint, ...probeDetails },
-      },
-      options
-    );
-  } catch (error) {
-    await proxy.close().catch(() => {});
-    throw error;
+    let proxy: ChromeDevtoolsRelayProxy;
+    try {
+      proxy = await (options.startProxy ?? startChromeDevtoolsRelayProxy)({ upstream: probe.upstream });
+    } catch {
+      probe.upstream.socket.destroy();
+      return unavailableOrLegacy(args, policy, 'network-error', endpoint, options, probeDetails);
+    }
+
+    const rewritten = replaceChromeDevtoolsAutoConnectArgs(command, args, ['--wsEndpoint', proxy.endpoint]);
+    try {
+      return decide(
+        {
+          args: rewritten,
+          applied: true,
+          endpoint: proxy.endpoint,
+          proxy,
+          decision: { route: 'relay', reason: 'success', policy, endpoint, ...probeDetails },
+        },
+        options
+      );
+    } catch (error) {
+      await proxy.close().catch(() => {});
+      throw error;
+    }
+  } finally {
+    loaded.credential.key.fill(0);
   }
 }
 
@@ -410,10 +371,13 @@ export function hashChromeDevtoolsRelayEnvironment(
   definitions: readonly ServerDefinition[],
   env: NodeJS.ProcessEnv = process.env
 ): string {
-  return hashChromeDevtoolsRelayProcessEnvironment(chromeDevtoolsRelayEnvironmentKeys(definitions), env);
+  return hashChromeDevtoolsRelayProcessEnvironment(chromeDevtoolsRelayEnvironmentKeys(definitions, env), env);
 }
 
-export function chromeDevtoolsRelayEnvironmentKeys(definitions: readonly ServerDefinition[]): string[] {
+export function chromeDevtoolsRelayEnvironmentKeys(
+  definitions: readonly ServerDefinition[],
+  env: NodeJS.ProcessEnv = process.env
+): string[] {
   const keys = new Set<string>();
   for (const definition of definitions) {
     if (definition.command.kind !== 'stdio') continue;
@@ -445,6 +409,9 @@ export function chromeDevtoolsRelayEnvironmentKeys(definitions: readonly ServerD
       if (!override) continue;
       for (const referenced of referencedEnvironmentVariables(override)) keys.add(referenced);
     }
+    const effectiveEnv = { ...env, ...definition.env };
+    const credentialPath = path.join(resolveOpenClawCredentialDir(effectiveEnv), 'browser-extension-relay.secret');
+    keys.add(`${RELAY_CREDENTIAL_SENTINEL}${credentialPath}`);
   }
   return [...keys].toSorted();
 }
@@ -453,8 +420,20 @@ export function hashChromeDevtoolsRelayProcessEnvironment(
   keys: readonly string[],
   env: NodeJS.ProcessEnv = process.env
 ): string {
-  const values = keys.map((key) => [key, key === RELAY_CWD_SENTINEL ? process.cwd() : (env[key] ?? null)]);
-  if (keys.length > 0) values.push(['$credentialDir', resolveOpenClawCredentialDir(env)]);
+  const values = keys.map((key) => {
+    if (key === RELAY_CWD_SENTINEL) return [key, process.cwd()];
+    if (key.startsWith(RELAY_CREDENTIAL_SENTINEL)) {
+      const credentialPath = key.slice(RELAY_CREDENTIAL_SENTINEL.length);
+      const loaded = readCredentialPath(credentialPath);
+      const value = [key, loaded.credential?.keyId ?? loaded.reason ?? 'missing-credential'];
+      loaded.credential?.key.fill(0);
+      return value;
+    }
+    return [key, env[key] ?? null];
+  });
+  if (keys.length > 0) {
+    values.push(['$relayAuth', 'v2']);
+  }
   return createHash('sha256').update(JSON.stringify(values)).digest('hex').slice(0, 16);
 }
 
@@ -465,10 +444,6 @@ function referencedEnvironmentVariables(value: string): string[] {
     if (match[1]) names.add(match[1]);
   }
   return [...names];
-}
-
-function isAbortError(error: unknown): boolean {
-  return Boolean(error && typeof error === 'object' && (error as { name?: unknown }).name === 'AbortError');
 }
 
 function isErrno(error: unknown, code: string): boolean {

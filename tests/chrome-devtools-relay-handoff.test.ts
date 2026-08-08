@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -12,10 +14,50 @@ import {
 
 const TARGET = fileURLToPath(new URL('./fixtures/chrome-devtools-mcp-handoff-target.mjs', import.meta.url));
 const LAUNCHER = fileURLToPath(new URL('./fixtures/chrome-relay-handoff-launcher.mjs', import.meta.url));
+const SOURCE_RENDERER = fileURLToPath(new URL('./fixtures/render-chrome-devtools-relay-preload.ts', import.meta.url));
+const TSX_CLI = createRequire(import.meta.url).resolve('tsx/cli');
 const ENDPOINT = 'ws://127.0.0.1:45678/cdp';
 const STABLE_RELAY_TOKEN = 'stable-relay-token-must-not-appear';
 
 describe('chrome-devtools relay preload handoff', () => {
+  it('executes the source-runtime emitted preload without free helpers and consumes authorization once', async () => {
+    const rendered = await runNode([TSX_CLI, SOURCE_RENDERER], { ...process.env } as Record<string, string>);
+    expect(rendered.code, rendered.stderr).toBe(0);
+
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-rendered-handoff-'));
+    const handoffPath = path.join(directory, 'headers.json');
+    const preloadPath = path.join(directory, 'preload.mjs');
+    const authorization = `Bearer ${'k'.repeat(43)}`;
+    await fs.chmod(directory, 0o700);
+    await fs.writeFile(preloadPath, rendered.stdout, { mode: 0o600 });
+    await fs.writeFile(handoffPath, JSON.stringify({ Authorization: authorization }), { mode: 0o600 });
+    const env = {
+      ...process.env,
+      NODE_OPTIONS: `--import=${pathToFileURL(preloadPath).href}`,
+      [CHROME_RELAY_HANDOFF_ENV]: handoffPath,
+    } as Record<string, string>;
+
+    try {
+      const first = await runNode([TARGET, ENDPOINT], env);
+      expect(first.code, first.stderr).toBe(0);
+      expect(rendered.stdout).not.toMatch(/\b__[A-Za-z_$][\w$]*\b/u);
+      expect(JSON.parse(first.stdout)).toMatchObject({
+        hasWsHeaders: true,
+        authorizationDigest: createHash('sha256').update(authorization).digest('hex'),
+        handoffEnvPresent: false,
+      });
+      await expect(fs.stat(handoffPath)).rejects.toMatchObject({ code: 'ENOENT' });
+
+      const second = await runNode([TARGET, ENDPOINT], env);
+      expect(second.code).not.toBe(0);
+      expect(second.stderr).toContain('MCPorter Chrome relay authorization handoff unavailable.');
+      expect(second.stderr).not.toContain(handoffPath);
+      expect(second.stderr).not.toContain(authorization);
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('uses protected files, preserves NODE_OPTIONS, and mutates argv only inside the target child', async () => {
     const authorization = `Bearer ${'d'.repeat(43)}`;
     const handoff = createChromeDevtoolsRelayHandoff(
