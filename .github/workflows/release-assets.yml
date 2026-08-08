@@ -53,7 +53,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -151,7 +151,7 @@ jobs:
             ./scripts/verify-release.sh "$RELEASE_TAG" "$RUNNER_TEMP/release-assets"
 
       - name: Preserve exact verified asset identity
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: verified-assets-${{ matrix.arch }}
           path: ${{ runner.temp }}/verified-assets.json

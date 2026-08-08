@@ -20,6 +20,7 @@
 
 ### Tooling
 
+- Refresh pnpm, GitHub Actions runtimes, and mature security overrides for fast-uri, Hono, ip-address, and nanoid.
 - Remove the obsolete scoped-commit helper and use standard Git commands in isolated worktrees.
 
 ## [0.13.0] - 2026-08-02

@@ -26,12 +26,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
 
       - run: corepack enable
-      - run: corepack prepare pnpm@10.33.2 --activate
+      - run: corepack prepare pnpm@10.34.5 --activate
 
       - name: Locate pnpm store
         id: pnpm-store
@@ -106,7 +106,7 @@ jobs:
 
       - name: Upload coverage report
         if: matrix.os == 'ubuntu-latest' && always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage/
