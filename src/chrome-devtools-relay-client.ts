@@ -81,12 +81,29 @@ export async function connectChromeDevtoolsRelayV2(options: {
   let socket: net.Socket | undefined;
   let timer: NodeJS.Timeout | undefined;
   try {
-    const address = await resolveLoopbackAddress(options.baseUrl.hostname, options.resolve ?? lookup);
+    const addresses = await resolveLoopbackAddresses(options.baseUrl.hostname, options.resolve ?? lookup);
     const port = resolvePort(options.baseUrl);
-    socket = net.createConnection({ host: address.address, family: address.family, port });
-    timer = setTimeout(() => socket?.destroy(new RelayV2Error('timeout')), options.timeoutMs);
+    let timedOut = false;
+    timer = setTimeout(() => {
+      timedOut = true;
+      socket?.destroy(new RelayV2Error('timeout'));
+    }, options.timeoutMs);
     timer.unref?.();
-    await waitForConnect(socket);
+    let lastConnectionError: unknown;
+    for (const address of addresses) {
+      socket = net.createConnection({ host: address.address, family: address.family, port });
+      try {
+        await waitForConnect(socket);
+        lastConnectionError = undefined;
+        break;
+      } catch (error) {
+        socket.destroy();
+        if (timedOut || isTimeoutError(error)) throw new RelayV2Error('timeout');
+        lastConnectionError = error;
+      }
+    }
+    if (lastConnectionError) throw lastConnectionError;
+    if (!socket || socket.destroyed) throw new RelayV2Error(timedOut ? 'timeout' : 'network-error');
     if (!socket.remoteAddress || !isNumericLoopback(socket.remoteAddress)) throw new RelayV2Error('protocol');
 
     const reader = new SocketReader(socket);
@@ -184,15 +201,13 @@ export async function connectChromeDevtoolsRelayV2(options: {
   }
 }
 
-async function resolveLoopbackAddress(hostname: string, resolver: typeof lookup) {
+async function resolveLoopbackAddresses(hostname: string, resolver: typeof lookup) {
   const normalized = hostname.replace(/^\[(.*)\]$/u, '$1');
   const addresses = await resolver(normalized, { all: true, verbatim: true });
   if (addresses.length === 0 || addresses.some((address) => !isNumericLoopback(address.address))) {
     throw new RelayV2Error('protocol');
   }
-  const selected = addresses[0];
-  if (!selected) throw new RelayV2Error('protocol');
-  return selected;
+  return addresses;
 }
 
 function resolvePort(url: URL): number {

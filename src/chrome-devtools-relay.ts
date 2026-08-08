@@ -8,6 +8,7 @@ import {
   resolveChromeDevtoolsAutoConnectCommand,
 } from './chrome-devtools-command.js';
 import type { ServerDefinition } from './config.js';
+import { resolveEnvValue } from './env.js';
 import { startChromeDevtoolsRelayProxy, type ChromeDevtoolsRelayProxy } from './chrome-devtools-relay-proxy.js';
 import { deriveBrowserRelayKeyId } from './browser-relay-auth-v2.js';
 import {
@@ -391,8 +392,17 @@ export function chromeDevtoolsRelayEnvironmentKeys(
       continue;
     }
     for (const key of commandEnvironmentKeys) keys.add(key);
+    const resolvedDefinitionEnv = Object.fromEntries(
+      Object.entries(definition.env ?? {}).map(([key, raw]) => {
+        try {
+          return [key, resolveEnvValue(raw, env)];
+        } catch {
+          return [key, raw];
+        }
+      })
+    );
     for (const pathKey of ['OPENCLAW_HOME', 'OPENCLAW_STATE_DIR', 'OPENCLAW_OAUTH_DIR'] as const) {
-      const override = definition.env?.[pathKey]?.trim();
+      const override = resolvedDefinitionEnv[pathKey]?.trim();
       if (
         override &&
         override !== '~' &&
@@ -409,7 +419,7 @@ export function chromeDevtoolsRelayEnvironmentKeys(
       if (!override) continue;
       for (const referenced of referencedEnvironmentVariables(override)) keys.add(referenced);
     }
-    const effectiveEnv = { ...env, ...definition.env };
+    const effectiveEnv = { ...env, ...resolvedDefinitionEnv };
     const credentialPath = path.join(resolveOpenClawCredentialDir(effectiveEnv), 'browser-extension-relay.secret');
     keys.add(`${RELAY_CREDENTIAL_SENTINEL}${credentialPath}`);
   }

@@ -237,6 +237,23 @@ describe('Browser Relay Authentication v2 raw CDP client', () => {
     expect(result.reason).toBe('protocol');
   });
 
+  it('tries every validated localhost address until one connects', async () => {
+    const relay = await createValidRelay();
+    const result = await connectChromeDevtoolsRelayV2({
+      baseUrl: new URL(`http://localhost:${relay.port}`),
+      credential: CREDENTIAL,
+      timeoutMs: 2_000,
+      resolve: async () =>
+        [
+          { address: '::1', family: 6 },
+          { address: '127.0.0.1', family: 4 },
+        ] as never,
+    });
+    expect(result).toMatchObject({ reason: 'success', status: 200, upstream: { head: expect.any(Buffer) } });
+    expect(relay.connectionCount).toBe(1);
+    result.upstream?.socket.destroy();
+  });
+
   it('uses fresh nonces and closes each failed replay attempt instead of reconnecting', async () => {
     const nonces: string[] = [];
     const relay = await createRawServer((request, socket) => {

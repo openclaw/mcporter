@@ -199,6 +199,25 @@ describe('chrome-devtools OpenClaw relay routing', () => {
     }
   });
 
+  it('resolves credential-directory placeholders before hashing relay key rotation', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-relay-placeholder-'));
+    const secretPath = path.join(directory, 'browser-extension-relay.secret');
+    const definition: ServerDefinition = {
+      name: 'chrome',
+      command: { kind: 'stdio', command: 'npx', args: AUTO_ARGS, cwd: '/tmp' },
+      env: { OPENCLAW_OAUTH_DIR: '${OPENCLAW_DIR}' },
+    };
+    try {
+      await fs.writeFile(secretPath, TOKEN, { mode: 0o600 });
+      const before = hashChromeDevtoolsRelayEnvironment([definition], { OPENCLAW_DIR: directory });
+      await fs.writeFile(secretPath, 'b'.repeat(64), { mode: 0o600 });
+      const after = hashChromeDevtoolsRelayEnvironment([definition], { OPENCLAW_DIR: directory });
+      expect(after).not.toBe(before);
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('routes through the protected local proxy without putting either bearer in child argv', async () => {
     const observed: unknown[] = [];
     const close = vi.fn(async () => {});
