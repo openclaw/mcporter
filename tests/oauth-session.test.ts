@@ -470,6 +470,85 @@ describe('FileOAuthClientProvider session lifecycle', () => {
     await waitPromise;
   });
 
+  it('suppresses browser launch via MCPORTER_OAUTH_NO_BROWSER without session options (#283)', async () => {
+    const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+    tempDirs.push(tokenCacheDir);
+    const definition: ServerDefinition = {
+      name: 'test-oauth-env-no-browser',
+      description: 'Test OAuth server',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'oauth',
+      tokenCacheDir,
+    };
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+
+    vi.stubEnv('MCPORTER_OAUTH_NO_BROWSER', '1');
+    try {
+      const session = await createOAuthSession(definition, logger);
+      const provider = session.provider as StatefulProvider;
+      const openSpy = vi.spyOn(__oauthInternals, 'openExternal').mockImplementation(() => {});
+      const authorizationUrl = new URL('https://example.com/auth?code=xyz');
+
+      await provider.redirectToAuthorization(authorizationUrl);
+
+      // Waiters fail fast with a server-named error instead of waiting out the
+      // authorization timeout — including ones that attach after the redirect.
+      await expect(session.waitForAuthorizationCode()).rejects.toMatchObject({
+        name: 'BrowserLaunchSuppressedError',
+        serverName: 'test-oauth-env-no-browser',
+      });
+
+      expect(openSpy).not.toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining(`Visit ${authorizationUrl.toString()} to authorize`)
+      );
+      expect(provider.hasAuthorizationRedirectStarted()).toBe(true);
+
+      await session.close();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('ignores falsy MCPORTER_OAUTH_NO_BROWSER values and still opens the browser', async () => {
+    const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+    tempDirs.push(tokenCacheDir);
+    const definition: ServerDefinition = {
+      name: 'test-oauth-env-no-browser-falsy',
+      description: 'Test OAuth server',
+      command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      auth: 'oauth',
+      tokenCacheDir,
+    };
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+
+    vi.stubEnv('MCPORTER_OAUTH_NO_BROWSER', '0');
+    try {
+      const session = await createOAuthSession(definition, logger);
+      const provider = session.provider as StatefulProvider;
+      const openSpy = vi.spyOn(__oauthInternals, 'openExternal').mockImplementation(() => {});
+      const authorizationUrl = new URL('https://example.com/auth?code=xyz');
+      const waitPromise = session.waitForAuthorizationCode().catch(() => undefined);
+
+      await provider.redirectToAuthorization(authorizationUrl);
+
+      expect(openSpy).toHaveBeenCalledWith(authorizationUrl.toString());
+
+      await session.close();
+      await waitPromise;
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('logs the manual OAuth URL at warn level for headless terminals (#139)', async () => {
     const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
     tempDirs.push(tokenCacheDir);
