@@ -63,6 +63,22 @@ describe('vault command input validation', () => {
       { tokens: { access_token: 'token', token_type: 'Bearer' }, clientInfo: { client_id: 42 } },
       'clientInfo.client_id must be a string',
     ],
+    [
+      { tokens: { access_token: 'token', token_type: 'Bearer' }, clientInfo: { application_type: 42 } },
+      'clientInfo.application_type must be a string',
+    ],
+    [
+      { tokens: { access_token: 'token', token_type: 'Bearer' }, clientInfo: { redirect_uris: 'callback' } },
+      'clientInfo.redirect_uris must be an array of strings',
+    ],
+    [
+      { tokens: { access_token: 'token', token_type: 'Bearer' }, clientInfo: { grant_types: ['code', 42] } },
+      'clientInfo.grant_types must be an array of strings',
+    ],
+    [
+      { tokens: { access_token: 'token', token_type: 'Bearer' }, clientInfo: { client_id_issued_at: 'today' } },
+      'clientInfo.client_id_issued_at must be a finite number',
+    ],
   ])('rejects malformed payload %#', async (payload, message) => {
     await expect(handleVault(runtime, ['set', 'calendar', '--stdin'], stdin(payload))).rejects.toThrow(
       message as string

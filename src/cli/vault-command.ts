@@ -151,10 +151,48 @@ function validateOAuthTokens(tokens: Record<string, unknown>): void {
   }
 }
 
+const OAUTH_CLIENT_STRING_FIELDS = [
+  'client_id',
+  'client_secret',
+  'token_endpoint_auth_method',
+  'application_type',
+  'client_name',
+  'client_uri',
+  'logo_uri',
+  'scope',
+  'tos_uri',
+  'policy_uri',
+  'jwks_uri',
+  'software_id',
+  'software_version',
+  'software_statement',
+  'issuer',
+] as const;
+
+const OAUTH_CLIENT_STRING_ARRAY_FIELDS = ['redirect_uris', 'grant_types', 'response_types', 'contacts'] as const;
+
+const OAUTH_CLIENT_NUMBER_FIELDS = ['client_id_issued_at', 'client_secret_expires_at'] as const;
+
 function validateOAuthClientInfo(clientInfo: Record<string, unknown>): void {
-  for (const [key, value] of Object.entries(clientInfo)) {
-    if (value !== undefined && value !== null && typeof value !== 'string') {
+  for (const key of OAUTH_CLIENT_STRING_FIELDS) {
+    if (clientInfo[key] !== undefined && clientInfo[key] !== null && typeof clientInfo[key] !== 'string') {
       throw new CliUsageError(`Vault payload clientInfo.${key} must be a string.`);
+    }
+  }
+  for (const key of OAUTH_CLIENT_STRING_ARRAY_FIELDS) {
+    const value = clientInfo[key];
+    if (
+      value !== undefined &&
+      value !== null &&
+      (!Array.isArray(value) || value.some((item) => typeof item !== 'string'))
+    ) {
+      throw new CliUsageError(`Vault payload clientInfo.${key} must be an array of strings.`);
+    }
+  }
+  for (const key of OAUTH_CLIENT_NUMBER_FIELDS) {
+    const value = clientInfo[key];
+    if (value !== undefined && value !== null && (typeof value !== 'number' || !Number.isFinite(value))) {
+      throw new CliUsageError(`Vault payload clientInfo.${key} must be a finite number.`);
     }
   }
 }

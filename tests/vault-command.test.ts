@@ -35,7 +35,7 @@ describe('vault command', () => {
     vi.restoreAllMocks();
   });
 
-  it('seeds OAuth credentials from a file using mcporter vault keys', async () => {
+  it('keeps accepting string-only client info from a file', async () => {
     const payloadPath = path.join(tempDir, 'tokens.json');
     await fs.writeFile(
       payloadPath,
@@ -47,6 +47,7 @@ describe('vault command', () => {
         },
         clientInfo: {
           client_id: 'client-123',
+          token_endpoint_auth_method: 'none',
         },
       }),
       'utf8'
@@ -64,6 +65,50 @@ describe('vault command', () => {
       },
       clientInfo: {
         client_id: 'client-123',
+        token_endpoint_auth_method: 'none',
+      },
+    });
+  });
+
+  it('preserves OAuth dynamic client registration metadata from stdin JSON', async () => {
+    await handleVault(runtimeFor(definition), ['set', 'calendar', '--stdin'], {
+      readStdin: async () =>
+        JSON.stringify({
+          tokens: {
+            access_token: 'dcr-token',
+            token_type: 'Bearer',
+          },
+          clientInfo: {
+            client_id: 'dcr-client',
+            redirect_uris: ['https://calendar.example/callback'],
+            grant_types: ['authorization_code'],
+            response_types: ['code'],
+            contacts: ['oauth-admin@calendar.example'],
+            token_endpoint_auth_method: 'none',
+            client_name: null,
+            client_uri: 'not parsed as a URL for backward compatibility',
+            jwks: { keys: [] },
+            client_id_issued_at: 1_754_611_200,
+            client_secret_expires_at: 0,
+            provider_metadata: { tenant: 'calendar' },
+          },
+        }),
+    });
+
+    await expect(loadVaultEntry(definition)).resolves.toMatchObject({
+      clientInfo: {
+        client_id: 'dcr-client',
+        redirect_uris: ['https://calendar.example/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+        contacts: ['oauth-admin@calendar.example'],
+        token_endpoint_auth_method: 'none',
+        client_name: null,
+        client_uri: 'not parsed as a URL for backward compatibility',
+        jwks: { keys: [] },
+        client_id_issued_at: 1_754_611_200,
+        client_secret_expires_at: 0,
+        provider_metadata: { tenant: 'calendar' },
       },
     });
   });
