@@ -6,10 +6,6 @@
 
 - Harden OpenClaw extension-backed Chrome control with configurable `prefer` / `require` / `off` routing, a bounded 5-second relay probe, secure OpenClaw credential discovery, redacted route diagnostics, and an OS-protected preload handoff that keeps stable and ephemeral proxy authorization out of `chrome-devtools-mcp` OS arguments.
 
-### OAuth
-
-- Accept standard dynamic client registration arrays and timestamps in `mcporter vault set` payloads while preserving provider-specific metadata.
-
 ### Daemon
 
 - Invalidate keep-alive Chrome DevTools state when relay policy, URL, timeout, or OpenClaw credential paths change, keep `require` fail-closed across retries, and expose the last safe relay decision in `mcporter daemon status`.
