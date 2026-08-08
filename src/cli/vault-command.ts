@@ -151,10 +151,66 @@ function validateOAuthTokens(tokens: Record<string, unknown>): void {
   }
 }
 
+interface ClientInfoFieldRule {
+  readonly description: string;
+  readonly matches: (value: unknown) => boolean;
+}
+
+const CLIENT_INFO_STRING: ClientInfoFieldRule = {
+  description: 'a string',
+  matches: (value) => typeof value === 'string',
+};
+
+const CLIENT_INFO_STRING_ARRAY: ClientInfoFieldRule = {
+  description: 'an array of strings',
+  matches: (value) => Array.isArray(value) && value.every((entry) => typeof entry === 'string'),
+};
+
+const CLIENT_INFO_FINITE_NUMBER: ClientInfoFieldRule = {
+  description: 'a finite number',
+  matches: (value) => Number.isFinite(value),
+};
+
+// Field types follow OAuthClientInformationFullSchema (RFC 7591 dynamic client
+// registration) from @modelcontextprotocol/sdk/shared/auth.js, in its declaration
+// order. `client_id` is required by both members of OAuthClientInformationMixed and
+// is checked separately. Fields the schema leaves open (`jwks`) and provider
+// extensions outside it (`registration_client_uri`, `registration_access_token`) are
+// deliberately absent, so a complete registration response reaches the vault intact.
+const CLIENT_INFO_FIELD_RULES: Readonly<Record<string, ClientInfoFieldRule>> = {
+  redirect_uris: CLIENT_INFO_STRING_ARRAY,
+  token_endpoint_auth_method: CLIENT_INFO_STRING,
+  grant_types: CLIENT_INFO_STRING_ARRAY,
+  response_types: CLIENT_INFO_STRING_ARRAY,
+  client_name: CLIENT_INFO_STRING,
+  client_uri: CLIENT_INFO_STRING,
+  logo_uri: CLIENT_INFO_STRING,
+  scope: CLIENT_INFO_STRING,
+  contacts: CLIENT_INFO_STRING_ARRAY,
+  tos_uri: CLIENT_INFO_STRING,
+  policy_uri: CLIENT_INFO_STRING,
+  jwks_uri: CLIENT_INFO_STRING,
+  software_id: CLIENT_INFO_STRING,
+  software_version: CLIENT_INFO_STRING,
+  software_statement: CLIENT_INFO_STRING,
+  client_secret: CLIENT_INFO_STRING,
+  client_id_issued_at: CLIENT_INFO_FINITE_NUMBER,
+  client_secret_expires_at: CLIENT_INFO_FINITE_NUMBER,
+};
+
 function validateOAuthClientInfo(clientInfo: Record<string, unknown>): void {
-  for (const [key, value] of Object.entries(clientInfo)) {
-    if (value !== undefined && value !== null && typeof value !== 'string') {
-      throw new CliUsageError(`Vault payload clientInfo.${key} must be a string.`);
+  if (typeof clientInfo.client_id !== 'string' || clientInfo.client_id.length === 0) {
+    throw new CliUsageError('Vault payload clientInfo.client_id must be a non-empty string.');
+  }
+  // Iterate the rules rather than the payload: unknown keys pass through, and the
+  // reported field no longer depends on JSON key order.
+  for (const [key, rule] of Object.entries(CLIENT_INFO_FIELD_RULES)) {
+    const value = clientInfo[key];
+    if (value === undefined || value === null) {
+      continue;
+    }
+    if (!rule.matches(value)) {
+      throw new CliUsageError(`Vault payload clientInfo.${key} must be ${rule.description}.`);
     }
   }
 }
