@@ -2,6 +2,7 @@ import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it, vi } from 'vitest';
 import type { ServerDefinition } from '../src/config.js';
 import { createKeepAliveRuntime } from '../src/daemon/runtime-wrapper.js';
+import { DAEMON_OAUTH_FLOW_ERROR_CODE } from '../src/daemon/protocol.js';
 import type { CallOptions, ConnectOptions, ListToolsOptions, Runtime } from '../src/runtime.js';
 
 class FakeRuntime implements Runtime {
@@ -322,6 +323,28 @@ describe('createKeepAliveRuntime', () => {
 
     await expect(keepAliveRuntime.listTools('alpha', { timeoutMs: 5_000 })).rejects.toThrow('timed out');
     expect(daemon.listTools).toHaveBeenCalledTimes(1);
+    expect(daemon.closeServer).not.toHaveBeenCalled();
+  });
+
+  it('does not close or replay daemon OAuth flow failures', async () => {
+    const runtime = new FakeRuntime(definitions);
+    const oauthFlowError = Object.assign(new Error('browser launch is suppressed'), {
+      code: DAEMON_OAUTH_FLOW_ERROR_CODE,
+    });
+    const daemon = {
+      callTool: vi.fn().mockRejectedValue(oauthFlowError),
+      closeServer: vi.fn().mockResolvedValue(undefined),
+      listTools: vi.fn(),
+      listResources: vi.fn(),
+      readResource: vi.fn(),
+    };
+    const keepAliveRuntime = createKeepAliveRuntime(runtime as unknown as Runtime, {
+      daemonClient: daemon as never,
+      keepAliveServers: new Set(['alpha']),
+    });
+
+    await expect(keepAliveRuntime.callTool('alpha', 'ping', {})).rejects.toBe(oauthFlowError);
+    expect(daemon.callTool).toHaveBeenCalledTimes(1);
     expect(daemon.closeServer).not.toHaveBeenCalled();
   });
 });

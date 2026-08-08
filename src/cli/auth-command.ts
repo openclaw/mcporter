@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import type { ServerDefinition } from '../config-schema.js';
 import type { OAuthAuthorizationRequest, OAuthSessionOptions } from '../oauth.js';
+import { suppressBrowserLaunchFromEnv } from '../oauth-browser-suppression.js';
 import { analyzeConnectionError } from '../error-classifier.js';
 import { clearOAuthCaches } from '../oauth-persistence.js';
 import type { Runtime } from '../runtime.js';
@@ -19,9 +20,6 @@ type BrowserSuppression = 'default' | 'no-browser';
 export interface AuthCommandOptions {
   readonly oauthTimeoutMs?: number;
 }
-
-const TRUE_VALUES = new Set(['1', 'true', 'yes']);
-const FALSE_VALUES = new Set(['0', 'false', 'no']);
 
 export async function handleAuth(runtime: Runtime, args: string[], options: AuthCommandOptions = {}): Promise<void> {
   const browserSuppression = consumeBrowserSuppression(args, process.env);
@@ -192,7 +190,7 @@ function buildNoBrowserOAuthOptions(
 }
 
 function consumeBrowserSuppression(args: string[], env: NodeJS.ProcessEnv): BrowserSuppression {
-  let mode = resolveBrowserSuppressionFromEnv(env.MCPORTER_OAUTH_NO_BROWSER);
+  let mode: BrowserSuppression = suppressBrowserLaunchFromEnv(env) ? 'no-browser' : 'default';
   const noBrowserIndex = args.indexOf('--no-browser');
   if (noBrowserIndex !== -1) {
     args.splice(noBrowserIndex, 1);
@@ -211,20 +209,6 @@ function consumeBrowserSuppression(args: string[], env: NodeJS.ProcessEnv): Brow
     mode = 'no-browser';
   }
   return mode;
-}
-
-function resolveBrowserSuppressionFromEnv(raw: string | undefined): BrowserSuppression {
-  if (raw === undefined) {
-    return 'default';
-  }
-  const normalized = raw.trim().toLowerCase();
-  if (!normalized || FALSE_VALUES.has(normalized)) {
-    return 'default';
-  }
-  if (TRUE_VALUES.has(normalized)) {
-    return 'no-browser';
-  }
-  return 'default';
 }
 
 function shouldRetryAuthError(error: unknown): boolean {

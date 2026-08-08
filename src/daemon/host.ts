@@ -14,9 +14,10 @@ import { readJsonFile, withFileLock, writeJsonFile } from '../fs-json.js';
 import { isKeepAliveServer } from '../lifecycle.js';
 import { configureAutoSelectFamilyAttemptTimeout } from '../network-family-autoselection.js';
 import { isProcessRunning } from '../process-utils.js';
+import { suppressBrowserLaunchFromEnv } from '../oauth-browser-suppression.js';
 import { createRuntime, type Runtime } from '../runtime.js';
 import { createNonInteractiveElicitationResponder, NON_INTERACTIVE_ELICITATION_HINT } from '../runtime/elicitation.js';
-import { OAuthTimeoutError, resolveOAuthTimeoutFromEnv } from '../runtime/oauth.js';
+import { isOAuthFlowError, OAuthTimeoutError, resolveOAuthTimeoutFromEnv } from '../runtime/oauth.js';
 import { raceWithTimeout } from '../runtime/utils.js';
 import { collectConfigLayers, normalizeConfigLayers, statConfigMtime } from './config-layers.js';
 import { hashDaemonDefinitions } from './definition-hash.js';
@@ -29,6 +30,7 @@ import {
   shouldLogServer,
 } from './log-context.js';
 import {
+  DAEMON_OAUTH_FLOW_ERROR_CODE,
   DAEMON_OPERATION_TIMEOUT_CODE,
   DAEMON_PROGRESS_INTERVAL_MS,
   DAEMON_PROTOCOL_VERSION,
@@ -81,6 +83,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
   const definitionHash = hashDaemonDefinitions(keepAliveDefinitions);
   const relayEnvironmentKeys = chromeDevtoolsRelayEnvironmentKeys(keepAliveDefinitions);
   const relayEnvironmentHash = hashChromeDevtoolsRelayProcessEnvironment(relayEnvironmentKeys);
+  const oauthNoBrowser = suppressBrowserLaunchFromEnv();
   if (keepAliveDefinitions.length === 0) {
     throw new Error('No MCP servers require keep-alive; daemon will not start.');
   }
@@ -189,6 +192,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
           definitionHash,
           relayEnvironmentHash,
           relayEnvironmentKeys,
+          oauthNoBrowser,
         },
         logContext,
         shutdown,
@@ -225,7 +229,8 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
           configMtimeMs,
           definitionHash,
           relayEnvironmentHash,
-          relayEnvironmentKeys
+          relayEnvironmentKeys,
+          oauthNoBrowser
         )
       ) {
         if (!(await metadataMatches(options.metadataPath, live))) {
@@ -255,6 +260,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
       definitionHash,
       relayEnvironmentHash,
       relayEnvironmentKeys,
+      oauthNoBrowser,
     });
     claimed = true;
   });
@@ -327,6 +333,7 @@ function metadataFromStatus(
   definitionHash?: string;
   relayEnvironmentHash?: string;
   relayEnvironmentKeys?: string[];
+  oauthNoBrowser?: boolean;
 } {
   return {
     pid: status.pid,
@@ -340,6 +347,7 @@ function metadataFromStatus(
     definitionHash: status.definitionHash,
     relayEnvironmentHash: status.relayEnvironmentHash,
     relayEnvironmentKeys: status.relayEnvironmentKeys,
+    oauthNoBrowser: status.oauthNoBrowser,
   };
 }
 
@@ -350,7 +358,8 @@ function daemonConfigMatches(
   currentConfigMtimeMs: number | null,
   currentDefinitionHash: string,
   currentRelayEnvironmentHash: string,
-  currentRelayEnvironmentKeys: readonly string[]
+  currentRelayEnvironmentKeys: readonly string[],
+  currentOauthNoBrowser: boolean
 ): boolean {
   if (live.definitionHash !== currentDefinitionHash) {
     return false;
@@ -359,6 +368,9 @@ function daemonConfigMatches(
     return false;
   }
   if (JSON.stringify(live.relayEnvironmentKeys) !== JSON.stringify(currentRelayEnvironmentKeys)) {
+    return false;
+  }
+  if ((live.oauthNoBrowser ?? false) !== currentOauthNoBrowser) {
     return false;
   }
   const liveLayers = normalizeConfigLayers(
@@ -528,6 +540,7 @@ async function handleSocketRequest(
     definitionHash?: string;
     relayEnvironmentHash?: string;
     relayEnvironmentKeys?: string[];
+    oauthNoBrowser?: boolean;
   },
   logContext: LogContext,
   shutdown: () => Promise<void>,
@@ -605,6 +618,9 @@ function daemonRuntimeErrorCode(error: unknown): string {
   ) {
     return DAEMON_OPERATION_TIMEOUT_CODE;
   }
+  if (isOAuthFlowError(error)) {
+    return DAEMON_OAUTH_FLOW_ERROR_CODE;
+  }
   return 'runtime_error';
 }
 
@@ -638,6 +654,7 @@ async function processRequest(
     definitionHash?: string;
     relayEnvironmentHash?: string;
     relayEnvironmentKeys?: string[];
+    oauthNoBrowser?: boolean;
   },
   logContext: LogContext,
   preParsedRequest?: DaemonRequest
@@ -819,6 +836,7 @@ async function processRequest(
           definitionHash: metadata.definitionHash,
           relayEnvironmentHash: metadata.relayEnvironmentHash,
           relayEnvironmentKeys: metadata.relayEnvironmentKeys,
+          oauthNoBrowser: metadata.oauthNoBrowser,
           socketPath: metadata.socketPath,
           logPath: metadata.logPath ?? undefined,
           servers: Array.from(managedServers.values()).map((def) => {
@@ -879,6 +897,7 @@ export async function __testProcessRequest(
     definitionHash?: string;
     relayEnvironmentHash?: string;
     relayEnvironmentKeys?: string[];
+    oauthNoBrowser?: boolean;
   },
   logContext: LogContext,
   preParsedRequest?: DaemonRequest

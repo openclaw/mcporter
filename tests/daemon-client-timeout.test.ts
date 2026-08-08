@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hashChromeDevtoolsRelayProcessEnvironment } from '../src/chrome-devtools-relay.js';
 import { NON_INTERACTIVE_ELICITATION_HINT } from '../src/runtime/elicitation.js';
+import { DAEMON_OAUTH_FLOW_ERROR_CODE } from '../src/daemon/protocol.js';
 import { makeShortTempDir } from './fixtures/test-helpers.js';
 
 const timeoutRecords: Array<{ method: string; timeout: number }> = [];
@@ -183,6 +184,24 @@ describe('DaemonClient timeouts', () => {
 
     expect(warn).toHaveBeenCalledWith(`[mcporter] ${NON_INTERACTIVE_ELICITATION_HINT}`);
     warn.mockRestore();
+  });
+
+  it('reconstructs stable OAuth flow error codes from daemon responses', async () => {
+    const configPath = 'mcporter.config.json';
+    await writeFreshMetadata(configPath);
+    responseOverrides.set(
+      'callTool',
+      JSON.stringify({
+        id: 'oauth-flow',
+        ok: false,
+        error: { code: DAEMON_OAUTH_FLOW_ERROR_CODE, message: 'browser launch is suppressed' },
+      })
+    );
+    const client = new DaemonClient({ configPath, configExplicit: true });
+
+    const error = await client.callTool({ server: 'foo', tool: 'bar' }).catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ message: 'browser launch is suppressed', code: DAEMON_OAUTH_FLOW_ERROR_CODE });
   });
 
   it('routes resource and close requests through the daemon protocol', async () => {

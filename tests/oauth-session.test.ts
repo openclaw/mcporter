@@ -470,80 +470,118 @@ describe('FileOAuthClientProvider session lifecycle', () => {
     await waitPromise;
   });
 
-  it('suppresses browser launch via MCPORTER_OAUTH_NO_BROWSER without session options (#283)', async () => {
-    const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
-    tempDirs.push(tokenCacheDir);
-    const definition: ServerDefinition = {
-      name: 'test-oauth-env-no-browser',
-      description: 'Test OAuth server',
-      command: { kind: 'http', url: new URL('https://example.com/mcp') },
-      auth: 'oauth',
-      tokenCacheDir,
-    };
-    const logger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-    };
+  it.each(['1', 'true', 'TRUE', 'yes', ' YeS '])(
+    'suppresses browser launch via truthy MCPORTER_OAUTH_NO_BROWSER=%j without session options (#283)',
+    async (envValue) => {
+      const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+      tempDirs.push(tokenCacheDir);
+      const definition: ServerDefinition = {
+        name: 'test-oauth-env-no-browser',
+        description: 'Test OAuth server',
+        command: { kind: 'http', url: new URL('https://example.com/mcp') },
+        auth: 'oauth',
+        tokenCacheDir,
+      };
+      const logger = {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      };
 
-    vi.stubEnv('MCPORTER_OAUTH_NO_BROWSER', '1');
-    try {
-      const session = await createOAuthSession(definition, logger);
-      const provider = session.provider as StatefulProvider;
-      const openSpy = vi.spyOn(__oauthInternals, 'openExternal').mockImplementation(() => {});
-      const authorizationUrl = new URL('https://example.com/auth?code=xyz');
+      vi.stubEnv('MCPORTER_OAUTH_NO_BROWSER', envValue);
+      try {
+        const session = await createOAuthSession(definition, logger);
+        const provider = session.provider as StatefulProvider;
+        const openSpy = vi.spyOn(__oauthInternals, 'openExternal').mockImplementation(() => {});
+        const authorizationUrl = new URL('https://example.com/auth?code=xyz');
 
-      await provider.redirectToAuthorization(authorizationUrl);
+        await provider.redirectToAuthorization(authorizationUrl);
 
-      // Waiters fail fast with a server-named error instead of waiting out the
-      // authorization timeout — including ones that attach after the redirect.
-      await expect(session.waitForAuthorizationCode()).rejects.toMatchObject({
-        name: 'BrowserLaunchSuppressedError',
-        serverName: 'test-oauth-env-no-browser',
-      });
+        // Waiters fail fast with a server-named error instead of waiting out the
+        // authorization timeout — including ones that attach after the redirect.
+        await expect(session.waitForAuthorizationCode()).rejects.toMatchObject({
+          name: 'BrowserLaunchSuppressedError',
+          serverName: 'test-oauth-env-no-browser',
+        });
 
-      expect(openSpy).not.toHaveBeenCalled();
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining(`Visit ${authorizationUrl.toString()} to authorize`)
-      );
-      expect(provider.hasAuthorizationRedirectStarted()).toBe(true);
+        expect(openSpy).not.toHaveBeenCalled();
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.stringContaining("run 'mcporter auth test-oauth-env-no-browser --no-browser' to authorize")
+        );
+        expect(logger.warn.mock.calls.flat().join('\n')).not.toContain(authorizationUrl.toString());
+        expect(provider.hasAuthorizationRedirectStarted()).toBe(true);
 
-      await session.close();
-    } finally {
-      vi.unstubAllEnvs();
+        await session.close();
+      } finally {
+        vi.unstubAllEnvs();
+      }
     }
-  });
+  );
 
-  it('ignores falsy MCPORTER_OAUTH_NO_BROWSER values and still opens the browser', async () => {
+  it.each(['0', 'false', 'FALSE', 'no', '', 'unexpected'])(
+    'ignores falsy MCPORTER_OAUTH_NO_BROWSER=%j and still opens the browser',
+    async (envValue) => {
+      const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+      tempDirs.push(tokenCacheDir);
+      const definition: ServerDefinition = {
+        name: 'test-oauth-env-no-browser-falsy',
+        description: 'Test OAuth server',
+        command: { kind: 'http', url: new URL('https://example.com/mcp') },
+        auth: 'oauth',
+        tokenCacheDir,
+      };
+      const logger = {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      };
+
+      vi.stubEnv('MCPORTER_OAUTH_NO_BROWSER', envValue);
+      try {
+        const session = await createOAuthSession(definition, logger);
+        const provider = session.provider as StatefulProvider;
+        const openSpy = vi.spyOn(__oauthInternals, 'openExternal').mockImplementation(() => {});
+        const authorizationUrl = new URL('https://example.com/auth?code=xyz');
+        const waitPromise = session.waitForAuthorizationCode().catch(() => undefined);
+
+        await provider.redirectToAuthorization(authorizationUrl);
+
+        expect(openSpy).toHaveBeenCalledWith(authorizationUrl.toString());
+
+        await session.close();
+        await waitPromise;
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    }
+  );
+
+  it('lets explicit suppressBrowserLaunch false override a truthy environment value', async () => {
     const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
     tempDirs.push(tokenCacheDir);
     const definition: ServerDefinition = {
-      name: 'test-oauth-env-no-browser-falsy',
-      description: 'Test OAuth server',
+      name: 'test-oauth-explicit-browser',
       command: { kind: 'http', url: new URL('https://example.com/mcp') },
       auth: 'oauth',
       tokenCacheDir,
     };
-    const logger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-    };
-
-    vi.stubEnv('MCPORTER_OAUTH_NO_BROWSER', '0');
+    vi.stubEnv('MCPORTER_OAUTH_NO_BROWSER', 'yes');
     try {
-      const session = await createOAuthSession(definition, logger);
+      const session = await createOAuthSession(
+        definition,
+        { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+        { suppressBrowserLaunch: false }
+      );
       const provider = session.provider as StatefulProvider;
       const openSpy = vi.spyOn(__oauthInternals, 'openExternal').mockImplementation(() => {});
-      const authorizationUrl = new URL('https://example.com/auth?code=xyz');
-      const waitPromise = session.waitForAuthorizationCode().catch(() => undefined);
+      const authorizationUrl = new URL('https://example.com/auth?explicit=true');
+      const pending = session.waitForAuthorizationCode().catch(() => undefined);
 
       await provider.redirectToAuthorization(authorizationUrl);
 
       expect(openSpy).toHaveBeenCalledWith(authorizationUrl.toString());
-
       await session.close();
-      await waitPromise;
+      await pending;
     } finally {
       vi.unstubAllEnvs();
     }

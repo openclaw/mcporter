@@ -2,6 +2,7 @@ import type { ChromeDevtoolsRelayDecision } from '../chrome-devtools-relay.js';
 
 export const DAEMON_PROTOCOL_VERSION = 2;
 export const DAEMON_OPERATION_TIMEOUT_CODE = 'operation_timeout';
+export const DAEMON_OAUTH_FLOW_ERROR_CODE = 'oauth_flow_error';
 export const DAEMON_PROGRESS_INTERVAL_MS = 250;
 
 export function resolveProgressInterval(idleTimeoutMs: number): number {
@@ -147,6 +148,7 @@ export interface StatusResult {
   readonly definitionHash?: string;
   readonly relayEnvironmentHash?: string;
   readonly relayEnvironmentKeys?: string[];
+  readonly oauthNoBrowser?: boolean;
   readonly socketPath: string;
   readonly logPath?: string;
   readonly servers: Array<{

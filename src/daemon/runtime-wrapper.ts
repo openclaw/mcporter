@@ -11,7 +11,7 @@ import type {
   Runtime,
 } from '../runtime.js';
 import type { DaemonClient } from './client.js';
-import { DAEMON_OPERATION_TIMEOUT_CODE } from './protocol.js';
+import { DAEMON_OAUTH_FLOW_ERROR_CODE, DAEMON_OPERATION_TIMEOUT_CODE } from './protocol.js';
 
 interface KeepAliveRuntimeOptions {
   readonly daemonClient: DaemonClient | null;
@@ -181,8 +181,11 @@ function shouldRestartDaemonServer(error: unknown): boolean {
   if (!error) {
     return false;
   }
-  if (typeof error === 'object' && (error as { code?: unknown }).code === DAEMON_OPERATION_TIMEOUT_CODE) {
-    return false;
+  if (typeof error === 'object') {
+    const code = (error as { code?: unknown }).code;
+    if (code === DAEMON_OPERATION_TIMEOUT_CODE || code === DAEMON_OAUTH_FLOW_ERROR_CODE) {
+      return false;
+    }
   }
   // Restarting cannot repair a missing or rejected credential, and replaying the
   // operation re-enters interactive authorization, duplicating prompts (issue #247).

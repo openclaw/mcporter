@@ -5,6 +5,7 @@ import path from 'node:path';
 import { hashChromeDevtoolsRelayProcessEnvironment } from '../chrome-devtools-relay.js';
 import { withFileLock } from '../fs-json.js';
 import { isProcessRunning } from '../process-utils.js';
+import { suppressBrowserLaunchFromEnv } from '../oauth-browser-suppression.js';
 import { collectConfigLayers, normalizeConfigLayers } from './config-layers.js';
 import { getDaemonMetadataPath, getDaemonSocketPath } from './paths.js';
 import {
@@ -52,6 +53,7 @@ interface DaemonMetadata {
   readonly logPath?: string | null;
   readonly relayEnvironmentHash?: string;
   readonly relayEnvironmentKeys?: string[];
+  readonly oauthNoBrowser?: boolean;
 }
 
 type DaemonConfigState = 'missing' | 'fresh' | 'stale';
@@ -270,6 +272,9 @@ export class DaemonClient {
       !metadata.relayEnvironmentKeys ||
       metadata.relayEnvironmentHash !== hashChromeDevtoolsRelayProcessEnvironment(metadata.relayEnvironmentKeys)
     ) {
+      return 'stale';
+    }
+    if ((metadata.oauthNoBrowser ?? false) !== suppressBrowserLaunchFromEnv()) {
       return 'stale';
     }
     return 'fresh';

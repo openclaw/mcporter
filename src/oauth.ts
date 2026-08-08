@@ -12,6 +12,7 @@ import type {
 } from '@modelcontextprotocol/client';
 import { validateClientMetadataUrl } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from './config.js';
+import { suppressBrowserLaunchFromEnv } from './oauth-browser-suppression.js';
 import { buildStaticClientInformation } from './oauth-client-info.js';
 import type { OAuthPersistence } from './oauth-persistence.js';
 import { buildOAuthPersistence } from './oauth-persistence.js';
@@ -35,17 +36,6 @@ export interface OAuthAuthorizationResponse {
 export interface OAuthSessionOptions {
   suppressBrowserLaunch?: boolean;
   onAuthorizationUrl?: (request: OAuthAuthorizationRequest) => void | Promise<void>;
-}
-
-// Env-driven browser suppression for flows that never see CLI flags (serve/daemon
-// bridges, embedded runtimes): honors the same MCPORTER_OAUTH_NO_BROWSER values the
-// auth command accepts (issue #283). An explicit suppressBrowserLaunch option wins.
-const NO_BROWSER_TRUE_VALUES = new Set(['1', 'true', 'yes']);
-function suppressBrowserLaunchFromEnv(raw = process.env.MCPORTER_OAUTH_NO_BROWSER): boolean {
-  if (raw === undefined) {
-    return false;
-  }
-  return NO_BROWSER_TRUE_VALUES.has(raw.trim().toLowerCase());
 }
 
 // Thrown when interactive authorization is needed but browser launch is suppressed
@@ -370,20 +360,18 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
         await this.options.onAuthorizationUrl(request);
         return;
       }
-      // No callback registered (serve/daemon path): surface the URL in the log and
-      // reject the pending authorization so waiters fail fast with a server-named
+      // No callback registered (serve/daemon path): reject the pending
+      // authorization so waiters fail fast with a server-named
       // error instead of waiting out the timeout on a browser handshake nobody
       // will complete. Never throw here: the SDK invokes this from unawaited send
       // paths, where a throw becomes an unhandled rejection that kills the daemon.
-      this.logger.warn(
-        `Authorization required for ${this.definition.name}; browser launch suppressed (MCPORTER_OAUTH_NO_BROWSER). Visit ${request.authorizationUrl} to authorize.`
-      );
       const suppressed = new BrowserLaunchSuppressedError(this.definition.name);
+      this.logger.warn(suppressed.message);
       const deferred = this.ensureAuthorizationDeferred();
       // Mark the rejection handled: waiters that attach later still observe it.
       deferred.promise.catch(() => {});
       deferred.reject(suppressed);
-      this.interactiveAuthorization = null;
+      this.clearInteractiveAuthorization();
       return;
     }
     this.logger.info(`Authorization required for ${this.definition.name}. Opening browser...`);

@@ -52,6 +52,7 @@ function buildResponse(method: string, id: string) {
         configLayers: activeLayers,
         relayEnvironmentHash: activeRelayEnvironmentHash,
         relayEnvironmentKeys: activeRelayEnvironmentKeys,
+        oauthNoBrowser: activeOauthNoBrowser,
         socketPath: activeSocketPath,
         servers: [],
       },
@@ -70,9 +71,11 @@ let activeConfigMtime: number | null = null;
 let activeStatusPid = process.pid;
 let activeSocketPath: string;
 let previousDaemonDir: string | undefined;
+let previousOauthNoBrowser: string | undefined;
 let activeLayers: Array<{ path: string; mtimeMs: number | null }> = [];
 let activeRelayEnvironmentHash = hashChromeDevtoolsRelayEnvironment([], {});
 let activeRelayEnvironmentKeys: string[] = [];
+let activeOauthNoBrowser = false;
 
 vi.mock('node:net', () => {
   createConnection.mockImplementation(() => {
@@ -93,9 +96,12 @@ describe('DaemonClient config freshness', () => {
   beforeEach(() => {
     sentMethods.length = 0;
     previousDaemonDir = process.env.MCPORTER_DAEMON_DIR;
+    previousOauthNoBrowser = process.env.MCPORTER_OAUTH_NO_BROWSER;
+    delete process.env.MCPORTER_OAUTH_NO_BROWSER;
     activeLayers = [];
     activeRelayEnvironmentHash = hashChromeDevtoolsRelayEnvironment([], {});
     activeRelayEnvironmentKeys = [];
+    activeOauthNoBrowser = false;
     launchDaemonDetached.mockClear();
     launchDaemonDetached.mockImplementation(
       (options: { metadataPath: string; socketPath: string; configPath: string }) => {
@@ -113,6 +119,7 @@ describe('DaemonClient config freshness', () => {
               configLayers: activeLayers,
               relayEnvironmentHash: activeRelayEnvironmentHash,
               relayEnvironmentKeys: activeRelayEnvironmentKeys,
+              oauthNoBrowser: activeOauthNoBrowser,
             },
             null,
             2
@@ -128,6 +135,11 @@ describe('DaemonClient config freshness', () => {
       delete process.env.MCPORTER_DAEMON_DIR;
     } else {
       process.env.MCPORTER_DAEMON_DIR = previousDaemonDir;
+    }
+    if (previousOauthNoBrowser === undefined) {
+      delete process.env.MCPORTER_OAUTH_NO_BROWSER;
+    } else {
+      process.env.MCPORTER_OAUTH_NO_BROWSER = previousOauthNoBrowser;
     }
   });
 
@@ -325,6 +337,45 @@ describe('DaemonClient config freshness', () => {
       if (previousPolicy === undefined) delete process.env.MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY;
       else process.env.MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY = previousPolicy;
     }
+  });
+
+  it('restarts when normalized no-browser environment state changes', async () => {
+    const tmpDir = await makeShortTempDir('daemon-oauth-browser-env');
+    process.env.MCPORTER_DAEMON_DIR = tmpDir;
+    const configPath = path.join(tmpDir, 'config.json');
+    await fs.writeFile(configPath, JSON.stringify({ mcpServers: {} }), 'utf8');
+    const stat = await fs.stat(configPath);
+    const { metadataPath, socketPath } = resolveDaemonPaths(configPath);
+    activeConfigPath = configPath;
+    activeSocketPath = socketPath;
+    activeConfigMtime = stat.mtimeMs;
+    activeStatusPid = process.pid;
+    activeLayers = [{ path: configPath, mtimeMs: stat.mtimeMs }];
+    activeOauthNoBrowser = false;
+    await fs.mkdir(path.dirname(metadataPath), { recursive: true });
+    await fs.writeFile(
+      metadataPath,
+      JSON.stringify({
+        pid: process.pid,
+        socketPath,
+        configPath,
+        startedAt: Date.now() - 10_000,
+        configMtimeMs: stat.mtimeMs,
+        configLayers: activeLayers,
+        relayEnvironmentHash: activeRelayEnvironmentHash,
+        relayEnvironmentKeys: activeRelayEnvironmentKeys,
+        oauthNoBrowser: false,
+      }),
+      'utf8'
+    );
+
+    process.env.MCPORTER_OAUTH_NO_BROWSER = ' YeS ';
+    const client = new DaemonClient({ configPath, configExplicit: true, rootDir: tmpDir });
+    await client.listTools({ server: 'oauth' });
+
+    expect(sentMethods[0]).toBe('status');
+    expect(sentMethods).toContain('stop');
+    expect(launchDaemonDetached).toHaveBeenCalledOnce();
   });
 
   it('restarts when the relay key rotates at the same credential path', async () => {

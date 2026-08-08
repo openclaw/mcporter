@@ -14,9 +14,10 @@ import {
   runDaemonHost,
 } from '../src/daemon/host.js';
 import type { DaemonRequest, DaemonResponse, StatusResult } from '../src/daemon/protocol.js';
+import { DAEMON_OAUTH_FLOW_ERROR_CODE } from '../src/daemon/protocol.js';
 import { recordChromeDevtoolsRelayDecision } from '../src/chrome-devtools-relay.js';
 import type { Runtime } from '../src/runtime.js';
-import { OAuthTimeoutError } from '../src/runtime/oauth.js';
+import { markOAuthFlowError, OAuthTimeoutError } from '../src/runtime/oauth.js';
 
 const describeUnixSocket = process.platform === 'win32' ? describe.skip : describe;
 
@@ -188,6 +189,33 @@ describe('daemon host request handling', () => {
       id: 'oauth-timeout',
       ok: false,
       error: { code: 'operation_timeout' },
+    });
+  });
+
+  it('serializes OAuth flow failures with a stable non-retryable code', async () => {
+    const runtime = createRuntimeDouble();
+    vi.mocked(runtime.callTool).mockRejectedValue(
+      markOAuthFlowError(new Error("Authorization required for 'oauth' but browser launch is suppressed"))
+    );
+
+    const result = await __testProcessRequest(
+      '',
+      runtime as unknown as Runtime,
+      createManagedServers(),
+      new Map(),
+      metadata,
+      logContext,
+      {
+        id: 'oauth-flow-error',
+        method: 'callTool',
+        params: { server: 'oauth', tool: 'ping' },
+      }
+    );
+
+    expect(result.response).toMatchObject({
+      id: 'oauth-flow-error',
+      ok: false,
+      error: { code: DAEMON_OAUTH_FLOW_ERROR_CODE },
     });
   });
 
