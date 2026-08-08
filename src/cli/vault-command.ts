@@ -181,7 +181,11 @@ function validateOAuthClientInfo(clientInfo: Record<string, unknown>): void {
   }
   for (const key of OAUTH_CLIENT_STRING_ARRAY_FIELDS) {
     const value = clientInfo[key];
-    if (value !== undefined && value !== null && (!Array.isArray(value) || value.some((item) => typeof item !== 'string'))) {
+    if (
+      value !== undefined &&
+      value !== null &&
+      (!Array.isArray(value) || value.some((item) => typeof item !== 'string'))
+    ) {
       throw new CliUsageError(`Vault payload clientInfo.${key} must be an array of strings.`);
     }
   }
