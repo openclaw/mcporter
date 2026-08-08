@@ -69,6 +69,12 @@ describe('vault command input validation', () => {
     );
   });
 
+  it('reports malformed JSON as a usage error', async () => {
+    await expect(
+      handleVault(runtime, ['set', 'calendar', '--stdin'], { readStdin: async () => '{"tokens":' })
+    ).rejects.toThrow('Vault payload is not valid JSON');
+  });
+
   it('accepts a dynamic client registration clientInfo payload', async () => {
     const clientInfo = {
       client_id: 'abc',

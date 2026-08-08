@@ -44,7 +44,7 @@ async function handleVaultSet(
     throw new CliUsageError(`Unknown vault set argument '${args[0]}'.`);
   }
   const definition = runtime.getDefinition(server);
-  const payload = validateVaultPayload(JSON.parse(await readPayload(source, options)));
+  const payload = validateVaultPayload(parseVaultPayload(await readPayload(source, options)));
   await saveVaultEntry(definition, {
     tokens: payload.tokens,
     ...(payload.clientInfo ? { clientInfo: payload.clientInfo } : {}),
@@ -105,6 +105,15 @@ async function readPayload(
     process.stdin.on('end', () => resolve(data));
     process.stdin.on('error', reject);
   });
+}
+
+function parseVaultPayload(raw: string): unknown {
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new CliUsageError(`Vault payload is not valid JSON: ${reason}`);
+  }
 }
 
 function validateVaultPayload(value: unknown): VaultPayload {
