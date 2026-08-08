@@ -235,6 +235,9 @@ export function printVaultHelp(): void {
     '',
     'Payload:',
     '  { "tokens": { "access_token": "...", "token_type": "Bearer" }, "clientInfo": { "client_id": "..." } }',
+    '',
+    '  clientInfo accepts a full dynamic client registration response, including',
+    '  redirect_uris, grant_types, response_types and the registration timestamps.',
   ];
   console.error(lines.join('\n'));
 }
