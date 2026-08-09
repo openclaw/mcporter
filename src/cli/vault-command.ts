@@ -223,6 +223,11 @@ export function printVaultHelp(): void {
     '',
     'Payload:',
     '  { "tokens": { "access_token": "...", "token_type": "Bearer" }, "clientInfo": { "client_id": "..." } }',
+    '',
+    '  clientInfo accepts a full dynamic client registration response, including the',
+    '  redirect_uris, grant_types, response_types and contacts arrays, the',
+    '  client_id_issued_at and client_secret_expires_at timestamps, and provider',
+    '  metadata outside RFC 7591.',
   ];
   console.error(lines.join('\n'));
 }
