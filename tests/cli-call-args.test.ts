@@ -97,6 +97,8 @@ describe('CLI call argument parsing', () => {
   it('reports invalid JSON argument payloads and malformed long flags', async () => {
     const { parseCallArguments } = await cliModulePromise;
     expect(() => parseCallArguments(['linear.search', '--args', '{bad'])).toThrow('Unable to parse --args');
+    expect(() => parseCallArguments(['linear.search', '--params', '{bad'])).toThrow('Unable to parse --params');
+    expect(() => parseCallArguments(['linear.search', '--params', '[]'])).toThrow('--params must be a JSON object');
     expect(() => parseCallArguments(['linear.search', '--json', '[]'])).toThrow('--json must be a JSON object');
     expect(() => parseCallArguments(['linear.search', '---bad', 'value'])).toThrow(CliUsageError);
   });

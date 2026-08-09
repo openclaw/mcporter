@@ -1,9 +1,16 @@
 import { analyzeConnectionError, type ConnectionIssue } from '../error-classifier.js';
 import { wrapCallResult } from '../result-utils.js';
 import type { Runtime } from '../runtime.js';
-import { type CallArgsParseResult, parseCallArguments } from './call-arguments.js';
-import { CALL_HELP_ARGUMENT_LINES, CALL_HELP_EXAMPLE_LINES, CALL_HELP_RUNTIME_FLAG_LINES } from './call-help.js';
+import { type CallArgsParseResult, type GenericLongFlagArgument, parseCallArguments } from './call-arguments.js';
+import {
+  buildUnknownCallFlagMessage,
+  buildUnvalidatedCallFlagMessage,
+  CALL_HELP_ARGUMENT_LINES,
+  CALL_HELP_EXAMPLE_LINES,
+  CALL_HELP_RUNTIME_FLAG_LINES,
+} from './call-help.js';
 import { renderAdhocServerHelpLines } from './adhoc-help.js';
+import { CliUsageError } from './errors.js';
 import {
   persistPreparedEphemeralServer,
   prepareEphemeralServerTarget,
@@ -82,6 +89,7 @@ async function prepareCallRequest(runtime: Runtime, args: string[]): Promise<Pre
     hydratedArgs,
     parsed.schemaStringCoercionCandidates,
     parsed.schemaArrayCoercionCandidates,
+    parsed.genericLongFlagArguments,
     timeoutMs,
     parsed.disableOAuth
   );
@@ -337,26 +345,50 @@ async function enforceSchemaAwareArgumentTypes(
   args: Record<string, unknown>,
   stringCandidates: Record<string, string> | undefined,
   arrayCandidates: Record<string, string> | undefined,
+  genericLongFlagArguments: GenericLongFlagArgument[] | undefined,
   timeoutMs: number,
   disableOAuth: boolean | undefined
 ): Promise<Record<string, unknown>> {
+  const requiresFlagValidation = (genericLongFlagArguments?.length ?? 0) > 0;
   if (
+    !requiresFlagValidation &&
     (!stringCandidates || Object.keys(stringCandidates).length === 0) &&
     (!arrayCandidates || Object.keys(arrayCandidates).length === 0)
   ) {
     return args;
   }
 
-  const tools = await withTimeout(
-    loadToolMetadata(runtime, server, { includeSchema: true, disableOAuth }),
-    timeoutMs
-  ).catch(() => undefined);
+  let tools: Awaited<ReturnType<typeof loadToolMetadata>> | undefined;
+  try {
+    tools = await withTimeout(loadToolMetadata(runtime, server, { includeSchema: true, disableOAuth }), timeoutMs);
+  } catch {
+    if (requiresFlagValidation) {
+      throw new CliUsageError(
+        buildUnvalidatedCallFlagMessage(genericLongFlagArguments?.[0]?.token ?? '--', server, tool)
+      );
+    }
+  }
   if (!tools) {
     return args;
   }
   const toolInfo = tools.find((entry) => entry.tool.name === tool);
-  const schema = toolInfo?.tool.inputSchema as { properties?: Record<string, unknown> } | undefined;
-  if (!schema?.properties) {
+  const schema = toolInfo?.tool.inputSchema;
+  const schemaProperties = readSchemaProperties(schema);
+  const declaredOptions = new Set(toolInfo?.options.map((option) => option.property) ?? []);
+  for (const key of Object.keys(schemaProperties ?? {})) {
+    declaredOptions.add(key);
+  }
+  if (requiresFlagValidation && (!toolInfo || (!schemaProperties && declaredOptions.size === 0))) {
+    throw new CliUsageError(
+      buildUnvalidatedCallFlagMessage(genericLongFlagArguments?.[0]?.token ?? '--', server, tool)
+    );
+  }
+  for (const flag of genericLongFlagArguments ?? []) {
+    if (!declaredOptions.has(flag.key)) {
+      throw new CliUsageError(buildUnknownCallFlagMessage(flag.token));
+    }
+  }
+  if (!schemaProperties) {
     return args;
   }
 
@@ -365,7 +397,7 @@ async function enforceSchemaAwareArgumentTypes(
     if (typeof args[key] !== 'number') {
       continue;
     }
-    if (!schemaAllowsString(schema.properties[key])) {
+    if (!schemaAllowsString(schemaProperties[key])) {
       continue;
     }
     corrected ??= { ...args };
@@ -375,7 +407,7 @@ async function enforceSchemaAwareArgumentTypes(
     if (typeof args[key] !== 'string') {
       continue;
     }
-    const descriptor = schema.properties[key];
+    const descriptor = schemaProperties[key];
     if (!schemaAllowsArray(descriptor) || schemaAllowsString(descriptor)) {
       continue;
     }
@@ -383,6 +415,17 @@ async function enforceSchemaAwareArgumentTypes(
     corrected[key] = [rawValue];
   }
   return corrected ?? args;
+}
+
+function readSchemaProperties(schema: unknown): Record<string, unknown> | undefined {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
+    return undefined;
+  }
+  const properties = (schema as Record<string, unknown>).properties;
+  if (!properties || typeof properties !== 'object' || Array.isArray(properties)) {
+    return undefined;
+  }
+  return properties as Record<string, unknown>;
 }
 
 function schemaAllowsString(descriptor: unknown): boolean {

@@ -89,6 +89,51 @@ describe('daemon call fast path', () => {
     );
   });
 
+  it('uses normal call handling to schema-validate generic long tool flags', async () => {
+    mocks.daemonListTools.mockResolvedValue([
+      {
+        name: 'list_pages',
+        inputSchema: { type: 'object', properties: { includeHidden: { type: 'boolean' } } },
+      },
+    ]);
+    const { runCli } = await import('../src/cli.js');
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runCli(['call', 'chrome-devtools.list_pages', '--include-hidden', 'true', '--output', 'json']);
+
+    expect(mocks.daemonListTools).toHaveBeenCalledWith(
+      expect.objectContaining({
+        server: 'chrome-devtools',
+        includeSchema: true,
+        autoAuthorize: true,
+        allowCachedAuth: true,
+      })
+    );
+    expect(mocks.daemonCallTool).toHaveBeenCalledWith(
+      expect.objectContaining({
+        server: 'chrome-devtools',
+        tool: 'list_pages',
+        args: { includeHidden: true },
+      })
+    );
+  });
+
+  it('keeps --params JSON calls on the simple daemon fast path', async () => {
+    const { runCli } = await import('../src/cli.js');
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runCli(['call', 'chrome-devtools.list_pages', '--params', '{"limit":5}', '--output', 'json']);
+
+    expect(mocks.daemonListTools).not.toHaveBeenCalled();
+    expect(mocks.daemonCallTool).toHaveBeenCalledWith(
+      expect.objectContaining({
+        server: 'chrome-devtools',
+        tool: 'list_pages',
+        args: { limit: 5 },
+      })
+    );
+  });
+
   it('leaves CloudBase calls on the config-aware runtime path', async () => {
     mocks.createRuntime.mockRejectedValue(new Error('runtime path used'));
     const { runCli } = await import('../src/cli.js');

@@ -131,7 +131,34 @@ describe('CLI call execution behavior', () => {
     logSpy.mockRestore();
   });
 
-  it('does not load schemas for numeric values supplied via --args JSON', async () => {
+  it('rejects undeclared long flags after metadata lookup without dispatching a tool call', async () => {
+    const { handleCall } = await cliModulePromise;
+    const { runtime, callTool, listTools } = createRuntimeStub({
+      email: [
+        {
+          name: 'send_email',
+          inputSchema: {
+            type: 'object',
+            properties: { subject: { type: 'string' } },
+          },
+        },
+      ],
+    });
+
+    await expect(handleCall(runtime, ['email.send_email', '--bogus', 'Test'])).rejects.toThrow(
+      "Unknown flag '--bogus' passed to call command."
+    );
+
+    expect(listTools).toHaveBeenCalledWith('email', {
+      autoAuthorize: true,
+      includeSchema: true,
+      allowCachedAuth: true,
+      disableOAuth: undefined,
+    });
+    expect(callTool).not.toHaveBeenCalled();
+  });
+
+  it.each(['--args', '--params'] as const)('forwards JSON arguments supplied via %s', async (flag) => {
     const { handleCall } = await cliModulePromise;
     const { runtime, callTool, listTools } = createRuntimeStub({
       linear: [
@@ -148,7 +175,7 @@ describe('CLI call execution behavior', () => {
     });
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await handleCall(runtime, ['linear.list_issues', '--args', '{"limit":5}']);
+    await handleCall(runtime, ['linear.list_issues', flag, '{"limit":5}']);
 
     expect(callTool).toHaveBeenCalledWith('linear', 'list_issues', expect.objectContaining({ args: { limit: 5 } }));
     expect(listTools).not.toHaveBeenCalled();

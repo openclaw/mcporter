@@ -2,6 +2,10 @@
 
 ## [0.13.2] - Unreleased
 
+### CLI
+
+- Accept `--params` as an alias for JSON call arguments and reject undeclared long-form tool flags before dispatch.
+
 ### OAuth
 
 - Preserve refreshable dynamic OAuth client registrations across fresh callback ports, replacing an obsolete redirect registration only when interactive authorization is required. (Issue #290, thanks @elecnix)

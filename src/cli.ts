@@ -521,7 +521,8 @@ async function maybeHandleSimpleDaemonFastCall(
     parsed.saveImagesDir ||
     (parsed.positionalArgs?.length ?? 0) > 0 ||
     parsed.schemaStringCoercionCandidates ||
-    parsed.schemaArrayCoercionCandidates
+    parsed.schemaArrayCoercionCandidates ||
+    (parsed.genericLongFlagArguments?.length ?? 0) > 0
   ) {
     return false;
   }
