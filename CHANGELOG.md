@@ -1,11 +1,26 @@
 # mcporter Changelog
 
-## [0.13.1] - Unreleased
+## [0.13.3] - Unreleased
+
+### CLI
+
+- Keep legacy HTTP list and call operations moving when standalone SSE response headers remain pending, while preserving delayed server-to-client messages. (PR #282, thanks @Quack6765)
+
+## [0.13.2] - 2026-08-08
+
+### CLI
+
+- Accept `--params` as an alias for JSON call arguments and reject undeclared long-form tool flags before dispatch.
+
+### OAuth
+
+- Preserve refreshable dynamic OAuth client registrations across fresh callback ports, replacing an obsolete redirect registration only when interactive authorization is required. (Issue #290, thanks @elecnix)
+
+## [0.13.1] - 2026-08-08
 
 ### CLI
 
 - Authenticate OpenClaw extension-backed Chrome control with Browser Relay Authentication v2 over one retained loopback socket from HMAC challenge through CDP upgrade, never transmitting the host key or retrying legacy relay auth, while preserving configurable `prefer` / `require` / `off` routing and the OS-protected one-use child handoff.
-- Keep legacy HTTP list and call operations moving when standalone SSE response headers remain pending, while preserving delayed server-to-client messages. (PR #282, thanks @Quack6765)
 - Tear down both sides of streamed `mcporter serve --http` responses on client aborts or body errors, preventing orphaned readers. (PR #280, thanks @SebTardif)
 
 ### Daemon
@@ -17,9 +32,11 @@
 
 - Honor `MCPORTER_OAUTH_NO_BROWSER` across serve/daemon OAuth flows, fail once with actionable reauthorization guidance without logging authorization URLs, and restart daemons when the normalized setting changes. (PR #284 / issue #283, thanks @vitalijssilins)
 - Accept RFC 7591 dynamic-client-registration arrays and timestamps in `mcporter vault set` while preserving null-compatible partial client information and provider metadata. (PR #288 / issue #286, thanks @feniix)
+- Sanitize malformed `mcporter vault set` JSON diagnostics and reject non-finite `expires_at` / `expiresAt` token values before persistence. (Follow-up to PR #287, thanks @Yigtwxx)
 
 ### Tooling
 
+- Refresh pnpm, GitHub Actions runtimes, and mature security overrides for fast-uri, Hono, ip-address, and nanoid.
 - Remove the obsolete scoped-commit helper and use standard Git commands in isolated worktrees.
 
 ## [0.13.0] - 2026-08-02

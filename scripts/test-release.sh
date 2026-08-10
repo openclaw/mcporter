@@ -419,6 +419,59 @@ assert_fails env -u GH_TOKEN -u GITHUB_TOKEN \
 release_workflow="$ROOT/.github/workflows/release-assets.yml"
 publish_workflow="$ROOT/.github/workflows/release.yml"
 homebrew_workflow="$ROOT/.github/workflows/update-homebrew-tap.yml"
+PUBLISH_WORKFLOW="$publish_workflow" HOMEBREW_WORKFLOW="$homebrew_workflow" ruby <<'RUBY'
+require 'yaml'
+
+def contract_assert(condition, message)
+  return if condition
+
+  warn "release contract test failed: #{message}"
+  exit 1
+end
+
+def named_step(job, name)
+  job.fetch('steps').find { |step| step['name'] == name }
+end
+
+publish = YAML.safe_load_file(ENV.fetch('PUBLISH_WORKFLOW'), aliases: true)
+publish_jobs = publish.fetch('jobs')
+release_job = publish_jobs.fetch('release')
+proof_step = named_step(release_job, 'Verify protected native proof and published assets')
+contract_assert(proof_step, 'release proof step is missing')
+contract_assert(release_job.dig('permissions', 'actions') == 'read', 'release proof lacks actions: read')
+contract_assert(proof_step.dig('env', 'GH_TOKEN') == '${{ github.token }}', 'release proof does not use github.token')
+contract_assert(!File.read(ENV.fetch('PUBLISH_WORKFLOW')).include?('HOMEBREW_TAP_TOKEN'), 'release workflow still depends on the Homebrew PAT')
+
+dispatch_job = publish_jobs.fetch('dispatch-homebrew')
+dispatch_step = named_step(dispatch_job, 'Dispatch protected Homebrew update')
+contract_assert(dispatch_step, 'protected Homebrew dispatch step is missing')
+contract_assert(dispatch_job.dig('permissions', 'actions') == 'write', 'same-repository dispatch lacks actions: write')
+contract_assert(dispatch_step.dig('env', 'GH_TOKEN') == '${{ github.token }}', 'same-repository dispatch does not use github.token')
+
+homebrew = YAML.safe_load_file(ENV.fetch('HOMEBREW_WORKFLOW'), aliases: true)
+contract_assert(homebrew.dig('permissions', 'actions') == 'read', 'Homebrew proof workflow lacks actions: read')
+homebrew_job = homebrew.fetch('jobs').fetch('update-homebrew-tap')
+homebrew_proof = named_step(homebrew_job, 'Verify protected release for tap update')
+contract_assert(homebrew_proof, 'Homebrew proof step is missing')
+contract_assert(homebrew_proof.dig('env', 'GH_TOKEN') == '${{ github.token }}', 'Homebrew same-repository proof does not use github.token')
+contract_assert(!homebrew_proof.to_s.include?('HOMEBREW_TAP_TOKEN'), 'Homebrew same-repository proof can access the tap PAT')
+
+pat_value = '${{ secrets.HOMEBREW_TAP_TOKEN }}'
+boundary_names = ['Dispatch tap update', 'Wait for tap update']
+contract_assert(boundary_names.all? { |name| named_step(homebrew_job, name) }, 'cross-repository Homebrew boundary step is missing')
+homebrew_job.fetch('steps').each do |step|
+  next unless step.key?('name')
+
+  if boundary_names.include?(step['name'])
+    contract_assert(step.fetch('env', {}) == { 'HOMEBREW_TAP_TOKEN' => pat_value }, "#{step['name']} exposes unexpected credentials")
+    contract_assert(step.fetch('run', '').include?('test -n "$HOMEBREW_TAP_TOKEN"'), "#{step['name']} does not require the tap PAT")
+    contract_assert(step.fetch('run', '').include?('GH_TOKEN="$HOMEBREW_TAP_TOKEN" gh '), "#{step['name']} does not bind the PAT at the cross-repository gh call")
+    contract_assert(step.fetch('run', '').include?('--repo steipete/homebrew-tap'), "#{step['name']} is not scoped to the cross-repository tap")
+  else
+    contract_assert(!step.to_s.include?('HOMEBREW_TAP_TOKEN'), "#{step['name']} can access the tap PAT outside the cross-repository boundary")
+  end
+end
+RUBY
 assert_fails "$ROOT/scripts/package-release.sh" v1.2.3-rc.1
 assert_fails "$ROOT/scripts/verify-release.sh" v1.2.3-rc.1 "$WORK/missing-prerelease-assets"
 grep -Fq '[[ "$RELEASE_TAG" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]' "$release_workflow"
@@ -451,7 +504,6 @@ grep -Fq 'pnpm check' "$publish_workflow"
 grep -Fq 'pnpm test' "$publish_workflow"
 grep -Fq 'id-token: write' "$publish_workflow"
 grep -Fq 'ACTIONS_ID_TOKEN_REQUEST_URL' "$publish_workflow"
-grep -Fq 'secrets.HOMEBREW_TAP_TOKEN' "$publish_workflow"
 grep -Fq 'workflow run update-homebrew-tap.yml' "$publish_workflow"
 grep -Fq 'verify-published-release-proof.mjs' "$publish_workflow"
 grep -Fq 'verify-npm-publication.mjs' "$publish_workflow"
@@ -474,7 +526,6 @@ done
 grep -Eq 'GITHUB_REF.*expected_ref' "$homebrew_workflow"
 grep -Eq 'GITHUB_WORKFLOW_REF.*expected_workflow_ref' "$homebrew_workflow"
 ! grep -Eq '^  release:' "$homebrew_workflow" || fail 'Homebrew workflow regained automatic release trigger'
-[[ "$(grep -Ec '^          GH_TOKEN:' "$homebrew_workflow")" == 2 ]] || fail 'Homebrew token scope changed'
 grep -Eq 'native_verifier_run_id' "$homebrew_workflow"
 grep -Eq 'gh run download' "$homebrew_workflow"
 grep -Eq 'verified-assets-arm64' "$homebrew_workflow"

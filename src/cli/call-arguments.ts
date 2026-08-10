@@ -14,6 +14,11 @@ import { consumeOutputFormat } from './output-format.js';
 import type { OutputFormat } from './output-utils.js';
 import { consumeTimeoutFlag } from './timeouts.js';
 
+export interface GenericLongFlagArgument {
+  key: string;
+  token: string;
+}
+
 export interface CallArgsParseResult {
   selector?: string;
   server?: string;
@@ -21,6 +26,7 @@ export interface CallArgsParseResult {
   args: Record<string, unknown>;
   schemaStringCoercionCandidates?: Record<string, string>;
   schemaArrayCoercionCandidates?: Record<string, string>;
+  genericLongFlagArguments?: GenericLongFlagArgument[];
   positionalArgs?: unknown[];
   tailLog: boolean;
   output: OutputFormat;
@@ -66,6 +72,7 @@ const FLAG_HANDLERS: Record<string, FlagHandler> = {
   '--raw-strings': handleRawStringsFlag,
   '--no-coerce': handleNoCoerceFlag,
   '--args': handleArgsFlag,
+  '--params': handleParamsFlag,
   '--json': handleJsonArgsFlag,
 };
 
@@ -293,6 +300,10 @@ function handleArgsFlag(context: FlagHandlerContext): number {
   return consumeJsonArgsFlag(context, '--args', '--args requires a JSON value.');
 }
 
+function handleParamsFlag(context: FlagHandlerContext): number {
+  return consumeJsonArgsFlag(context, '--params', '--params requires a JSON value.');
+}
+
 function handleJsonArgsFlag(context: FlagHandlerContext): number {
   return consumeJsonArgsFlag(context, '--json', '--json requires a JSON object value.');
 }
@@ -335,6 +346,8 @@ function handleNamedArgumentFlag(context: FlagHandlerContext): number {
     context.result.schemaArrayCoercionCandidates ??= {};
     context.result.schemaArrayCoercionCandidates[key] = schemaValue;
   }
+  context.result.genericLongFlagArguments ??= [];
+  context.result.genericLongFlagArguments.push({ key, token });
   context.result.args[key] = value;
   return context.index + (eqIndex === -1 ? 2 : 1);
 }

@@ -14,7 +14,7 @@ import { validateClientMetadataUrl } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from './config.js';
 import { suppressBrowserLaunchFromEnv } from './oauth-browser-suppression.js';
 import { buildStaticClientInformation } from './oauth-client-info.js';
-import type { OAuthPersistence } from './oauth-persistence.js';
+import type { OAuthPersistence, OAuthPersistenceSnapshot } from './oauth-persistence.js';
 import { buildOAuthPersistence } from './oauth-persistence.js';
 
 const CALLBACK_HOST = '127.0.0.1';
@@ -49,6 +49,13 @@ export class BrowserLaunchSuppressedError extends Error {
     );
     this.name = 'BrowserLaunchSuppressedError';
     this.serverName = serverName;
+  }
+}
+
+export class OAuthRedirectUriMismatchError extends Error {
+  constructor(serverName: string) {
+    super(`OAuth client registration for '${serverName}' used an obsolete redirect URI.`);
+    this.name = 'OAuthRedirectUriMismatchError';
   }
 }
 
@@ -120,6 +127,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     persistence: OAuthPersistence,
     redirectUrl: URL,
     logger: OAuthLogger,
+    private readonly usesDynamicPort: boolean,
     private readonly options: OAuthSessionOptions = {}
   ) {
     this.redirectUrlValue = redirectUrl;
@@ -181,31 +189,14 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       redirectUrl.pathname = callbackPath;
     }
 
-    // When using a dynamic port, the redirect URI changes every run.  If a
-    // previous client registration is cached with a different redirect URI the
-    // auth server will reject the request with `invalid_redirect_uri`.  Clear
-    // the stale registration so the next flow re-registers with the new URI.
-    // Wrapped in try/catch so non-recoverable persistence errors (for example,
-    // permission issues) close the already-bound callback server instead of leaking it.
-    if (usesDynamicPort) {
-      try {
-        const cachedClient = await persistence.readClientInfo();
-        const cachedRedirect = firstRedirectUri(cachedClient);
-        if (cachedRedirect && cachedRedirect !== redirectUrl.toString()) {
-          logger.info(
-            `Redirect URI changed (${cachedRedirect} → ${redirectUrl.toString()}); clearing stale client registration.`
-          );
-          await persistence.clear('client');
-        }
-      } catch (error) {
-        await new Promise<void>((resolve) => {
-          server.close(() => resolve());
-        });
-        throw error;
-      }
-    }
-
-    const provider = new PersistentOAuthClientProvider(definition, persistence, redirectUrl, logger, options);
+    const provider = new PersistentOAuthClientProvider(
+      definition,
+      persistence,
+      redirectUrl,
+      logger,
+      usesDynamicPort,
+      options
+    );
     provider.attachServer(server);
     return {
       provider,
@@ -328,6 +319,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   }
 
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {
+    await this.invalidateObsoleteDynamicRegistration();
     this.authorizationRedirectStarted = true;
     this.ensureAuthorizationDeferred();
     const challenge = authorizationUrl.searchParams.get('code_challenge');
@@ -486,6 +478,42 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   private clearInteractiveAuthorization(): void {
     this.interactiveAuthorization = null;
     this.pendingVerifiersByChallenge.clear();
+  }
+
+  private async invalidateObsoleteDynamicRegistration(): Promise<void> {
+    if (!this.usesDynamicPort || this.definition.oauthClientId) {
+      return;
+    }
+    let snapshot: OAuthPersistenceSnapshot;
+    try {
+      snapshot = await this.persistence.readSnapshot();
+    } catch (error) {
+      await this.close();
+      throw error;
+    }
+    const cachedClient = snapshot.clientInfo;
+    // Configuring a metadata URL does not mean the authorization server accepted
+    // URL-based client IDs. The SDK falls back to DCR when support is absent, so
+    // only preserve the registration when that URL is the client identity in use.
+    if (cachedClient?.client_id === this.definition.oauthClientMetadataUrl) {
+      return;
+    }
+    const cachedRedirect = firstRedirectUri(cachedClient);
+    if (!cachedClient || !cachedRedirect || cachedRedirect === this.redirectUrlValue.toString()) {
+      return;
+    }
+    this.logger.info(
+      `Redirect URI changed (${cachedRedirect} → ${this.redirectUrlValue.toString()}); replacing obsolete client registration before interactive authorization.`
+    );
+    try {
+      // A failed refresh makes this exact token/client pair unusable for the
+      // upcoming callback. Generation checks preserve any concurrent winner.
+      await this.persistence.clearRejectedCredentials(snapshot.tokens, cachedClient);
+    } catch (error) {
+      await this.close();
+      throw error;
+    }
+    throw new OAuthRedirectUriMismatchError(this.definition.name);
   }
 }
 

@@ -2,7 +2,7 @@ export const CALL_HELP_ARGUMENT_LINES = [
   '  key=value / key:value  Flag-style named arguments.',
   '  key=@path              Read a UTF-8 string value from a file; use @@ for a literal @.',
   '  function-call syntax   \'server.tool(arg: "value", other: 1)\'.',
-  '  --args <json>          Provide a JSON object payload.',
+  '  --args, --params <json>  Provide a JSON object payload.',
   '  positional values      Accepted when schema order is known.',
   '  --                     Treat remaining tokens as literal positional values.',
 ] as const;
@@ -26,11 +26,20 @@ export const CALL_HELP_EXAMPLE_LINES = [
 ] as const;
 
 export function buildUnknownCallFlagMessage(token: string): string {
-  const argumentName = token.startsWith('--') ? token.slice(2) : token;
+  const argumentName = (token.startsWith('--') ? token.slice(2) : token).split('=', 1)[0];
   return [
     `Unknown flag '${token}' passed to call command.`,
     `If you intended to pass a tool argument, use '${argumentName}=<value>' or --args '{"${argumentName}": ...}'.`,
     "If you intended to pass a literal positional value, insert '--' before it.",
+    "Run 'mcporter call --help' to see available flags.",
+  ].join('\n');
+}
+
+export function buildUnvalidatedCallFlagMessage(token: string, server: string, tool: string): string {
+  const argumentName = (token.startsWith('--') ? token.slice(2) : token).split('=', 1)[0];
+  return [
+    `Unable to validate flag '${token}' because ${server}.${tool} did not provide usable tool metadata with an input schema.`,
+    `Use '${argumentName}=<value>' or --args '{"${argumentName}": ...}' to pass this argument without long-flag validation.`,
     "Run 'mcporter call --help' to see available flags.",
   ].join('\n');
 }

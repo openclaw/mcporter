@@ -47,6 +47,7 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
   pseudo-TS syntax and `--arg` flags.
 - Useful flags:
   - `--server`, `--tool` – alternate way to target a tool.
+  - `--args <json>`, `--params <json>` – provide a JSON object payload.
   - `--` – stop flag parsing so remaining tokens stay literal positional values.
   - `--timeout <ms>` – override the 60 s call timeout; `MCPORTER_CALL_TIMEOUT` provides the equivalent environment override.
   - `--output text|markdown|json|raw` – choose how to render the `CallResult`.
@@ -54,6 +55,7 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
   - `--raw-strings` – disable numeric coercion for flag-style and positional values.
   - `--no-coerce` – disable all flag-style/positional value coercion.
   - `key=@path` / `--key @path` – read a named UTF-8 string argument from a file; prefix with `@@` for a literal leading `@`.
+  - Generic long tool flags are validated against the selected tool schema before dispatch.
   - `--tail-log` – stream tail output when the tool returns log handles.
   - `--no-oauth` – never start an interactive OAuth flow; use cached
     tokens only while keeping eligible connections pooled.

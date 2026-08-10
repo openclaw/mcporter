@@ -1,6 +1,6 @@
 {
   "name": "mcporter",
-  "version": "0.13.0",
+  "version": "0.13.2",
   "description": "TypeScript runtime and CLI for connecting to configured Model Context Protocol servers.",
   "keywords": [
     "cli",
@@ -111,5 +111,5 @@
   "engines": {
     "node": ">=24"
   },
-  "packageManager": "pnpm@10.33.2"
+  "packageManager": "pnpm@10.34.5"
 }

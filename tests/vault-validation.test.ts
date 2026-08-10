@@ -56,6 +56,18 @@ describe('vault command input validation', () => {
       'tokens.expires_in must be a finite number',
     ],
     [
+      { tokens: { access_token: 'token', token_type: 'Bearer', expires_at: 'soon' } },
+      'tokens.expires_at must be a finite number',
+    ],
+    [
+      { tokens: { access_token: 'token', token_type: 'Bearer', expires_at: Number.NaN } },
+      'tokens.expires_at must be a finite number',
+    ],
+    [
+      { tokens: { access_token: 'token', token_type: 'Bearer', expiresAt: Number.NEGATIVE_INFINITY } },
+      'tokens.expiresAt must be a finite number',
+    ],
+    [
       { tokens: { access_token: 'token', token_type: 'Bearer' }, clientInfo: [] },
       "Vault payload 'clientInfo' must be an object",
     ],
@@ -83,5 +95,36 @@ describe('vault command input validation', () => {
     await expect(handleVault(runtime, ['set', 'calendar', '--stdin'], stdin(payload))).rejects.toThrow(
       message as string
     );
+  });
+
+  it('sanitizes malformed stdin JSON without retaining its input prefix', async () => {
+    const marker = 'VAULT_SECRET_MARKER_7H3K9';
+    const error = await handleVault(runtime, ['set', 'calendar', '--stdin'], {
+      readStdin: async () => `${marker} malformed`,
+    }).then(
+      () => undefined,
+      (reason: unknown) => reason
+    );
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe('Vault payload from stdin is not valid JSON.');
+    expect(String(error)).not.toContain(marker);
+    expect((error as Error).stack).not.toContain(marker);
+  });
+
+  it('names a malformed credential file without echoing its contents', async () => {
+    const payloadPath = path.join(tempDir, 'tokens.json');
+    const marker = 'VAULT_FILE_SECRET_MARKER_2Q8M4';
+    await fs.writeFile(payloadPath, `${marker} malformed`, 'utf8');
+
+    const error = await handleVault(runtime, ['set', 'calendar', '--tokens-file', payloadPath]).then(
+      () => undefined,
+      (reason: unknown) => reason
+    );
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe(`Vault payload file '${payloadPath}' is not valid JSON.`);
+    expect(String(error)).not.toContain(marker);
+    expect((error as Error).stack).not.toContain(marker);
   });
 });

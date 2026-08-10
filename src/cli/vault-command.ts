@@ -9,6 +9,8 @@ interface VaultPayload {
   readonly clientInfo?: OAuthClientInformationMixed;
 }
 
+type VaultPayloadSource = { kind: 'file'; path: string } | { kind: 'stdin' };
+
 export interface VaultCommandOptions {
   readonly readStdin?: () => Promise<string>;
 }
@@ -44,7 +46,7 @@ async function handleVaultSet(
     throw new CliUsageError(`Unknown vault set argument '${args[0]}'.`);
   }
   const definition = runtime.getDefinition(server);
-  const payload = validateVaultPayload(JSON.parse(await readPayload(source, options)));
+  const payload = validateVaultPayload(parseVaultPayload(await readPayload(source, options), source));
   await saveVaultEntry(definition, {
     tokens: payload.tokens,
     ...(payload.clientInfo ? { clientInfo: payload.clientInfo } : {}),
@@ -65,7 +67,7 @@ async function handleVaultClear(runtime: Pick<Runtime, 'getDefinition'>, args: s
   console.log(`Cleared OAuth vault entry for '${definition.name}'`);
 }
 
-function consumeVaultPayloadSource(args: string[]): { kind: 'file'; path: string } | { kind: 'stdin' } {
+function consumeVaultPayloadSource(args: string[]): VaultPayloadSource {
   const fileIndex = args.indexOf('--tokens-file');
   const stdinIndex = args.indexOf('--stdin');
   if (fileIndex !== -1 && stdinIndex !== -1) {
@@ -86,10 +88,7 @@ function consumeVaultPayloadSource(args: string[]): { kind: 'file'; path: string
   throw new CliUsageError('Usage: mcporter vault set <server> (--tokens-file <path> | --stdin)');
 }
 
-async function readPayload(
-  source: { kind: 'file'; path: string } | { kind: 'stdin' },
-  options: VaultCommandOptions
-): Promise<string> {
+async function readPayload(source: VaultPayloadSource, options: VaultCommandOptions): Promise<string> {
   if (source.kind === 'file') {
     return fs.readFile(source.path, 'utf8');
   }
@@ -105,6 +104,20 @@ async function readPayload(
     process.stdin.on('end', () => resolve(data));
     process.stdin.on('error', reject);
   });
+}
+
+function parseVaultPayload(raw: string, source: VaultPayloadSource): unknown {
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    // V8 parser diagnostics can quote a prefix of the credential input. Name
+    // only the source so secrets and token fragments cannot reach logs.
+    throw new CliUsageError(
+      source.kind === 'file'
+        ? `Vault payload file '${source.path}' is not valid JSON.`
+        : 'Vault payload from stdin is not valid JSON.'
+    );
+  }
 }
 
 function validateVaultPayload(value: unknown): VaultPayload {
@@ -143,11 +156,13 @@ function validateOAuthTokens(tokens: Record<string, unknown>): void {
       throw new CliUsageError(`Vault payload tokens.${key} must be a string.`);
     }
   }
-  if (
-    tokens.expires_in !== undefined &&
-    (!Number.isFinite(tokens.expires_in) || typeof tokens.expires_in !== 'number')
-  ) {
-    throw new CliUsageError('Vault payload tokens.expires_in must be a finite number.');
+  // Keep the write boundary aligned with isStoredOAuthTokens: zero, negative,
+  // and fractional values remain valid, but every accepted alias is finite.
+  for (const key of ['expires_in', 'expires_at', 'expiresAt'] as const) {
+    const value = tokens[key];
+    if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value))) {
+      throw new CliUsageError(`Vault payload tokens.${key} must be a finite number.`);
+    }
   }
 }
 

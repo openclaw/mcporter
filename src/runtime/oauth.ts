@@ -6,7 +6,7 @@ import {
   type Transport,
 } from '@modelcontextprotocol/client';
 import type { Logger } from '../logging.js';
-import type { OAuthAuthorizationResponse, OAuthSession } from '../oauth.js';
+import { type OAuthAuthorizationResponse, OAuthRedirectUriMismatchError, type OAuthSession } from '../oauth.js';
 import { isUnauthorizedError } from '../runtime-oauth-support.js';
 
 export const DEFAULT_OAUTH_CODE_TIMEOUT_MS = 300_000;
@@ -34,6 +34,7 @@ interface OAuthConnectState {
   activeTransport: OAuthCapableTransport;
   attempt: number;
   hasCompletedAuthFlow: boolean;
+  repairedRedirectMismatch: boolean;
 }
 
 export class OAuthTimeoutError extends Error {
@@ -136,6 +137,7 @@ export async function connectWithAuth(
     activeTransport: transport,
     attempt: 0,
     hasCompletedAuthFlow: false,
+    repairedRedirectMismatch: false,
   };
 
   while (true) {
@@ -155,6 +157,15 @@ export async function connectWithAuth(
       }
       return state.activeTransport;
     } catch (error) {
+      if (error instanceof OAuthRedirectUriMismatchError) {
+        if (state.repairedRedirectMismatch || !recreateTransport) {
+          await closeReplacementTransport(transport, state.activeTransport);
+          throw markOAuthFlowError(error);
+        }
+        state.repairedRedirectMismatch = true;
+        state.activeTransport = await recreateOAuthTransport(state.activeTransport, recreateTransport);
+        continue;
+      }
       const unauthorized = isUnauthorizedError(error);
       if (!shouldRetryAuthorization(state, unauthorized, session)) {
         await closeReplacementTransport(transport, state.activeTransport);
@@ -223,6 +234,15 @@ async function closeReplacementTransport(
   await activeTransport.close().catch(() => {});
 }
 
+async function recreateOAuthTransport(
+  activeTransport: OAuthCapableTransport,
+  recreateTransport: (transport: OAuthCapableTransport) => Promise<OAuthCapableTransport>
+): Promise<OAuthCapableTransport> {
+  const replacement = await recreateTransport(activeTransport);
+  await activeTransport.close().catch(() => {});
+  return replacement;
+}
+
 async function completeAuthorizationChallenge(
   transport: OAuthCapableTransport,
   session: OAuthSession,
@@ -258,7 +278,8 @@ async function completeProactiveAuthorization(
   logger: Logger,
   options: Pick<ConnectWithAuthOptions, 'serverName' | 'oauthTimeoutMs' | 'serverUrl' | 'fetchFn'>
 ): Promise<void> {
-  if (!options.serverUrl) {
+  const serverUrl = options.serverUrl;
+  if (!serverUrl) {
     return;
   }
   try {
@@ -266,10 +287,20 @@ async function completeProactiveAuthorization(
     if (hasUsableCachedAccessToken(cachedTokens)) {
       return;
     }
-    const result = await sdkAuth(session.provider, {
-      serverUrl: options.serverUrl,
-      fetchFn: options.fetchFn,
-    });
+    const runAuth = () =>
+      sdkAuth(session.provider, {
+        serverUrl,
+        fetchFn: options.fetchFn,
+      });
+    let result;
+    try {
+      result = await runAuth();
+    } catch (error) {
+      if (!(error instanceof OAuthRedirectUriMismatchError)) {
+        throw error;
+      }
+      result = await runAuth();
+    }
     if (result !== 'REDIRECT') {
       await session.close().catch(() => {});
       return;

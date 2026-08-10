@@ -1,6 +1,6 @@
 import { type Client, UnauthorizedError, validateAuthorizationResponseIssuer } from '@modelcontextprotocol/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { OAuthSession } from '../src/oauth.js';
+import { OAuthRedirectUriMismatchError, type OAuthSession } from '../src/oauth.js';
 import {
   connectWithAuth,
   isOAuthFlowError,
@@ -121,6 +121,28 @@ describe('connectWithAuth', () => {
     expect(connect).toHaveBeenNthCalledWith(1, transport);
     expect(connect).toHaveBeenNthCalledWith(2, replacement);
     expect(connectedTransport).toBe(replacement);
+  });
+
+  it('recreates the transport once after repairing an obsolete redirect registration', async () => {
+    const mismatch = new OAuthRedirectUriMismatchError('test-server');
+    const connect = vi.fn().mockRejectedValueOnce(mismatch).mockRejectedValueOnce(mismatch);
+    const client = { connect } as unknown as Client;
+    const { session } = createPendingAuthorizationSession();
+    const transport = new MockTransport();
+    const replacement = new MockTransport();
+    const recreateTransport = vi.fn(async () => replacement);
+
+    await expect(
+      connectWithAuth(client, transport, session, createLogger(), {
+        serverName: 'test-server',
+        maxAttempts: 1,
+        recreateTransport,
+      })
+    ).rejects.toSatisfy((error: unknown) => error === mismatch && isOAuthFlowError(error));
+
+    expect(connect).toHaveBeenNthCalledWith(1, transport);
+    expect(connect).toHaveBeenNthCalledWith(2, replacement);
+    expect(recreateTransport).toHaveBeenCalledTimes(1);
   });
 
   it('marks reconnect failures after auth as post-auth transport errors', async () => {
@@ -297,6 +319,32 @@ describe('connectWithAuth', () => {
     });
     expect(waitForAuthorizationCode).not.toHaveBeenCalled();
     expect(transport.calls).toEqual([]);
+    expect(session.close).toHaveBeenCalled();
+    expect(connectedTransport).toBe(transport);
+  });
+
+  it('retries proactive OAuth once after repairing an obsolete redirect registration', async () => {
+    const connect = vi.fn().mockResolvedValueOnce(undefined);
+    const client = { connect } as unknown as Client;
+    const { session, waitForAuthorizationCode } = createPendingAuthorizationSession();
+    session.provider.tokens = vi.fn(async () => ({
+      access_token: 'expired-token',
+      token_type: 'Bearer',
+      expires_at: Math.floor(Date.now() / 1000) - 60,
+    }));
+    mocks.sdkAuth
+      .mockRejectedValueOnce(new OAuthRedirectUriMismatchError('calendar'))
+      .mockResolvedValueOnce('AUTHORIZED');
+
+    const transport = new MockTransport();
+    const connectedTransport = await connectWithAuth(client, transport, session, createLogger(), {
+      serverName: 'calendar',
+      maxAttempts: 1,
+      serverUrl: 'https://calendar.example/mcp',
+    });
+
+    expect(mocks.sdkAuth).toHaveBeenCalledTimes(2);
+    expect(waitForAuthorizationCode).not.toHaveBeenCalled();
     expect(session.close).toHaveBeenCalled();
     expect(connectedTransport).toBe(transport);
   });

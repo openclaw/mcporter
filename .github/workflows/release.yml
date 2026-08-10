@@ -16,7 +16,7 @@ concurrency:
 
 env:
   NODE_VERSION: 24
-  PNPM_VERSION: 10.33.2
+  PNPM_VERSION: 10.34.5
 
 jobs:
   release:
@@ -29,6 +29,7 @@ jobs:
     # for openclaw/mcporter and .github/workflows/release.yml. No NPM_TOKEN is used.
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
       id-token: write
     outputs:
@@ -89,11 +90,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: pnpm/action-setup@v6.0.8
+      - uses: pnpm/action-setup@v6.0.10
         with:
           version: ${{ env.PNPM_VERSION }}
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           check-latest: true
@@ -158,13 +159,13 @@ jobs:
         shell: bash
         env:
           DEFAULT_BRANCH: ${{ steps.release.outputs.default_branch }}
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           RELEASE_SHA: ${{ steps.tag.outputs.sha }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
           [[ -n "$GH_TOKEN" ]] || {
-            echo "::error::HOMEBREW_TAP_TOKEN is required to read protected verifier artifacts and dispatch Homebrew."
+            echo "::error::The built-in GitHub token is required to read protected verifier artifacts."
             exit 1
           }
 
@@ -278,7 +279,7 @@ jobs:
           ref: ${{ needs.release.outputs.tag }}
           persist-credentials: false
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           check-latest: true
@@ -293,13 +294,14 @@ jobs:
     needs: release
     runs-on: ubuntu-latest
     permissions:
+      actions: write
       contents: read
     steps:
       - name: Dispatch protected Homebrew update
         shell: bash
         env:
           DEFAULT_BRANCH: ${{ needs.release.outputs.default_branch }}
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           NATIVE_VERIFIER_RUN_ID: ${{ needs.release.outputs.native_verifier_run_id }}
           RELEASE_TAG: ${{ needs.release.outputs.tag }}
         run: |

@@ -120,6 +120,15 @@ describe('CLI call positional and schema validation', () => {
     );
   });
 
+  it('rejects long tool flags when metadata cannot establish a declared option', async () => {
+    const { runtime, callTool } = runtimeWith(() => Promise.reject(new Error('discovery failed')));
+
+    await expect(handleCall(runtime, ['linear.update', '--label', 'bug'])).rejects.toThrow(
+      "Unable to validate flag '--label' because linear.update did not provide usable tool metadata"
+    );
+    expect(callTool).not.toHaveBeenCalled();
+  });
+
   it('reports STDIO process exits with code and signal details', async () => {
     const { runtime, callTool } = runtimeWith([]);
     callTool.mockRejectedValue(new Error('STDIO transport exited with code 2 (signal SIGTERM)'));

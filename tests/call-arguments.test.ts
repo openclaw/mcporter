@@ -61,6 +61,12 @@ describe('parseCallArguments', () => {
       limit: 5,
     });
     expect(parsed.schemaStringCoercionCandidates).toEqual({ limit: '5' });
+    expect(parsed.genericLongFlagArguments).toEqual([
+      { key: 'to', token: '--to' },
+      { key: 'subject', token: '--subject' },
+      { key: 'saveToDrafts', token: '--save-to-drafts' },
+      { key: 'limit', token: '--limit=5' },
+    ]);
   });
 
   it('merges --json object payloads as an alias for --args', () => {
@@ -77,6 +83,7 @@ describe('parseCallArguments', () => {
       saveToDrafts: true,
       text: 'Hello',
     });
+    expect(parsed.genericLongFlagArguments).toEqual([{ key: 'text', token: '--text' }]);
   });
 
   it('reads JSON object payloads from stdin when --json - is used', () => {
@@ -144,10 +151,6 @@ describe('parseCallArguments', () => {
     }
   });
 
-  it('throws when generic long flags are missing a value', () => {
-    expect(() => parseCallArguments(['server.tool', '--source'])).toThrow("Flag '--source' requires a value.");
-  });
-
   it('treats values after -- as literal positional arguments', () => {
     const parsed = parseCallArguments(['server.tool', '--', '--source', 'import', '--raw=true']);
     expect(parsed.selector).toBe('server.tool');
@@ -158,6 +161,10 @@ describe('parseCallArguments', () => {
     expect(() => parseCallArguments(['--server', 'linear', 'cursor.list_documents(limit:1)'])).toThrow(
       /Conflicting server names/
     );
+  });
+
+  it('throws when generic long flags are missing a value', () => {
+    expect(() => parseCallArguments(['server.tool', '--source'])).toThrow("Flag '--source' requires a value.");
   });
 
   it('treats key:=value as an alias for key=value without keeping a trailing colon', () => {
@@ -240,6 +247,7 @@ describe('parseCallArguments', () => {
   it.each([
     ['--save-images', /--save-images requires a directory path/],
     ['--args', /--args requires a JSON value/],
+    ['--params', /--params requires a JSON value/],
   ] as const)('throws when %s is missing a value', (flag, expectedError) => {
     expect(() => parseCallArguments([flag])).toThrow(expectedError);
   });

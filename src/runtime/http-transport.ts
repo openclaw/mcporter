@@ -306,20 +306,17 @@ async function connectSseFallbackTransport(
   wrapRecordTransport: WrapRecordTransport,
   clientFactory: HttpClientFactory
 ): Promise<ClientContext> {
+  const createSseTransport = () =>
+    wrapRecordTransport(new SSEClientTransport(command.url, transportOptions), definition, options);
   try {
-    const transport = await connectHttpTransport(
-      client,
-      wrapRecordTransport(new SSEClientTransport(command.url, transportOptions), definition, options),
-      oauthSession,
-      logger,
-      {
-        serverName: definition.name,
-        serverUrl: command.url,
-        maxAttempts: options.maxOAuthAttempts,
-        oauthTimeoutMs: options.oauthTimeoutMs,
-        signal: options.signal,
-      }
-    );
+    const transport = await connectHttpTransport(client, createSseTransport(), oauthSession, logger, {
+      serverName: definition.name,
+      serverUrl: command.url,
+      maxAttempts: options.maxOAuthAttempts,
+      oauthTimeoutMs: options.oauthTimeoutMs,
+      signal: options.signal,
+      recreateTransport: async () => createSseTransport(),
+    });
     return { client, transport, definition, oauthSession };
   } catch (sseError) {
     await closeOAuthSession(oauthSession);
