@@ -8,6 +8,11 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+// The child processes exercise the built artifact; this parent only needs the
+// same lock-path derivation, so it imports source rather than requiring dist to
+// exist at typecheck time.
+import { withFileLock } from '../src/fs-json.js';
+import { refreshLockPaths } from '../src/oauth-refresh-lock.js';
 import { ensureDistBuilt } from './helpers/dist.js';
 import { budget } from './helpers/timing.js';
 
@@ -272,8 +277,6 @@ describe('OAuth refresh across fresh built-artifact processes', () => {
       const env = await freshEnv('lock-held', seed);
       await runFixture('seed', env);
 
-      const { refreshLockPaths } = await import('../dist/oauth-refresh-lock.js');
-      const { withFileLock } = await import('../dist/fs-json.js');
       const previousDataHome = process.env.XDG_DATA_HOME;
       process.env.XDG_DATA_HOME = env.XDG_DATA_HOME;
       const lockPaths = await refreshLockPaths({
@@ -315,7 +318,6 @@ describe('OAuth refresh across fresh built-artifact processes', () => {
       const env = await freshEnv('stale-lock', seed);
       await runFixture('seed', env);
 
-      const { refreshLockPaths } = await import('../dist/oauth-refresh-lock.js');
       const previousDataHome = process.env.XDG_DATA_HOME;
       process.env.XDG_DATA_HOME = env.XDG_DATA_HOME;
       const lockPaths = await refreshLockPaths({
