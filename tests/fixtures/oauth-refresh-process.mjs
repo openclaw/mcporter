@@ -90,14 +90,29 @@ if (action === 'seed') {
       authorizationPrompts += 1;
     },
   });
-  await connectWithAuth({ connect: async () => {} }, { close: async () => {} }, session, logger, {
-    serverName: definition.name,
-    serverUrl: endpoint,
-    fetchFn: fetch,
-  });
+  let refreshUnavailable = false;
+  try {
+    await connectWithAuth({ connect: async () => {} }, { close: async () => {} }, session, logger, {
+      serverName: definition.name,
+      serverUrl: endpoint,
+      fetchFn: fetch,
+    });
+  } catch (error) {
+    // The provider refuses to hand the SDK a redeemable stale token when a due
+    // refresh could not land, so the connect fails instead of replaying it.
+    if (!/Could not refresh OAuth credentials/.test(String(error?.message ?? error))) {
+      throw error;
+    }
+    refreshUnavailable = true;
+  } finally {
+    // connectWithAuth only closes the session on its success path, and the
+    // callback server would otherwise keep this fixture process alive.
+    await session.close().catch(() => {});
+  }
   const stored = await snapshot();
   emit({
     authorizationPrompts,
+    refreshUnavailable,
     persistedAccessMarker: marker(stored.tokens?.access_token),
     persistedRefreshMarker: marker(stored.tokens?.refresh_token),
   });

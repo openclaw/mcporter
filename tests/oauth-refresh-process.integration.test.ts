@@ -269,6 +269,30 @@ describe('OAuth refresh across fresh built-artifact processes', () => {
     budget(30_000)
   );
 
+  async function holdRefreshLock(
+    name: string,
+    env: NodeJS.ProcessEnv
+  ): Promise<{ release: () => void; settled: Promise<void> }> {
+    const previousDataHome = process.env.XDG_DATA_HOME;
+    process.env.XDG_DATA_HOME = env.XDG_DATA_HOME;
+    const lockPaths = await refreshLockPaths({
+      name,
+      command: { kind: 'http', url: new URL(endpoint) },
+      auth: 'oauth',
+      tokenCacheDir: env.MCPORTER_TEST_OAUTH_CACHE_DIR,
+    });
+    process.env.XDG_DATA_HOME = previousDataHome;
+
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const settled = withFileLock(lockPaths[0] ?? '', async () => {
+      await held;
+    });
+    return { release, settled };
+  }
+
   it(
     'returns the persisted token without redeeming when another process holds the lock',
     async () => {
@@ -276,36 +300,45 @@ describe('OAuth refresh across fresh built-artifact processes', () => {
       registerSeed(seed, 'held');
       const env = await freshEnv('lock-held', seed);
       await runFixture('seed', env);
-
-      const previousDataHome = process.env.XDG_DATA_HOME;
-      process.env.XDG_DATA_HOME = env.XDG_DATA_HOME;
-      const lockPaths = await refreshLockPaths({
-        name: 'lock-held',
-        command: { kind: 'http', url: new URL(endpoint) },
-        auth: 'oauth',
-        tokenCacheDir: env.MCPORTER_TEST_OAUTH_CACHE_DIR,
-      });
-      process.env.XDG_DATA_HOME = previousDataHome;
-
-      let releaseHolder!: () => void;
-      const holderRelease = new Promise<void>((resolve) => {
-        releaseHolder = resolve;
-      });
-      const holder = withFileLock(lockPaths[0] ?? '', async () => {
-        await holderRelease;
-      });
+      const holder = await holdRefreshLock('lock-held', env);
 
       const waiter = JSON.parse(
         await runFixture('refresh-cached', { ...env, MCPORTER_TEST_REFRESH_LOCK_TIMEOUT_MS: '400' })
       ) as { accessMarker: string };
-      releaseHolder();
-      await holder;
+      holder.release();
+      await holder.settled;
 
       // The waiter keeps the seeded (expired) token rather than redeeming it
       // outside the lock, which is what would replay against the provider.
       expect(waiter.accessMarker).toBe(marker('expired-process-token'));
       expect(tokenRequests).toHaveLength(0);
       expect(replays).toHaveLength(0);
+    },
+    budget(30_000)
+  );
+
+  it(
+    'refuses to let the provider path redeem after the lock times out',
+    async () => {
+      const seed = 'held-connect-seed';
+      registerSeed(seed, 'held-connect');
+      const env = await freshEnv('lock-held-connect', seed);
+      await runFixture('seed', env);
+      const holder = await holdRefreshLock('lock-held-connect', env);
+
+      const result = JSON.parse(
+        await runFixture('refresh-connect', { ...env, MCPORTER_TEST_REFRESH_LOCK_TIMEOUT_MS: '400' })
+      ) as { refreshUnavailable: boolean; authorizationPrompts: number };
+      holder.release();
+      await holder.settled;
+
+      // Handing the SDK the expired-but-refreshable token would let it redeem
+      // the spent generation outside the lock and revoke the family.
+      expect(result.refreshUnavailable).toBe(true);
+      expect(tokenRequests).toHaveLength(0);
+      expect(replays).toHaveLength(0);
+      // Failing beats prompting: the credentials are valid and being refreshed.
+      expect(result.authorizationPrompts).toBe(0);
     },
     budget(30_000)
   );

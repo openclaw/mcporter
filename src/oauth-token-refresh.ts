@@ -108,6 +108,17 @@ function cachedTokensChanged(original: OAuthTokens, current: OAuthTokens | undef
   return !sameOAuthTokenGeneration(current, original);
 }
 
+/**
+ * Whether a persisted token is close enough to expiry that a refresh is due.
+ *
+ * The OAuth provider needs this to enforce that it never hands the MCP SDK an
+ * expired-but-refreshable token: the SDK would redeem it outside the refresh
+ * lock, which is the replay this module exists to prevent.
+ */
+export function oauthAccessTokenNeedsRefresh(tokens: OAuthTokens): boolean {
+  return shouldRefreshCachedToken(tokens);
+}
+
 function shouldRefreshCachedToken(tokens: OAuthTokens, skewSeconds = TOKEN_EXPIRY_SKEW_SECONDS): boolean {
   const expiresAt = tokenExpirySeconds(tokens);
   if (expiresAt !== undefined) {
