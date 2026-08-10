@@ -2,6 +2,11 @@
 
 ## [0.13.4] - Unreleased
 
+### OAuth
+
+- Serialize the whole OAuth refresh transaction across processes so a rotating refresh token is redeemed once. Concurrent mcporter processes sharing a credential vault could each read the same expired access token and redeem the same refresh token; providers that detect replay answer with `invalid_grant` and revoke the entire token family, leaving no cached credentials. A dedicated per-credential refresh lock now covers the re-read, redemption, and persist as one transaction, and a caller that finds another process already refreshed adopts that result instead of redeeming again. Token endpoint and discovery requests made under the lock carry a cancellation deadline so a stalled endpoint cannot starve other processes. The guarantee is per host: hosts sharing one credential directory over a network filesystem cannot arbitrate each other's locks, and every long-lived daemon or generated CLI has to be upgraded before a fleet is fully protected. One known gap remains by design — the MCP SDK's internal 401-driven refresh has no interception point, so a 401 reaching two processes at the same instant can still redeem concurrently, where the existing rejected-refresh recovery remains the backstop. (Issue #305, thanks @feniix)
+- Recognize the OAuth error code the MCP SDK reports on its error objects, so a genuinely rejected refresh grant reaches the recovery that clears dead credentials instead of being retried as a transient failure. (Issue #305, thanks @feniix)
+
 ## [0.13.3] - 2026-08-09
 
 ### CLI

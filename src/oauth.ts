@@ -327,6 +327,16 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
    *
    * The locked transaction is re-entrant per call chain, so an SDK auth() flow
    * that already holds the lock does not deadlock on this read.
+   *
+   * Known and accepted limit (issue #305): this covers the proactive connect
+   * path, not the SDK's internal 401-driven auth(). That branch runs inside the
+   * SDK's own fetch handling with no seam to wrap, it redeems whenever this
+   * method returns any refresh token — it never checks expiry — and it
+   * re-persists this method's return value when `issuer` is unset, so
+   * withholding the refresh token here would destroy it instead of protecting
+   * it. Two processes taking a 401 at the same instant can therefore still
+   * redeem concurrently; the rejected-refresh recovery in oauth-token-refresh.ts
+   * remains the backstop for that case.
    */
   private async refreshedTokens(stored: StoredOAuthTokens | undefined): Promise<StoredOAuthTokens | undefined> {
     if (!stored || this.definition.auth === 'refreshable_bearer') {

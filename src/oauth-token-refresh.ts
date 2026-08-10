@@ -181,9 +181,15 @@ function oauthErrorCode(error: unknown): string | undefined {
   if (!error || typeof error !== 'object') {
     return undefined;
   }
-  const { errorCode, name } = error as { errorCode?: unknown; name?: unknown };
-  if (typeof errorCode === 'string' && errorCode.length > 0) {
-    return errorCode.toLowerCase();
+  // `code` is where the MCP SDK's OAuthError carries the OAuth error code, so
+  // without it a real rejected grant would skip recovery and be replayed.
+  // Unrelated codes (an errno such as ECONNREFUSED) fall out of the caller's
+  // allowlist, which is what keeps a transport failure recoverable.
+  const { errorCode, code, name } = error as { errorCode?: unknown; code?: unknown; name?: unknown };
+  for (const candidate of [errorCode, code]) {
+    if (typeof candidate === 'string' && candidate.length > 0) {
+      return candidate.toLowerCase();
+    }
   }
   if (typeof name === 'string') {
     const normalized = name.toLowerCase();

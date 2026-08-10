@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { buildOAuthPersistence, readCachedAccessToken } from '../../dist/oauth-persistence.js';
 import { createOAuthSession } from '../../dist/oauth.js';
 import { connectWithAuth } from '../../dist/runtime/oauth.js';
@@ -9,13 +10,32 @@ if (!action || !endpoint || !tokenCacheDir) {
   throw new Error('Expected action, MCPORTER_TEST_OAUTH_ENDPOINT, and MCPORTER_TEST_OAUTH_CACHE_DIR.');
 }
 
+const serverName = process.env.MCPORTER_TEST_OAUTH_SERVER_NAME ?? 'oauth-refresh-process';
+const seedRefreshToken = process.env.MCPORTER_TEST_OAUTH_SEED_REFRESH ?? 'fresh-process-refresh-token';
+
 const definition = {
-  name: 'oauth-refresh-process',
+  name: serverName,
   command: { kind: 'http', url: new URL(endpoint) },
   auth: 'oauth',
   tokenCacheDir,
 };
 const logger = { info() {}, warn() {}, error() {}, debug() {} };
+
+// Credential values must never reach stdout, CI logs, or failure artifacts, so
+// callers compare opaque markers instead of tokens.
+function marker(value) {
+  return typeof value === 'string' && value.length > 0
+    ? createHash('sha256').update(value).digest('hex').slice(0, 12)
+    : null;
+}
+
+function emit(payload) {
+  process.stdout.write(`${JSON.stringify(payload)}\n`);
+}
+
+async function snapshot() {
+  return await (await buildOAuthPersistence(definition, logger)).readSnapshot();
+}
 
 if (action === 'seed') {
   const persistence = await buildOAuthPersistence(definition, logger);
@@ -27,10 +47,10 @@ if (action === 'seed') {
   await persistence.saveTokens({
     access_token: 'expired-process-token',
     token_type: 'Bearer',
-    refresh_token: 'fresh-process-refresh-token',
+    refresh_token: seedRefreshToken,
     expires_at: 1,
   });
-  process.stdout.write('seeded\n');
+  emit({ seeded: true, refreshMarker: marker(seedRefreshToken) });
 } else if (action === 'refresh') {
   const accessToken = await readCachedAccessToken(definition, logger);
   let authorizationPrompts = 0;
@@ -45,15 +65,57 @@ if (action === 'seed') {
     serverUrl: endpoint,
     fetchFn: fetch,
   });
-  const snapshot = await (await buildOAuthPersistence(definition, logger)).readSnapshot();
-  process.stdout.write(
-    `${JSON.stringify({
-      accessToken,
-      authorizationPrompts,
-      clientId: snapshot.clientInfo?.client_id,
-      refreshToken: snapshot.tokens?.refresh_token,
-    })}\n`
-  );
+  const stored = await snapshot();
+  emit({
+    accessToken,
+    authorizationPrompts,
+    clientId: stored.clientInfo?.client_id,
+    refreshToken: stored.tokens?.refresh_token,
+  });
+} else if (action === 'refresh-cached') {
+  // The cached-read path: the header-injection route every connect takes.
+  const accessToken = await readCachedAccessToken(definition, logger);
+  const stored = await snapshot();
+  emit({
+    accessMarker: marker(accessToken),
+    persistedAccessMarker: marker(stored.tokens?.access_token),
+    persistedRefreshMarker: marker(stored.tokens?.refresh_token),
+  });
+} else if (action === 'refresh-connect') {
+  // The provider path: proactive authorization before an oauth connect.
+  let authorizationPrompts = 0;
+  const session = await createOAuthSession(definition, logger, {
+    suppressBrowserLaunch: true,
+    onAuthorizationUrl: () => {
+      authorizationPrompts += 1;
+    },
+  });
+  await connectWithAuth({ connect: async () => {} }, { close: async () => {} }, session, logger, {
+    serverName: definition.name,
+    serverUrl: endpoint,
+    fetchFn: fetch,
+  });
+  const stored = await snapshot();
+  emit({
+    authorizationPrompts,
+    persistedAccessMarker: marker(stored.tokens?.access_token),
+    persistedRefreshMarker: marker(stored.tokens?.refresh_token),
+  });
+} else if (action === 'redeem-without-persisting') {
+  // Simulates a process killed between the token response and the persist: the
+  // provider has rotated the refresh token, local state still holds the spent
+  // one. The next caller replays it, which is what the recovery must absorb.
+  const stored = await snapshot();
+  const response = await fetch(new URL('/token', endpoint), {
+    method: 'POST',
+    headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: stored.tokens?.refresh_token ?? '',
+      client_id: stored.clientInfo?.client_id ?? '',
+    }),
+  });
+  emit({ redeemed: response.ok, persistSkipped: true });
 } else {
   throw new Error(`Unknown action '${action}'.`);
 }
