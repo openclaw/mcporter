@@ -159,6 +159,26 @@ function stringRecord(value: unknown): Record<string, string> {
   );
 }
 
+/**
+ * Every vault key whose credentials this definition can end up using: its own,
+ * plus any same-URL legacy `<name>-oauth` entry it inherits from.
+ *
+ * Refresh locking needs the whole set. A renamed definition and its legacy entry
+ * resolve to one shared refresh token (see resolveVaultEntry), so locking only
+ * the exact key would let them redeem that token concurrently and lose the
+ * family. Deliberately the broader rename-candidate set rather than the entry
+ * that inheritance would pick right now: over-locking costs a little
+ * serialization, under-locking costs the credential.
+ */
+export async function vaultCredentialKeys(definition: ServerDefinition): Promise<VaultKey[]> {
+  const key = vaultKeyForDefinition(definition);
+  if (definition.command.kind !== 'http') {
+    return [key];
+  }
+  const vault = await readVault();
+  return [...new Set([key, ...legacyOAuthRenameKeys(vault, definition, key)])];
+}
+
 export async function loadVaultEntry(definition: ServerDefinition): Promise<VaultEntry | undefined> {
   const vault = await readVault();
   return externalVaultEntry(resolveVaultEntry(vault, definition));

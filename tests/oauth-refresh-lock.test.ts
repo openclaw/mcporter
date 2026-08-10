@@ -6,6 +6,7 @@ import type { ServerDefinition } from '../src/config.js';
 import { isFileLockTimeoutError } from '../src/fs-json.js';
 import { buildOAuthPersistence } from '../src/oauth-persistence.js';
 import { refreshLockDir, refreshLockPaths, withRefreshLock } from '../src/oauth-refresh-lock.js';
+import { saveVaultEntry } from '../src/oauth-vault.js';
 
 function httpDefinition(name: string, extra: Partial<ServerDefinition> = {}): ServerDefinition {
   return {
@@ -141,6 +142,61 @@ describe('oauth refresh lock', () => {
     releaseCached.resolve();
     await Promise.all([cachedRun, uncachedRun]);
     expect(order).toEqual(['cached:enter', 'cached:exit', 'uncached:enter']);
+  });
+
+  it('shares a lock between a renamed server and the legacy entry it inherits', async () => {
+    const url = new URL('https://mcp.example.com/inherited');
+    const renamed = { name: 'inherited', command: { kind: 'http', url } } as ServerDefinition;
+    const legacy = { name: 'inherited-oauth', command: { kind: 'http', url } } as ServerDefinition;
+
+    // The legacy entry holds the credentials the renamed definition inherits.
+    await saveVaultEntry(legacy, {
+      tokens: { access_token: 'inherited-access', token_type: 'Bearer', refresh_token: 'inherited-refresh' },
+    });
+
+    const renamedLocks = await refreshLockPaths(renamed);
+    const legacyLocks = await refreshLockPaths(legacy);
+
+    // The sets need not match; they must overlap on the shared credential's key.
+    expect(legacyLocks).toHaveLength(1);
+    expect(renamedLocks).toContain(legacyLocks[0]);
+    expect(renamedLocks.length).toBeGreaterThan(1);
+
+    const order: string[] = [];
+    const holding = deferred();
+    const release = deferred();
+    const holder = withRefreshLock(renamed, async () => {
+      order.push('renamed:enter');
+      holding.resolve();
+      await release.promise;
+      order.push('renamed:exit');
+    });
+    await holding.promise;
+
+    const waiter = withRefreshLock(legacy, async () => {
+      order.push('legacy:enter');
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Redeeming here would replay the refresh token the other config is rotating.
+    expect(order).toEqual(['renamed:enter']);
+
+    release.resolve();
+    await Promise.all([holder, waiter]);
+    expect(order).toEqual(['renamed:enter', 'renamed:exit', 'legacy:enter']);
+  });
+
+  it('sorts lock targets so overlapping sets cannot invert', async () => {
+    const url = new URL('https://mcp.example.com/ordering');
+    const cacheDir = path.join(tempDir, 'ordering-cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    const renamed = { name: 'ordering', command: { kind: 'http', url }, tokenCacheDir: cacheDir } as ServerDefinition;
+    await saveVaultEntry({ name: 'ordering-oauth', command: { kind: 'http', url } } as ServerDefinition, {
+      tokens: { access_token: 'a', token_type: 'Bearer' },
+    });
+
+    const locks = await refreshLockPaths(renamed);
+    expect(locks).toHaveLength(3);
+    expect(locks).toEqual(locks.toSorted());
   });
 
   it('resolves relative and absolute spellings of one token path to one identity', async () => {

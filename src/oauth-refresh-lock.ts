@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import type { ServerDefinition } from './config.js';
 import { canonicalizeFilePath, withFileLock } from './fs-json.js';
-import { vaultKeyForDefinition } from './oauth-vault.js';
+import { vaultCredentialKeys } from './oauth-vault.js';
 import { mcporterDir } from './paths.js';
 
 /**
@@ -42,12 +42,19 @@ export function refreshLockDir(): string {
 /**
  * Derives the lock file paths for a credential, in acquisition order.
  *
- * A credential reachable through more than one store must serialize as one
- * identity. The composite persistence writes every store and falls back to the
- * vault on reads, so a server configured with a token cache directory shares
- * its vault-persisted token with the same server configured without one. Both
- * targets are therefore locked, always in this order, so two configurations
- * cannot invert it and deadlock.
+ * A credential reachable through more than one place must serialize as one
+ * identity, and there are two such axes. The composite persistence writes every
+ * store and falls back to the vault on reads, so a server configured with a
+ * token cache directory shares its vault-persisted token with the same server
+ * configured without one. Separately, a renamed server inherits the credentials
+ * of its legacy `<name>-oauth` vault entry, so both configurations can resolve
+ * to one refresh token under different vault keys.
+ *
+ * Every reachable target is locked, and the set is sorted so that all
+ * configurations acquire shared targets in the same order. Two definitions need
+ * not derive identical sets — they only have to overlap on the target holding
+ * the credential they share — but a total order is what keeps overlapping sets
+ * from inverting into a deadlock.
  */
 export async function refreshLockPaths(definition: ServerDefinition): Promise<string[]> {
   const paths: string[] = [];
@@ -55,8 +62,13 @@ export async function refreshLockPaths(definition: ServerDefinition): Promise<st
     const tokenPath = await canonicalizeFilePath(path.join(definition.tokenCacheDir, 'tokens.json'));
     paths.push(lockPathFor(path.basename(path.dirname(tokenPath)), `dir:${tokenPath}`));
   }
-  paths.push(lockPathFor(definition.name, `vault:${vaultKeyForDefinition(definition)}`));
-  return paths;
+  for (const vaultKey of await vaultCredentialKeys(definition)) {
+    // Label from the key's own server name, never the calling definition's: a
+    // renamed server and its legacy entry must land on one filename for the key
+    // they share, or they would take separate locks over one refresh token.
+    paths.push(lockPathFor(vaultKey.split('|')[0] ?? '', `vault:${vaultKey}`));
+  }
+  return [...new Set(paths)].toSorted();
 }
 
 export async function withRefreshLock<T>(
