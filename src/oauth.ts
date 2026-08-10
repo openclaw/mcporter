@@ -16,6 +16,7 @@ import { suppressBrowserLaunchFromEnv } from './oauth-browser-suppression.js';
 import { buildStaticClientInformation } from './oauth-client-info.js';
 import type { OAuthPersistence, OAuthPersistenceSnapshot } from './oauth-persistence.js';
 import { buildOAuthPersistence } from './oauth-persistence.js';
+import { readCachedAccessTokenWithPersistence } from './oauth-token-refresh.js';
 
 const CALLBACK_HOST = '127.0.0.1';
 const CALLBACK_PATH = '/callback';
@@ -310,7 +311,39 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       this.logger.info(`Discarded OAuth tokens for ${this.definition.name} after issuer changed.`);
       return undefined;
     }
-    return stored;
+    return await this.refreshedTokens(stored);
+  }
+
+  /**
+   * Refreshes an expiring token under the cross-process refresh lock before the
+   * SDK sees it.
+   *
+   * This is the interception point for SDK-driven refresh. The SDK redeems a
+   * rotating refresh token itself whenever tokens() hands it an expired one —
+   * proactively before connect and internally on a 401 — and neither call site
+   * is wrappable from here. Returning an already-refreshed token starves that
+   * branch, so the redemption happens once, under the lock, instead of racing
+   * every other process that shares the credential.
+   *
+   * The locked transaction is re-entrant per call chain, so an SDK auth() flow
+   * that already holds the lock does not deadlock on this read.
+   */
+  private async refreshedTokens(stored: StoredOAuthTokens | undefined): Promise<StoredOAuthTokens | undefined> {
+    if (!stored || this.definition.auth === 'refreshable_bearer') {
+      return stored;
+    }
+    try {
+      await readCachedAccessTokenWithPersistence(this.definition, this.persistence);
+    } catch (error) {
+      // A refresh that discarded credentials (issuer change, rejected grant)
+      // must surface as "no tokens" so the SDK reauthorizes interactively.
+      this.logger.warn(
+        `Could not refresh OAuth tokens for ${this.definition.name}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+    return await this.persistence.readTokens();
   }
 
   async saveTokens(tokens: StoredOAuthTokens): Promise<void> {

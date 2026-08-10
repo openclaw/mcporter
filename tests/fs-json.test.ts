@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { readJsonFile, withFileLock, writeJsonFile } from '../src/fs-json.js';
+import { isFileLockTimeoutError, readJsonFile, withFileLock, writeJsonFile } from '../src/fs-json.js';
 
 describe('fs-json helpers', () => {
   let tempDir: string;
@@ -254,9 +254,9 @@ describe('fs-json helpers', () => {
     });
     await entered;
 
-    await expect(withFileLock(lockTarget, async () => {}, { timeoutMs: 50 })).rejects.toThrow(
-      /Timed out waiting for file lock/
-    );
+    const timedOut = withFileLock(lockTarget, async () => {}, { timeoutMs: 50 });
+    await expect(timedOut).rejects.toThrow(/Timed out waiting for file lock/);
+    await expect(timedOut).rejects.toSatisfy(isFileLockTimeoutError);
 
     let followerEntered = false;
     const follower = withFileLock(lockTarget, async () => {

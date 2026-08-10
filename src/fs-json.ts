@@ -11,6 +11,23 @@ const MAX_SYMLINK_DEPTH = 40;
 const DEFAULT_ATOMIC_FILE_MODE = 0o600;
 const localLockTails = new Map<string, Promise<void>>();
 
+// Callers that degrade on contention (the OAuth refresh lock returns a stale
+// token instead of redeeming unlocked) must tell a timeout apart from a real
+// filesystem failure. Message matching would misroute either direction.
+export class FileLockTimeoutError extends Error {
+  readonly lockPath: string;
+
+  constructor(lockPath: string, options?: ErrorOptions) {
+    super(`Timed out waiting for file lock ${lockPath}`, options);
+    this.name = 'FileLockTimeoutError';
+    this.lockPath = lockPath;
+  }
+}
+
+export function isFileLockTimeoutError(error: unknown): error is FileLockTimeoutError {
+  return error instanceof FileLockTimeoutError;
+}
+
 // readJsonFile reads a JSON file and returns undefined when the file does not exist.
 export async function readJsonFile<T = unknown>(filePath: string): Promise<T | undefined> {
   try {
@@ -95,7 +112,7 @@ export async function withFileLock<T>(
           continue;
         }
         if (Date.now() - startedAt > timeoutMs) {
-          throw new Error(`Timed out waiting for file lock ${lockPath}`, { cause: error });
+          throw new FileLockTimeoutError(lockPath, { cause: error });
         }
         await sleep(LOCK_POLL_MS);
       }
@@ -149,10 +166,7 @@ async function waitForLocalLock(previous: Promise<void>, timeoutMs: number, key:
     await Promise.race([
       previous,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error(`Timed out waiting for file lock ${key}.lock`)),
-          Math.max(0, timeoutMs)
-        );
+        timer = setTimeout(() => reject(new FileLockTimeoutError(`${key}.lock`)), Math.max(0, timeoutMs));
       }),
     ]);
   } finally {
@@ -176,6 +190,12 @@ async function resolveAtomicWriteTarget(filePath: string): Promise<{ path: strin
     }
     throw error;
   }
+}
+
+// Resolves a path to its real location so two spellings of one file (relative,
+// absolute, or symlinked) cannot be treated as separate identities.
+export async function canonicalizeFilePath(filePath: string): Promise<string> {
+  return await resolvePathFollowingSymlinks(path.resolve(filePath));
 }
 
 async function resolvePathFollowingSymlinks(filePath: string): Promise<string> {
