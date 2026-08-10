@@ -27,6 +27,12 @@ export interface OAuthPersistence {
   describe(): string;
   readSnapshot(): Promise<OAuthPersistenceSnapshot>;
   readTokens(): Promise<StoredOAuthTokens | undefined>;
+  // Every backing store's own view of the tokens. readTokens() returns the
+  // first store that has any, which hides divergence: a partial save can leave
+  // a spent generation in the higher-priority store while a newer one sits
+  // behind it. Refresh reconciles across these before redeeming. Only the
+  // composite needs it; a single store's readTokens() is already its own view.
+  readTokensPerStore?(): Promise<OAuthTokens[]>;
   saveTokens(tokens: StoredOAuthTokens): Promise<void>;
   readClientInfo(): Promise<StoredOAuthClientInformation | undefined>;
   saveClientInfo(info: StoredOAuthClientInformation): Promise<void>;

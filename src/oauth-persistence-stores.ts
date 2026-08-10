@@ -507,6 +507,11 @@ export class CompositePersistence implements OAuthPersistence {
     return result.value;
   }
 
+  async readTokensPerStore(): Promise<OAuthTokens[]> {
+    const perStore = await Promise.all(this.stores.map((store) => store.readTokens()));
+    return perStore.filter((tokens): tokens is OAuthTokens => tokens !== undefined);
+  }
+
   async saveTokens(tokens: OAuthTokens): Promise<void> {
     // Compute the absolute expiry once so every backing store records the same
     // generation value even at a wall-clock second boundary.

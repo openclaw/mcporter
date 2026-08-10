@@ -68,6 +68,71 @@ function decideUnderRefreshLock(
 }
 
 /**
+ * Chooses which store's generation to redeem when the stores disagree.
+ *
+ * The composite read returns the first store holding any tokens, so a save that
+ * only partly landed can leave a spent generation in the higher-priority store
+ * while a newer one sits behind it. Redeeming the spent one is a replay, which
+ * revokes the family — the loss the lock exists to prevent, reached through
+ * storage rather than concurrency.
+ *
+ * Two deliberate limits keep this from breaking rejected-credential recovery:
+ *
+ * - It only overrides store priority when the stores hold *different* refresh
+ *   tokens. Stores commonly differ in generation marker or expiry spelling while
+ *   holding the same refresh token; redeeming either is identical, and that
+ *   per-store divergence is what lets recovery tell a rejected generation apart
+ *   from a concurrent winner.
+ * - It never writes the winner back to the other stores. Flattening them to one
+ *   generation would make recovery clear every copy, discarding a generation
+ *   that should have survived. Divergence resolves on its own: the next
+ *   successful refresh saves to every store.
+ */
+async function reconcilePersistedTokens(
+  definition: ServerDefinition,
+  persistence: OAuthPersistence,
+  logger?: Logger
+): Promise<OAuthTokens | undefined> {
+  const perStore = await persistence.readTokensPerStore?.();
+  if (!perStore || perStore.length <= 1) {
+    return await persistence.readTokens();
+  }
+  const candidates = perStore.filter(
+    (candidate) => typeof candidate.access_token === 'string' && candidate.access_token.trim().length > 0
+  );
+  const distinctRefreshTokens = new Set(
+    candidates.map((candidate) => (typeof candidate.refresh_token === 'string' ? candidate.refresh_token : ''))
+  );
+  if (candidates.length <= 1 || distinctRefreshTokens.size <= 1) {
+    return await persistence.readTokens();
+  }
+
+  let selected = candidates[0];
+  for (const candidate of candidates.slice(1)) {
+    if (selected === undefined || outranksForRedemption(candidate, selected)) {
+      selected = candidate;
+    }
+  }
+  logger?.debug?.(
+    `Persisted OAuth stores for '${definition.name}' hold different refresh tokens; redeeming the newest.`
+  );
+  return selected;
+}
+
+// A generation that still works cannot be one another process already spent.
+// Failing that, the later expiry is the best evidence of which was issued last,
+// since generation markers are opaque and carry no ordering.
+function outranksForRedemption(candidate: OAuthTokens, incumbent: OAuthTokens): boolean {
+  const candidateDue = shouldRefreshCachedToken(candidate);
+  if (candidateDue !== shouldRefreshCachedToken(incumbent)) {
+    return !candidateDue;
+  }
+  const candidateExpiry = tokenExpirySeconds(candidate) ?? Number.NEGATIVE_INFINITY;
+  const incumbentExpiry = tokenExpirySeconds(incumbent) ?? Number.NEGATIVE_INFINITY;
+  return candidateExpiry > incumbentExpiry;
+}
+
+/**
  * Never redeem outside the lock: a waiter that gave up would be exactly the
  * concurrent redemption the lock exists to prevent. Returning a possibly
  * expired token degrades to a 401, which the debug line makes traceable.
@@ -259,7 +324,8 @@ async function refreshCachedOAuthTokenUnderLock(
   original: OAuthTokens,
   logger?: Logger
 ): Promise<string | undefined> {
-  const decision = decideUnderRefreshLock(original, await persistence.readTokens(), TOKEN_EXPIRY_SKEW_SECONDS);
+  const latest = await reconcilePersistedTokens(definition, persistence, logger);
+  const decision = decideUnderRefreshLock(original, latest, TOKEN_EXPIRY_SKEW_SECONDS);
   if (decision.kind === 'gone') {
     logger?.debug?.(`Cached OAuth token for '${definition.name}' was cleared before its refresh could run.`);
     return undefined;
@@ -424,7 +490,8 @@ async function refreshBearerTokenUnderLock(
   skewSeconds: number,
   logger?: Logger
 ): Promise<string> {
-  const decision = decideUnderRefreshLock(original, await persistence.readTokens(), skewSeconds);
+  const latest = await reconcilePersistedTokens(definition, persistence, logger);
+  const decision = decideUnderRefreshLock(original, latest, skewSeconds);
   if (decision.kind === 'gone') {
     throw new Error(`Cached bearer token for '${definition.name}' was cleared before its refresh could run.`);
   }

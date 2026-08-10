@@ -2285,6 +2285,97 @@ describe('oauth persistence', () => {
       await holder;
     });
 
+    it('prefers a newer vault generation over a stale token cache before redeeming', async () => {
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-divergent-'));
+      tempRoots.push(tmp);
+      homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+      hasSpy = true;
+
+      const cacheDir = path.join(tmp, 'cache');
+      await fs.mkdir(cacheDir, { recursive: true });
+      const definition = mkDef('divergent-stores', cacheDir);
+
+      // A save that only partly landed: the cache kept the spent generation
+      // while the vault took the rotated one. The cache is read first.
+      await fs.writeFile(
+        path.join(cacheDir, 'tokens.json'),
+        JSON.stringify({
+          access_token: 'spent-access',
+          token_type: 'Bearer',
+          refresh_token: 'spent-refresh',
+          expires_at: Math.floor(Date.now() / 1000) - 120,
+        })
+      );
+      await saveVaultEntry(definition, {
+        tokens: {
+          access_token: 'rotated-access',
+          token_type: 'Bearer',
+          refresh_token: 'rotated-refresh',
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+        } as OAuthTokens,
+      });
+
+      // Redeeming the cache's spent refresh token here would replay it and
+      // revoke the family, so the newer vault generation has to win.
+      await expect(readCachedAccessToken(definition)).resolves.toBe('rotated-access');
+      expect(authMocks.refreshAuthorization).not.toHaveBeenCalled();
+
+      // The stale store is deliberately left alone. Flattening every store to
+      // the winner would make rejected-credential recovery clear all copies,
+      // discarding a generation that should survive; the next successful refresh
+      // converges them instead.
+      const cached = (await readJsonFile(path.join(cacheDir, 'tokens.json'))) as { access_token?: string } | undefined;
+      expect(cached?.access_token).toBe('spent-access');
+    });
+
+    it('redeems the newer generation when both stores are expired but divergent', async () => {
+      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-divergent-expired-'));
+      tempRoots.push(tmp);
+      homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+      hasSpy = true;
+
+      const cacheDir = path.join(tmp, 'cache');
+      await fs.mkdir(cacheDir, { recursive: true });
+      const definition = mkDef('divergent-expired', cacheDir);
+
+      await fs.writeFile(
+        path.join(cacheDir, 'tokens.json'),
+        JSON.stringify({
+          access_token: 'spent-access',
+          token_type: 'Bearer',
+          refresh_token: 'spent-refresh',
+          expires_at: Math.floor(Date.now() / 1000) - 600,
+        })
+      );
+      await saveVaultEntry(definition, {
+        clientInfo: { client_id: 'divergent-client', redirect_uris: ['http://127.0.0.1/callback'] },
+        tokens: {
+          access_token: 'newer-access',
+          token_type: 'Bearer',
+          refresh_token: 'newer-refresh',
+          expires_at: Math.floor(Date.now() / 1000) - 30,
+        } as OAuthTokens,
+      });
+
+      authMocks.discoverOAuthServerInfo.mockResolvedValue({
+        authorizationServerUrl: 'https://auth.example.com',
+        authorizationServerMetadata: { issuer: 'https://auth.example.com' },
+        resourceMetadata: undefined,
+      });
+      authMocks.refreshAuthorization.mockResolvedValue({
+        access_token: 'refreshed-access',
+        token_type: 'Bearer',
+        refresh_token: 'refreshed-refresh',
+        expires_in: 3600,
+      });
+
+      await expect(readCachedAccessToken(definition)).resolves.toBe('refreshed-access');
+
+      // The spent cache token must never be the one presented to the provider.
+      expect(authMocks.refreshAuthorization).toHaveBeenCalledTimes(1);
+      expect(authMocks.refreshAuthorization.mock.calls[0]?.[1]).toMatchObject({ refreshToken: 'newer-refresh' });
+    });
+
     it('honors a custom refresh skew when adopting a concurrently persisted token', async () => {
       const { cacheDir } = await seedExpiredCache('bearer-skew');
       const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) =>
