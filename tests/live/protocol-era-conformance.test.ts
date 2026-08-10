@@ -38,7 +38,7 @@ const ERA_TARGETS: readonly EraTarget[] = [
   { name: 'javadocs', url: 'https://www.javadocs.dev/mcp', expectedVersion: '2026-07-28', expectedEra: 'modern' },
   { name: 'hf', url: 'https://huggingface.co/mcp', expectedVersion: '2026-07-28', expectedEra: 'modern' },
   { name: 'cfdocs', url: 'https://docs.mcp.cloudflare.com/mcp', expectedVersion: '2026-07-28', expectedEra: 'modern' },
-  { name: 'context7', url: 'https://mcp.context7.com/mcp', expectedVersion: '2025-11-25', expectedEra: 'legacy' },
+  { name: 'context7', url: 'https://mcp.context7.com/mcp', expectedVersion: '2026-07-28', expectedEra: 'modern' },
   { name: 'mslearn', url: 'https://learn.microsoft.com/api/mcp', expectedVersion: '2025-06-18', expectedEra: 'legacy' },
   { name: 'gitmcp', url: 'https://gitmcp.io/docs', expectedVersion: '2025-03-26', expectedEra: 'legacy' },
 ];
@@ -52,7 +52,7 @@ const ERA_CALLS: readonly EraCall[] = [
   },
   {
     server: 'context7',
-    revision: '2025-11-25',
+    revision: '2026-07-28',
     toolNames: ['resolve-library-id'],
     args: { query: 'testing', libraryName: 'vitest' },
   },
