@@ -314,6 +314,19 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       this.logger.info(`Discarded OAuth client registration for ${this.definition.name} after issuer changed.`);
       return undefined;
     }
+    if (!stored) {
+      const tokens = await this.persistence.readTokens();
+      if (tokens && typeof tokens.refresh_token === 'string' && oauthAccessTokenNeedsRefresh(tokens)) {
+        // The SDK asks for client information before tokens. Clear an expired
+        // orphan here so the DCR that follows cannot redeem its old refresh
+        // token outside the transaction lock; provider.tokens() then returns
+        // undefined and the SDK continues to interactive authorization.
+        await this.persistence.clear('tokens');
+        this.logger.info(
+          `Discarded expired OAuth tokens for ${this.definition.name} because no client registration is available.`
+        );
+      }
+    }
     return stored;
   }
 

@@ -266,6 +266,51 @@ describe('FileOAuthClientProvider session lifecycle', () => {
     await session.close();
   });
 
+  it('lets the SDK reauthorize when expired tokens have no dynamic client registration', async () => {
+    const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+    tempDirs.push(tokenCacheDir);
+    const oauthServer = await startOAuthMetadataServer(false);
+    await fs.writeFile(
+      path.join(tokenCacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'orphaned-refresh-token',
+        expires_at: 1,
+      }),
+      'utf8'
+    );
+    const definition: ServerDefinition = {
+      name: 'test-oauth-missing-client',
+      command: { kind: 'http', url: new URL(oauthServer.serverUrl) },
+      auth: 'oauth',
+      tokenCacheDir,
+    };
+    const authorizationRequests: URL[] = [];
+    const session = await createOAuthSession(
+      definition,
+      { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      {
+        suppressBrowserLaunch: true,
+        onAuthorizationUrl: ({ authorizationUrl }) => {
+          authorizationRequests.push(new URL(authorizationUrl));
+        },
+      }
+    );
+
+    try {
+      await expect(sdkAuth(session.provider, { serverUrl: oauthServer.serverUrl })).resolves.toBe('REDIRECT');
+      expect(oauthServer.registrationCount()).toBe(1);
+      expect(authorizationRequests).toHaveLength(1);
+      expect(authorizationRequests[0]?.searchParams.get('client_id')).toBe('replacement-dcr-client');
+    } finally {
+      const pending = session.waitForAuthorizationCode().catch(() => undefined);
+      await session.close();
+      await pending;
+      await oauthServer.close();
+    }
+  });
+
   it('preserves refreshable credentials when a new session allocates a different dynamic port', async () => {
     const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
     tempDirs.push(tokenCacheDir);

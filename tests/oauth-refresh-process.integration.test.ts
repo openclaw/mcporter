@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
@@ -44,6 +44,7 @@ describe('OAuth refresh across fresh built-artifact processes', () => {
   let revokedFamilies: Set<string>;
   let replays: URLSearchParams[] = [];
   let issuedByFamily: Map<string, number>;
+  let transientFailuresRemaining = 0;
   // Set to hold the first token request open until a second family arrives, so
   // "unrelated identities refresh concurrently" is proven by overlap.
   let overlapBarrier: { arrived: Map<string, () => void>; release: Promise<void> } | undefined;
@@ -79,6 +80,10 @@ describe('OAuth refresh across fresh built-artifact processes', () => {
       if (url.pathname === '/token' && request.method === 'POST') {
         const params = new URLSearchParams(await readBody(request));
         tokenRequests.push(params);
+        if (transientFailuresRemaining > 0) {
+          transientFailuresRemaining -= 1;
+          return sendError(response, 'temporarily_unavailable', 503);
+        }
         const presented = params.get('refresh_token') ?? '';
         const generation = generations.get(presented);
 
@@ -131,6 +136,7 @@ describe('OAuth refresh across fresh built-artifact processes', () => {
     generations = new Map();
     revokedFamilies = new Set();
     issuedByFamily = new Map();
+    transientFailuresRemaining = 0;
     overlapBarrier = undefined;
   });
 
@@ -373,6 +379,48 @@ describe('OAuth refresh across fresh built-artifact processes', () => {
     budget(30_000)
   );
 
+  it.runIf(process.platform !== 'win32')(
+    'recovers after an actual lock holder process is killed',
+    async () => {
+      const seed = 'killed-holder-seed';
+      registerSeed(seed, 'killed-holder');
+      const env = await freshEnv('killed-holder', seed);
+      await runFixture('seed', env);
+
+      const holder = await startLockHolder(env);
+      holder.kill('SIGKILL');
+      await new Promise<void>((resolve) => holder.once('exit', () => resolve()));
+
+      const result = JSON.parse(await runFixture('refresh-cached', env)) as { accessMarker: string };
+      expect(result.accessMarker).toBe(marker('access-killed-holder-1'));
+      expect(tokenRequests).toHaveLength(1);
+      expect(replays).toHaveLength(0);
+      expect(revokedFamilies.has('killed-holder')).toBe(false);
+    },
+    budget(30_000)
+  );
+
+  it(
+    'lets another process refresh after a transient holder failure',
+    async () => {
+      const seed = 'transient-seed';
+      registerSeed(seed, 'transient');
+      const env = await freshEnv('transient-failure', seed);
+      await runFixture('seed', env);
+      transientFailuresRemaining = 1;
+
+      const failed = JSON.parse(await runFixture('refresh-cached', env)) as { accessMarker: string };
+      expect(failed.accessMarker).toBe(marker('expired-process-token'));
+
+      const recovered = JSON.parse(await runFixture('refresh-cached', env)) as { accessMarker: string };
+      expect(recovered.accessMarker).toBe(marker('access-transient-1'));
+      expect(tokenRequests).toHaveLength(2);
+      expect(replays).toHaveLength(0);
+      expect(revokedFamilies.has('transient')).toBe(false);
+    },
+    budget(30_000)
+  );
+
   it(
     'degrades to a clean re-auth when a process dies between redeeming and persisting',
     async () => {
@@ -419,14 +467,39 @@ function runFixture(action: string, env: NodeJS.ProcessEnv): Promise<string> {
   });
 }
 
+function startLockHolder(env: NodeJS.ProcessEnv): Promise<ChildProcess> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [PROCESS_FIXTURE, 'hold-refresh-lock'], {
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stderr = '';
+    child.stderr?.on('data', (chunk) => {
+      stderr += String(chunk);
+    });
+    child.once('error', reject);
+    child.once('exit', (code, signal) => {
+      reject(new Error(`Lock holder exited before acquiring the lock (code=${code}, signal=${signal}): ${stderr}`));
+    });
+    child.stdout?.once('data', (chunk) => {
+      const message = JSON.parse(String(chunk)) as { holding?: boolean };
+      if (!message.holding) {
+        reject(new Error(`Unexpected lock-holder output: ${String(chunk)}`));
+        return;
+      }
+      resolve(child);
+    });
+  });
+}
+
 function sendJson(response: import('node:http').ServerResponse, body: unknown): void {
   response.statusCode = 200;
   response.setHeader('Content-Type', 'application/json');
   response.end(JSON.stringify(body));
 }
 
-function sendError(response: import('node:http').ServerResponse, error: string): void {
-  response.statusCode = 400;
+function sendError(response: import('node:http').ServerResponse, error: string, status = 400): void {
+  response.statusCode = status;
   response.setHeader('Content-Type', 'application/json');
   response.end(JSON.stringify({ error }));
 }

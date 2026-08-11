@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { buildOAuthPersistence, readCachedAccessToken } from '../../dist/oauth-persistence.js';
+import { withRefreshLock } from '../../dist/oauth-refresh-lock.js';
 import { createOAuthSession } from '../../dist/oauth.js';
 import { connectWithAuth } from '../../dist/runtime/oauth.js';
 
@@ -131,6 +132,11 @@ if (action === 'seed') {
     }),
   });
   emit({ redeemed: response.ok, persistSkipped: true });
+} else if (action === 'hold-refresh-lock') {
+  await withRefreshLock(definition, async () => {
+    emit({ holding: true });
+    await new Promise(() => {});
+  });
 } else {
   throw new Error(`Unknown action '${action}'.`);
 }
