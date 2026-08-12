@@ -196,14 +196,14 @@ describe('createClientContext (HTTP)', () => {
     expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('"reason":"missing-credential"'));
   });
 
-  it('falls back to SSE when primary connect fails', async () => {
+  it('falls back to SSE when primary fails with a legacy transport mismatch (405)', async () => {
     const definition = stubHttpDefinition('https://example.com/mcp');
 
     const clientConnect = vi
       .spyOn(Client.prototype, 'connect')
       .mockImplementationOnce(async (transport) => {
         expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
-        throw new Error('network down');
+        throw new SdkHttpError(SdkErrorCode.ClientHttpNotImplemented, 'Method Not Allowed', { status: 405 });
       })
       .mockImplementationOnce(async (transport) => {
         expect(transport).toBeInstanceOf(SSEClientTransport);
@@ -215,6 +215,50 @@ describe('createClientContext (HTTP)', () => {
     expect(clientConnect).toHaveBeenCalledTimes(2);
   });
 
+  it('does not fall back to SSE on generic network primary failures', async () => {
+    // #310: streamable-only servers return 405 on the SSE GET; that must not replace
+    // a primary connect timeout / fetch failure.
+    const definition = stubHttpDefinition('https://example.com/mcp');
+    const primary = new Error('network down');
+
+    const clientConnect = vi
+      .spyOn(Client.prototype, 'connect')
+      .mockImplementationOnce(async (transport) => {
+        expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
+        throw primary;
+      })
+      .mockImplementationOnce(async (transport) => {
+        expect(transport).toBeInstanceOf(SSEClientTransport);
+      });
+
+    await expect(createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 })).rejects.toBe(primary);
+    expect(clientConnect).toHaveBeenCalledTimes(1);
+    expect(clientConnect.mock.calls[0]?.[0]).toBeInstanceOf(StreamableHTTPClientTransport);
+  });
+
+  it('surfaces the primary error when SSE fallback also fails', async () => {
+    const definition = stubHttpDefinition('https://example.com/mcp');
+    const primary = new SdkHttpError(SdkErrorCode.ClientHttpNotImplemented, 'Method Not Allowed', {
+      status: 405,
+    });
+    const sse = new Error('SSE error: Non-200 status code (405)');
+
+    const clientConnect = vi
+      .spyOn(Client.prototype, 'connect')
+      .mockImplementationOnce(async (transport) => {
+        expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
+        throw primary;
+      })
+      .mockImplementationOnce(async (transport) => {
+        expect(transport).toBeInstanceOf(SSEClientTransport);
+        throw sse;
+      });
+
+    await expect(createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 })).rejects.toBe(primary);
+    expect(primary.cause).toBe(sse);
+    expect(clientConnect).toHaveBeenCalledTimes(2);
+  });
+
   it('uses a newly created legacy client for the SSE fallback', async () => {
     const definition = stubHttpDefinition('https://example.com/legacy-sse');
     const connectedClients: Client[] = [];
@@ -223,7 +267,7 @@ describe('createClientContext (HTTP)', () => {
       .mockImplementationOnce(async (client, transport) => {
         connectedClients.push(client);
         expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
-        throw new Error('streamable transport unavailable');
+        throw new SdkHttpError(SdkErrorCode.ClientHttpNotImplemented, 'Method Not Allowed', { status: 405 });
       })
       .mockImplementationOnce(async (client, transport) => {
         connectedClients.push(client);

@@ -568,7 +568,9 @@ describe('mcporter composability', () => {
         ([, cached]) => cached.disableOAuth && cached.allowCachedAuth === true
       )?.[0];
 
-      mocks.connectMock.mockImplementationOnce(throwConnectBoom).mockImplementationOnce(throwConnectBoom);
+      // Generic connect failures no longer fall back to SSE (#310), so only one
+      // Streamable HTTP attempt is made.
+      mocks.connectMock.mockImplementationOnce(throwConnectBoom);
       await expect(runtime.connect('oauth', { disableOAuth: true, allowCachedAuth: false })).rejects.toThrow(
         'connect boom'
       );

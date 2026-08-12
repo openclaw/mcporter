@@ -144,8 +144,31 @@ async function closeOAuthSession(oauthSession?: OAuthSession): Promise<void> {
 }
 
 function shouldAbortSseFallback(error: unknown): boolean {
+  // After a completed Streamable auth challenge: only fall back on 404/405
+  // transport-mismatch signals (legacy SSE servers), not on other post-auth faults.
   if (isPostAuthConnectError(error)) return !isLegacySseTransportMismatch(error);
-  return isOAuthFlowError(error) || error instanceof OAuthTimeoutError;
+  if (isOAuthFlowError(error) || error instanceof OAuthTimeoutError) return true;
+  // 401/auth still needs the promote + SSE paths below; do not short-circuit them.
+  if (isUnauthorizedError(error)) return false;
+  // Ordinary path: only attempt SSE when primary failure looks like a legacy-SSE
+  // transport mismatch. Generic network errors on streamable-HTTP-only servers
+  // must not fall through to a GET that 405s and masks the real cause (#310).
+  return !isLegacySseTransportMismatch(error);
+}
+
+/**
+ * Prefer the primary Streamable HTTP error when SSE fallback also fails.
+ * Attaches the SSE failure as `cause` so diagnostics stay available without
+ * replacing a network timeout with a misleading legacy-SSE 405.
+ */
+function preferPrimaryTransportError(primaryError: unknown, sseError: unknown): unknown {
+  if (primaryError instanceof Error) {
+    if (sseError instanceof Error && primaryError.cause === undefined) {
+      primaryError.cause = sseError;
+    }
+    return primaryError;
+  }
+  return sseError;
 }
 
 function isEraNegotiationFailure(error: unknown): boolean {
@@ -260,7 +283,8 @@ async function attemptHttpClientContext(
         logger,
         options,
         wrapRecordTransport,
-        clientFactory
+        clientFactory,
+        primaryError
       ),
     };
   }
@@ -304,7 +328,8 @@ async function connectSseFallbackTransport(
   logger: Logger,
   options: CreateClientContextOptions,
   wrapRecordTransport: WrapRecordTransport,
-  clientFactory: HttpClientFactory
+  clientFactory: HttpClientFactory,
+  primaryError?: unknown
 ): Promise<ClientContext> {
   const createSseTransport = () =>
     wrapRecordTransport(new SSEClientTransport(command.url, transportOptions), definition, options);
@@ -327,10 +352,19 @@ async function connectSseFallbackTransport(
         options.onDefinitionPromoted?.(promoted);
         return createHttpClientContext(promoted, logger, options, wrapRecordTransport, clientFactory);
       }
-      if (definition.auth) throw sseError;
+      // Auth challenges from SSE (including ad-hoc HTTP discovery) stay authoritative.
+      throw sseError;
     }
+    // Prefer primary so a failed SSE GET (often 405 on streamable-only) never erases
+    // the Streamable HTTP fault that triggered the fallback (#310).
+    if (primaryError !== undefined) throw preferPrimaryTransportError(primaryError, sseError);
     throw sseError;
   }
 }
 
-export const __test = { waitForStandaloneSseStart };
+export const __test = {
+  waitForStandaloneSseStart,
+  isLegacySseTransportMismatch,
+  shouldAbortSseFallback,
+  preferPrimaryTransportError,
+};
