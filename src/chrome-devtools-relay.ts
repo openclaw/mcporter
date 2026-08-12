@@ -477,7 +477,7 @@ export function chromeDevtoolsRelayEnvironmentKeys(
       continue;
     }
     for (const key of commandEnvironmentKeys) keys.add(key);
-    const resolvedDefinitionEnv = resolveRelayDefinitionEnvOverrides(definition.env, env);
+    const resolvedDefinitionEnv = resolveRelayIdentityEnvOverrides(definition.env, env);
     for (const pathKey of [
       'HOME',
       'USERPROFILE',
@@ -690,6 +690,19 @@ function resolveRelayDefinitionEnvOverrides(
     if (value !== '') resolved[key] = value;
   }
   return resolved;
+}
+
+function resolveRelayIdentityEnvOverrides(
+  overrides: Readonly<Record<string, string>> | undefined,
+  env: NodeJS.ProcessEnv
+): NodeJS.ProcessEnv {
+  const relevant = Object.fromEntries(
+    CHROME_DEVTOOLS_RELAY_RUNTIME_ENV_KEYS.flatMap((key) => {
+      const value = overrides?.[key];
+      return value === undefined ? [] : [[key, value]];
+    })
+  );
+  return resolveRelayDefinitionEnvOverrides(relevant, env);
 }
 
 function isErrno(error: unknown, code: string): boolean {

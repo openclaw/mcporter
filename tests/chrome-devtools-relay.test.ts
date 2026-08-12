@@ -340,6 +340,23 @@ describe('chrome-devtools OpenClaw relay routing', () => {
     expect(discover).not.toHaveBeenCalled();
   });
 
+  it('does not resolve unrelated server env while building relay identity', async () => {
+    const definition: ServerDefinition = {
+      name: 'chrome',
+      command: { kind: 'stdio', command: 'npx', args: AUTO_ARGS, cwd: '/tmp' },
+      env: {
+        MCPORTER_CHROME_DEVTOOLS_RELAY_URL: 'http://127.0.0.1:18888',
+        API_TOKEN: '$env:MISSING_API_TOKEN',
+      },
+    };
+    const discover = vi.fn(async () => ({ kind: 'unavailable' as const }));
+    const keys = chromeDevtoolsRelayEnvironmentKeys([definition], {});
+    await resolveChromeDevtoolsRelayRuntimeIdentity(keys, {}, { discover, discovery: TEST_DISCOVERY });
+    expect(discover).not.toHaveBeenCalled();
+    expect(keys.join('\n')).not.toContain('API_TOKEN');
+    expect(() => resolveChromeDevtoolsRelayEnvironment(definition.env, {})).toThrow('MISSING_API_TOKEN');
+  });
+
   it.each([
     ['policy off', { MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'off' }],
     ['disable flag', { MCPORTER_DISABLE_CHROME_DEVTOOLS_RELAY: '1' }],

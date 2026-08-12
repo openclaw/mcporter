@@ -539,7 +539,7 @@ describeUnixSocket('runDaemonHost lifecycle', () => {
             command: 'npx',
             args: ['-y', 'chrome-devtools-mcp@latest', '--autoConnect'],
             lifecycle: 'keep-alive',
-            env: { PATH: binDir, OPENCLAW_OAUTH_DIR: dir },
+            env: { PATH: binDir, OPENCLAW_OAUTH_DIR: dir, API_TOKEN: '$env:MISSING_API_TOKEN' },
           },
         },
       }),
