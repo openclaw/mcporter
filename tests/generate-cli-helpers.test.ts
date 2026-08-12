@@ -120,6 +120,7 @@ describe('generate helpers', () => {
     expect(getDescriptorDefault(null)).toBeUndefined();
 
     expect(buildPlaceholder('myPath', 'string', ['s1', 's2'])).toBe('<my-path:s1|s2>');
+    expect(buildPlaceholder('sources', 'array', ['web', 'news'])).toBe('<sources:web|news,...>');
     expect(buildPlaceholder('createdAt', 'string', undefined, 'iso-8601')).toBe('<created-at:iso-8601>');
     expect(buildPlaceholder('fields', 'object')).toBe('<fields:json>');
     expect(buildExampleValue('itemId', 'string', undefined, undefined)).toBe('example-id');

@@ -167,7 +167,10 @@ export function buildPlaceholder(
 ): string {
   const normalized = property.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`).replace(/_/g, '-');
   if (enumValues && enumValues.length > 0) {
-    return `<${normalized}:${enumValues.join('|')}>`;
+    // Enum members can describe an array's items, and the generated parser splits those
+    // flags on commas, so keep the multi-value hint next to the choices.
+    const suffix = type === 'array' ? ',...' : '';
+    return `<${normalized}:${enumValues.join('|')}${suffix}>`;
   }
   switch (type) {
     case 'number':
