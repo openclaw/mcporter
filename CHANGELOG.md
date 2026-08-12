@@ -2,6 +2,10 @@
 
 ## [0.13.5] - Unreleased
 
+### CLI
+
+- Discover OpenClaw's active Chrome extension relay endpoint automatically, while preserving the explicit environment override and legacy `127.0.0.1:18799` fallback.
+
 ## [0.13.4] - 2026-08-11
 
 **Highlight:** OAuth token refresh is now serialized across processes — two
@@ -33,10 +37,6 @@ token into a provider-side replay revocation.
 ### CLI
 
 - Accept `--params` as an alias for JSON call arguments and reject undeclared long-form tool flags before dispatch.
-
-### CLI
-
-- Discover OpenClaw's active Chrome extension relay endpoint automatically, while preserving the explicit environment override and legacy `127.0.0.1:18799` fallback.
 
 ### OAuth
 
