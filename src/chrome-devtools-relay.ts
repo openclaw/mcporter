@@ -22,6 +22,7 @@ import {
   discoverOpenClawRelayUrl,
   normalizeOpenClawProfile,
   OPENCLAW_RELAY_DISCOVERY_ENV_KEYS,
+  type OpenClawRelayDiscoveryFileProbe,
   type OpenClawRelayDiscoveryRunner,
 } from './chrome-devtools-relay-discovery.js';
 
@@ -83,9 +84,16 @@ export interface ChromeDevtoolsRelayRewrite {
 
 export type ChromeDevtoolsRelayProbeResult = ChromeDevtoolsRelayV2Result;
 
+export interface ChromeDevtoolsRelayDiscoveryOptions {
+  readonly platform?: NodeJS.Platform;
+  readonly isFile?: OpenClawRelayDiscoveryFileProbe;
+  readonly cwd?: string;
+}
+
 export interface ChromeDevtoolsRelayProbeOptions {
   readonly readToken?: () => string | undefined;
   readonly discover?: OpenClawRelayDiscoveryRunner;
+  readonly discovery?: ChromeDevtoolsRelayDiscoveryOptions;
   readonly connect?: (
     baseUrl: URL,
     credential: ChromeDevtoolsRelayCredential,
@@ -97,6 +105,7 @@ export interface ChromeDevtoolsRelayProbeOptions {
 
 export interface ChromeDevtoolsRelayIdentityOptions {
   readonly discover?: OpenClawRelayDiscoveryRunner;
+  readonly discovery?: ChromeDevtoolsRelayDiscoveryOptions;
 }
 
 export class ChromeDevtoolsRelayRequiredError extends Error {
@@ -340,6 +349,9 @@ export async function rewriteChromeDevtoolsArgsForRelay(
           keyId: loaded.credential.keyId,
           timeoutMs,
           run: options.discover,
+          platform: options.discovery?.platform,
+          isFile: options.discovery?.isFile,
+          cwd: options.discovery?.cwd,
         })
       ).url ??
       new URL(DEFAULT_RELAY_URL);
@@ -562,6 +574,9 @@ export async function resolveChromeDevtoolsRelayRuntimeIdentity(
         keyId,
         timeoutMs: resolveChromeDevtoolsRelayProbeTimeoutMs(effectiveEnv),
         run: options.discover,
+        platform: options.discovery?.platform,
+        isFile: options.discovery?.isFile,
+        cwd: options.discovery?.cwd,
       });
       discoveryValues.push([key, discovered.url?.toString() ?? DEFAULT_RELAY_IDENTITY_URL]);
     } catch {

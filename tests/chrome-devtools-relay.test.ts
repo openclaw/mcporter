@@ -28,6 +28,7 @@ const TOKEN = 'a'.repeat(64);
 const TOKEN_KEY_ID = deriveBrowserRelayKeyId(Buffer.from(TOKEN, 'hex'));
 const FAKE_PROXY_AUTHORIZATION = `Bearer ${'c'.repeat(43)}`;
 const AUTO_ARGS = ['-y', 'chrome-devtools-mcp@latest', '--autoConnect'];
+const TEST_DISCOVERY = { platform: 'linux' as const };
 
 function fakeUpstream() {
   return { socket: new net.Socket(), head: Buffer.alloc(0) };
@@ -37,6 +38,7 @@ function successfulOptions(overrides: ChromeDevtoolsRelayProbeOptions = {}): Chr
   return {
     readToken: () => TOKEN,
     discover: async () => ({ kind: 'success', stdout: relayMetadata(TOKEN_KEY_ID) }),
+    discovery: TEST_DISCOVERY,
     connect: async () => ({ reason: 'success', durationMs: 12, status: 200, upstream: fakeUpstream() }),
     startProxy: async () => ({
       endpoint: 'ws://127.0.0.1:45678/cdp',
@@ -169,7 +171,7 @@ describe('chrome-devtools OpenClaw relay routing', () => {
     };
     const discover = vi.fn(async () => ({ kind: 'unavailable' as const }));
     const keys = chromeDevtoolsRelayEnvironmentKeys([definition], {});
-    await resolveChromeDevtoolsRelayRuntimeIdentity(keys, {}, { discover });
+    await resolveChromeDevtoolsRelayRuntimeIdentity(keys, {}, { discover, discovery: TEST_DISCOVERY });
     expect(discover).not.toHaveBeenCalled();
   });
 
@@ -265,11 +267,13 @@ describe('chrome-devtools OpenClaw relay routing', () => {
       const keys = chromeDevtoolsRelayEnvironmentKeys([definition], env);
       const before = await resolveChromeDevtoolsRelayRuntimeIdentity(keys, env, {
         discover: async () => ({ kind: 'success', stdout: relayMetadata(firstKeyId, 19_110) }),
+        discovery: TEST_DISCOVERY,
       });
       await fs.writeFile(secretPath, secondKey, { mode: 0o600 });
       const secondKeyId = deriveBrowserRelayKeyId(Buffer.from(secondKey, 'hex'));
       const after = await resolveChromeDevtoolsRelayRuntimeIdentity(keys, env, {
         discover: async () => ({ kind: 'success', stdout: relayMetadata(secondKeyId, 19_110) }),
+        discovery: TEST_DISCOVERY,
       });
       expect(after).not.toBe(before);
     } finally {
@@ -289,9 +293,11 @@ describe('chrome-devtools OpenClaw relay routing', () => {
       const keys = chromeDevtoolsRelayEnvironmentKeys([definition], env);
       const at19110 = await resolveChromeDevtoolsRelayRuntimeIdentity(keys, env, {
         discover: async () => ({ kind: 'success', stdout: relayMetadata(TOKEN_KEY_ID, 19_110) }),
+        discovery: TEST_DISCOVERY,
       });
       const at19111 = await resolveChromeDevtoolsRelayRuntimeIdentity(keys, env, {
         discover: async () => ({ kind: 'success', stdout: relayMetadata(TOKEN_KEY_ID, 19_111) }),
+        discovery: TEST_DISCOVERY,
       });
       expect(at19111).not.toBe(at19110);
     } finally {
@@ -316,8 +322,18 @@ describe('chrome-devtools OpenClaw relay routing', () => {
       const firstKeys = chromeDevtoolsRelayEnvironmentKeys([first], baseEnv);
       const secondKeys = chromeDevtoolsRelayEnvironmentKeys([second], baseEnv);
       expect(firstKeys.join('\n')).not.toContain('do-not-store');
-      identities.push(await resolveChromeDevtoolsRelayRuntimeIdentity(firstKeys, baseEnv, { discover }));
-      identities.push(await resolveChromeDevtoolsRelayRuntimeIdentity(secondKeys, baseEnv, { discover }));
+      identities.push(
+        await resolveChromeDevtoolsRelayRuntimeIdentity(firstKeys, baseEnv, {
+          discover,
+          discovery: TEST_DISCOVERY,
+        })
+      );
+      identities.push(
+        await resolveChromeDevtoolsRelayRuntimeIdentity(secondKeys, baseEnv, {
+          discover,
+          discovery: TEST_DISCOVERY,
+        })
+      );
     }
     expect(identities[0]).not.toBe(identities[1]);
     expect(identities[2]).not.toBe(identities[3]);
@@ -336,7 +352,7 @@ describe('chrome-devtools OpenClaw relay routing', () => {
     const processEnv = { MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'require' };
     const discover = vi.fn(async () => ({ kind: 'unavailable' as const }));
     const keys = chromeDevtoolsRelayEnvironmentKeys([definition], processEnv);
-    await resolveChromeDevtoolsRelayRuntimeIdentity(keys, processEnv, { discover });
+    await resolveChromeDevtoolsRelayRuntimeIdentity(keys, processEnv, { discover, discovery: TEST_DISCOVERY });
     expect(discover).not.toHaveBeenCalled();
   });
 
@@ -361,7 +377,7 @@ describe('chrome-devtools OpenClaw relay routing', () => {
         return { kind: 'success', stdout: relayMetadata(TOKEN_KEY_ID, 19_110) };
       });
       const keys = chromeDevtoolsRelayEnvironmentKeys([definition], processEnv);
-      await resolveChromeDevtoolsRelayRuntimeIdentity(keys, processEnv, { discover });
+      await resolveChromeDevtoolsRelayRuntimeIdentity(keys, processEnv, { discover, discovery: TEST_DISCOVERY });
       expect(discover).toHaveBeenCalledOnce();
     } finally {
       await fs.rm(directory, { recursive: true, force: true });
@@ -385,7 +401,7 @@ describe('chrome-devtools OpenClaw relay routing', () => {
         processEnv.SERVER_RELAY_URL
       );
       const keys = chromeDevtoolsRelayEnvironmentKeys([definition], processEnv);
-      await resolveChromeDevtoolsRelayRuntimeIdentity(keys, processEnv, { discover });
+      await resolveChromeDevtoolsRelayRuntimeIdentity(keys, processEnv, { discover, discovery: TEST_DISCOVERY });
     }
     expect(discover).not.toHaveBeenCalled();
     expect(() =>
@@ -409,7 +425,7 @@ describe('chrome-devtools OpenClaw relay routing', () => {
     const discover = vi.fn(async () => ({ kind: 'unavailable' as const }));
     const keys = chromeDevtoolsRelayEnvironmentKeys([definition], {});
     expect(keys.join('\n')).not.toContain('/private');
-    await resolveChromeDevtoolsRelayRuntimeIdentity(keys, {}, { discover });
+    await resolveChromeDevtoolsRelayRuntimeIdentity(keys, {}, { discover, discovery: TEST_DISCOVERY });
     expect(discover).not.toHaveBeenCalled();
   });
 
@@ -425,17 +441,21 @@ describe('chrome-devtools OpenClaw relay routing', () => {
       const keys = chromeDevtoolsRelayEnvironmentKeys([definition], env);
       const unavailable = await resolveChromeDevtoolsRelayRuntimeIdentity(keys, env, {
         discover: async () => ({ kind: 'unavailable' }),
+        discovery: TEST_DISCOVERY,
       });
       const failed = await resolveChromeDevtoolsRelayRuntimeIdentity(keys, env, {
         discover: async () => {
           throw new Error('discovery failed');
         },
+        discovery: TEST_DISCOVERY,
       });
       const atLegacyPort = await resolveChromeDevtoolsRelayRuntimeIdentity(keys, env, {
         discover: async () => ({ kind: 'success', stdout: relayMetadata(TOKEN_KEY_ID, 18_799) }),
+        discovery: TEST_DISCOVERY,
       });
       const atNondefaultPort = await resolveChromeDevtoolsRelayRuntimeIdentity(keys, env, {
         discover: async () => ({ kind: 'success', stdout: relayMetadata(TOKEN_KEY_ID, 19_110) }),
+        discovery: TEST_DISCOVERY,
       });
       expect(unavailable).toBe(atLegacyPort);
       expect(failed).toBe(unavailable);

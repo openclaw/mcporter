@@ -37,6 +37,7 @@ const WINDOWS_CMD = String.raw`C:\Windows\System32\cmd.exe`;
 const WINDOWS_TASKKILL = String.raw`C:\Windows\System32\taskkill.exe`;
 const WINDOWS_SHIM_DIR = String.raw`C:\Program Files\OpenClaw\bin`;
 const WINDOWS_SHIM = String.raw`C:\Program Files\OpenClaw\bin\openclaw.CMD`;
+const TEST_DISCOVERY = { platform: 'linux' as const };
 
 describe('OpenClaw relay metadata discovery', () => {
   it('requests only the canonical non-legacy OpenClaw command with bounded output and time', async () => {
@@ -44,7 +45,7 @@ describe('OpenClaw relay metadata discovery', () => {
     const sourceEnv = { ...env, MCPORTER_TEST_UNRELATED_VALUE: 'not-forwarded' };
     const run = vi.fn<OpenClawRelayDiscoveryRunner>(async () => ({ kind: 'success', stdout: metadata() }));
     await expect(
-      discoverOpenClawRelayUrl({ env: sourceEnv, keyId: RELAY_KEY_ID, timeoutMs: 5_000, run })
+      discoverOpenClawRelayUrl({ env: sourceEnv, keyId: RELAY_KEY_ID, timeoutMs: 5_000, run, platform: 'linux' })
     ).resolves.toMatchObject({ reason: 'success' });
     expect(run).toHaveBeenCalledWith({
       executable: 'openclaw',
@@ -52,7 +53,7 @@ describe('OpenClaw relay metadata discovery', () => {
       env,
       timeoutMs: 5_000,
       maxOutputBytes: OPENCLAW_RELAY_DISCOVERY_MAX_OUTPUT_BYTES,
-      platform: process.platform,
+      platform: 'linux',
       shell: false,
     });
     expect(run.mock.calls[0]?.[0].args).not.toContain('--legacy-bearer');
@@ -647,7 +648,7 @@ function fakeChildProcess(pid: number): {
 }
 
 function relayOptions(overrides: Partial<ChromeDevtoolsRelayProbeOptions>): ChromeDevtoolsRelayProbeOptions {
-  return { readToken: () => RELAY_KEY_HEX, ...overrides };
+  return { readToken: () => RELAY_KEY_HEX, discovery: TEST_DISCOVERY, ...overrides };
 }
 
 function runner(stdout: Buffer): OpenClawRelayDiscoveryRunner {
@@ -655,11 +656,23 @@ function runner(stdout: Buffer): OpenClawRelayDiscoveryRunner {
 }
 
 async function discover(stdout: Buffer) {
-  return discoverOpenClawRelayUrl({ env: {}, keyId: RELAY_KEY_ID, timeoutMs: 5_000, run: runner(stdout) });
+  return discoverOpenClawRelayUrl({
+    env: {},
+    keyId: RELAY_KEY_ID,
+    timeoutMs: 5_000,
+    run: runner(stdout),
+    platform: 'linux',
+  });
 }
 
 async function discoverCommand(result: OpenClawRelayDiscoveryCommandResult) {
-  return discoverOpenClawRelayUrl({ env: {}, keyId: RELAY_KEY_ID, timeoutMs: 5_000, run: async () => result });
+  return discoverOpenClawRelayUrl({
+    env: {},
+    keyId: RELAY_KEY_ID,
+    timeoutMs: 5_000,
+    run: async () => result,
+    platform: 'linux',
+  });
 }
 
 function metadata(

@@ -24,6 +24,7 @@ const createConnection = vi.hoisted(() => vi.fn());
 const spawnSyncOpenClaw = vi.hoisted(() => vi.fn(() => new Error('synchronous discovery is forbidden')));
 const unavailableRelayIdentity = {
   discover: async () => ({ kind: 'unavailable' as const }),
+  discovery: { platform: 'linux' as const },
 };
 
 class MockSocket extends EventEmitter {
@@ -615,6 +616,7 @@ describe('DaemonClient config freshness', () => {
     let relayPort = 19_110;
     const identity = {
       discover: async () => ({ kind: 'success' as const, stdout: relayMetadata(keyId, relayPort) }),
+      discovery: { platform: 'linux' as const },
     };
     activeConfigPath = configPath;
     activeSocketPath = socketPath;
