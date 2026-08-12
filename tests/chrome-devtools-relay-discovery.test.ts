@@ -356,18 +356,19 @@ describe('OpenClaw discovery command planning', () => {
     });
   });
 
-  it.each([{ ComSpec: 'powershell.exe', SystemRoot: String.raw`..\Windows` }, {}])(
-    'fails closed without an absolute validated system cmd.exe: %j',
-    (systemEnv) => {
-      expect(
-        resolveOpenClawRelayDiscoveryCommandPlan(
-          { ...systemEnv, Path: WINDOWS_SHIM_DIR, PATHEXT: '.CMD' },
-          'win32',
-          (candidate) => candidate === WINDOWS_SHIM
-        )
-      ).toBeUndefined();
-    }
-  );
+  it.each([
+    { ComSpec: 'powershell.exe', SystemRoot: String.raw`..\Windows` },
+    { ComSpec: String.raw`C:\attacker\System32\cmd.exe`, SystemRoot: String.raw`C:\attacker` },
+    {},
+  ])('fails closed without an absolute validated system cmd.exe: %j', (systemEnv) => {
+    expect(
+      resolveOpenClawRelayDiscoveryCommandPlan(
+        { ...systemEnv, Path: WINDOWS_SHIM_DIR, PATHEXT: '.CMD' },
+        'win32',
+        (candidate) => candidate === WINDOWS_SHIM
+      )
+    ).toBeUndefined();
+  });
 
   it('passes the exact Windows plan through the async runner seam with shell disabled', async () => {
     const env = windowsEnv({ OPENCLAW_PROFILE: ' Work ' });
