@@ -146,7 +146,8 @@ export interface StatusResult {
     readonly mtimeMs: number | null;
   }>;
   readonly definitionHash?: string;
-  readonly relayEnvironmentHash?: string;
+  readonly relayRuntimeIdentityVersion?: number;
+  readonly relayRuntimeIdentity?: string;
   readonly relayEnvironmentKeys?: string[];
   readonly oauthNoBrowser?: boolean;
   readonly socketPath: string;

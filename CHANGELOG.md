@@ -34,6 +34,10 @@ token into a provider-side replay revocation.
 
 - Accept `--params` as an alias for JSON call arguments and reject undeclared long-form tool flags before dispatch.
 
+### CLI
+
+- Discover OpenClaw's active Chrome extension relay endpoint automatically, while preserving the explicit environment override and legacy `127.0.0.1:18799` fallback.
+
 ### OAuth
 
 - Preserve refreshable dynamic OAuth client registrations across fresh callback ports, replacing an obsolete redirect registration only when interactive authorization is required. (Issue #290, thanks @elecnix)

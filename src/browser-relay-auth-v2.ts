@@ -4,6 +4,15 @@ export const BROWSER_RELAY_AUTH_LABEL = 'openclaw.browser-relay.auth';
 export const BROWSER_RELAY_AUTH_VERSION = 2;
 export const BROWSER_RELAY_CHALLENGE_MAX_LIFETIME_MS = 10_000;
 export const BROWSER_RELAY_CLOCK_SKEW_MS = 30_000;
+export const BROWSER_RELAY_AUTH_CHALLENGE_PATH = '/_openclaw/relay/auth/v2/challenge';
+export const BROWSER_RELAY_AUTH_COMPLETE_PATH = '/_openclaw/relay/auth/v2/complete';
+export const BROWSER_RELAY_CDP_PATH = '/cdp';
+export const BROWSER_RELAY_CDP_ROLE = 'cdp';
+export const BROWSER_RELAY_CDP_TRANSPORT = 'connection';
+export const BROWSER_RELAY_CDP_METHOD = 'SEQUENCE';
+export const BROWSER_RELAY_CDP_RESOURCE = '/json/version -> /cdp';
+export const BROWSER_RELAY_CDP_FLOW = 'cdp';
+export const BROWSER_RELAY_VERSION_PATH = '/json/version';
 
 export type BrowserRelayProofKind = 'server' | 'client' | 'accept';
 

@@ -5,9 +5,10 @@ import fs from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import {
+  CHROME_DEVTOOLS_RELAY_RUNTIME_IDENTITY_VERSION,
   chromeDevtoolsRelayEnvironmentKeys,
   getChromeDevtoolsRelayDecision,
-  hashChromeDevtoolsRelayProcessEnvironment,
+  resolveChromeDevtoolsRelayRuntimeIdentity,
 } from '../chrome-devtools-relay.js';
 import { loadConfigSnapshot, type DaemonConfig, type ServerDefinition } from '../config.js';
 import { readJsonFile, withFileLock, writeJsonFile } from '../fs-json.js';
@@ -82,7 +83,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
   const keepAliveDefinitions = runtime.getDefinitions().filter(isKeepAliveServer);
   const definitionHash = hashDaemonDefinitions(keepAliveDefinitions);
   const relayEnvironmentKeys = chromeDevtoolsRelayEnvironmentKeys(keepAliveDefinitions);
-  const relayEnvironmentHash = hashChromeDevtoolsRelayProcessEnvironment(relayEnvironmentKeys);
+  const relayRuntimeIdentity = await resolveChromeDevtoolsRelayRuntimeIdentity(relayEnvironmentKeys);
   const oauthNoBrowser = suppressBrowserLaunchFromEnv();
   if (keepAliveDefinitions.length === 0) {
     throw new Error('No MCP servers require keep-alive; daemon will not start.');
@@ -190,7 +191,8 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
           logPath: options.logPath ?? null,
           configMtimeMs,
           definitionHash,
-          relayEnvironmentHash,
+          relayRuntimeIdentityVersion: CHROME_DEVTOOLS_RELAY_RUNTIME_IDENTITY_VERSION,
+          relayRuntimeIdentity,
           relayEnvironmentKeys,
           oauthNoBrowser,
         },
@@ -228,7 +230,8 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
           options.configPath,
           configMtimeMs,
           definitionHash,
-          relayEnvironmentHash,
+          CHROME_DEVTOOLS_RELAY_RUNTIME_IDENTITY_VERSION,
+          relayRuntimeIdentity,
           relayEnvironmentKeys,
           oauthNoBrowser
         )
@@ -258,7 +261,8 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
       logPath: options.logPath ?? null,
       configMtimeMs,
       definitionHash,
-      relayEnvironmentHash,
+      relayRuntimeIdentityVersion: CHROME_DEVTOOLS_RELAY_RUNTIME_IDENTITY_VERSION,
+      relayRuntimeIdentity,
       relayEnvironmentKeys,
       oauthNoBrowser,
     });
@@ -331,7 +335,8 @@ function metadataFromStatus(
   logPath: string | null;
   configMtimeMs: number | null;
   definitionHash?: string;
-  relayEnvironmentHash?: string;
+  relayRuntimeIdentityVersion?: number;
+  relayRuntimeIdentity?: string;
   relayEnvironmentKeys?: string[];
   oauthNoBrowser?: boolean;
 } {
@@ -345,7 +350,8 @@ function metadataFromStatus(
     logPath: status.logPath ?? null,
     configMtimeMs: status.configMtimeMs ?? null,
     definitionHash: status.definitionHash,
-    relayEnvironmentHash: status.relayEnvironmentHash,
+    relayRuntimeIdentityVersion: status.relayRuntimeIdentityVersion,
+    relayRuntimeIdentity: status.relayRuntimeIdentity,
     relayEnvironmentKeys: status.relayEnvironmentKeys,
     oauthNoBrowser: status.oauthNoBrowser,
   };
@@ -357,14 +363,18 @@ function daemonConfigMatches(
   currentConfigPath: string,
   currentConfigMtimeMs: number | null,
   currentDefinitionHash: string,
-  currentRelayEnvironmentHash: string,
+  currentRelayRuntimeIdentityVersion: number,
+  currentRelayRuntimeIdentity: string,
   currentRelayEnvironmentKeys: readonly string[],
   currentOauthNoBrowser: boolean
 ): boolean {
   if (live.definitionHash !== currentDefinitionHash) {
     return false;
   }
-  if (live.relayEnvironmentHash !== currentRelayEnvironmentHash) {
+  if (live.relayRuntimeIdentityVersion !== currentRelayRuntimeIdentityVersion) {
+    return false;
+  }
+  if (live.relayRuntimeIdentity !== currentRelayRuntimeIdentity) {
     return false;
   }
   if (JSON.stringify(live.relayEnvironmentKeys) !== JSON.stringify(currentRelayEnvironmentKeys)) {
@@ -538,7 +548,8 @@ async function handleSocketRequest(
     startedAt: number;
     logPath: string | null;
     definitionHash?: string;
-    relayEnvironmentHash?: string;
+    relayRuntimeIdentityVersion?: number;
+    relayRuntimeIdentity?: string;
     relayEnvironmentKeys?: string[];
     oauthNoBrowser?: boolean;
   },
@@ -652,7 +663,8 @@ async function processRequest(
     startedAt: number;
     logPath: string | null;
     definitionHash?: string;
-    relayEnvironmentHash?: string;
+    relayRuntimeIdentityVersion?: number;
+    relayRuntimeIdentity?: string;
     relayEnvironmentKeys?: string[];
     oauthNoBrowser?: boolean;
   },
@@ -834,7 +846,8 @@ async function processRequest(
           configLayers: metadata.configLayers,
           configMtimeMs: metadata.configMtimeMs,
           definitionHash: metadata.definitionHash,
-          relayEnvironmentHash: metadata.relayEnvironmentHash,
+          relayRuntimeIdentityVersion: metadata.relayRuntimeIdentityVersion,
+          relayRuntimeIdentity: metadata.relayRuntimeIdentity,
           relayEnvironmentKeys: metadata.relayEnvironmentKeys,
           oauthNoBrowser: metadata.oauthNoBrowser,
           socketPath: metadata.socketPath,
@@ -895,7 +908,8 @@ export async function __testProcessRequest(
     startedAt: number;
     logPath: string | null;
     definitionHash?: string;
-    relayEnvironmentHash?: string;
+    relayRuntimeIdentityVersion?: number;
+    relayRuntimeIdentity?: string;
     relayEnvironmentKeys?: string[];
     oauthNoBrowser?: boolean;
   },

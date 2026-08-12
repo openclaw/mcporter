@@ -4,9 +4,19 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  BROWSER_RELAY_AUTH_CHALLENGE_PATH,
+  BROWSER_RELAY_AUTH_COMPLETE_PATH,
+  BROWSER_RELAY_AUTH_LABEL,
+  BROWSER_RELAY_AUTH_VERSION,
+  deriveBrowserRelayKeyId,
+} from '../src/browser-relay-auth-v2.js';
+import {
+  chromeDevtoolsRelayEnvironmentKeys,
   hashChromeDevtoolsRelayEnvironment,
+  resolveChromeDevtoolsRelayEnvironment,
   resolveChromeDevtoolsRelayPolicy,
   resolveChromeDevtoolsRelayProbeTimeoutMs,
+  resolveChromeDevtoolsRelayRuntimeIdentity,
   rewriteChromeDevtoolsArgsForRelay,
   shouldAttemptChromeDevtoolsRelay,
   type ChromeDevtoolsRelayProbeOptions,
@@ -15,6 +25,7 @@ import {
 import type { ServerDefinition } from '../src/config.js';
 
 const TOKEN = 'a'.repeat(64);
+const TOKEN_KEY_ID = deriveBrowserRelayKeyId(Buffer.from(TOKEN, 'hex'));
 const FAKE_PROXY_AUTHORIZATION = `Bearer ${'c'.repeat(43)}`;
 const AUTO_ARGS = ['-y', 'chrome-devtools-mcp@latest', '--autoConnect'];
 
@@ -25,6 +36,7 @@ function fakeUpstream() {
 function successfulOptions(overrides: ChromeDevtoolsRelayProbeOptions = {}): ChromeDevtoolsRelayProbeOptions {
   return {
     readToken: () => TOKEN,
+    discover: async () => ({ kind: 'success', stdout: relayMetadata(TOKEN_KEY_ID) }),
     connect: async () => ({ reason: 'success', durationMs: 12, status: 200, upstream: fakeUpstream() }),
     startProxy: async () => ({
       endpoint: 'ws://127.0.0.1:45678/cdp',
@@ -33,6 +45,28 @@ function successfulOptions(overrides: ChromeDevtoolsRelayProbeOptions = {}): Chr
     }),
     ...overrides,
   };
+}
+
+function relayMetadata(keyId: string, port = 18_799): Buffer {
+  const browserUrl = `http://127.0.0.1:${port}`;
+  return Buffer.from(
+    JSON.stringify({
+      browserUrl,
+      wsEndpoint: `ws://127.0.0.1:${port}/cdp`,
+      auth: {
+        label: BROWSER_RELAY_AUTH_LABEL,
+        version: BROWSER_RELAY_AUTH_VERSION,
+        keyId,
+        challengeUrl: new URL(BROWSER_RELAY_AUTH_CHALLENGE_PATH, browserUrl).toString(),
+        completeUrl: new URL(BROWSER_RELAY_AUTH_COMPLETE_PATH, browserUrl).toString(),
+        role: 'cdp',
+        transport: 'connection',
+        method: 'SEQUENCE',
+        resource: '/json/version -> /cdp',
+        flow: 'cdp',
+      },
+    })
+  );
 }
 
 describe('chrome-devtools OpenClaw relay routing', () => {
@@ -127,6 +161,18 @@ describe('chrome-devtools OpenClaw relay routing', () => {
     }
   });
 
+  it('does not discover daemon identity while relay routing is off', async () => {
+    const definition: ServerDefinition = {
+      name: 'chrome',
+      command: { kind: 'stdio', command: 'npx', args: AUTO_ARGS, cwd: '/tmp' },
+      chromeDevtoolsRelay: 'off',
+    };
+    const discover = vi.fn(async () => ({ kind: 'unavailable' as const }));
+    const keys = chromeDevtoolsRelayEnvironmentKeys([definition], {});
+    await resolveChromeDevtoolsRelayRuntimeIdentity(keys, {}, { discover });
+    expect(discover).not.toHaveBeenCalled();
+  });
+
   it('changes daemon identity for policy, URL, timeout, state, credential directory, and referenced env inputs', () => {
     const definition: ServerDefinition = {
       name: 'chrome',
@@ -137,8 +183,10 @@ describe('chrome-devtools OpenClaw relay routing', () => {
       { MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'require' },
       { MCPORTER_CHROME_DEVTOOLS_RELAY_URL: 'http://127.0.0.1:18888' },
       { MCPORTER_CHROME_DEVTOOLS_RELAY_TIMEOUT_MS: '9000' },
+      { HOME: '/tmp/openclaw-home-a' },
       { OPENCLAW_STATE_DIR: '/tmp/openclaw-state-a' },
       { OPENCLAW_OAUTH_DIR: '/tmp/openclaw-oauth-a' },
+      { OPENCLAW_PROFILE: 'work' },
     ];
     for (const env of variants) expect(hashChromeDevtoolsRelayEnvironment([definition], env)).not.toBe(baseline);
     const indirect = {
@@ -199,6 +247,204 @@ describe('chrome-devtools OpenClaw relay routing', () => {
     }
   });
 
+  it('uses the named-profile credential path in daemon identity', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-relay-profile-identity-'));
+    const credentials = path.join(home, '.openclaw-work', 'credentials');
+    const secretPath = path.join(credentials, 'browser-extension-relay.secret');
+    const definition: ServerDefinition = {
+      name: 'chrome',
+      command: { kind: 'stdio', command: 'npx', args: AUTO_ARGS, cwd: '/tmp' },
+    };
+    const firstKey = Buffer.alloc(32, 0x66).toString('hex');
+    const secondKey = Buffer.alloc(32, 0x67).toString('hex');
+    try {
+      await fs.mkdir(credentials, { recursive: true });
+      await fs.writeFile(secretPath, firstKey, { mode: 0o600 });
+      const firstKeyId = deriveBrowserRelayKeyId(Buffer.from(firstKey, 'hex'));
+      const env = { OPENCLAW_HOME: home, OPENCLAW_PROFILE: 'work' };
+      const keys = chromeDevtoolsRelayEnvironmentKeys([definition], env);
+      const before = await resolveChromeDevtoolsRelayRuntimeIdentity(keys, env, {
+        discover: async () => ({ kind: 'success', stdout: relayMetadata(firstKeyId, 19_110) }),
+      });
+      await fs.writeFile(secretPath, secondKey, { mode: 0o600 });
+      const secondKeyId = deriveBrowserRelayKeyId(Buffer.from(secondKey, 'hex'));
+      const after = await resolveChromeDevtoolsRelayRuntimeIdentity(keys, env, {
+        discover: async () => ({ kind: 'success', stdout: relayMetadata(secondKeyId, 19_110) }),
+      });
+      expect(after).not.toBe(before);
+    } finally {
+      await fs.rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('changes daemon identity when the discovered relay port changes', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-relay-port-'));
+    const definition: ServerDefinition = {
+      name: 'chrome',
+      command: { kind: 'stdio', command: 'npx', args: AUTO_ARGS, cwd: '/tmp' },
+    };
+    try {
+      await fs.writeFile(path.join(directory, 'browser-extension-relay.secret'), TOKEN, { mode: 0o600 });
+      const env = { OPENCLAW_OAUTH_DIR: directory };
+      const keys = chromeDevtoolsRelayEnvironmentKeys([definition], env);
+      const at19110 = await resolveChromeDevtoolsRelayRuntimeIdentity(keys, env, {
+        discover: async () => ({ kind: 'success', stdout: relayMetadata(TOKEN_KEY_ID, 19_110) }),
+      });
+      const at19111 = await resolveChromeDevtoolsRelayRuntimeIdentity(keys, env, {
+        discover: async () => ({ kind: 'success', stdout: relayMetadata(TOKEN_KEY_ID, 19_111) }),
+      });
+      expect(at19111).not.toBe(at19110);
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('skips discovery for an explicit URL and honors definition env precedence', async () => {
+    const definition = (url: string): ServerDefinition => ({
+      name: 'chrome',
+      command: { kind: 'stdio', command: 'npx', args: AUTO_ARGS, cwd: '/tmp' },
+      env: { MCPORTER_CHROME_DEVTOOLS_RELAY_URL: url, UNRELATED_SECRET: 'do-not-store' },
+    });
+    const discover = vi.fn(async () => ({ kind: 'unavailable' as const }));
+    const identities: string[] = [];
+    for (const baseEnv of [{}, { MCPORTER_CHROME_DEVTOOLS_RELAY_URL: 'http://127.0.0.1:19999' }]) {
+      const first = definition('http://127.0.0.1:18888');
+      const second = definition('http://127.0.0.1:18889');
+      expect(resolveChromeDevtoolsRelayEnvironment(first.env, baseEnv).MCPORTER_CHROME_DEVTOOLS_RELAY_URL).toBe(
+        'http://127.0.0.1:18888'
+      );
+      const firstKeys = chromeDevtoolsRelayEnvironmentKeys([first], baseEnv);
+      const secondKeys = chromeDevtoolsRelayEnvironmentKeys([second], baseEnv);
+      expect(firstKeys.join('\n')).not.toContain('do-not-store');
+      identities.push(await resolveChromeDevtoolsRelayRuntimeIdentity(firstKeys, baseEnv, { discover }));
+      identities.push(await resolveChromeDevtoolsRelayRuntimeIdentity(secondKeys, baseEnv, { discover }));
+    }
+    expect(identities[0]).not.toBe(identities[1]);
+    expect(identities[2]).not.toBe(identities[3]);
+    expect(discover).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['policy off', { MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'off' }],
+    ['disable flag', { MCPORTER_DISABLE_CHROME_DEVTOOLS_RELAY: '1' }],
+  ])('skips discovery for definition-scoped %s', async (_case, definitionEnv) => {
+    const definition: ServerDefinition = {
+      name: 'chrome',
+      command: { kind: 'stdio', command: 'npx', args: AUTO_ARGS, cwd: '/tmp' },
+      env: definitionEnv,
+    };
+    const processEnv = { MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'require' };
+    const discover = vi.fn(async () => ({ kind: 'unavailable' as const }));
+    const keys = chromeDevtoolsRelayEnvironmentKeys([definition], processEnv);
+    await resolveChromeDevtoolsRelayRuntimeIdentity(keys, processEnv, { discover });
+    expect(discover).not.toHaveBeenCalled();
+  });
+
+  it('passes a definition-scoped placeholder timeout to bounded discovery', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-relay-timeout-identity-'));
+    const definition: ServerDefinition = {
+      name: 'chrome',
+      command: { kind: 'stdio', command: 'npx', args: AUTO_ARGS, cwd: '/tmp' },
+      env: {
+        OPENCLAW_OAUTH_DIR: directory,
+        MCPORTER_CHROME_DEVTOOLS_RELAY_TIMEOUT_MS: '$env:SERVER_RELAY_TIMEOUT',
+      },
+    };
+    try {
+      await fs.writeFile(path.join(directory, 'browser-extension-relay.secret'), TOKEN, { mode: 0o600 });
+      const processEnv = {
+        SERVER_RELAY_TIMEOUT: '2300',
+        MCPORTER_CHROME_DEVTOOLS_RELAY_TIMEOUT_MS: '9000',
+      };
+      const discover = vi.fn<NonNullable<ChromeDevtoolsRelayProbeOptions['discover']>>(async (options) => {
+        expect(options.timeoutMs).toBe(2_300);
+        return { kind: 'success', stdout: relayMetadata(TOKEN_KEY_ID, 19_110) };
+      });
+      const keys = chromeDevtoolsRelayEnvironmentKeys([definition], processEnv);
+      await resolveChromeDevtoolsRelayRuntimeIdentity(keys, processEnv, { discover });
+      expect(discover).toHaveBeenCalledOnce();
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('matches runtime placeholder behavior for definition relay controls', async () => {
+    const processEnv = { SERVER_RELAY_URL: 'http://127.0.0.1:18888' };
+    const direct: ServerDefinition = {
+      name: 'chrome',
+      command: { kind: 'stdio', command: 'npx', args: AUTO_ARGS, cwd: '/tmp' },
+      env: { MCPORTER_CHROME_DEVTOOLS_RELAY_URL: '$env:SERVER_RELAY_URL' },
+    };
+    const interpolated: ServerDefinition = {
+      ...direct,
+      env: { MCPORTER_CHROME_DEVTOOLS_RELAY_URL: '${SERVER_RELAY_URL}' },
+    };
+    const discover = vi.fn(async () => ({ kind: 'unavailable' as const }));
+    for (const definition of [direct, interpolated]) {
+      expect(resolveChromeDevtoolsRelayEnvironment(definition.env, processEnv).MCPORTER_CHROME_DEVTOOLS_RELAY_URL).toBe(
+        processEnv.SERVER_RELAY_URL
+      );
+      const keys = chromeDevtoolsRelayEnvironmentKeys([definition], processEnv);
+      await resolveChromeDevtoolsRelayRuntimeIdentity(keys, processEnv, { discover });
+    }
+    expect(discover).not.toHaveBeenCalled();
+    expect(() =>
+      chromeDevtoolsRelayEnvironmentKeys(
+        [{ ...direct, env: { MCPORTER_CHROME_DEVTOOLS_RELAY_URL: '$env:MISSING_RELAY_URL' } }],
+        {}
+      )
+    ).toThrow('MISSING_RELAY_URL');
+    expect(
+      resolveChromeDevtoolsRelayEnvironment({ MCPORTER_CHROME_DEVTOOLS_RELAY_URL: '${MISSING_RELAY_URL}' }, {})
+        .MCPORTER_CHROME_DEVTOOLS_RELAY_URL
+    ).toBeUndefined();
+  });
+
+  it('marks an invalid definition URL without discovering or storing its raw bytes', async () => {
+    const definition: ServerDefinition = {
+      name: 'chrome',
+      command: { kind: 'stdio', command: 'npx', args: AUTO_ARGS, cwd: '/tmp' },
+      env: { MCPORTER_CHROME_DEVTOOLS_RELAY_URL: 'https://127.0.0.1:18888/private' },
+    };
+    const discover = vi.fn(async () => ({ kind: 'unavailable' as const }));
+    const keys = chromeDevtoolsRelayEnvironmentKeys([definition], {});
+    expect(keys.join('\n')).not.toContain('/private');
+    await resolveChromeDevtoolsRelayRuntimeIdentity(keys, {}, { discover });
+    expect(discover).not.toHaveBeenCalled();
+  });
+
+  it('uses 18799 in runtime identity when async discovery is unavailable', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-relay-fallback-identity-'));
+    const definition: ServerDefinition = {
+      name: 'chrome',
+      command: { kind: 'stdio', command: 'npx', args: AUTO_ARGS, cwd: '/tmp' },
+    };
+    try {
+      await fs.writeFile(path.join(directory, 'browser-extension-relay.secret'), TOKEN, { mode: 0o600 });
+      const env = { OPENCLAW_OAUTH_DIR: directory };
+      const keys = chromeDevtoolsRelayEnvironmentKeys([definition], env);
+      const unavailable = await resolveChromeDevtoolsRelayRuntimeIdentity(keys, env, {
+        discover: async () => ({ kind: 'unavailable' }),
+      });
+      const failed = await resolveChromeDevtoolsRelayRuntimeIdentity(keys, env, {
+        discover: async () => {
+          throw new Error('discovery failed');
+        },
+      });
+      const atLegacyPort = await resolveChromeDevtoolsRelayRuntimeIdentity(keys, env, {
+        discover: async () => ({ kind: 'success', stdout: relayMetadata(TOKEN_KEY_ID, 18_799) }),
+      });
+      const atNondefaultPort = await resolveChromeDevtoolsRelayRuntimeIdentity(keys, env, {
+        discover: async () => ({ kind: 'success', stdout: relayMetadata(TOKEN_KEY_ID, 19_110) }),
+      });
+      expect(unavailable).toBe(atLegacyPort);
+      expect(failed).toBe(unavailable);
+      expect(atNondefaultPort).not.toBe(unavailable);
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('resolves credential-directory placeholders before hashing relay key rotation', async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-relay-placeholder-'));
     const secretPath = path.join(directory, 'browser-extension-relay.secret');
@@ -218,7 +464,7 @@ describe('chrome-devtools OpenClaw relay routing', () => {
     }
   });
 
-  it('resolves chained definition environment before hashing relay key rotation', async () => {
+  it('uses the runtime environment merge contract without chaining definition overrides', async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-relay-chained-placeholder-'));
     const secretPath = path.join(directory, 'browser-extension-relay.secret');
     const definition: ServerDefinition = {
@@ -229,15 +475,14 @@ describe('chrome-devtools OpenClaw relay routing', () => {
         OPENCLAW_OAUTH_DIR: '${OPENCLAW_DIR}',
       },
     };
-    try {
-      await fs.writeFile(secretPath, TOKEN, { mode: 0o600 });
-      const before = hashChromeDevtoolsRelayEnvironment([definition], {});
-      await fs.writeFile(secretPath, 'b'.repeat(64), { mode: 0o600 });
-      const after = hashChromeDevtoolsRelayEnvironment([definition], {});
-      expect(after).not.toBe(before);
-    } finally {
-      await fs.rm(directory, { recursive: true, force: true });
-    }
+    await fs.writeFile(secretPath, TOKEN, { mode: 0o600 });
+    const merged = resolveChromeDevtoolsRelayEnvironment(definition.env, {});
+    expect(merged.OPENCLAW_DIR).toBe(directory);
+    expect(merged.OPENCLAW_OAUTH_DIR).toBeUndefined();
+    const before = hashChromeDevtoolsRelayEnvironment([definition], {});
+    await fs.writeFile(secretPath, 'b'.repeat(64), { mode: 0o600 });
+    expect(hashChromeDevtoolsRelayEnvironment([definition], {})).toBe(before);
+    await fs.rm(directory, { recursive: true, force: true });
   });
 
   it('routes through the protected local proxy without putting either bearer in child argv', async () => {
@@ -522,6 +767,128 @@ describe('chrome-devtools OpenClaw relay routing', () => {
     }
   });
 
+  it('matches OpenClaw default, named-profile, home, state, and OAuth credential precedence', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-relay-profile-'));
+    const home = path.join(root, 'home');
+    const state = path.join(root, 'state');
+    const oauth = path.join(root, 'oauth');
+    const keys = {
+      default: Buffer.alloc(32, 0x61).toString('hex'),
+      named: Buffer.alloc(32, 0x62).toString('hex'),
+      state: Buffer.alloc(32, 0x63).toString('hex'),
+      oauth: Buffer.alloc(32, 0x64).toString('hex'),
+    };
+    try {
+      await writeRelayCredential(path.join(home, '.openclaw', 'credentials'), keys.default);
+      await writeRelayCredential(path.join(home, '.openclaw-Work', 'credentials'), keys.named);
+      await writeRelayCredential(path.join(state, 'credentials'), keys.state);
+      await writeRelayCredential(oauth, keys.oauth);
+
+      const cases: Array<{ name: string; env: NodeJS.ProcessEnv; key: string; forwardedProfile?: string }> = [
+        { name: 'default', env: { OPENCLAW_HOME: home }, key: keys.default },
+        {
+          name: 'case-insensitive default profile',
+          env: { OPENCLAW_HOME: home, OPENCLAW_PROFILE: 'Default' },
+          key: keys.default,
+        },
+        {
+          name: 'named profile',
+          env: { OPENCLAW_HOME: home, OPENCLAW_PROFILE: ' Work ' },
+          key: keys.named,
+          forwardedProfile: 'Work',
+        },
+        {
+          name: 'HOME-derived named profile',
+          env: { HOME: home, OPENCLAW_PROFILE: 'Work' },
+          key: keys.named,
+          forwardedProfile: 'Work',
+        },
+        {
+          name: 'invalid profile falls back safely',
+          env: { OPENCLAW_HOME: home, OPENCLAW_PROFILE: '../Work' },
+          key: keys.default,
+        },
+        {
+          name: 'explicit state overrides profile',
+          env: { OPENCLAW_HOME: home, OPENCLAW_PROFILE: 'Work', OPENCLAW_STATE_DIR: state },
+          key: keys.state,
+          forwardedProfile: 'Work',
+        },
+        {
+          name: 'explicit OAuth directory overrides state',
+          env: {
+            OPENCLAW_HOME: home,
+            OPENCLAW_PROFILE: 'Work',
+            OPENCLAW_STATE_DIR: state,
+            OPENCLAW_OAUTH_DIR: oauth,
+          },
+          key: keys.oauth,
+          forwardedProfile: 'Work',
+        },
+      ];
+
+      for (const testCase of cases) {
+        const expectedKeyId = deriveBrowserRelayKeyId(Buffer.from(testCase.key, 'hex'));
+        const observed: string[] = [];
+        const result = await rewriteChromeDevtoolsArgsForRelay(
+          'npx',
+          AUTO_ARGS,
+          testCase.env,
+          successfulOptions({
+            readToken: undefined,
+            discover: async (options) => {
+              expect(options.env.OPENCLAW_PROFILE, testCase.name).toBe(testCase.forwardedProfile);
+              return { kind: 'success', stdout: relayMetadata(expectedKeyId, 19_110) };
+            },
+            connect: async (url, credential) => {
+              observed.push(url.toString(), credential.keyId);
+              return { reason: 'network-error', durationMs: 1 };
+            },
+          })
+        );
+        expect(observed, testCase.name).toEqual(['http://127.0.0.1:19110/', expectedKeyId]);
+        expect(result.decision.endpoint, testCase.name).toBe('ws://127.0.0.1:19110/cdp');
+      }
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('satisfies require with a named-profile credential and discovered endpoint', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-relay-profile-require-'));
+    const key = Buffer.alloc(32, 0x65).toString('hex');
+    const keyId = deriveBrowserRelayKeyId(Buffer.from(key, 'hex'));
+    try {
+      await writeRelayCredential(path.join(root, '.openclaw-work', 'credentials'), key);
+      const result = await rewriteChromeDevtoolsArgsForRelay(
+        'npx',
+        AUTO_ARGS,
+        {
+          OPENCLAW_HOME: root,
+          OPENCLAW_PROFILE: 'work',
+          MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'require',
+        },
+        successfulOptions({
+          readToken: undefined,
+          discover: async () => ({ kind: 'success', stdout: relayMetadata(keyId, 19_110) }),
+          connect: async (url, credential) => {
+            expect(url.toString()).toBe('http://127.0.0.1:19110/');
+            expect(credential.keyId).toBe(keyId);
+            return { reason: 'success', durationMs: 1, status: 200, upstream: fakeUpstream() };
+          },
+        })
+      );
+      expect(result.applied).toBe(true);
+      expect(result.decision).toMatchObject({
+        route: 'relay',
+        policy: 'require',
+        endpoint: 'ws://127.0.0.1:19110/cdp',
+      });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('leaves unrelated commands untouched without credential discovery or probing', async () => {
     const readToken = vi.fn(() => TOKEN);
     const connect = vi.fn(async () => ({
@@ -542,3 +909,8 @@ describe('chrome-devtools OpenClaw relay routing', () => {
     expect(connect).not.toHaveBeenCalled();
   });
 });
+
+async function writeRelayCredential(directory: string, key: string): Promise<void> {
+  await fs.mkdir(directory, { recursive: true });
+  await fs.writeFile(path.join(directory, 'browser-extension-relay.secret'), key, { mode: 0o600 });
+}

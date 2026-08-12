@@ -2,7 +2,11 @@ import crypto, { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
-import { hashChromeDevtoolsRelayProcessEnvironment } from '../chrome-devtools-relay.js';
+import {
+  CHROME_DEVTOOLS_RELAY_RUNTIME_IDENTITY_VERSION,
+  resolveChromeDevtoolsRelayRuntimeIdentity,
+  type ChromeDevtoolsRelayIdentityOptions,
+} from '../chrome-devtools-relay.js';
 import { withFileLock } from '../fs-json.js';
 import { isProcessRunning } from '../process-utils.js';
 import { suppressBrowserLaunchFromEnv } from '../oauth-browser-suppression.js';
@@ -31,6 +35,7 @@ export interface DaemonClientOptions {
   readonly configPath: string;
   readonly configExplicit?: boolean;
   readonly rootDir?: string;
+  readonly chromeDevtoolsRelayIdentity?: ChromeDevtoolsRelayIdentityOptions;
 }
 
 const DEFAULT_DAEMON_TIMEOUT_MS = 30_000;
@@ -51,7 +56,8 @@ interface DaemonMetadata {
   readonly configLayers?: Array<{ path: string; mtimeMs: number | null }>;
   readonly startedAt: number;
   readonly logPath?: string | null;
-  readonly relayEnvironmentHash?: string;
+  readonly relayRuntimeIdentityVersion?: number;
+  readonly relayRuntimeIdentity?: string;
   readonly relayEnvironmentKeys?: string[];
   readonly oauthNoBrowser?: boolean;
 }
@@ -269,8 +275,14 @@ export class DaemonClient {
       }
     }
     if (
+      metadata.relayRuntimeIdentityVersion !== CHROME_DEVTOOLS_RELAY_RUNTIME_IDENTITY_VERSION ||
       !metadata.relayEnvironmentKeys ||
-      metadata.relayEnvironmentHash !== hashChromeDevtoolsRelayProcessEnvironment(metadata.relayEnvironmentKeys)
+      metadata.relayRuntimeIdentity !==
+        (await resolveChromeDevtoolsRelayRuntimeIdentity(
+          metadata.relayEnvironmentKeys,
+          process.env,
+          this.options.chromeDevtoolsRelayIdentity
+        ))
     ) {
       return 'stale';
     }

@@ -4,19 +4,23 @@ import net from 'node:net';
 import { TextDecoder } from 'node:util';
 import { parseTree, type Node as JsonNode, type ParseError } from 'jsonc-parser';
 import {
+  BROWSER_RELAY_AUTH_CHALLENGE_PATH,
+  BROWSER_RELAY_AUTH_COMPLETE_PATH,
   BROWSER_RELAY_AUTH_VERSION,
   BROWSER_RELAY_CHALLENGE_MAX_LIFETIME_MS,
   BROWSER_RELAY_CLOCK_SKEW_MS,
+  BROWSER_RELAY_CDP_FLOW,
+  BROWSER_RELAY_CDP_METHOD,
+  BROWSER_RELAY_CDP_PATH,
+  BROWSER_RELAY_CDP_RESOURCE,
+  BROWSER_RELAY_CDP_ROLE,
+  BROWSER_RELAY_CDP_TRANSPORT,
+  BROWSER_RELAY_VERSION_PATH,
   createBrowserRelayProof,
   type BrowserRelayProofFields,
   verifyBrowserRelayProof,
 } from './browser-relay-auth-v2.js';
 
-const CHALLENGE_PATH = '/_openclaw/relay/auth/v2/challenge';
-const COMPLETE_PATH = '/_openclaw/relay/auth/v2/complete';
-const VERSION_PATH = '/json/version';
-const CDP_PATH = '/cdp';
-const CDP_RESOURCE = '/json/version -> /cdp';
 const MAX_HEADER_BYTES = 16 * 1024;
 const MAX_JSON_BYTES = 64 * 1024;
 const WEBSOCKET_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
@@ -120,13 +124,13 @@ export async function connectChromeDevtoolsRelayV2(options: {
       v: BROWSER_RELAY_AUTH_VERSION,
       keyId: options.credential.keyId,
       clientNonce,
-      role: 'cdp',
-      transport: 'connection',
-      method: flow === 'cdp' ? 'SEQUENCE' : 'GET',
-      resource: flow === 'cdp' ? CDP_RESOURCE : '/json/list',
+      role: BROWSER_RELAY_CDP_ROLE,
+      transport: BROWSER_RELAY_CDP_TRANSPORT,
+      method: flow === BROWSER_RELAY_CDP_FLOW ? BROWSER_RELAY_CDP_METHOD : 'GET',
+      resource: flow === BROWSER_RELAY_CDP_FLOW ? BROWSER_RELAY_CDP_RESOURCE : '/json/list',
       flow,
     } as const;
-    await writeJsonRequest(socket, options.baseUrl.host, CHALLENGE_PATH, hello);
+    await writeJsonRequest(socket, options.baseUrl.host, BROWSER_RELAY_AUTH_CHALLENGE_PATH, hello);
     const challengeResponse = await reader.readHttpResponse(MAX_JSON_BYTES);
     ensureAuthStatus(challengeResponse, 'challenge');
     const challenge = parseStrictJsonObject(challengeResponse.body);
@@ -137,7 +141,7 @@ export async function connectChromeDevtoolsRelayV2(options: {
     }
 
     const clientProof = createBrowserRelayProof(options.credential.key, 'client', fields);
-    await writeJsonRequest(socket, options.baseUrl.host, COMPLETE_PATH, {
+    await writeJsonRequest(socket, options.baseUrl.host, BROWSER_RELAY_AUTH_COMPLETE_PATH, {
       v: BROWSER_RELAY_AUTH_VERSION,
       sessionId: fields.sessionId,
       clientProof,
@@ -168,7 +172,7 @@ export async function connectChromeDevtoolsRelayV2(options: {
       return { reason: 'success', durationMs: durationMs(), status: 200, json };
     }
 
-    await writeRequest(socket, options.baseUrl.host, 'GET', VERSION_PATH, []);
+    await writeRequest(socket, options.baseUrl.host, 'GET', BROWSER_RELAY_VERSION_PATH, []);
     const versionResponse = await reader.readHttpResponse(MAX_JSON_BYTES);
     if (versionResponse.status === 503) {
       socket.destroy();
@@ -178,7 +182,7 @@ export async function connectChromeDevtoolsRelayV2(options: {
     parseStrictJsonObject(versionResponse.body);
 
     const websocketKey = randomBytes(16).toString('base64');
-    await writeRequest(socket, options.baseUrl.host, 'GET', CDP_PATH, [
+    await writeRequest(socket, options.baseUrl.host, 'GET', BROWSER_RELAY_CDP_PATH, [
       ['Connection', 'Upgrade'],
       ['Upgrade', 'websocket'],
       ['Sec-WebSocket-Key', websocketKey],

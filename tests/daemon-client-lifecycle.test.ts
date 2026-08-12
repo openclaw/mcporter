@@ -2,7 +2,10 @@ import fs from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { hashChromeDevtoolsRelayProcessEnvironment } from '../src/chrome-devtools-relay.js';
+import {
+  CHROME_DEVTOOLS_RELAY_RUNTIME_IDENTITY_VERSION,
+  hashChromeDevtoolsRelayProcessEnvironment,
+} from '../src/chrome-devtools-relay.js';
 import { makeShortTempDir } from './fixtures/test-helpers.js';
 
 const launchDaemonDetached = vi.hoisted(() => vi.fn());
@@ -151,7 +154,8 @@ async function startMockDaemon(
       socketPath: options.socketPath,
       configPath: options.configPath,
       configLayers: [{ path: options.configPath, mtimeMs: stat.mtimeMs }],
-      relayEnvironmentHash: hashChromeDevtoolsRelayProcessEnvironment([], {}),
+      relayRuntimeIdentityVersion: CHROME_DEVTOOLS_RELAY_RUNTIME_IDENTITY_VERSION,
+      relayRuntimeIdentity: hashChromeDevtoolsRelayProcessEnvironment([], {}),
       relayEnvironmentKeys: [],
       startedAt: Date.now(),
     }),

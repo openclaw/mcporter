@@ -2,7 +2,7 @@ import { resolveEnvPlaceholders } from '../env.js';
 
 const ENV_PLACEHOLDER_PATTERN = /\$\{[A-Za-z_][A-Za-z0-9_]*(?::-[^}]*)?\}/;
 
-export function resolveCommandArgument(value: string): string {
+export function resolveCommandArgument(value: string, env: NodeJS.ProcessEnv = process.env): string {
   if (!value) {
     return value;
   }
@@ -13,14 +13,14 @@ export function resolveCommandArgument(value: string): string {
   if (!needsInterpolation) {
     return value;
   }
-  return resolveEnvPlaceholders(value);
+  return resolveEnvPlaceholders(value, env);
 }
 
-export function resolveCommandArguments(args: readonly string[]): string[] {
+export function resolveCommandArguments(args: readonly string[], env: NodeJS.ProcessEnv = process.env): string[] {
   if (args.length === 0) {
     return [];
   }
-  return args.map((arg) => resolveCommandArgument(arg));
+  return args.map((arg) => resolveCommandArgument(arg, env));
 }
 
 export function normalizeTimeout(raw?: number): number | undefined {

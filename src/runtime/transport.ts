@@ -14,10 +14,11 @@ import {
   type ChromeDevtoolsRelayRewrite,
   formatChromeDevtoolsRelayDecision,
   recordChromeDevtoolsRelayDecision,
+  resolveChromeDevtoolsRelayEnvironment,
   rewriteChromeDevtoolsArgsForRelay,
 } from '../chrome-devtools-relay.js';
 import type { ServerDefinition } from '../config.js';
-import { resolveEnvValue, withEnvOverrides } from '../env.js';
+import { withEnvOverrides } from '../env.js';
 import type { Logger } from '../logging.js';
 import { closeTransportAndWait } from '../runtime-process-utils.js';
 import { applyCachedAuthIfAvailable } from './cached-auth.js';
@@ -131,18 +132,7 @@ async function createStdioClientContext(
   logger: Logger,
   options: CreateClientContextOptions
 ): Promise<ClientContext> {
-  const resolvedEnvOverrides =
-    definition.env && Object.keys(definition.env).length > 0
-      ? Object.fromEntries(
-          Object.entries(definition.env)
-            .map(([key, raw]) => [key, resolveEnvValue(raw)])
-            .filter(([, value]) => value !== '')
-        )
-      : undefined;
-  const mergedEnv =
-    resolvedEnvOverrides && Object.keys(resolvedEnvOverrides).length > 0
-      ? { ...process.env, ...resolvedEnvOverrides }
-      : { ...process.env };
+  const mergedEnv = resolveChromeDevtoolsRelayEnvironment(definition.env);
   const command = resolveCommandArgument(definition.command.command);
   const resolvedArgs = resolveCommandArguments(definition.command.args);
   const publishRelayDecision = (decision: ChromeDevtoolsRelayDecision): void => {

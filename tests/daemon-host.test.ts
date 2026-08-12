@@ -4,6 +4,13 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  BROWSER_RELAY_AUTH_CHALLENGE_PATH,
+  BROWSER_RELAY_AUTH_COMPLETE_PATH,
+  BROWSER_RELAY_AUTH_LABEL,
+  BROWSER_RELAY_AUTH_VERSION,
+  deriveBrowserRelayKeyId,
+} from '../src/browser-relay-auth-v2.js';
 import type { ServerDefinition } from '../src/config.js';
 import {
   __daemonHostInternals,
@@ -15,7 +22,10 @@ import {
 } from '../src/daemon/host.js';
 import type { DaemonRequest, DaemonResponse, StatusResult } from '../src/daemon/protocol.js';
 import { DAEMON_OAUTH_FLOW_ERROR_CODE } from '../src/daemon/protocol.js';
-import { recordChromeDevtoolsRelayDecision } from '../src/chrome-devtools-relay.js';
+import {
+  CHROME_DEVTOOLS_RELAY_RUNTIME_IDENTITY_VERSION,
+  recordChromeDevtoolsRelayDecision,
+} from '../src/chrome-devtools-relay.js';
 import type { Runtime } from '../src/runtime.js';
 import { markOAuthFlowError, OAuthTimeoutError } from '../src/runtime/oauth.js';
 
@@ -505,6 +515,63 @@ describeUnixSocket('runDaemonHost lifecycle', () => {
     }
   });
 
+  it('writes asynchronously discovered relay identity into daemon metadata', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-host-relay-identity-'));
+    const binDir = path.join(dir, 'bin');
+    const configPath = path.join(dir, 'mcporter.json');
+    const metadataPath = path.join(dir, 'daemon.json');
+    const socketPath = path.join(dir, 'daemon.sock');
+    const markerPath = path.join(dir, 'openclaw-called');
+    const relayKeyHex = Buffer.alloc(32, 0x61).toString('hex');
+    const keyId = deriveBrowserRelayKeyId(Buffer.from(relayKeyHex, 'hex'));
+    await fs.mkdir(binDir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'browser-extension-relay.secret'), relayKeyHex, { mode: 0o600 });
+    await fs.writeFile(
+      path.join(binDir, 'openclaw'),
+      `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(markerPath)}, 'called');\nprocess.stdout.write(${JSON.stringify(relayMetadata(keyId, 19_110).toString('utf8'))});\n`,
+      { mode: 0o700 }
+    );
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          chrome: {
+            command: 'npx',
+            args: ['-y', 'chrome-devtools-mcp@latest', '--autoConnect'],
+            lifecycle: 'keep-alive',
+            env: { PATH: binDir, OPENCLAW_OAUTH_DIR: dir },
+          },
+        },
+      }),
+      'utf8'
+    );
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    const originalSignals = new Map(
+      (['SIGINT', 'SIGTERM', 'SIGQUIT'] as const).map((signal) => [signal, new Set(process.listeners(signal))])
+    );
+    try {
+      await runDaemonHost({ socketPath, metadataPath, configPath, configExplicit: true, rootDir: dir });
+      await expect(fs.readFile(markerPath, 'utf8')).resolves.toBe('called');
+      const metadata = JSON.parse(await fs.readFile(metadataPath, 'utf8')) as {
+        relayRuntimeIdentityVersion?: number;
+        relayRuntimeIdentity?: string;
+      };
+      expect(metadata.relayRuntimeIdentityVersion).toBe(CHROME_DEVTOOLS_RELAY_RUNTIME_IDENTITY_VERSION);
+      expect(metadata.relayRuntimeIdentity).toMatch(/^[a-f0-9]{16}$/u);
+      await requestDaemon<boolean>(socketPath, { id: 'stop-relay', method: 'stop', params: {} });
+      await waitForMissing(metadataPath);
+    } finally {
+      exitSpy.mockRestore();
+      for (const signal of ['SIGINT', 'SIGTERM', 'SIGQUIT'] as const) {
+        const originals = originalSignals.get(signal)!;
+        for (const listener of process.listeners(signal)) {
+          if (!originals.has(listener)) process.removeListener(signal, listener);
+        }
+      }
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('claims a socket, serves split status requests, repairs metadata, and stops cleanly', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-host-lifecycle-'));
     const configPath = path.join(dir, 'mcporter.json');
@@ -535,9 +602,13 @@ describeUnixSocket('runDaemonHost lifecycle', () => {
         pid: number;
         socketPath: string;
         definitionHash: string;
+        relayRuntimeIdentityVersion: number;
+        relayRuntimeIdentity: string;
       };
       expect(metadataFile).toMatchObject({ pid: process.pid, socketPath });
       expect(metadataFile.definitionHash).toMatch(/^[a-f0-9]+$/u);
+      expect(metadataFile.relayRuntimeIdentityVersion).toBe(CHROME_DEVTOOLS_RELAY_RUNTIME_IDENTITY_VERSION);
+      expect(metadataFile.relayRuntimeIdentity).toMatch(/^[a-f0-9]{16}$/u);
       recordChromeDevtoolsRelayDecision('local', {
         route: 'legacy',
         reason: 'extension-disconnected',
@@ -563,6 +634,8 @@ describeUnixSocket('runDaemonHost lifecycle', () => {
           pid: process.pid,
           socketPath,
           configPath,
+          relayRuntimeIdentityVersion: CHROME_DEVTOOLS_RELAY_RUNTIME_IDENTITY_VERSION,
+          relayRuntimeIdentity: metadataFile.relayRuntimeIdentity,
           servers: [
             {
               name: 'local',
@@ -601,6 +674,28 @@ describeUnixSocket('runDaemonHost lifecycle', () => {
     }
   });
 });
+
+function relayMetadata(keyId: string, port: number): Buffer {
+  const browserUrl = `http://127.0.0.1:${port}`;
+  return Buffer.from(
+    JSON.stringify({
+      browserUrl,
+      wsEndpoint: `ws://127.0.0.1:${port}/cdp`,
+      auth: {
+        label: BROWSER_RELAY_AUTH_LABEL,
+        version: BROWSER_RELAY_AUTH_VERSION,
+        keyId,
+        challengeUrl: new URL(BROWSER_RELAY_AUTH_CHALLENGE_PATH, browserUrl).toString(),
+        completeUrl: new URL(BROWSER_RELAY_AUTH_COMPLETE_PATH, browserUrl).toString(),
+        role: 'cdp',
+        transport: 'connection',
+        method: 'SEQUENCE',
+        resource: '/json/version -> /cdp',
+        flow: 'cdp',
+      },
+    })
+  );
+}
 
 describeUnixSocket('isDaemonResponding', () => {
   const servers: net.Server[] = [];
