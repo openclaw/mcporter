@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GeneratedOption } from '../src/cli/generate/tools.js';
+import { extractOptions } from '../src/cli/generate/tools.js';
 import { buildToolDoc, selectDisplayOptions } from '../src/cli/list-detail-helpers.js';
 import { buildDocComment, wrapCommentText } from '../src/cli/list-doc-comments.js';
 import {
@@ -113,6 +114,41 @@ describe('formatFunctionSignature', () => {
     expect(signature).toBe(
       'function filter_docs(names: string[], scores: number[], enabled: boolean[], metadata: Record<string, unknown>[], unknownItems: unknown[], missingItems: unknown[]);'
     );
+  });
+
+  it('keeps the array shape when enum members come from array items', () => {
+    const signature = formatFunctionSignature(
+      'search_docs',
+      [
+        baseOption({ property: 'sources', type: 'array', arrayItemType: 'string', enumValues: ['web', 'news'] }),
+        baseOption({ property: 'tags', type: 'array', arrayItemType: 'string', enumValues: ['stable'] }),
+        baseOption({ property: 'mode', type: 'string', enumValues: ['fast', 'deep'] }),
+      ],
+      undefined,
+      { colorize: false }
+    );
+
+    expect(signature).toBe(
+      'function search_docs(sources: ("web" | "news")[], tags: "stable"[], mode: "fast" | "deep");'
+    );
+  });
+
+  it('agrees with the call example it renders for the same schema', () => {
+    const options = extractOptions({
+      name: 'search_docs',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          sources: { type: 'array', items: { type: 'string', enum: ['web', 'news'] } },
+        },
+        required: ['sources'],
+      },
+    });
+    const signature = formatFunctionSignature('search_docs', options, undefined, { colorize: false });
+    const example = formatCallExpressionExample('docs', 'search_docs', options);
+
+    expect(signature).toBe('function search_docs(sources: ("web" | "news")[]);');
+    expect(example).toBe('mcporter call docs.search_docs(sources: ["web"])');
   });
 
   it('normalizes integer item output schemas to number arrays', () => {

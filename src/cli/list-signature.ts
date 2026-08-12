@@ -181,7 +181,10 @@ function inferSchemaDisplayType(descriptor: Record<string, unknown>): string {
 function formatTypeAnnotation(option: GeneratedOption, colorize: boolean): string {
   let baseType: string;
   if (option.enumValues && option.enumValues.length > 0) {
-    baseType = option.enumValues.map((value) => JSON.stringify(value)).join(' | ');
+    const union = option.enumValues.map((value) => JSON.stringify(value)).join(' | ');
+    // Enum members can come from an array's items, so keep the array shape instead of
+    // rendering the union alone.
+    baseType = option.type === 'array' ? formatEnumArrayType(union, option.enumValues.length) : union;
   } else {
     switch (option.type) {
       case 'number':
@@ -218,6 +221,10 @@ function formatTypeAnnotation(option: GeneratedOption, colorize: boolean): strin
     return `${base} ${tint(`/* ${option.formatHint} */`)}`;
   }
   return base;
+}
+
+function formatEnumArrayType(union: string, memberCount: number): string {
+  return memberCount > 1 ? `(${union})[]` : `${union}[]`;
 }
 
 function formatArrayItemType(type: GeneratedOption['arrayItemType']): string {
