@@ -156,21 +156,6 @@ function shouldAbortSseFallback(error: unknown): boolean {
   return !isLegacySseTransportMismatch(error);
 }
 
-/**
- * Prefer the primary Streamable HTTP error when SSE fallback also fails.
- * Attaches the SSE failure as `cause` so diagnostics stay available without
- * replacing a network timeout with a misleading legacy-SSE 405.
- */
-function preferPrimaryTransportError(primaryError: unknown, sseError: unknown): unknown {
-  if (primaryError instanceof Error) {
-    if (sseError instanceof Error && primaryError.cause === undefined) {
-      primaryError.cause = sseError;
-    }
-    return primaryError;
-  }
-  return sseError;
-}
-
 function isEraNegotiationFailure(error: unknown): boolean {
   return !!error && typeof error === 'object' && 'code' in error && error.code === SdkErrorCode.EraNegotiationFailed;
 }
@@ -283,8 +268,7 @@ async function attemptHttpClientContext(
         logger,
         options,
         wrapRecordTransport,
-        clientFactory,
-        primaryError
+        clientFactory
       ),
     };
   }
@@ -328,8 +312,7 @@ async function connectSseFallbackTransport(
   logger: Logger,
   options: CreateClientContextOptions,
   wrapRecordTransport: WrapRecordTransport,
-  clientFactory: HttpClientFactory,
-  primaryError?: unknown
+  clientFactory: HttpClientFactory
 ): Promise<ClientContext> {
   const createSseTransport = () =>
     wrapRecordTransport(new SSEClientTransport(command.url, transportOptions), definition, options);
@@ -355,16 +338,10 @@ async function connectSseFallbackTransport(
       // Auth challenges from SSE (including ad-hoc HTTP discovery) stay authoritative.
       throw sseError;
     }
-    // Prefer primary so a failed SSE GET (often 405 on streamable-only) never erases
-    // the Streamable HTTP fault that triggered the fallback (#310).
-    if (primaryError !== undefined) throw preferPrimaryTransportError(primaryError, sseError);
     throw sseError;
   }
 }
 
 export const __test = {
   waitForStandaloneSseStart,
-  isLegacySseTransportMismatch,
-  shouldAbortSseFallback,
-  preferPrimaryTransportError,
 };

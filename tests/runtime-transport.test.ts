@@ -236,7 +236,7 @@ describe('createClientContext (HTTP)', () => {
     expect(clientConnect.mock.calls[0]?.[0]).toBeInstanceOf(StreamableHTTPClientTransport);
   });
 
-  it('surfaces the primary error when SSE fallback also fails', async () => {
+  it('surfaces the SSE error when a transport-mismatch fallback fails', async () => {
     const definition = stubHttpDefinition('https://example.com/mcp');
     const primary = new SdkHttpError(SdkErrorCode.ClientHttpNotImplemented, 'Method Not Allowed', {
       status: 405,
@@ -254,8 +254,7 @@ describe('createClientContext (HTTP)', () => {
         throw sse;
       });
 
-    await expect(createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 })).rejects.toBe(primary);
-    expect(primary.cause).toBe(sse);
+    await expect(createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 })).rejects.toBe(sse);
     expect(clientConnect).toHaveBeenCalledTimes(2);
   });
 
