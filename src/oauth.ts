@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { URL } from 'node:url';
 import type {
+  FetchLike,
   OAuthClientInformationMixed,
   OAuthDiscoveryState,
   OAuthClientMetadata,
@@ -12,11 +13,19 @@ import type {
 } from '@modelcontextprotocol/client';
 import { validateClientMetadataUrl } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from './config.js';
+import { isFileLockTimeoutError } from './fs-json.js';
 import { suppressBrowserLaunchFromEnv } from './oauth-browser-suppression.js';
 import { buildStaticClientInformation } from './oauth-client-info.js';
 import type { OAuthPersistence, OAuthPersistenceSnapshot } from './oauth-persistence.js';
 import { buildOAuthPersistence } from './oauth-persistence.js';
-import { oauthAccessTokenNeedsRefresh, readCachedAccessTokenWithPersistence } from './oauth-token-refresh.js';
+import { withRefreshLock } from './oauth-refresh-lock.js';
+import { sameOAuthTokenGeneration } from './oauth-token-generation.js';
+import {
+  oauthAccessTokenNeedsRefresh,
+  readCachedAccessTokenWithPersistence,
+  reconcilePersistedTokens,
+  withRefreshRequestTimeout,
+} from './oauth-token-refresh.js';
 
 const CALLBACK_HOST = '127.0.0.1';
 const CALLBACK_PATH = '/callback';
@@ -38,6 +47,13 @@ export interface OAuthSessionOptions {
   suppressBrowserLaunch?: boolean;
   onAuthorizationUrl?: (request: OAuthAuthorizationRequest) => void | Promise<void>;
 }
+
+interface OAuthUnauthorizedContext {
+  readonly fetchFn: FetchLike;
+  readonly presentedTokens?: Readonly<StoredOAuthTokens>;
+}
+
+type ContinueOAuthUnauthorized = (options?: { fetchFn?: FetchLike }) => Promise<void>;
 
 // Thrown when a refresh was due but could not complete, so the only tokens left
 // to hand the MCP SDK are expired ones that still carry a refresh token. The SDK
@@ -349,11 +365,11 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
    * SDK sees it.
    *
    * This is the interception point for SDK-driven refresh. The SDK redeems a
-   * rotating refresh token itself whenever tokens() hands it an expired one —
-   * proactively before connect and internally on a 401 — and neither call site
-   * is wrappable from here. Returning an already-refreshed token starves that
-   * branch, so the redemption happens once, under the lock, instead of racing
-   * every other process that shares the credential.
+   * rotating refresh token itself whenever tokens() hands it an expired one.
+   * Returning an already-refreshed token starves the proactive branch, so the
+   * redemption happens once under the lock instead of racing every other
+   * process that shares the credential. The distinct fresh-token post-401 path
+   * is wrapped by onOAuthUnauthorized().
    *
    * The locked transaction is re-entrant per call chain, so an SDK auth() flow
    * that already holds the lock does not deadlock on this read.
@@ -365,12 +381,6 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
    * re-persists this method's return value when `issuer` is unset and would
    * destroy the token instead. So when a due refresh does not produce a usable
    * token, this fails the connect rather than offering a redeemable stale one.
-   *
-   * Known and accepted limit (issue #305): a 401 makes the SDK redeem the token
-   * this method returns even when it is fresh, and that call site has no seam to
-   * wrap. Two processes taking a 401 at the same instant can still redeem
-   * concurrently; the rejected-refresh recovery in oauth-token-refresh.ts
-   * remains the backstop for that case.
    */
   private async refreshedTokens(stored: StoredOAuthTokens | undefined): Promise<StoredOAuthTokens | undefined> {
     if (!stored || this.definition.auth === 'refreshable_bearer') {
@@ -400,6 +410,39 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   async saveTokens(tokens: StoredOAuthTokens): Promise<void> {
     await this.persistence.saveTokens(tokens);
     this.logger.info(`Saved OAuth tokens for ${this.definition.name} (${this.persistence.describe()})`);
+  }
+
+  /**
+   * Keeps the SDK's post-401 refresh transaction inside the same cross-process
+   * lock as proactive refresh. The SDK supplies the exact tokens attached to
+   * the rejected request, so a waiter can distinguish its stale generation
+   * from the winner another process persisted while it waited.
+   */
+  async onOAuthUnauthorized(
+    context: OAuthUnauthorizedContext,
+    continueDefault: ContinueOAuthUnauthorized
+  ): Promise<void> {
+    const rejected = context.presentedTokens;
+    if (!rejected) {
+      throw new OAuthRefreshUnavailableError(this.definition.name);
+    }
+    try {
+      await withRefreshLock(this.definition, async () => {
+        const latest = await reconcilePersistedTokens(this.definition, this.persistence);
+        if (!latest) {
+          throw new OAuthRefreshUnavailableError(this.definition.name);
+        }
+        if (!sameOAuthTokenGeneration(latest, rejected)) {
+          return;
+        }
+        await continueDefault({ fetchFn: withRefreshRequestTimeout(context.fetchFn) });
+      });
+    } catch (error) {
+      if (isFileLockTimeoutError(error)) {
+        throw new OAuthRefreshUnavailableError(this.definition.name, { cause: error });
+      }
+      throw error;
+    }
   }
 
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {

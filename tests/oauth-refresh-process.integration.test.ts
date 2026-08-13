@@ -45,6 +45,10 @@ describe('OAuth refresh across fresh built-artifact processes', () => {
   let replays: URLSearchParams[] = [];
   let issuedByFamily: Map<string, number>;
   let transientFailuresRemaining = 0;
+  let post401InitialRequests = 0;
+  let post401RetryRequests = 0;
+  let releasePost401Requests: (() => void) | undefined;
+  let post401RequestsArrived: Promise<void> | undefined;
   // Set to hold the first token request open until a second family arrives, so
   // "unrelated identities refresh concurrently" is proven by overlap.
   let overlapBarrier: { arrived: Map<string, () => void>; release: Promise<void> } | undefined;
@@ -114,6 +118,27 @@ describe('OAuth refresh across fresh built-artifact processes', () => {
           expires_in: 3600,
         });
       }
+      if (url.pathname === '/mcp') {
+        const authorization = request.headers.authorization;
+        if (authorization === 'Bearer post-401-access') {
+          post401InitialRequests += 1;
+          if (post401InitialRequests === 2) releasePost401Requests?.();
+          await post401RequestsArrived;
+          response.statusCode = 401;
+          response.setHeader(
+            'WWW-Authenticate',
+            `Bearer resource_metadata="${authOrigin}/.well-known/oauth-protected-resource"`
+          );
+          response.end('unauthorized');
+          return;
+        }
+        if (authorization === 'Bearer access-post-401-1') {
+          post401RetryRequests += 1;
+          response.statusCode = 202;
+          response.end();
+          return;
+        }
+      }
       response.statusCode = 404;
       response.end('not found');
     });
@@ -137,6 +162,10 @@ describe('OAuth refresh across fresh built-artifact processes', () => {
     revokedFamilies = new Set();
     issuedByFamily = new Map();
     transientFailuresRemaining = 0;
+    post401InitialRequests = 0;
+    post401RetryRequests = 0;
+    releasePost401Requests = undefined;
+    post401RequestsArrived = undefined;
     overlapBarrier = undefined;
   });
 
@@ -242,6 +271,36 @@ describe('OAuth refresh across fresh built-artifact processes', () => {
       budget(60_000)
     );
   }
+
+  it(
+    'redeems exactly once when two processes receive 401 for the same fresh token',
+    async () => {
+      const seed = 'post-401-seed';
+      registerSeed(seed, 'post-401');
+      const env = await freshEnv('post-401-refresh', seed);
+      await runFixture('seed-post-401', env);
+
+      post401RequestsArrived = new Promise<void>((resolve) => {
+        releasePost401Requests = resolve;
+      });
+      const outputs = await Promise.all(
+        Array.from({ length: 2 }, () => runFixture('post-401-refresh', env).then((raw) => JSON.parse(raw)))
+      );
+
+      expect(post401InitialRequests).toBe(2);
+      expect(post401RetryRequests).toBe(2);
+      expect(tokenRequests.filter((request) => request.get('refresh_token') === seed)).toHaveLength(1);
+      expect(replays).toHaveLength(0);
+      expect(revokedFamilies.has('post-401')).toBe(false);
+      for (const output of outputs) {
+        expect(output.persistedAccessMarker).toBe(marker('access-post-401-1'));
+        expect(output.persistedRefreshMarker).toBe(marker('rotated-post-401-1'));
+        expect(JSON.stringify(output)).not.toContain('access-post-401-1');
+        expect(JSON.stringify(output)).not.toContain('rotated-post-401-1');
+      }
+    },
+    budget(30_000)
+  );
 
   it(
     'lets unrelated credential identities refresh at the same time',

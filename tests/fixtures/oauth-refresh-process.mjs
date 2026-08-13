@@ -3,6 +3,7 @@ import { buildOAuthPersistence, readCachedAccessToken } from '../../dist/oauth-p
 import { withRefreshLock } from '../../dist/oauth-refresh-lock.js';
 import { createOAuthSession } from '../../dist/oauth.js';
 import { connectWithAuth } from '../../dist/runtime/oauth.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 
 const action = process.argv[2];
 const endpoint = process.env.MCPORTER_TEST_OAUTH_ENDPOINT;
@@ -50,6 +51,20 @@ if (action === 'seed') {
     token_type: 'Bearer',
     refresh_token: seedRefreshToken,
     expires_at: 1,
+  });
+  emit({ seeded: true, refreshMarker: marker(seedRefreshToken) });
+} else if (action === 'seed-post-401') {
+  const persistence = await buildOAuthPersistence(definition, logger);
+  await persistence.saveClientInfo({
+    client_id: 'fresh-process-client',
+    redirect_uris: ['http://127.0.0.1:41000/callback'],
+    token_endpoint_auth_method: 'none',
+  });
+  await persistence.saveTokens({
+    access_token: 'post-401-access',
+    token_type: 'Bearer',
+    refresh_token: seedRefreshToken,
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
   });
   emit({ seeded: true, refreshMarker: marker(seedRefreshToken) });
 } else if (action === 'refresh') {
@@ -114,6 +129,25 @@ if (action === 'seed') {
   emit({
     authorizationPrompts,
     refreshUnavailable,
+    persistedAccessMarker: marker(stored.tokens?.access_token),
+    persistedRefreshMarker: marker(stored.tokens?.refresh_token),
+  });
+} else if (action === 'post-401-refresh') {
+  const session = await createOAuthSession(definition, logger, { suppressBrowserLaunch: true });
+  const transport = new StreamableHTTPClientTransport(new URL(endpoint), { authProvider: session.provider });
+  try {
+    await transport.start();
+    await transport.send({
+      jsonrpc: '2.0',
+      method: 'notifications/progress',
+      params: { progressToken: 'post-401', progress: 1 },
+    });
+  } finally {
+    await transport.close().catch(() => {});
+    await session.close().catch(() => {});
+  }
+  const stored = await snapshot();
+  emit({
     persistedAccessMarker: marker(stored.tokens?.access_token),
     persistedRefreshMarker: marker(stored.tokens?.refresh_token),
   });

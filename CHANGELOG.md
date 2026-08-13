@@ -2,6 +2,10 @@
 
 ## [0.13.6] - Unreleased
 
+### OAuth
+
+- Keep the SDK's automatic post-401 token redemption inside the cross-process refresh lock, so simultaneous rejected requests adopt one rotated token generation instead of replaying and revoking the shared token family. (Issue #307)
+
 ## [0.13.5] - 2026-08-13
 
 ### CLI
