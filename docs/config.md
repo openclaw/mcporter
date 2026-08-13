@@ -95,7 +95,7 @@ Use `--scope home|project` with `mcporter config add` to pick the write target e
 - Persists a server into the writable config file. Accepts both positional shortcuts (`mcporter config add sentry https://mcp.sentry.dev/mcp`) and flag-driven definitions:
   - `--transport http|sse|stdio`
   - `--url` or `--command`/`--stdio`
-  - `--env`, `--header`, `--token-cache-dir`, `--description`, `--tag`, `--client-name`, `--oauth-redirect-url`
+  - `--env`, `--header`, `--token-cache-dir`, `--description`, `--client-name`, `--oauth-redirect-url`
   - `--oauth-client-id`, `--oauth-client-secret-env`, `--oauth-token-endpoint-auth-method` for pre-registered OAuth clients.
   - `--copy-from importKind:name` to clone settings from an imported entry before editing.
 - `--dry-run` shows the JSON diff without writing, while `--persist <path>` overrides the destination file.
