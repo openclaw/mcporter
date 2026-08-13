@@ -538,6 +538,15 @@ describe('FileOAuthClientProvider session lifecycle', () => {
   it('closes the callback server when interactive stale-client reads have I/O errors', async () => {
     const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
     tempDirs.push(tokenCacheDir);
+    const clientPath = path.join(tokenCacheDir, 'client.json');
+    await fs.writeFile(
+      clientPath,
+      JSON.stringify({
+        client_id: 'stale-client',
+        redirect_uris: ['http://127.0.0.1:9999/callback'],
+      }),
+      'utf8'
+    );
     const definition: ServerDefinition = {
       name: 'test-oauth-read-failure',
       description: 'Test OAuth server',
@@ -552,6 +561,7 @@ describe('FileOAuthClientProvider session lifecycle', () => {
     };
 
     const readError = Object.assign(new Error('permission denied'), { code: 'EACCES' });
+    const originalReadFile = fs.readFile.bind(fs);
     const originalCreateServer = http.createServer.bind(http);
     const createdServers: http.Server[] = [];
     const createServerSpy = vi.spyOn(http, 'createServer').mockImplementation((...args) => {
@@ -559,18 +569,25 @@ describe('FileOAuthClientProvider session lifecycle', () => {
       createdServers.push(server);
       return server;
     });
+    let session: Awaited<ReturnType<typeof createOAuthSession>> | undefined;
 
     try {
-      const session = await createOAuthSession(definition, logger);
-      const readFileSpy = vi.spyOn(fs, 'readFile').mockRejectedValueOnce(readError);
+      session = await createOAuthSession(definition, logger);
+      const readFileSpy = vi.spyOn(fs, 'readFile').mockImplementation((file, ...args) => {
+        if (file === clientPath) {
+          return Promise.reject(readError);
+        }
+        return originalReadFile(file, ...args);
+      });
       await expect(
         session.provider.redirectToAuthorization(new URL('https://auth.example.com/authorize'))
       ).rejects.toMatchObject({ code: 'EACCES' });
+      expect(readFileSpy).toHaveBeenCalledWith(clientPath, 'utf8');
       readFileSpy.mockRestore();
-      await new Promise((resolve) => setTimeout(resolve, 0));
       expect(createdServers).toHaveLength(1);
       expect(createdServers[0]?.listening).toBe(false);
     } finally {
+      await session?.close();
       createServerSpy.mockRestore();
     }
   });
