@@ -70,10 +70,12 @@ afterAll(async () => {
   await Promise.allSettled([...spawnedChildren].map((child) => stopChild(child)));
 });
 
+// Each real CLI invocation over stdio owns a fresh fixture process. Keep the
+// coverage in bounded groups so one timer does not measure cumulative startup.
 describe.each(fixtureKinds)('%s fixture through the real CLI', (fixture) => {
   describe.each(transports)('%s', (transport) => {
     it(
-      'lists, calls, fails, reports structured output, completes progress work, and reads resources',
+      'lists tools and reports protocol metadata',
       async () => {
         await withConfig({ fixture: configFor(fixture, transport) }, async (configPath, env) => {
           const listed = await runCli(['list', 'fixture', '--json', '--verbose', '--no-oauth'], configPath, env);
@@ -91,7 +93,15 @@ describe.each(fixtureKinds)('%s fixture through the real CLI', (fixture) => {
             expect(listPayload.protocolVersion).toBe('2026-07-28');
             expect(listPayload.era).toBe('modern');
           }
+        });
+      },
+      budget(20_000)
+    );
 
+    it(
+      'calls tools and reports structured output',
+      async () => {
+        await withConfig({ fixture: configFor(fixture, transport) }, async (configPath, env) => {
           const echo = await runCli(['call', 'fixture.echo', 'text=fixture-echo', '--output', 'json'], configPath, env);
           expect(echo.exitCode, echo.stderr).toBe(0);
           expect(echo.stdout).toContain('fixture-echo');
@@ -99,7 +109,15 @@ describe.each(fixtureKinds)('%s fixture through the real CLI', (fixture) => {
           const add = await runCli(['call', 'fixture.add', 'a=19', 'b=23', '--output', 'json'], configPath, env);
           expect(add.exitCode, add.stderr).toBe(0);
           expect(parseJson<{ result: number }>(add.stdout)).toEqual({ result: 42 });
+        });
+      },
+      budget(20_000)
+    );
 
+    it(
+      'reports tool failures and completes progress work',
+      async () => {
+        await withConfig({ fixture: configFor(fixture, transport) }, async (configPath, env) => {
           const failed = await runCli(['call', 'fixture.fail', '--output', 'json'], configPath, env);
           expect(failed.exitCode).not.toBe(0);
           expect(`${failed.stdout}\n${failed.stderr}`).toContain(`${fixture} requested failure`);
@@ -107,7 +125,15 @@ describe.each(fixtureKinds)('%s fixture through the real CLI', (fixture) => {
           const longTask = await runCli(['call', 'fixture.long_task', 'steps=3', '--output', 'text'], configPath, env);
           expect(longTask.exitCode, longTask.stderr).toBe(0);
           expect(longTask.stdout).toContain(`${fixture} long task completed 3 steps`);
+        });
+      },
+      budget(20_000)
+    );
 
+    it(
+      'lists and reads resources',
+      async () => {
+        await withConfig({ fixture: configFor(fixture, transport) }, async (configPath, env) => {
           const resources = await runCli(['resource', 'fixture', '--json'], configPath, env);
           expect(resources.exitCode, resources.stderr).toBe(0);
           const resourcePayload = parseJson<{ resources: Array<{ uri: string }> }>(resources.stdout);
@@ -132,7 +158,7 @@ describe.each(fixtureKinds)('%s fixture through the real CLI', (fixture) => {
           }
         });
       },
-      budget(30_000)
+      budget(20_000)
     );
   });
 });
