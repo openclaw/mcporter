@@ -1,21 +1,7 @@
 import { analyzeConnectionError, type ConnectionIssue } from '../error-classifier.js';
 import { wrapCallResult } from '../result-utils.js';
-import type { Runtime } from '../runtime.js';
-import { type CallArgsParseResult, type GenericLongFlagArgument, parseCallArguments } from './call-arguments.js';
-import {
-  buildUnknownCallFlagMessage,
-  buildUnvalidatedCallFlagMessage,
-  CALL_HELP_ARGUMENT_LINES,
-  CALL_HELP_EXAMPLE_LINES,
-  CALL_HELP_RUNTIME_FLAG_LINES,
-} from './call-help.js';
-import { renderAdhocServerHelpLines } from './adhoc-help.js';
-import { CliUsageError } from './errors.js';
-import {
-  persistPreparedEphemeralServer,
-  prepareEphemeralServerTarget,
-  type PrepareEphemeralServerTargetResult,
-} from './ephemeral-target.js';
+import { type CallArgsParseResult, parseCallArguments } from './call-arguments.js';
+import { prepareEphemeralServerTarget } from './ephemeral-target.js';
 import { looksLikeHttpUrl, normalizeHttpUrlCandidate } from './http-utils.js';
 import type { IdentifierResolution } from './identifier-helpers.js';
 import {
@@ -23,8 +9,8 @@ import {
   normalizeIdentifier,
   renderIdentifierResolutionMessages,
 } from './identifier-helpers.js';
-import { saveCallImagesIfRequested } from './image-output.js';
 import { buildConnectionIssueEnvelope } from './json-output.js';
+import { handleList } from './list-command.js';
 import type { OutputFormat } from './output-utils.js';
 import { printCallOutput, tailLogIfRequested } from './output-utils.js';
 import { dumpActiveHandles } from './runtime-debug.js';
@@ -32,83 +18,13 @@ import { dimText, redText, yellowText } from './terminal.js';
 import { resolveCallTimeout, withTimeout } from './timeouts.js';
 import { loadToolMetadata } from './tool-cache.js';
 
-interface ResolvedCallTarget {
-  server: string;
-  tool: string;
-}
-
-interface PreparedCallRequest extends ResolvedCallTarget {
-  parsed: CallArgsParseResult;
-  hydratedArgs: Record<string, unknown>;
-  timeoutMs: number;
-  disableOAuth?: boolean;
-  ephemeralTarget?: PrepareEphemeralServerTargetResult;
-}
-
-export async function handleCall(runtime: Runtime, args: string[]): Promise<void> {
-  let prepared: PreparedCallRequest | undefined;
-  try {
-    prepared = await prepareCallRequest(runtime, args);
-    if (!prepared) {
-      return;
-    }
-
-    const invocation = await invokePreparedCall(runtime, prepared);
-    if (!invocation) {
-      return;
-    }
-
-    renderCallResult(invocation.result, prepared.parsed);
-  } finally {
-    await persistPreparedEphemeralServer(runtime, prepared?.ephemeralTarget);
-  }
-}
-
-async function prepareCallRequest(runtime: Runtime, args: string[]): Promise<PreparedCallRequest | undefined> {
+export async function handleCall(
+  runtime: Awaited<ReturnType<typeof import('../runtime.js')['createRuntime']>>,
+  args: string[]
+): Promise<void> {
   const parsed = parseCallArguments(args);
-  const ephemeralTarget = await normalizeParsedCallArguments(runtime, parsed);
-  const { server, tool } = await resolveServerAndTool(runtime, parsed);
-
-  if (await maybeDescribeServer(runtime, server, tool, parsed.output, parsed.disableOAuth)) {
-    return undefined;
-  }
-
-  const timeoutMs = resolveCallTimeout(parsed.timeoutMs);
-  const hydratedArgs = await hydratePositionalArguments(
-    runtime,
-    server,
-    tool,
-    parsed.args,
-    parsed.positionalArgs,
-    parsed.disableOAuth
-  );
-  const schemaAwareArgs = await enforceSchemaAwareArgumentTypes(
-    runtime,
-    server,
-    tool,
-    hydratedArgs,
-    parsed.schemaStringCoercionCandidates,
-    parsed.schemaArrayCoercionCandidates,
-    parsed.genericLongFlagArguments,
-    timeoutMs,
-    parsed.disableOAuth
-  );
-  return {
-    parsed,
-    server,
-    tool,
-    hydratedArgs: schemaAwareArgs,
-    timeoutMs,
-    disableOAuth: parsed.disableOAuth,
-    ephemeralTarget,
-  };
-}
-
-async function normalizeParsedCallArguments(
-  runtime: Runtime,
-  parsed: CallArgsParseResult
-): Promise<PrepareEphemeralServerTargetResult> {
   let ephemeralSpec = parsed.ephemeral ? { ...parsed.ephemeral } : undefined;
+
   const nameHints: string[] = [];
   const absorbUrlCandidate = (value: string | undefined): string | undefined => {
     if (!value) {
@@ -134,18 +50,10 @@ async function normalizeParsedCallArguments(
     parsed.server = undefined;
   }
 
-  if (ephemeralSpec?.httpUrl && parsed.selector && !looksLikeHttpUrl(parsed.selector)) {
-    const selector = splitServerToolSelector(parsed.selector);
-    if (selector) {
-      if (!ephemeralSpec.name) {
-        nameHints.push(selector.server);
-      }
-      parsed.tool ??= selector.tool;
-      parsed.selector = undefined;
-    } else if (parsed.tool) {
-      if (!ephemeralSpec.name) {
-        nameHints.push(parsed.selector);
-      }
+  if (ephemeralSpec?.httpUrl && !ephemeralSpec.name && parsed.tool) {
+    const candidate = parsed.selector && !looksLikeHttpUrl(parsed.selector) ? parsed.selector : undefined;
+    if (candidate) {
+      nameHints.push(candidate);
       parsed.selector = undefined;
     }
   }
@@ -162,10 +70,7 @@ async function normalizeParsedCallArguments(
   if (!parsed.selector) {
     parsed.selector = prepared.target;
   }
-  return prepared;
-}
 
-async function resolveServerAndTool(runtime: Runtime, parsed: CallArgsParseResult): Promise<ResolvedCallTarget> {
   const target = resolveCallTarget(parsed, { allowMissingTool: true });
   const server = target.server;
   let tool = target.tool;
@@ -173,55 +78,37 @@ async function resolveServerAndTool(runtime: Runtime, parsed: CallArgsParseResul
     throw new Error('Missing server name. Provide it via <server>.<tool> or --server.');
   }
   if (!tool) {
-    tool = await inferSingleToolName(runtime, server, parsed.disableOAuth);
+    tool = await inferSingleToolName(runtime, server);
     if (!tool) {
       throw new Error('Missing tool name. Provide it via <server>.<tool> or --tool.');
     }
   }
-  return { server, tool };
-}
 
-async function invokePreparedCall(
-  runtime: Runtime,
-  prepared: PreparedCallRequest
-): Promise<{ result: unknown; resolvedTool: string } | undefined> {
+  if (await maybeDescribeServer(runtime, server, tool, parsed.output)) {
+    return;
+  }
+
+  const timeoutMs = resolveCallTimeout(parsed.timeoutMs);
+  const hydratedArgs = await hydratePositionalArguments(runtime, server, tool, parsed.args, parsed.positionalArgs);
   let invocation: { result: unknown; resolvedTool: string };
   try {
-    invocation = await invokeWithAutoCorrection(
-      runtime,
-      prepared.server,
-      prepared.tool,
-      prepared.hydratedArgs,
-      prepared.timeoutMs,
-      prepared.parsed.output,
-      prepared.disableOAuth
-    );
+    invocation = await invokeWithAutoCorrection(runtime, server, tool, hydratedArgs, timeoutMs);
   } catch (error) {
-    const issue = maybeReportConnectionIssue(prepared.server, prepared.tool, error);
-    if (prepared.parsed.output === 'json' || prepared.parsed.output === 'raw') {
-      const payload = buildConnectionIssueEnvelope({ server: prepared.server, tool: prepared.tool, error, issue });
+    const issue = maybeReportConnectionIssue(server, tool, error);
+    if (parsed.output === 'json' || parsed.output === 'raw') {
+      const payload = buildConnectionIssueEnvelope({ server, tool, error, issue });
       console.log(JSON.stringify(payload, null, 2));
       process.exitCode = 1;
-      return undefined;
+      return;
     }
     throw error;
   }
-  return invocation;
-}
+  const { result } = invocation;
 
-function renderCallResult(result: unknown, parsed: CallArgsParseResult): void {
   const { callResult: wrapped } = wrapCallResult(result);
-  if (isErrorCallResult(result)) {
-    process.exitCode = 1;
-  }
   printCallOutput(wrapped, result, parsed.output);
-  saveCallImagesIfRequested(wrapped, parsed.saveImagesDir);
   tailLogIfRequested(result, parsed.tailLog);
   dumpActiveHandles('after call (formatted result)');
-}
-
-function isErrorCallResult(result: unknown): boolean {
-  return !!result && typeof result === 'object' && (result as { isError?: unknown }).isError === true;
 }
 
 export function printCallHelp(): void {
@@ -235,46 +122,56 @@ export function printCallHelp(): void {
     '  --tool <name>          Override the tool name.',
     '',
     'Arguments:',
-    ...CALL_HELP_ARGUMENT_LINES,
+    '  key=value / key:value  Flag-style named arguments.',
+    '  function-call syntax   \'server.tool(arg: "value", other: 1)\'.',
+    '  --args <json>          Provide a JSON object payload.',
+    '  positional values      Accepted when schema order is known.',
     '',
     'Runtime flags:',
-    ...CALL_HELP_RUNTIME_FLAG_LINES,
+    '  --timeout <ms>         Override the call timeout.',
+    '  --output text|markdown|json|raw  Control formatting.',
+    '  --tail-log             Stream returned log handles.',
     '',
     'Ad-hoc servers:',
-    ...renderAdhocServerHelpLines(),
+    '  --http-url <url>       Register an HTTP server for this run.',
+    '  --allow-http           Permit plain http:// URLs with --http-url.',
+    '  --stdio <command>      Run a stdio MCP server (repeat --stdio-arg for args).',
+    '  --stdio-arg <value>    Append args to the stdio command (repeatable).',
+    '  --env KEY=value        Inject env vars for stdio servers (repeatable).',
+    '  --cwd <path>           Working directory for stdio servers.',
+    '  --name <value>         Override the display name for ad-hoc servers.',
+    '  --description <text>   Override the description for ad-hoc servers.',
+    '  --persist <path>       Write the ad-hoc definition to config/mcporter.json.',
+    '  --yes                  Skip confirmation prompts when persisting.',
     '',
     'Examples:',
-    ...CALL_HELP_EXAMPLE_LINES,
+    '  mcporter call linear.list_issues team=ENG limit:5',
+    '  mcporter call "linear.create_issue(title: \\"Bug\\", team: \\"ENG\\")"',
+    '  mcporter call https://api.example.com/mcp.fetch url:https://example.com',
+    '  mcporter call --stdio "bun run ./server.ts" scrape url=https://example.com',
   ];
   console.error(lines.join('\n'));
 }
 
 async function maybeDescribeServer(
-  runtime: Runtime,
+  runtime: Awaited<ReturnType<typeof import('../runtime.js')['createRuntime']>>,
   server: string,
   tool: string,
-  outputFormat: OutputFormat,
-  disableOAuth: boolean | undefined
+  outputFormat: OutputFormat
 ): Promise<boolean> {
   if (tool === 'list_tools') {
     console.log(dimText(`[mcporter] ${server}.list_tools is a shortcut for 'mcporter list ${server}'.`));
     const listArgs = [server];
-    if (disableOAuth) {
-      listArgs.push('--no-oauth');
-    }
     if (outputFormat === 'json') {
       listArgs.push('--json');
     }
-    const { handleList } = await import('./list-command.js');
     await handleList(runtime, listArgs);
     return true;
   }
   if (tool !== 'help') {
     return false;
   }
-  const tools = await runtime
-    .listTools(server, { includeSchema: false, autoAuthorize: false, disableOAuth })
-    .catch(() => undefined);
+  const tools = await runtime.listTools(server, { includeSchema: false, autoAuthorize: false }).catch(() => undefined);
   if (!tools) {
     return false;
   }
@@ -284,13 +181,9 @@ async function maybeDescribeServer(
   }
   console.log(dimText(`[mcporter] ${server} does not expose a 'help' tool; showing mcporter list output instead.`));
   const listArgs = [server];
-  if (disableOAuth) {
-    listArgs.push('--no-oauth');
-  }
   if (outputFormat === 'json') {
     listArgs.push('--json');
   }
-  const { handleList } = await import('./list-command.js');
   await handleList(runtime, listArgs);
   return true;
 }
@@ -327,163 +220,19 @@ function resolveCallTarget(
   return { server, tool };
 }
 
-function splitServerToolSelector(selector: string): { server: string; tool: string } | undefined {
-  const dotIndex = selector.indexOf('.');
-  if (dotIndex <= 0 || dotIndex === selector.length - 1) {
-    return undefined;
-  }
-  return {
-    server: selector.slice(0, dotIndex),
-    tool: selector.slice(dotIndex + 1),
-  };
-}
-
-async function enforceSchemaAwareArgumentTypes(
-  runtime: Runtime,
-  server: string,
-  tool: string,
-  args: Record<string, unknown>,
-  stringCandidates: Record<string, string> | undefined,
-  arrayCandidates: Record<string, string> | undefined,
-  genericLongFlagArguments: GenericLongFlagArgument[] | undefined,
-  timeoutMs: number,
-  disableOAuth: boolean | undefined
-): Promise<Record<string, unknown>> {
-  const requiresFlagValidation = (genericLongFlagArguments?.length ?? 0) > 0;
-  if (
-    !requiresFlagValidation &&
-    (!stringCandidates || Object.keys(stringCandidates).length === 0) &&
-    (!arrayCandidates || Object.keys(arrayCandidates).length === 0)
-  ) {
-    return args;
-  }
-
-  let tools: Awaited<ReturnType<typeof loadToolMetadata>> | undefined;
-  try {
-    tools = await withTimeout(loadToolMetadata(runtime, server, { includeSchema: true, disableOAuth }), timeoutMs);
-  } catch {
-    if (requiresFlagValidation) {
-      throw new CliUsageError(
-        buildUnvalidatedCallFlagMessage(genericLongFlagArguments?.[0]?.token ?? '--', server, tool)
-      );
-    }
-  }
-  if (!tools) {
-    return args;
-  }
-  const toolInfo = tools.find((entry) => entry.tool.name === tool);
-  const schema = toolInfo?.tool.inputSchema;
-  const schemaProperties = readSchemaProperties(schema);
-  const declaredOptions = new Set(toolInfo?.options.map((option) => option.property) ?? []);
-  for (const key of Object.keys(schemaProperties ?? {})) {
-    declaredOptions.add(key);
-  }
-  if (requiresFlagValidation && (!toolInfo || (!schemaProperties && declaredOptions.size === 0))) {
-    throw new CliUsageError(
-      buildUnvalidatedCallFlagMessage(genericLongFlagArguments?.[0]?.token ?? '--', server, tool)
-    );
-  }
-  for (const flag of genericLongFlagArguments ?? []) {
-    if (!declaredOptions.has(flag.key)) {
-      throw new CliUsageError(buildUnknownCallFlagMessage(flag.token));
-    }
-  }
-  if (!schemaProperties) {
-    return args;
-  }
-
-  let corrected: Record<string, unknown> | undefined;
-  for (const [key, rawValue] of Object.entries(stringCandidates ?? {})) {
-    if (typeof args[key] !== 'number') {
-      continue;
-    }
-    if (!schemaAllowsString(schemaProperties[key])) {
-      continue;
-    }
-    corrected ??= { ...args };
-    corrected[key] = rawValue;
-  }
-  for (const [key, rawValue] of Object.entries(arrayCandidates ?? {})) {
-    if (typeof args[key] !== 'string') {
-      continue;
-    }
-    const descriptor = schemaProperties[key];
-    if (!schemaAllowsArray(descriptor) || schemaAllowsString(descriptor)) {
-      continue;
-    }
-    corrected ??= { ...args };
-    corrected[key] = [rawValue];
-  }
-  return corrected ?? args;
-}
-
-function readSchemaProperties(schema: unknown): Record<string, unknown> | undefined {
-  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
-    return undefined;
-  }
-  const properties = (schema as Record<string, unknown>).properties;
-  if (!properties || typeof properties !== 'object' || Array.isArray(properties)) {
-    return undefined;
-  }
-  return properties as Record<string, unknown>;
-}
-
-function schemaAllowsString(descriptor: unknown): boolean {
-  if (!descriptor || typeof descriptor !== 'object') {
-    return false;
-  }
-  const record = descriptor as Record<string, unknown>;
-  const type = record.type;
-  if (type === 'string') {
-    return true;
-  }
-  if (Array.isArray(type) && type.includes('string')) {
-    return true;
-  }
-  for (const key of ['anyOf', 'oneOf', 'allOf'] as const) {
-    const variants = record[key];
-    if (Array.isArray(variants) && variants.some(schemaAllowsString)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function schemaAllowsArray(descriptor: unknown): boolean {
-  if (!descriptor || typeof descriptor !== 'object') {
-    return false;
-  }
-  const record = descriptor as Record<string, unknown>;
-  const type = record.type;
-  if (type === 'array') {
-    return true;
-  }
-  if (Array.isArray(type) && type.includes('array')) {
-    return true;
-  }
-  for (const key of ['anyOf', 'oneOf', 'allOf'] as const) {
-    const variants = record[key];
-    if (Array.isArray(variants) && variants.some(schemaAllowsArray)) {
-      return true;
-    }
-  }
-  return false;
-}
-
 async function hydratePositionalArguments(
-  runtime: Runtime,
+  runtime: Awaited<ReturnType<typeof import('../runtime.js')['createRuntime']>>,
   server: string,
   tool: string,
   namedArgs: Record<string, unknown>,
-  positionalArgs: unknown[] | undefined,
-  disableOAuth: boolean | undefined
+  positionalArgs: unknown[] | undefined
 ): Promise<Record<string, unknown>> {
   if (!positionalArgs || positionalArgs.length === 0) {
     return namedArgs;
   }
   // We need the schema order to know which field each positional argument maps to; pull the
   // tool list with schemas instead of guessing locally so optional/required order stays correct.
-  const tools = await loadToolMetadata(runtime, server, { includeSchema: true, disableOAuth }).catch(() => undefined);
+  const tools = await loadToolMetadata(runtime, server, { includeSchema: true }).catch(() => undefined);
   if (!tools) {
     throw new Error('Unable to load tool metadata; name positional arguments explicitly.');
   }
@@ -522,11 +271,10 @@ async function hydratePositionalArguments(
 type ToolResolution = IdentifierResolution;
 
 async function inferSingleToolName(
-  runtime: Runtime,
-  server: string,
-  disableOAuth: boolean | undefined
+  runtime: Awaited<ReturnType<typeof import('../runtime.js')['createRuntime']>>,
+  server: string
 ): Promise<string | undefined> {
-  const tools = await loadToolMetadata(runtime, server, { includeSchema: false, disableOAuth });
+  const tools = await loadToolMetadata(runtime, server, { includeSchema: false });
   if (tools.length !== 1) {
     return undefined;
   }
@@ -539,56 +287,33 @@ async function inferSingleToolName(
 }
 
 async function invokeWithAutoCorrection(
-  runtime: Runtime,
+  runtime: Awaited<ReturnType<typeof import('../runtime.js')['createRuntime']>>,
   server: string,
   tool: string,
   args: Record<string, unknown>,
-  timeoutMs: number,
-  outputFormat: OutputFormat,
-  disableOAuth: boolean | undefined
+  timeoutMs: number
 ): Promise<{ result: unknown; resolvedTool: string }> {
   // Attempt the original request first; if it fails with a "tool not found" we opportunistically retry once with a better match.
-  return attemptCall(runtime, server, tool, args, timeoutMs, outputFormat, true, disableOAuth);
+  return attemptCall(runtime, server, tool, args, timeoutMs, true);
 }
 
 async function attemptCall(
-  runtime: Runtime,
+  runtime: Awaited<ReturnType<typeof import('../runtime.js')['createRuntime']>>,
   server: string,
   tool: string,
   args: Record<string, unknown>,
   timeoutMs: number,
-  outputFormat: OutputFormat,
-  allowCorrection: boolean,
-  disableOAuth: boolean | undefined
+  allowCorrection: boolean
 ): Promise<{ result: unknown; resolvedTool: string }> {
   try {
-    const result = await withTimeout(runtime.callTool(server, tool, { args, timeoutMs, disableOAuth }), timeoutMs);
-    if (allowCorrection && isErrorCallResult(result)) {
-      const resolution = await maybeResolveToolName(runtime, server, tool, result, disableOAuth);
-      if (resolution) {
-        const retry = await maybeRetryResolvedTool(
-          runtime,
-          server,
-          tool,
-          args,
-          timeoutMs,
-          outputFormat,
-          resolution,
-          disableOAuth
-        );
-        if (retry) {
-          return retry;
-        }
-      }
-    }
+    const result = await withTimeout(runtime.callTool(server, tool, { args, timeoutMs }), timeoutMs);
     return { result, resolvedTool: tool };
   } catch (error) {
     if (error instanceof Error && error.message === 'Timeout') {
       const timeoutDisplay = `${timeoutMs}ms`;
       await runtime.close(server).catch(() => {});
       throw new Error(
-        `Call to ${server}.${tool} timed out after ${timeoutDisplay}. Override MCPORTER_CALL_TIMEOUT or pass --timeout to adjust.`,
-        { cause: error }
+        `Call to ${server}.${tool} timed out after ${timeoutDisplay}. Override MCPORTER_CALL_TIMEOUT or pass --timeout to adjust.`
       );
     }
 
@@ -596,63 +321,36 @@ async function attemptCall(
       throw error;
     }
 
-    const resolution = await maybeResolveToolName(runtime, server, tool, error, disableOAuth);
+    const resolution = await maybeResolveToolName(runtime, server, tool, error);
     if (!resolution) {
+      maybeReportConnectionIssue(server, tool, error);
       throw error;
     }
 
-    const retry = await maybeRetryResolvedTool(
-      runtime,
-      server,
-      tool,
-      args,
-      timeoutMs,
-      outputFormat,
+    const messages = renderIdentifierResolutionMessages({
+      entity: 'tool',
+      attempted: tool,
       resolution,
-      disableOAuth
-    );
-    if (!retry) {
+      scope: server,
+    });
+    if (resolution.kind === 'suggest') {
+      if (messages.suggest) {
+        console.error(dimText(messages.suggest));
+      }
       throw error;
     }
-    return retry;
-  }
-}
-
-async function maybeRetryResolvedTool(
-  runtime: Runtime,
-  server: string,
-  tool: string,
-  args: Record<string, unknown>,
-  timeoutMs: number,
-  outputFormat: OutputFormat,
-  resolution: ToolResolution,
-  disableOAuth: boolean | undefined
-): Promise<{ result: unknown; resolvedTool: string } | undefined> {
-  const messages = renderIdentifierResolutionMessages({
-    entity: 'tool',
-    attempted: tool,
-    resolution,
-    scope: server,
-  });
-  if (resolution.kind === 'suggest') {
-    if (messages.suggest) {
-      console.error(dimText(messages.suggest));
+    if (messages.auto) {
+      console.log(dimText(messages.auto));
     }
-    return undefined;
+    return attemptCall(runtime, server, resolution.value, args, timeoutMs, false);
   }
-  if (messages.auto) {
-    const emitAutoMessage = outputFormat === 'json' || outputFormat === 'raw' ? console.error : console.log;
-    emitAutoMessage(dimText(messages.auto));
-  }
-  return attemptCall(runtime, server, resolution.value, args, timeoutMs, outputFormat, false, disableOAuth);
 }
 
 async function maybeResolveToolName(
-  runtime: Runtime,
+  runtime: Awaited<ReturnType<typeof import('../runtime.js')['createRuntime']>>,
   server: string,
   attemptedTool: string,
-  error: unknown,
-  disableOAuth: boolean | undefined
+  error: unknown
 ): Promise<ToolResolution | undefined> {
   const missingName = extractMissingToolFromError(error);
   if (!missingName) {
@@ -664,7 +362,7 @@ async function maybeResolveToolName(
     return undefined;
   }
 
-  const tools = await loadToolMetadata(runtime, server, { includeSchema: false, disableOAuth }).catch(() => undefined);
+  const tools = await loadToolMetadata(runtime, server, { includeSchema: false }).catch(() => undefined);
   if (!tools) {
     return undefined;
   }
@@ -680,37 +378,12 @@ async function maybeResolveToolName(
 }
 
 function extractMissingToolFromError(error: unknown): string | undefined {
-  const message = extractErrorMessageText(error);
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : undefined;
   if (!message) {
     return undefined;
   }
-  const match =
-    message.match(/Tool\s+([A-Za-z0-9._-]+)\s+not found/i) ?? message.match(/Unknown tool:?\s+([A-Za-z0-9._-]+)/i);
+  const match = message.match(/Tool\s+([A-Za-z0-9._-]+)\s+not found/i);
   return match?.[1];
-}
-
-function extractErrorMessageText(value: unknown): string | undefined {
-  if (value instanceof Error) {
-    return value.message;
-  }
-  if (typeof value === 'string') {
-    return value;
-  }
-  if (!value || typeof value !== 'object') {
-    return undefined;
-  }
-  const content = (value as { content?: unknown }).content;
-  if (!Array.isArray(content)) {
-    return undefined;
-  }
-  return content
-    .map((entry) =>
-      entry && typeof entry === 'object' && typeof (entry as { text?: unknown }).text === 'string'
-        ? (entry as { text: string }).text
-        : ''
-    )
-    .filter(Boolean)
-    .join('\n');
 }
 
 function maybeReportConnectionIssue(server: string, tool: string, error: unknown): ConnectionIssue | undefined {
