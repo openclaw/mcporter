@@ -8,6 +8,7 @@ const runDaemonHostMock = vi.fn();
 const createRuntimeMock = vi.fn();
 const isKeepAliveServerMock = vi.fn(() => true);
 const DaemonClientMock = vi.fn();
+const waitForDaemonReadyMock = vi.fn();
 
 vi.mock('node:fs/promises', () => ({
   default: { mkdir: mkdirMock },
@@ -35,6 +36,10 @@ vi.mock('../src/daemon/paths.js', () => ({
   getDaemonLogPath: vi.fn(() => '/tmp/mock-daemon.log'),
 }));
 
+vi.mock('../src/daemon/startup-readiness.js', () => ({
+  waitForDaemonReady: (...args: unknown[]) => waitForDaemonReadyMock(...args),
+}));
+
 vi.mock('../src/env.js', () => ({
   expandHome: (value: string) => value,
 }));
@@ -59,6 +64,10 @@ describe('daemon CLI restart', () => {
     createRuntimeMock.mockReset();
     isKeepAliveServerMock.mockReset();
     DaemonClientMock.mockReset();
+    waitForDaemonReadyMock.mockReset();
+    waitForDaemonReadyMock.mockImplementation(async (probe: (timeoutMs: number) => Promise<unknown>) => {
+      return (await probe(100)) ?? (await probe(100));
+    });
     DaemonClientMock.mockImplementation(function MockDaemonClient() {
       return {
         stop: stopMock,
@@ -232,6 +241,7 @@ describe('daemon CLI restart', () => {
       expect(launchDaemonDetachedMock).toHaveBeenCalledWith(
         expect.objectContaining({ extraArgs: ['--log-file', expect.stringMatching(/daemon\.log$/u)] })
       );
+      expect(waitForDaemonReadyMock).toHaveBeenCalledOnce();
       expect(log).toHaveBeenCalledWith('Daemon started for 1 server(s).');
     } finally {
       log.mockRestore();

@@ -4,6 +4,7 @@ import { DaemonClient, resolveDaemonPaths } from '../daemon/client.js';
 import { runDaemonHost } from '../daemon/host.js';
 import { launchDaemonDetached } from '../daemon/launch.js';
 import { getDaemonLogPath } from '../daemon/paths.js';
+import { waitForDaemonReady } from '../daemon/startup-readiness.js';
 import { expandHome } from '../env.js';
 import { isKeepAliveServer } from '../lifecycle.js';
 import { createRuntime } from '../runtime.js';
@@ -131,10 +132,7 @@ async function handleDaemonStart(args: string[], options: DaemonCliOptions, clie
     socketPath,
     extraArgs: forwardedArgs,
   });
-  const ready = await waitFor(() => client.status(), 10_000, 100);
-  if (!ready) {
-    throw new Error('Failed to start daemon before timeout expired.');
-  }
+  await waitForDaemonReady((timeoutMs) => client.status(timeoutMs));
   console.log(`Daemon started for ${keepAlive.length} server(s).`);
 }
 

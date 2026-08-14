@@ -19,6 +19,7 @@ import {
   resolveProgressInterval,
 } from './protocol.js';
 import { delay } from './request-utils.js';
+import { waitForDaemonReady } from './startup-readiness.js';
 import type {
   CallToolParams,
   CloseServerParams,
@@ -104,8 +105,8 @@ export class DaemonClient {
     await this.invoke('closeServer', params);
   }
 
-  async status(): Promise<StatusResult | null> {
-    return await this.readVerifiedStatus();
+  async status(timeoutMs?: number): Promise<StatusResult | null> {
+    return await this.readVerifiedStatus(timeoutMs);
   }
 
   async stop(): Promise<void> {
@@ -214,14 +215,7 @@ export class DaemonClient {
   }
 
   private async waitForReady(): Promise<void> {
-    const deadline = Date.now() + 10_000;
-    while (Date.now() < deadline) {
-      if (await this.isResponsive()) {
-        return;
-      }
-      await delay(100);
-    }
-    throw new Error('Timeout while waiting for MCPorter daemon to start.');
+    await waitForDaemonReady((timeoutMs) => this.readVerifiedStatus(timeoutMs));
   }
 
   private async isResponsive(timeoutMs?: number): Promise<boolean> {

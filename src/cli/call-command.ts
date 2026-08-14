@@ -598,7 +598,6 @@ async function attemptCall(
 
     const resolution = await maybeResolveToolName(runtime, server, tool, error, disableOAuth);
     if (!resolution) {
-      maybeReportConnectionIssue(server, tool, error);
       throw error;
     }
 

@@ -201,13 +201,55 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$HOMEBREW_TAP_TOKEN"
-          for _ in {1..20}; do
-            run_id="$(GH_TOKEN="$HOMEBREW_TAP_TOKEN" gh run list --repo steipete/homebrew-tap --workflow update-formula.yml --json databaseId,displayTitle --jq '.[] | select(.displayTitle | contains("${{ steps.release.outputs.request_id }}")) | .databaseId' | head -n1)"
-            if [[ -n "$run_id" ]]; then
-              GH_TOKEN="$HOMEBREW_TAP_TOKEN" gh run watch "$run_id" --repo steipete/homebrew-tap --exit-status
-              exit 0
+          target_run_id=
+          max_attempts=40
+          for ((attempt = 1; attempt <= max_attempts; attempt += 1)); do
+            if [[ -z "$target_run_id" ]]; then
+              if discovered_run_id="$(GH_TOKEN="$HOMEBREW_TAP_TOKEN" gh api -X GET \
+                'repos/steipete/homebrew-tap/actions/workflows/update-formula.yml/runs' \
+                -f event=workflow_dispatch \
+                -f per_page=100 \
+                --jq '.workflow_runs | map(select(.display_title | contains("${{ steps.release.outputs.request_id }}"))) | first | .id // empty')"; then
+                if [[ "$discovered_run_id" =~ ^[0-9]+$ ]]; then
+                  target_run_id="$discovered_run_id"
+                elif [[ -n "$discovered_run_id" ]]; then
+                  echo "::warning::Attempt $attempt/$max_attempts returned an invalid tap workflow run ID; retrying."
+                fi
+              else
+                echo "::warning::Attempt $attempt/$max_attempts could not list tap workflow runs; retrying."
+              fi
             fi
-            sleep 5
+
+            if [[ -n "$target_run_id" ]]; then
+              if run_state="$(GH_TOKEN="$HOMEBREW_TAP_TOKEN" gh api \
+                "repos/steipete/homebrew-tap/actions/runs/$target_run_id" \
+                --jq '[.status, (.conclusion // "")] | @tsv')"; then
+                IFS=$'\t' read -r run_status run_conclusion <<<"$run_state"
+                if [[ "$run_status" == completed ]]; then
+                  if [[ "$run_conclusion" == success ]]; then
+                    echo "Tap workflow run $target_run_id completed successfully."
+                    exit 0
+                  fi
+                  echo "Tap workflow run $target_run_id completed with conclusion: ${run_conclusion:-unknown}." >&2
+                  exit 1
+                fi
+                echo "Tap workflow run $target_run_id status: ${run_status:-not yet visible}."
+              else
+                echo "::warning::Attempt $attempt/$max_attempts could not inspect tap workflow run $target_run_id; retrying."
+              fi
+            fi
+
+            if ((attempt < max_attempts)); then
+              delay=$((attempt * 5))
+              if ((delay > 30)); then
+                delay=30
+              fi
+              sleep "$delay"
+            fi
           done
-          echo "Timed out waiting for tap workflow to appear." >&2
+          if [[ -z "$target_run_id" ]]; then
+            echo "Timed out waiting for the dispatched tap workflow to appear." >&2
+          else
+            echo "Timed out waiting for tap workflow run $target_run_id to complete." >&2
+          fi
           exit 1

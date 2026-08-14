@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer';
 import type {
+  FetchLike,
   OAuthClientInformationMixed,
   OAuthProtectedResourceMetadata,
   OAuthTokens,
@@ -88,7 +89,7 @@ function decideUnderRefreshLock(
  *   that should have survived. Divergence resolves on its own: the next
  *   successful refresh saves to every store.
  */
-async function reconcilePersistedTokens(
+export async function reconcilePersistedTokens(
   definition: ServerDefinition,
   persistence: OAuthPersistence,
   logger?: Logger
@@ -401,7 +402,13 @@ async function refreshCachedOAuthTokenUnderLock(
 
 // Every request issued while the refresh lock is held carries a deadline.
 export function boundedRefreshFetch(input: string | URL, init?: RequestInit): Promise<Response> {
-  return fetch(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS) });
+  return withRefreshRequestTimeout(fetch)(input, init);
+}
+
+/** Keeps a transport's fetch behavior while bounding requests made under the refresh lock. */
+export function withRefreshRequestTimeout(fetchFn: FetchLike): FetchLike {
+  return async (input, init) =>
+    await fetchFn(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS) });
 }
 
 /**

@@ -1,6 +1,30 @@
 # mcporter Changelog
 
-## [0.13.5] - Unreleased
+## [0.13.7] - Unreleased
+
+### OAuth
+
+- Keep MCP transport headers out of OAuth discovery and send an identifying User-Agent from the HTTP/1.1 SSE compatibility path, preventing misleading 403 responses from header-sensitive load balancers. (Issues #320 and #321)
+
+### Maintenance
+
+- Retry transient Homebrew tap workflow API failures and propagation gaps with bounded backoff while preserving request-correlated release proof.
+
+## [0.13.6] - 2026-08-13
+
+### CLI
+
+- Report connection failures once at the prepared-call boundary instead of duplicating the same offline diagnostic during auto-correction.
+
+### Daemon
+
+- Allow up to 45 seconds for cold starts in automatic and explicit daemon launches, with one slow-start hint for Chrome relay discovery and actionable foreground logging guidance on timeout.
+
+### OAuth
+
+- Keep the SDK's automatic post-401 token redemption inside the cross-process refresh lock, so simultaneous rejected requests adopt one rotated token generation instead of replaying and revoking the shared token family. (Issue #307)
+
+## [0.13.5] - 2026-08-13
 
 ### CLI
 

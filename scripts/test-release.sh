@@ -419,7 +419,8 @@ assert_fails env -u GH_TOKEN -u GITHUB_TOKEN \
 release_workflow="$ROOT/.github/workflows/release-assets.yml"
 publish_workflow="$ROOT/.github/workflows/release.yml"
 homebrew_workflow="$ROOT/.github/workflows/update-homebrew-tap.yml"
-PUBLISH_WORKFLOW="$publish_workflow" HOMEBREW_WORKFLOW="$homebrew_workflow" ruby <<'RUBY'
+homebrew_wait_script="$WORK/homebrew-wait.sh"
+PUBLISH_WORKFLOW="$publish_workflow" HOMEBREW_WORKFLOW="$homebrew_workflow" HOMEBREW_WAIT_SCRIPT="$homebrew_wait_script" ruby <<'RUBY'
 require 'yaml'
 
 def contract_assert(condition, message)
@@ -433,7 +434,11 @@ def named_step(job, name)
   job.fetch('steps').find { |step| step['name'] == name }
 end
 
-publish = YAML.safe_load_file(ENV.fetch('PUBLISH_WORKFLOW'), aliases: true)
+def safe_load_yaml(path)
+  YAML.safe_load(File.read(path), aliases: true)
+end
+
+publish = safe_load_yaml(ENV.fetch('PUBLISH_WORKFLOW'))
 publish_jobs = publish.fetch('jobs')
 release_job = publish_jobs.fetch('release')
 proof_step = named_step(release_job, 'Verify protected native proof and published assets')
@@ -448,7 +453,7 @@ contract_assert(dispatch_step, 'protected Homebrew dispatch step is missing')
 contract_assert(dispatch_job.dig('permissions', 'actions') == 'write', 'same-repository dispatch lacks actions: write')
 contract_assert(dispatch_step.dig('env', 'GH_TOKEN') == '${{ github.token }}', 'same-repository dispatch does not use github.token')
 
-homebrew = YAML.safe_load_file(ENV.fetch('HOMEBREW_WORKFLOW'), aliases: true)
+homebrew = safe_load_yaml(ENV.fetch('HOMEBREW_WORKFLOW'))
 contract_assert(homebrew.dig('permissions', 'actions') == 'read', 'Homebrew proof workflow lacks actions: read')
 homebrew_job = homebrew.fetch('jobs').fetch('update-homebrew-tap')
 homebrew_proof = named_step(homebrew_job, 'Verify protected release for tap update')
@@ -466,12 +471,136 @@ homebrew_job.fetch('steps').each do |step|
     contract_assert(step.fetch('env', {}) == { 'HOMEBREW_TAP_TOKEN' => pat_value }, "#{step['name']} exposes unexpected credentials")
     contract_assert(step.fetch('run', '').include?('test -n "$HOMEBREW_TAP_TOKEN"'), "#{step['name']} does not require the tap PAT")
     contract_assert(step.fetch('run', '').include?('GH_TOKEN="$HOMEBREW_TAP_TOKEN" gh '), "#{step['name']} does not bind the PAT at the cross-repository gh call")
-    contract_assert(step.fetch('run', '').include?('--repo steipete/homebrew-tap'), "#{step['name']} is not scoped to the cross-repository tap")
+    repo_scope = if step['name'] == 'Wait for tap update'
+      'repos/steipete/homebrew-tap/'
+    else
+      '--repo steipete/homebrew-tap'
+    end
+    contract_assert(step.fetch('run', '').include?(repo_scope), "#{step['name']} is not scoped to the cross-repository tap")
   else
     contract_assert(!step.to_s.include?('HOMEBREW_TAP_TOKEN'), "#{step['name']} can access the tap PAT outside the cross-repository boundary")
   end
 end
+
+wait_step = named_step(homebrew_job, 'Wait for tap update')
+wait_run = wait_step.fetch('run')
+contract_assert(wait_run.include?('display_title | contains("${{ steps.release.outputs.request_id }}")'), 'tap run discovery is not matched to the dispatch request ID')
+contract_assert(wait_run.include?('"repos/steipete/homebrew-tap/actions/runs/$target_run_id"'), 'tap completion proof is not pinned to the discovered run ID')
+contract_assert(wait_run.include?('if [[ "$run_conclusion" == success ]]'), 'tap completion proof does not require a successful exact run')
+contract_assert(wait_run.include?('if discovered_run_id="$(GH_TOKEN="$HOMEBREW_TAP_TOKEN" gh api'), 'tap run discovery is not protected from set -e API exits')
+contract_assert(wait_run.include?('if run_state="$(GH_TOKEN="$HOMEBREW_TAP_TOKEN" gh api'), 'tap run verification is not protected from set -e API exits')
+File.write(
+  ENV.fetch('HOMEBREW_WAIT_SCRIPT'),
+  wait_run.sub('${{ steps.release.outputs.request_id }}', 'release-contract-request')
+)
 RUBY
+
+cat >"$MOCK_BIN/gh" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'gh-token %s\n' "${GH_TOKEN:-missing}" >>"$MOCK_WAIT_LOG"
+printf 'gh-args %s\n' "$*" >>"$MOCK_WAIT_LOG"
+[[ "${GH_TOKEN:-}" == tap-token ]]
+[[ "${1:-}" == api ]]
+
+if [[ " $* " == *' repos/steipete/homebrew-tap/actions/workflows/update-formula.yml/runs '* ]]; then
+  grep -Fq 'contains("release-contract-request")' <<<"$*"
+  count_file="$MOCK_WAIT_STATE/discovery-count"
+  count=0
+  [[ ! -f "$count_file" ]] || count=$(<"$count_file")
+  count=$((count + 1))
+  printf '%s\n' "$count" >"$count_file"
+  case "${MOCK_WAIT_SCENARIO:-success}:$count" in
+    success:1) exit 1 ;;
+    success:2) exit 0 ;;
+    success:*) echo 4242 ;;
+    failure:*) echo 4242 ;;
+    timeout:*) exit 0 ;;
+    *) exit 64 ;;
+  esac
+  exit 0
+fi
+
+if [[ " $* " == *' repos/steipete/homebrew-tap/actions/runs/4242 '* ]]; then
+  if [[ "${MOCK_WAIT_SCENARIO:-success}" == failure ]]; then
+    printf 'completed\tfailure\n'
+    exit 0
+  fi
+  count_file="$MOCK_WAIT_STATE/proof-count"
+  count=0
+  [[ ! -f "$count_file" ]] || count=$(<"$count_file")
+  count=$((count + 1))
+  printf '%s\n' "$count" >"$count_file"
+  case "$count" in
+    1) exit 1 ;;
+    2) printf 'in_progress\t\n' ;;
+    *) printf 'completed\tsuccess\n' ;;
+  esac
+  exit 0
+fi
+
+echo "unexpected mock gh arguments: $*" >&2
+exit 64
+MOCK
+
+cat >"$MOCK_BIN/sleep" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'sleep %s\n' "$1" >>"$MOCK_WAIT_LOG"
+MOCK
+chmod 755 "$MOCK_BIN/gh" "$MOCK_BIN/sleep" "$homebrew_wait_script"
+
+# A failed API call and an empty eventual-consistency result must both survive
+# set -e. Once discovered, only that exact run can prove successful completion.
+wait_state="$WORK/homebrew-wait-success"
+wait_log="$WORK/homebrew-wait-success.log"
+mkdir -p "$wait_state"
+: >"$wait_log"
+HOMEBREW_TAP_TOKEN=tap-token \
+MOCK_WAIT_SCENARIO=success \
+MOCK_WAIT_STATE="$wait_state" \
+MOCK_WAIT_LOG="$wait_log" \
+  bash "$homebrew_wait_script" >/dev/null
+[[ "$(<"$wait_state/discovery-count")" == 3 ]] || fail 'tap wait did not retry transient and empty discovery results'
+[[ "$(<"$wait_state/proof-count")" == 3 ]] || fail 'tap wait did not retry transient exact-run verification'
+grep -Fq 'repos/steipete/homebrew-tap/actions/runs/4242' "$wait_log" || fail 'tap wait did not verify the discovered run ID'
+if grep -Eo 'actions/runs/[0-9]+' "$wait_log" | grep -Fv 'actions/runs/4242' >/dev/null; then
+  fail 'tap wait accepted a different run as proof'
+fi
+[[ "$(grep -c '^sleep ' "$wait_log")" == 4 ]] || fail 'tap wait retry count changed unexpectedly'
+[[ "$(sed -n 's/^sleep //p' "$wait_log" | tail -n1)" == 20 ]] || fail 'tap wait backoff did not increase as expected'
+
+# A completed matching run with a non-success conclusion is exact evidence of
+# failure and must never be accepted as successful release proof.
+wait_state="$WORK/homebrew-wait-failure"
+wait_log="$WORK/homebrew-wait-failure.log"
+mkdir -p "$wait_state"
+: >"$wait_log"
+assert_fails env \
+  HOMEBREW_TAP_TOKEN=tap-token \
+  MOCK_WAIT_SCENARIO=failure \
+  MOCK_WAIT_STATE="$wait_state" \
+  MOCK_WAIT_LOG="$wait_log" \
+  bash "$homebrew_wait_script"
+grep -Fq 'repos/steipete/homebrew-tap/actions/runs/4242' "$wait_log" || fail 'tap wait did not inspect the matching failed run'
+
+# A never-visible matching run must stop after the declared attempt bound, and
+# the capped backoff must never turn into an unbounded wait.
+wait_state="$WORK/homebrew-wait-timeout"
+wait_log="$WORK/homebrew-wait-timeout.log"
+mkdir -p "$wait_state"
+: >"$wait_log"
+assert_fails env \
+  HOMEBREW_TAP_TOKEN=tap-token \
+  MOCK_WAIT_SCENARIO=timeout \
+  MOCK_WAIT_STATE="$wait_state" \
+  MOCK_WAIT_LOG="$wait_log" \
+  bash "$homebrew_wait_script"
+[[ "$(<"$wait_state/discovery-count")" == 40 ]] || fail 'tap wait attempt bound changed unexpectedly'
+[[ "$(grep -c '^sleep ' "$wait_log")" == 39 ]] || fail 'tap wait timeout sleep bound changed unexpectedly'
+[[ "$(sed -n 's/^sleep //p' "$wait_log" | tail -n1)" == 30 ]] || fail 'tap wait backoff cap changed unexpectedly'
+! grep -Fq 'actions/runs/' "$wait_log" || fail 'tap wait verified an unmatched run'
+
 assert_fails "$ROOT/scripts/package-release.sh" v1.2.3-rc.1
 assert_fails "$ROOT/scripts/verify-release.sh" v1.2.3-rc.1 "$WORK/missing-prerelease-assets"
 grep -Fq '[[ "$RELEASE_TAG" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]' "$release_workflow"

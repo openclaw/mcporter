@@ -3,6 +3,7 @@ import https from 'node:https';
 import { Buffer } from 'node:buffer';
 import { Readable } from 'node:stream';
 import type { FetchLike } from '@modelcontextprotocol/client';
+import { MCPORTER_VERSION } from '../version.js';
 
 const MAX_REDIRECTS = 20;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
@@ -44,6 +45,9 @@ async function nodeHttp1FetchWithRedirects(
   }
 
   const headers = normalizeRequestHeaders(init.headers);
+  if (!hasHeader(headers, 'user-agent')) {
+    headers['user-agent'] = `mcporter/${MCPORTER_VERSION}`;
+  }
   const body = await materializeRequestBody(init.body);
   if (body !== undefined && !hasHeader(headers, 'content-length') && !hasHeader(headers, 'transfer-encoding')) {
     headers['content-length'] = String(Buffer.byteLength(body));
