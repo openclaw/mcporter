@@ -2,6 +2,10 @@
 
 ## [0.13.7] - Unreleased
 
+### OAuth
+
+- Keep MCP transport headers out of OAuth discovery and send an identifying User-Agent from the HTTP/1.1 SSE compatibility path, preventing misleading 403 responses from header-sensitive load balancers. (Issues #320 and #321)
+
 ### Maintenance
 
 - Retry transient Homebrew tap workflow API failures and propagation gaps with bounded backoff while preserving request-correlated release proof.

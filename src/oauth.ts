@@ -33,6 +33,12 @@ const CALLBACK_PATH = '/callback';
 // authorization older than this is treated as abandoned so a later request can prompt again.
 const INTERACTIVE_AUTHORIZATION_TTL_MS = 300_000;
 
+const oauthJsonFetch: FetchLike = (input, init = {}) => {
+  const headers = new Headers(init.headers);
+  headers.set('accept', 'application/json');
+  return fetch(input, { ...init, headers });
+};
+
 export interface OAuthAuthorizationRequest {
   authorizationUrl: string;
   redirectUrl: string;
@@ -435,7 +441,10 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
         if (!sameOAuthTokenGeneration(latest, rejected)) {
           return;
         }
-        await continueDefault({ fetchFn: withRefreshRequestTimeout(context.fetchFn) });
+        // OAuth metadata, registration, and token requests are ordinary JSON HTTP
+        // traffic. The transport fetch carries MCP requestInit headers (including
+        // text/event-stream), which can misclassify discovery GETs as SSE.
+        await continueDefault({ fetchFn: withRefreshRequestTimeout(oauthJsonFetch) });
       });
     } catch (error) {
       if (isFileLockTimeoutError(error)) {

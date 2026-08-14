@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { auth as sdkAuth, resolveClientMetadata } from '@modelcontextprotocol/client';
+import { auth as sdkAuth, discoverOAuthServerInfo, resolveClientMetadata } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from '../src/config.js';
 import { __oauthInternals, createOAuthSession, OAuthRedirectUriMismatchError } from '../src/oauth.js';
 import { loadVaultEntry } from '../src/oauth-vault.js';
@@ -132,6 +132,56 @@ describe('FileOAuthClientProvider session lifecycle', () => {
     expect(session.provider.clientMetadataUrl).toBe('https://client.example.com/oauth/metadata.json');
     expect(resolveClientMetadata(session.provider).application_type).toBe('native');
     await session.close();
+  });
+
+  it('keeps the MCP event-stream Accept value out of post-401 OAuth discovery', async () => {
+    const tokenCacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-test-'));
+    tempDirs.push(tokenCacheDir);
+    const discovery = await startSeparatedOAuthDiscoveryServers();
+    const definition: ServerDefinition = {
+      name: 'test-oauth-fetch-isolation',
+      command: {
+        kind: 'http',
+        url: new URL(discovery.serverUrl),
+        headers: { accept: 'application/json, text/event-stream' },
+      },
+      auth: 'oauth',
+      tokenCacheDir,
+    };
+    const session = await createOAuthSession(definition, { info: vi.fn(), warn: vi.fn(), error: vi.fn() });
+    await session.provider.saveTokens({
+      access_token: 'rejected-access-token',
+      token_type: 'Bearer',
+      refresh_token: 'refresh-token',
+    });
+    const presentedTokens = await session.provider.tokens();
+    expect(presentedTokens).toBeDefined();
+    const transportFetch = vi.fn(async () => {
+      throw new Error('OAuth discovery used the MCP transport fetch');
+    });
+
+    try {
+      await session.provider.onOAuthUnauthorized?.(
+        {
+          response: new Response(null, { status: 401 }),
+          serverUrl: new URL(discovery.serverUrl),
+          fetchFn: transportFetch,
+          presentedTokens: presentedTokens!,
+        },
+        async (options) => {
+          await discoverOAuthServerInfo(discovery.serverUrl, { fetchFn: options?.fetchFn });
+        }
+      );
+
+      expect(transportFetch).not.toHaveBeenCalled();
+      expect(discovery.requests).toEqual([
+        { origin: 'resource', accept: 'application/json' },
+        { origin: 'authorization', accept: 'application/json' },
+      ]);
+    } finally {
+      await session.close();
+      await discovery.close();
+    }
   });
 
   it('does not leave a callback listener bound when CIMD configuration is invalid', async () => {
@@ -1011,6 +1061,58 @@ async function startOAuthMetadataServer(supportsUrlBasedClientId: boolean): Prom
     serverUrl,
     registrationCount: () => registrations,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+}
+
+async function startSeparatedOAuthDiscoveryServers(): Promise<{
+  serverUrl: string;
+  requests: Array<{ origin: 'resource' | 'authorization'; accept: string | undefined }>;
+  close: () => Promise<void>;
+}> {
+  const requests: Array<{ origin: 'resource' | 'authorization'; accept: string | undefined }> = [];
+  let authorizationOrigin = '';
+  const authorizationServer = http.createServer((request, response) => {
+    requests.push({ origin: 'authorization', accept: request.headers.accept });
+    sendJson(response, {
+      issuer: authorizationOrigin,
+      authorization_endpoint: `${authorizationOrigin}/authorize`,
+      token_endpoint: `${authorizationOrigin}/token`,
+      registration_endpoint: `${authorizationOrigin}/register`,
+      response_types_supported: ['code'],
+      grant_types_supported: ['authorization_code', 'refresh_token'],
+      token_endpoint_auth_methods_supported: ['none'],
+      code_challenge_methods_supported: ['S256'],
+    });
+  });
+  await new Promise<void>((resolve, reject) => {
+    authorizationServer.once('error', reject);
+    authorizationServer.listen(0, '127.0.0.1', resolve);
+  });
+  authorizationOrigin = `http://127.0.0.1:${(authorizationServer.address() as AddressInfo).port}`;
+
+  let resourceOrigin = '';
+  const resourceServer = http.createServer((request, response) => {
+    requests.push({ origin: 'resource', accept: request.headers.accept });
+    sendJson(response, {
+      resource: `${resourceOrigin}/mcp`,
+      authorization_servers: [authorizationOrigin],
+    });
+  });
+  await new Promise<void>((resolve, reject) => {
+    resourceServer.once('error', reject);
+    resourceServer.listen(0, '127.0.0.1', resolve);
+  });
+  resourceOrigin = `http://127.0.0.1:${(resourceServer.address() as AddressInfo).port}`;
+
+  return {
+    serverUrl: `${resourceOrigin}/mcp`,
+    requests,
+    close: async () => {
+      await Promise.all([
+        new Promise<void>((resolve) => resourceServer.close(() => resolve())),
+        new Promise<void>((resolve) => authorizationServer.close(() => resolve())),
+      ]);
+    },
   };
 }
 

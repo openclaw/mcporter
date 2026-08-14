@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSseIsolatedFetch, nodeHttp1Fetch } from '../src/runtime/node-http-fetch.js';
+import { MCPORTER_VERSION } from '../src/version.js';
 
 let cleanup: (() => Promise<void>) | undefined;
 
@@ -11,6 +12,34 @@ afterEach(async () => {
 });
 
 describe('nodeHttp1Fetch', () => {
+  it('identifies mcporter when the caller does not provide a User-Agent', async () => {
+    let userAgent: string | undefined;
+    const { baseUrl, close } = await serve((request, response) => {
+      userAgent = request.headers['user-agent'];
+      response.writeHead(userAgent ? 200 : 403, { 'content-type': 'text/plain' });
+      response.end(userAgent ? 'ok' : 'missing User-Agent');
+    });
+    cleanup = close;
+
+    const response = await nodeHttp1Fetch(baseUrl);
+
+    expect(response.status).toBe(200);
+    expect(userAgent).toBe(`mcporter/${MCPORTER_VERSION}`);
+  });
+
+  it('preserves an explicit User-Agent', async () => {
+    let userAgent: string | undefined;
+    const { baseUrl, close } = await serve((request, response) => {
+      userAgent = request.headers['user-agent'];
+      response.end('ok');
+    });
+    cleanup = close;
+
+    await nodeHttp1Fetch(baseUrl, { headers: { 'User-Agent': 'custom-client/1.0' } });
+
+    expect(userAgent).toBe('custom-client/1.0');
+  });
+
   it('isolates only event-stream GET requests from the default fetch', async () => {
     const { baseUrl, close } = await serve((_request, response) => {
       response.writeHead(200, { 'content-type': 'text/plain' });
