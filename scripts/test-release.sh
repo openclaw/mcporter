@@ -433,7 +433,11 @@ def named_step(job, name)
   job.fetch('steps').find { |step| step['name'] == name }
 end
 
-publish = YAML.safe_load_file(ENV.fetch('PUBLISH_WORKFLOW'), aliases: true)
+def safe_load_yaml(path)
+  YAML.safe_load(File.read(path), aliases: true)
+end
+
+publish = safe_load_yaml(ENV.fetch('PUBLISH_WORKFLOW'))
 publish_jobs = publish.fetch('jobs')
 release_job = publish_jobs.fetch('release')
 proof_step = named_step(release_job, 'Verify protected native proof and published assets')
@@ -448,7 +452,7 @@ contract_assert(dispatch_step, 'protected Homebrew dispatch step is missing')
 contract_assert(dispatch_job.dig('permissions', 'actions') == 'write', 'same-repository dispatch lacks actions: write')
 contract_assert(dispatch_step.dig('env', 'GH_TOKEN') == '${{ github.token }}', 'same-repository dispatch does not use github.token')
 
-homebrew = YAML.safe_load_file(ENV.fetch('HOMEBREW_WORKFLOW'), aliases: true)
+homebrew = safe_load_yaml(ENV.fetch('HOMEBREW_WORKFLOW'))
 contract_assert(homebrew.dig('permissions', 'actions') == 'read', 'Homebrew proof workflow lacks actions: read')
 homebrew_job = homebrew.fetch('jobs').fetch('update-homebrew-tap')
 homebrew_proof = named_step(homebrew_job, 'Verify protected release for tap update')
