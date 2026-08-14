@@ -11,6 +11,11 @@
 ### CLI
 
 - Discover OpenClaw's active Chrome extension relay endpoint automatically, while preserving the explicit environment override and legacy `127.0.0.1:18799` fallback.
+- Report connection failures once at the prepared-call boundary instead of duplicating the same offline diagnostic during auto-correction.
+
+### Daemon
+
+- Allow up to 45 seconds for cold starts in automatic and explicit daemon launches, with one slow-start hint for Chrome relay discovery and actionable foreground logging guidance on timeout.
 
 ## [0.13.4] - 2026-08-11
 

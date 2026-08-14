@@ -47,4 +47,19 @@ describe('CLI call error reporting', () => {
     logSpy.mockRestore();
     errorSpy.mockRestore();
   });
+
+  it('reports an offline connection failure once', async () => {
+    const { handleCall } = await cliModulePromise;
+    const runtime = {
+      callTool: vi.fn().mockRejectedValue(new Error('connect ECONNREFUSED 127.0.0.1:9000')),
+      close: vi.fn().mockResolvedValue(undefined),
+    } as unknown as Awaited<ReturnType<(typeof import('../src/runtime.js'))['createRuntime']>>;
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(handleCall(runtime, ['local.run'])).rejects.toThrow('ECONNREFUSED');
+
+    const offlineDiagnostics = errorSpy.mock.calls.filter((call) => call.join(' ').includes('appears offline'));
+    expect(offlineDiagnostics).toHaveLength(1);
+    errorSpy.mockRestore();
+  });
 });
