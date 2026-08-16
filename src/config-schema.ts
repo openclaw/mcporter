@@ -114,11 +114,13 @@ export const RawEntrySchema = z
     headers: z
       .record(z.string(), z.string())
       .optional()
-      .describe('HTTP headers for requests. Supports ${VAR}, ${VAR:-fallback}, and $env:VAR placeholders'),
+      .describe('HTTP headers for requests. Supports ${VAR}, ${VAR:-fallback}, and whole-value $env:VAR placeholders'),
     env: z
       .record(z.string(), z.string())
       .optional()
-      .describe('Environment variables for stdio commands. Supports ${VAR} and ${VAR:-fallback} placeholders'),
+      .describe(
+        'Environment variables for stdio commands. Supports ${VAR}, ${VAR:-fallback}, and whole-value $env:VAR placeholders'
+      ),
     auth: z.string().optional().describe('Authentication method (e.g., "oauth")'),
     tokenCacheDir: z.string().optional().describe('Directory for caching OAuth tokens (camelCase)'),
     token_cache_dir: z.string().optional().describe('Directory for caching OAuth tokens (snake_case)'),

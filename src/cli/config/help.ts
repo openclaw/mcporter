@@ -48,8 +48,14 @@ export const CONFIG_HELP_ENTRIES: Record<ConfigSubcommand, ConfigHelpEntry> = {
       { flag: '--transport <http|sse|stdio>', description: 'Force a specific transport (validates target).' },
       { flag: '--arg <value>', description: 'Pass through additional stdio arguments (repeatable).' },
       { flag: '--description <text>', description: 'Set a human-friendly summary.' },
-      { flag: '--env KEY=value', description: 'Attach environment variables (repeatable).' },
-      { flag: '--header KEY=value', description: 'Attach HTTP headers (repeatable).' },
+      {
+        flag: '--env KEY=value',
+        description: 'Attach environment variables; values support ${VAR}, ${VAR:-fallback}, or whole-value $env:VAR.',
+      },
+      {
+        flag: '--header KEY=value',
+        description: 'Attach HTTP headers; values support ${VAR}, ${VAR:-fallback}, or whole-value $env:VAR.',
+      },
       { flag: '--token-cache-dir <path>', description: 'Override where OAuth tokens are persisted.' },
       { flag: '--client-name <name>', description: 'Customize the OAuth client identifier.' },
       { flag: '--oauth-client-id <id>', description: 'Use a pre-registered OAuth client id.' },
