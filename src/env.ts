@@ -107,6 +107,7 @@ export async function withEnvOverrides<T>(
 
   const applied: string[] = [];
   for (const [key, rawValue] of Object.entries(envOverrides)) {
+    rejectUnsupportedBracedEnvPlaceholder(rawValue);
     if (process.env[key]) {
       continue;
     }
