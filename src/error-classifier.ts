@@ -161,43 +161,50 @@ function extractStatusAfterUrl(message: string): string | undefined {
       return undefined;
     }
     let separatorIndex = urlStart;
-    while (separatorIndex < message.length && !/\s/.test(message.charAt(separatorIndex))) {
+    while (separatorIndex < normalized.length && !/\s/.test(normalized.charAt(separatorIndex))) {
       separatorIndex += 1;
     }
-    if (separatorIndex < message.length) {
-      const candidate = extractStatusFromUrlTail(message.slice(separatorIndex));
+    if (separatorIndex < normalized.length) {
+      const candidate = extractStatusFromUrlTail(normalized, separatorIndex);
       if (candidate !== undefined) {
         return candidate;
       }
     }
-    searchStart = urlStart + 1;
+    searchStart = separatorIndex;
   }
   return undefined;
 }
 
-function extractStatusFromUrlTail(value: string): string | undefined {
-  let tail = value.trimStart().toLowerCase();
+function extractStatusFromUrlTail(value: string, start: number): string | undefined {
+  let cursor = skipWhitespace(value, start);
   for (const prefix of ['returned status', 'returned code', 'returned', 'status', 'code']) {
-    if (tail.startsWith(prefix)) {
-      tail = tail.slice(prefix.length).trimStart();
+    if (value.startsWith(prefix, cursor)) {
+      cursor = skipWhitespace(value, cursor + prefix.length);
       break;
     }
   }
-  const candidate = tail.slice(0, 3);
-  const boundary = tail.charAt(3);
+  const candidate = value.slice(cursor, cursor + 3);
+  const boundary = value.charAt(cursor + 3);
   return /^\d{3}$/.test(candidate) && !/[a-z0-9_]/i.test(boundary) ? candidate : undefined;
+}
+
+function skipWhitespace(value: string, start: number): number {
+  let index = start;
+  while (index < value.length && /\s/.test(value.charAt(index))) {
+    index += 1;
+  }
+  return index;
 }
 
 function findNextHttpUrl(value: string, searchStart: number): number {
   let index = searchStart;
   while (index < value.length) {
-    const httpIndex = value.indexOf('http://', index);
-    const httpsIndex = value.indexOf('https://', index);
-    const candidate = httpIndex === -1 ? httpsIndex : httpsIndex === -1 ? httpIndex : Math.min(httpIndex, httpsIndex);
+    const candidate = value.indexOf('http', index);
     if (candidate === -1) {
       return -1;
     }
-    if (candidate === 0 || !/[a-z0-9_]/i.test(value.charAt(candidate - 1))) {
+    const isUrl = value.startsWith('http://', candidate) || value.startsWith('https://', candidate);
+    if (isUrl && (candidate === 0 || !/[a-z0-9_]/i.test(value.charAt(candidate - 1)))) {
       return candidate;
     }
     index = candidate + 1;

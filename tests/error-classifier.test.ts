@@ -38,6 +38,12 @@ describe('analyzeConnectionError', () => {
     expect(issue).toMatchObject({ kind: 'http', statusCode: 503 });
   });
 
+  it('scans many status-less URL candidates without rescanning their suffixes', () => {
+    const candidates = Array.from({ length: 5_000 }, (_, index) => `https://example.com/${index} skipped`).join(' ');
+    const issue = analyzeConnectionError(new Error(`${candidates} https://final.example/mcp returned status 503`));
+    expect(issue).toMatchObject({ kind: 'http', statusCode: 503 });
+  });
+
   it.each([401, 403] as const)('keeps %s classified as auth', (status) => {
     const issue = analyzeConnectionError(new Error(`SSE error: Non-200 status code (${status})`));
     expect(issue.kind).toBe('auth');
