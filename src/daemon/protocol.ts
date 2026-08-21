@@ -4,12 +4,16 @@ export const DAEMON_PROTOCOL_VERSION = 2;
 export const DAEMON_OPERATION_TIMEOUT_CODE = 'operation_timeout';
 export const DAEMON_OAUTH_FLOW_ERROR_CODE = 'oauth_flow_error';
 export const DAEMON_PROGRESS_INTERVAL_MS = 250;
+export const MIN_DAEMON_PROGRESS_INTERVAL_MS = 25;
 
 export function resolveProgressInterval(idleTimeoutMs: number): number {
   if (!Number.isFinite(idleTimeoutMs) || idleTimeoutMs <= 0) {
     return DAEMON_PROGRESS_INTERVAL_MS;
   }
-  return Math.min(DAEMON_PROGRESS_INTERVAL_MS, Math.max(1, Math.floor(idleTimeoutMs / 3)));
+  return Math.min(
+    DAEMON_PROGRESS_INTERVAL_MS,
+    Math.max(MIN_DAEMON_PROGRESS_INTERVAL_MS, Math.floor(idleTimeoutMs / 3))
+  );
 }
 
 export type DaemonRequestMethod =

@@ -9,6 +9,7 @@ import {
   DAEMON_PROTOCOL_VERSION,
   DaemonFrameDecoder,
   encodeDaemonFrame,
+  resolveProgressInterval,
   type DaemonRequest,
 } from '../src/daemon/protocol.js';
 import type { Runtime } from '../src/runtime.js';
@@ -17,6 +18,12 @@ import { makeShortTempDir } from './fixtures/test-helpers.js';
 const describeUnixSocket = process.platform === 'win32' ? describe.skip : describe;
 
 describe('daemon frame protocol', () => {
+  it('bounds progress frequency for short and long idle budgets', () => {
+    expect(resolveProgressInterval(1)).toBe(25);
+    expect(resolveProgressInterval(60)).toBe(25);
+    expect(resolveProgressInterval(900)).toBe(250);
+  });
+
   it('decodes split and coalesced frames and reports malformed lines', () => {
     const decoder = new DaemonFrameDecoder();
     const progress = encodeDaemonFrame({ type: 'progress', id: 'one' });
@@ -128,6 +135,39 @@ describeUnixSocket('daemon socket liveness', () => {
       result: [{ name: 'legacy-client' }],
     });
     expect(payload.trim().split('\n')).toHaveLength(1);
+  });
+
+  it('clamps a raw client progress interval before starting the frame timer', async () => {
+    const served = await serveSocket(async (socket, request) => {
+      await __testHandleSocketRequest(
+        socket,
+        request,
+        {
+          listTools: async () => {
+            await delay(80);
+            return [{ name: 'bounded' }];
+          },
+        } as unknown as Runtime,
+        managedServers(),
+        metadata(served.socketPath)
+      );
+    });
+    cleanups.push(served.close);
+
+    const payload = await rawRequest(served.socketPath, {
+      id: 'bounded-progress',
+      method: 'listTools',
+      params: { server: 'oauth' },
+      protocolVersion: DAEMON_PROTOCOL_VERSION,
+      progressIntervalMs: 1,
+    });
+    const frames = payload
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+
+    expect(frames.filter((frame) => frame.type === 'progress').length).toBeLessThanOrEqual(5);
+    expect(frames.at(-1)).toMatchObject({ id: 'bounded-progress', ok: true });
   });
 });
 

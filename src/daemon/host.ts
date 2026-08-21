@@ -35,6 +35,7 @@ import {
   DAEMON_OPERATION_TIMEOUT_CODE,
   DAEMON_PROGRESS_INTERVAL_MS,
   DAEMON_PROTOCOL_VERSION,
+  MIN_DAEMON_PROGRESS_INTERVAL_MS,
   encodeDaemonFrame,
   type DaemonRequest,
   type DaemonResponse,
@@ -593,7 +594,12 @@ function startProgressFrames(socket: net.Socket, request?: DaemonRequest): () =>
   ) {
     return () => {};
   }
-  const intervalMs = Math.min(request.progressIntervalMs, DAEMON_PROGRESS_INTERVAL_MS);
+  // Raw protocol clients control this field, so enforce both ends before it
+  // reaches setInterval. The floor prevents a tight progress-frame loop.
+  const intervalMs = Math.min(
+    Math.max(Math.trunc(request.progressIntervalMs), MIN_DAEMON_PROGRESS_INTERVAL_MS),
+    DAEMON_PROGRESS_INTERVAL_MS
+  );
   const emit = (): void => {
     if (!socket.destroyed && !socket.writableEnded) {
       socket.write(encodeDaemonFrame({ type: 'progress', id: request.id }));

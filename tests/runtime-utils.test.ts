@@ -12,6 +12,10 @@ describe('normalizeTimeout', () => {
   it('returns a truncated positive integer', () => {
     expect(normalizeTimeout(1500.9)).toBe(1500);
   });
+
+  it('caps values at Node timer maximum instead of wrapping to an immediate timeout', () => {
+    expect(normalizeTimeout(Number.MAX_SAFE_INTEGER)).toBe(2_147_483_647);
+  });
 });
 
 describe('raceWithTimeout', () => {
