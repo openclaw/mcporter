@@ -1,5 +1,5 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
-import { createHmac, randomBytes } from 'node:crypto';
+import { randomBytes, scryptSync } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -31,7 +31,7 @@ interface Generation {
 }
 
 function marker(value: string): string {
-  return createHmac('sha256', MARKER_KEY).update(value).digest('hex').slice(0, 12);
+  return scryptSync(value, MARKER_KEY, 8).toString('hex').slice(0, 12);
 }
 
 describe('OAuth refresh across fresh built-artifact processes', () => {

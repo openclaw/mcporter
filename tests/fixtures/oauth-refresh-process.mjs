@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { scryptSync } from 'node:crypto';
 import { buildOAuthPersistence, readCachedAccessToken } from '../../dist/oauth-persistence.js';
 import { withRefreshLock } from '../../dist/oauth-refresh-lock.js';
 import { createOAuthSession } from '../../dist/oauth.js';
@@ -31,7 +31,7 @@ const logger = { info() {}, warn() {}, error() {}, debug() {} };
 // callers compare opaque markers instead of tokens.
 function marker(value) {
   return typeof value === 'string' && value.length > 0
-    ? createHmac('sha256', markerKeyBytes).update(value).digest('hex').slice(0, 12)
+    ? scryptSync(value, markerKeyBytes, 8).toString('hex').slice(0, 12)
     : null;
 }
 
