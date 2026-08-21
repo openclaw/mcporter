@@ -73,7 +73,7 @@ export function normalizeHttpUrl(value: string | URL): string | undefined {
     if (!url.pathname) {
       url.pathname = '/';
     }
-    return url.href.replace(/\/$/, '/');
+    return url.href;
   } catch {
     return undefined;
   }
