@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import { buildOAuthPersistence, readCachedAccessToken } from '../../dist/oauth-persistence.js';
 import { withRefreshLock } from '../../dist/oauth-refresh-lock.js';
 import { createOAuthSession } from '../../dist/oauth.js';
@@ -8,9 +8,13 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 const action = process.argv[2];
 const endpoint = process.env.MCPORTER_TEST_OAUTH_ENDPOINT;
 const tokenCacheDir = process.env.MCPORTER_TEST_OAUTH_CACHE_DIR;
-if (!action || !endpoint || !tokenCacheDir) {
-  throw new Error('Expected action, MCPORTER_TEST_OAUTH_ENDPOINT, and MCPORTER_TEST_OAUTH_CACHE_DIR.');
+const markerKey = process.env.MCPORTER_TEST_OAUTH_MARKER_KEY;
+if (!action || !endpoint || !tokenCacheDir || !markerKey) {
+  throw new Error(
+    'Expected action, MCPORTER_TEST_OAUTH_ENDPOINT, MCPORTER_TEST_OAUTH_CACHE_DIR, and MCPORTER_TEST_OAUTH_MARKER_KEY.'
+  );
 }
+const markerKeyBytes = Buffer.from(markerKey, 'hex');
 
 const serverName = process.env.MCPORTER_TEST_OAUTH_SERVER_NAME ?? 'oauth-refresh-process';
 const seedRefreshToken = process.env.MCPORTER_TEST_OAUTH_SEED_REFRESH ?? 'fresh-process-refresh-token';
@@ -27,7 +31,7 @@ const logger = { info() {}, warn() {}, error() {}, debug() {} };
 // callers compare opaque markers instead of tokens.
 function marker(value) {
   return typeof value === 'string' && value.length > 0
-    ? createHash('sha256').update(value).digest('hex').slice(0, 12)
+    ? createHmac('sha256', markerKeyBytes).update(value).digest('hex').slice(0, 12)
     : null;
 }
 

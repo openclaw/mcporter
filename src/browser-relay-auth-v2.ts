@@ -1,4 +1,4 @@
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, hash, timingSafeEqual } from 'node:crypto';
 
 export const BROWSER_RELAY_AUTH_LABEL = 'openclaw.browser-relay.auth';
 export const BROWSER_RELAY_AUTH_VERSION = 2;
@@ -33,7 +33,9 @@ export interface BrowserRelayProofFields {
 
 export function deriveBrowserRelayKeyId(key: Uint8Array): string {
   assertRelayKey(key);
-  return createHash('sha256').update(key).digest('base64url').slice(0, 22);
+  // This is a protocol fingerprint of an enforced 256-bit random key, not a
+  // password verifier. Keep the frozen v2 bytes shared with relay clients.
+  return hash('sha256', key, 'base64url').slice(0, 22);
 }
 
 export function canonicalizeBrowserRelayProof(

@@ -380,7 +380,7 @@ function transportError(message: string, code: string): Error {
 
 function deriveConfigKey(configPath: string): string {
   const absolute = path.resolve(configPath);
-  return crypto.createHash('sha1').update(absolute).digest('hex').slice(0, 12);
+  return crypto.hash('sha1', absolute, 'hex').slice(0, 12);
 }
 
 function isTransportError(error: unknown): boolean {
