@@ -8,16 +8,20 @@ export const DAEMON_PROGRESS_INTERVAL_MS = 250;
 export const MIN_DAEMON_PROGRESS_INTERVAL_MS = 25;
 const DAEMON_PROGRESS_SCHEDULING_SLACK_MS = MIN_DAEMON_PROGRESS_INTERVAL_MS;
 
+export function resolveProgressInterval(requestedIntervalMs: number): number {
+  if (requestedIntervalMs >= DAEMON_PROGRESS_INTERVAL_MS) return DAEMON_PROGRESS_INTERVAL_MS;
+  if (requestedIntervalMs >= 100) return 100;
+  if (requestedIntervalMs >= 50) return 50;
+  return MIN_DAEMON_PROGRESS_INTERVAL_MS;
+}
+
 export function resolveProgressTiming(requestedIdleTimeoutMs: number): {
   progressIntervalMs: number;
   idleTimeoutMs: number;
 } {
   const idleTimeoutMs =
     normalizeTimeout(requestedIdleTimeoutMs) ?? DAEMON_PROGRESS_INTERVAL_MS * 3 + DAEMON_PROGRESS_SCHEDULING_SLACK_MS;
-  const progressIntervalMs = Math.min(
-    DAEMON_PROGRESS_INTERVAL_MS,
-    Math.max(MIN_DAEMON_PROGRESS_INTERVAL_MS, Math.floor(idleTimeoutMs / 3))
-  );
+  const progressIntervalMs = resolveProgressInterval(Math.floor(idleTimeoutMs / 3));
   return {
     progressIntervalMs,
     // Keep three frame opportunities plus scheduler slack inside the socket idle budget.

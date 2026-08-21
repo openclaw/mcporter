@@ -9,6 +9,7 @@ import {
   DAEMON_PROTOCOL_VERSION,
   DaemonFrameDecoder,
   encodeDaemonFrame,
+  resolveProgressInterval,
   resolveProgressTiming,
   type DaemonRequest,
 } from '../src/daemon/protocol.js';
@@ -18,6 +19,12 @@ import { makeShortTempDir } from './fixtures/test-helpers.js';
 const describeUnixSocket = process.platform === 'win32' ? describe.skip : describe;
 
 describe('daemon frame protocol', () => {
+  it('maps raw progress requests to fixed protocol-owned cadences', () => {
+    expect([1, 49, 50, 99, 100, 249, 250, Number.MAX_SAFE_INTEGER].map(resolveProgressInterval)).toEqual([
+      25, 25, 50, 50, 100, 100, 250, 250,
+    ]);
+  });
+
   it('bounds progress frequency for short and long idle budgets', () => {
     expect(resolveProgressTiming(1)).toEqual({ progressIntervalMs: 25, idleTimeoutMs: 100 });
     expect(resolveProgressTiming(60)).toEqual({ progressIntervalMs: 25, idleTimeoutMs: 100 });
