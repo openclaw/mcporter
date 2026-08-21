@@ -25,6 +25,7 @@ Set `"imports": []` when you want to disable auto-merging entirely, or supply a 
   - `{ "servers": { ... } }` (older VS Code previews).
 - **TOML container**: Codex uses TOML files with `[mcp_servers.<name>]` tables. Only `.codex/config.toml` is recognized.
 - **Shared fields**: We convert JSON/TOML entries into mcporter’s schema, honoring `baseUrl`, `command` (string or array), `args`, `headers`, `env`, `bearerToken`, `bearerTokenEnv`, `description`, `tokenCacheDir`, `clientName`, `oauthClientId`, `oauthClientSecretEnv`, `oauthTokenEndpointAuthMethod`, and `auth`. Extra properties are ignored.
+- **Environment placeholders**: Imported `headers` and `env` values support `${VAR}`, `${VAR:-fallback}`, and whole-value `$env:VAR`. The `${env:VAR}` form used by some clients is not expanded; mcporter reports the supported alternatives before starting a request or child process.
 
 ## Import Support Matrix
 

@@ -13,7 +13,7 @@ describe('config help', () => {
 
   it.each([
     [undefined, ['mcporter config', 'Commands', 'config add', 'detailed flag info']],
-    ['ADD', ['mcporter config add', 'Usage', '--oauth-client-secret-env', 'Examples']],
+    ['ADD', ['mcporter config add', 'Usage', '--oauth-client-secret-env', '${VAR:-fallback}', '$env:VAR', 'Examples']],
     ['remove', ['mcporter config remove', 'Usage', 'config remove linear']],
     ['unknown', ["Unknown config subcommand 'unknown'", 'list, get, add']],
   ])('prints focused help for %s', (subcommand, expectedFragments) => {

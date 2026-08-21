@@ -3,6 +3,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadServerDefinitions } from '../src/config.js';
 import { resolveEnvPlaceholders, resolveEnvValue, withEnvOverrides } from '../src/env.js';
+import { createRuntime } from '../src/runtime.js';
 import { resolveCommandArgument } from '../src/runtime/utils.js';
 
 const FIXTURE_PATH = path.resolve(__dirname, 'fixtures', 'mcporter.json');
@@ -105,5 +106,20 @@ describe('command argument interpolation', () => {
     const value = '--browserUrl';
     const result = resolveCommandArgument(value);
     expect(result).toBe(value);
+  });
+
+  it('rejects unsupported placeholders in direct runtime definitions before launch', async () => {
+    const runtime = await createRuntime({
+      servers: [
+        {
+          name: 'invalid-command',
+          command: { kind: 'stdio', command: '${env:MCPORTER_COMMAND}', args: [], cwd: process.cwd() },
+        },
+      ],
+    });
+
+    await expect(runtime.connect('invalid-command')).rejects.toThrow(
+      "Unsupported environment placeholder '${env:MCPORTER_COMMAND}'"
+    );
   });
 });

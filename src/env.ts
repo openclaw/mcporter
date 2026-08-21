@@ -3,6 +3,7 @@ import path from 'node:path';
 
 const ENV_DEFAULT_PATTERN = /^\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-|:|-)?([^}]*)\}$/;
 const ENV_INTERPOLATION_PATTERN = /\\?\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(.*?))?\}/g;
+const UNSUPPORTED_BRACED_ENV_PATTERN = /\$\{env:[^}]*\}/;
 const ENV_DIRECT_PREFIX = '$env:';
 
 // expandHome replaces a leading '~' with the current user's home directory.
@@ -25,6 +26,7 @@ export function resolveEnvValue(raw: unknown, env: NodeJS.ProcessEnv = process.e
   if (typeof raw !== 'string') {
     return String(raw);
   }
+  rejectUnsupportedBracedEnvPlaceholder(raw);
 
   const match = ENV_DEFAULT_PATTERN.exec(raw);
   if (match) {
@@ -49,6 +51,8 @@ export function resolveEnvValue(raw: unknown, env: NodeJS.ProcessEnv = process.e
 
 // resolveEnvPlaceholders replaces ${VAR} or $env:VAR references using the supplied environment.
 export function resolveEnvPlaceholders(value: string, env: NodeJS.ProcessEnv = process.env): string {
+  rejectUnsupportedBracedEnvPlaceholder(value);
+
   if (value.startsWith(ENV_DIRECT_PREFIX)) {
     const envName = value.slice(ENV_DIRECT_PREFIX.length);
     const envValue = env[envName];
@@ -82,6 +86,16 @@ export function resolveEnvPlaceholders(value: string, env: NodeJS.ProcessEnv = p
   return replaced;
 }
 
+function rejectUnsupportedBracedEnvPlaceholder(value: string): void {
+  const unsupported = UNSUPPORTED_BRACED_ENV_PATTERN.exec(value)?.[0];
+  if (!unsupported) {
+    return;
+  }
+  throw new Error(
+    `Unsupported environment placeholder '${unsupported}'. Use '\${VAR}', '\${VAR:-fallback}', or whole-value '$env:VAR'.`
+  );
+}
+
 // withEnvOverrides temporarily populates process.env keys while executing the provided callback.
 export async function withEnvOverrides<T>(
   envOverrides: Record<string, string> | undefined,
@@ -93,6 +107,7 @@ export async function withEnvOverrides<T>(
 
   const applied: string[] = [];
   for (const [key, rawValue] of Object.entries(envOverrides)) {
+    rejectUnsupportedBracedEnvPlaceholder(rawValue);
     if (process.env[key]) {
       continue;
     }

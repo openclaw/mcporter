@@ -42,6 +42,16 @@ describe('environment helpers', () => {
     expect(() => resolveEnvPlaceholders('${MISSING_Z}-${MISSING_A}')).toThrow('MISSING_A, MISSING_Z');
   });
 
+  it('rejects unsupported braced env placeholders with supported alternatives', () => {
+    expect(() => resolveEnvPlaceholders('Bearer ${env:MCPORTER_TOKEN}', { MCPORTER_TOKEN: 'secret' })).toThrow(
+      "Unsupported environment placeholder '${env:MCPORTER_TOKEN}'. Use '${VAR}', '${VAR:-fallback}', or whole-value '$env:VAR'."
+    );
+    expect(() => resolveEnvValue('${env:MCPORTER_TOKEN}', { MCPORTER_TOKEN: 'secret' })).toThrow(
+      'Unsupported environment placeholder'
+    );
+    expect(resolveEnvPlaceholders('Bearer literal env:MCPORTER_TOKEN')).toBe('Bearer literal env:MCPORTER_TOKEN');
+  });
+
   it('applies only absent non-empty overrides and always restores them', async () => {
     process.env.MCPORTER_EXISTING = 'original';
     await expect(
@@ -57,6 +67,14 @@ describe('environment helpers', () => {
     ).rejects.toThrow('task failed');
     expect(process.env.MCPORTER_TEMP).toBeUndefined();
     await expect(withEnvOverrides(undefined, async () => 'done')).resolves.toBe('done');
+  });
+
+  it('rejects unsupported placeholders before inherited env precedence', async () => {
+    process.env.MCPORTER_EXISTING = 'original';
+
+    await expect(
+      withEnvOverrides({ MCPORTER_EXISTING: '${env:MCPORTER_EXISTING}' }, async () => 'unreachable')
+    ).rejects.toThrow("Unsupported environment placeholder '${env:MCPORTER_EXISTING}'");
   });
 });
 
