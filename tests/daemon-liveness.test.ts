@@ -22,6 +22,10 @@ describe('daemon frame protocol', () => {
     expect(resolveProgressTiming(1)).toEqual({ progressIntervalMs: 25, idleTimeoutMs: 100 });
     expect(resolveProgressTiming(60)).toEqual({ progressIntervalMs: 25, idleTimeoutMs: 100 });
     expect(resolveProgressTiming(900)).toEqual({ progressIntervalMs: 250, idleTimeoutMs: 900 });
+    expect(resolveProgressTiming(Number.MAX_SAFE_INTEGER)).toEqual({
+      progressIntervalMs: 250,
+      idleTimeoutMs: 2_147_483_647,
+    });
   });
 
   it('decodes split and coalesced frames and reports malformed lines', () => {

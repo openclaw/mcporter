@@ -1,4 +1,5 @@
 import type { ChromeDevtoolsRelayDecision } from '../chrome-devtools-relay.js';
+import { normalizeTimeout } from '../runtime/utils.js';
 
 export const DAEMON_PROTOCOL_VERSION = 2;
 export const DAEMON_OPERATION_TIMEOUT_CODE = 'operation_timeout';
@@ -12,9 +13,7 @@ export function resolveProgressTiming(requestedIdleTimeoutMs: number): {
   idleTimeoutMs: number;
 } {
   const idleTimeoutMs =
-    Number.isFinite(requestedIdleTimeoutMs) && requestedIdleTimeoutMs > 0
-      ? requestedIdleTimeoutMs
-      : DAEMON_PROGRESS_INTERVAL_MS * 3 + DAEMON_PROGRESS_SCHEDULING_SLACK_MS;
+    normalizeTimeout(requestedIdleTimeoutMs) ?? DAEMON_PROGRESS_INTERVAL_MS * 3 + DAEMON_PROGRESS_SCHEDULING_SLACK_MS;
   const progressIntervalMs = Math.min(
     DAEMON_PROGRESS_INTERVAL_MS,
     Math.max(MIN_DAEMON_PROGRESS_INTERVAL_MS, Math.floor(idleTimeoutMs / 3))
