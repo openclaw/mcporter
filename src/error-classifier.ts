@@ -153,17 +153,30 @@ function extractStatusCode(message: string): number | undefined {
 }
 
 function extractStatusAfterUrl(message: string): string | undefined {
-  const urlStart = message.search(/\bhttps?:\/\//i);
-  if (urlStart === -1) {
-    return undefined;
+  const normalized = message.toLowerCase();
+  let searchStart = 0;
+  while (searchStart < message.length) {
+    const urlStart = findNextHttpUrl(normalized, searchStart);
+    if (urlStart === -1) {
+      return undefined;
+    }
+    let separatorIndex = urlStart;
+    while (separatorIndex < message.length && !/\s/.test(message.charAt(separatorIndex))) {
+      separatorIndex += 1;
+    }
+    if (separatorIndex < message.length) {
+      const candidate = extractStatusFromUrlTail(message.slice(separatorIndex));
+      if (candidate !== undefined) {
+        return candidate;
+      }
+    }
+    searchStart = urlStart + 1;
   }
-  const afterUrl = message.slice(urlStart);
-  const separatorIndex = afterUrl.search(/\s/);
-  if (separatorIndex === -1) {
-    return undefined;
-  }
+  return undefined;
+}
 
-  let tail = afterUrl.slice(separatorIndex).trimStart().toLowerCase();
+function extractStatusFromUrlTail(value: string): string | undefined {
+  let tail = value.trimStart().toLowerCase();
   for (const prefix of ['returned status', 'returned code', 'returned', 'status', 'code']) {
     if (tail.startsWith(prefix)) {
       tail = tail.slice(prefix.length).trimStart();
@@ -173,6 +186,23 @@ function extractStatusAfterUrl(message: string): string | undefined {
   const candidate = tail.slice(0, 3);
   const boundary = tail.charAt(3);
   return /^\d{3}$/.test(candidate) && !/[a-z0-9_]/i.test(boundary) ? candidate : undefined;
+}
+
+function findNextHttpUrl(value: string, searchStart: number): number {
+  let index = searchStart;
+  while (index < value.length) {
+    const httpIndex = value.indexOf('http://', index);
+    const httpsIndex = value.indexOf('https://', index);
+    const candidate = httpIndex === -1 ? httpsIndex : httpsIndex === -1 ? httpIndex : Math.min(httpIndex, httpsIndex);
+    if (candidate === -1) {
+      return -1;
+    }
+    if (candidate === 0 || !/[a-z0-9_]/i.test(value.charAt(candidate - 1))) {
+      return candidate;
+    }
+    index = candidate + 1;
+  }
+  return -1;
 }
 
 function matchesAny(patterns: readonly RegExp[], normalizedMessage: string): boolean {

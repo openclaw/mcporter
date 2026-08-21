@@ -31,6 +31,13 @@ describe('analyzeConnectionError', () => {
     expect(issue).toMatchObject({ kind: 'http', statusCode: 503 });
   });
 
+  it('continues to a later URL when the first has no adjacent status', () => {
+    const issue = analyzeConnectionError(
+      new Error('Proxy failed at https://first.example/ then https://second.example/mcp 503')
+    );
+    expect(issue).toMatchObject({ kind: 'http', statusCode: 503 });
+  });
+
   it.each([401, 403] as const)('keeps %s classified as auth', (status) => {
     const issue = analyzeConnectionError(new Error(`SSE error: Non-200 status code (${status})`));
     expect(issue.kind).toBe('auth');
