@@ -352,6 +352,7 @@ describe('artifact implementation behavior', () => {
     try {
       expect(artifactsTestHooks.sanitizeFileName('  My Fancy CLI!!  ')).toBe('my-fancy-cli');
       expect(artifactsTestHooks.sanitizeFileName('!!!')).toBe('');
+      expect(artifactsTestHooks.sanitizeFileName(`alpha${'-'.repeat(100_000)}beta`)).toBe('alpha-beta');
       await fsPromises.writeFile(path.join(tempDir, 'tool'), '', 'utf8');
       await fsPromises.writeFile(path.join(tempDir, 'tool-1'), '', 'utf8');
       expect(artifactsTestHooks.resolveUniquePath(tempDir, 'tool')).toBe(path.join(tempDir, 'tool-2'));

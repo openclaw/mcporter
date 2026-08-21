@@ -1,4 +1,5 @@
 import { splitCommandLine } from '../adhoc-server.js';
+import { toAsciiSlug } from '../ascii-slug.js';
 import { normalizeHttpUrlCandidate } from '../http-utils.js';
 import type { CommandInput } from './types.js';
 
@@ -103,11 +104,7 @@ export function parseInlineCommand(value: string): CommandInput {
 }
 
 function slugify(value: string): string | undefined {
-  const normalized = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+  const normalized = toAsciiSlug(value);
   return normalized || undefined;
 }
 

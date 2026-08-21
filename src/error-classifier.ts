@@ -42,7 +42,6 @@ const OFFLINE_PATTERNS = [
   'failed to start',
   'spawn enoent',
 ];
-const HTTP_STATUS_FALLBACK = /\bhttps?:\/\/[^\s]+(?:\s+returned\s+)?(?:status|code)?\s*(\d{3})\b/i;
 const STATUS_DIRECT_PATTERN = /\b(?:status(?:\s+code)?|http(?:\s+(?:status|code|error))?)[:\s]*(\d{3})\b/i;
 const STDIO_EXIT_PATTERN = /exit(?:ed)?(?:\s+with)?(?:\s+(?:code|status))\s+(-?\d+)/i;
 const STDIO_SIGNAL_PATTERN = /signal\s+([A-Z0-9]+)/i;
@@ -124,7 +123,7 @@ function extractStatusCode(message: string): number | undefined {
   const candidates = [
     message.match(/status code\s*\((\d{3})\)/i)?.[1],
     message.match(STATUS_DIRECT_PATTERN)?.[1],
-    message.match(HTTP_STATUS_FALLBACK)?.[1],
+    extractStatusAfterUrl(message),
   ].filter(Boolean) as string[];
   for (const candidate of candidates) {
     const parsed = Number.parseInt(candidate, 10);
@@ -151,6 +150,29 @@ function extractStatusCode(message: string): number | undefined {
     }
   }
   return undefined;
+}
+
+function extractStatusAfterUrl(message: string): string | undefined {
+  const urlStart = message.search(/\bhttps?:\/\//i);
+  if (urlStart === -1) {
+    return undefined;
+  }
+  const afterUrl = message.slice(urlStart);
+  const separatorIndex = afterUrl.search(/\s/);
+  if (separatorIndex === -1) {
+    return undefined;
+  }
+
+  let tail = afterUrl.slice(separatorIndex).trimStart().toLowerCase();
+  for (const prefix of ['returned status', 'returned code', 'returned', 'status', 'code']) {
+    if (tail.startsWith(prefix)) {
+      tail = tail.slice(prefix.length).trimStart();
+      break;
+    }
+  }
+  const candidate = tail.slice(0, 3);
+  const boundary = tail.charAt(3);
+  return /^\d{3}$/.test(candidate) && !/[a-z0-9_]/i.test(boundary) ? candidate : undefined;
 }
 
 function matchesAny(patterns: readonly RegExp[], normalizedMessage: string): boolean {

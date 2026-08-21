@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { RolldownPlugin } from 'rolldown';
 import { MCPORTER_VERSION } from '../../version.js';
+import { toAsciiSlug } from '../ascii-slug.js';
 import { markExecutable, safeCopyFile } from './fs-helpers.js';
 import { verifyBunAvailable } from './runtime.js';
 
@@ -391,11 +392,7 @@ async function linkOrCopyDependency(sourceDir: string, targetDir: string): Promi
 }
 
 function sanitizeFileName(input: string): string {
-  const slug = input
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-');
-  return slug.replace(/^-+|-+$/g, '');
+  return toAsciiSlug(input);
 }
 
 function resolveUniquePath(directory: string, baseName: string): string {

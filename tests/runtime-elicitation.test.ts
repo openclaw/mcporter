@@ -11,6 +11,7 @@ import {
   type ElicitationHandler,
   NON_INTERACTIVE_ELICITATION_HINT,
   registerElicitationHandler,
+  sanitizeTerminalText,
 } from '../src/runtime/elicitation.js';
 
 const connectedClients: Array<{ close(): Promise<void> }> = [];
@@ -39,6 +40,11 @@ function stripReadlinePromptCodes(output: string): string {
 }
 
 describe('elicitation responder', () => {
+  it('strips long and unterminated terminal sequences without backtracking', () => {
+    expect(sanitizeTerminalText(`before\u001b]52;c;${'A'.repeat(100_000)}\u0007after`)).toBe('beforeafter');
+    expect(sanitizeTerminalText(`before\u001bP${'A'.repeat(100_000)}`)).toBe('before');
+  });
+
   it('attributes interactive form prompts and strips terminal control sequences from every display field', async () => {
     const request = {
       method: 'elicitation/create',
