@@ -26,10 +26,30 @@ describe('raceWithTimeout', () => {
 
   it('rejects with a timeout error when exceeding the deadline', async () => {
     vi.useFakeTimers();
-    const promise = raceWithTimeout(new Promise<void>(() => {}), 500);
-    const expectation = expect(promise).rejects.toThrowError('Timeout');
-    vi.advanceTimersByTime(500);
-    await expectation;
-    vi.useRealTimers();
+    try {
+      const promise = raceWithTimeout(new Promise<void>(() => {}), 500);
+      const expectation = expect(promise).rejects.toThrowError('Timeout');
+      await vi.advanceTimersByTimeAsync(500);
+      await expectation;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the timeout budget stable across wall-clock adjustments', async () => {
+    vi.useFakeTimers();
+    try {
+      const dateNow = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+      const { promise: operation, resolve: resolveOperation } = Promise.withResolvers<string>();
+      const promise = raceWithTimeout(operation, 500);
+
+      dateNow.mockReturnValue(60_001_000);
+      await vi.advanceTimersByTimeAsync(499);
+      resolveOperation('ok');
+
+      await expect(promise).resolves.toBe('ok');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

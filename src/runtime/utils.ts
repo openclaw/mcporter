@@ -58,13 +58,13 @@ export function raceWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Prom
 }
 
 function scheduleDeadline(callback: () => void, delayMs: number): () => void {
-  const deadline = Date.now() + delayMs;
+  const deadline = performance.now() + delayMs;
   let timer: NodeJS.Timeout | undefined;
   let cancelled = false;
 
   const scheduleNext = (): void => {
     if (cancelled) return;
-    const remainingMs = deadline - Date.now();
+    const remainingMs = deadline - performance.now();
     if (remainingMs <= 0) {
       callback();
     } else if (remainingMs > 86_400_000) {
