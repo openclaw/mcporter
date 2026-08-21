@@ -5,15 +5,25 @@ export const DAEMON_OPERATION_TIMEOUT_CODE = 'operation_timeout';
 export const DAEMON_OAUTH_FLOW_ERROR_CODE = 'oauth_flow_error';
 export const DAEMON_PROGRESS_INTERVAL_MS = 250;
 export const MIN_DAEMON_PROGRESS_INTERVAL_MS = 25;
+const DAEMON_PROGRESS_SCHEDULING_SLACK_MS = MIN_DAEMON_PROGRESS_INTERVAL_MS;
 
-export function resolveProgressInterval(idleTimeoutMs: number): number {
-  if (!Number.isFinite(idleTimeoutMs) || idleTimeoutMs <= 0) {
-    return DAEMON_PROGRESS_INTERVAL_MS;
-  }
-  return Math.min(
+export function resolveProgressTiming(requestedIdleTimeoutMs: number): {
+  progressIntervalMs: number;
+  idleTimeoutMs: number;
+} {
+  const idleTimeoutMs =
+    Number.isFinite(requestedIdleTimeoutMs) && requestedIdleTimeoutMs > 0
+      ? requestedIdleTimeoutMs
+      : DAEMON_PROGRESS_INTERVAL_MS * 3 + DAEMON_PROGRESS_SCHEDULING_SLACK_MS;
+  const progressIntervalMs = Math.min(
     DAEMON_PROGRESS_INTERVAL_MS,
     Math.max(MIN_DAEMON_PROGRESS_INTERVAL_MS, Math.floor(idleTimeoutMs / 3))
   );
+  return {
+    progressIntervalMs,
+    // Keep three frame opportunities plus scheduler slack inside the socket idle budget.
+    idleTimeoutMs: Math.max(idleTimeoutMs, progressIntervalMs * 3 + DAEMON_PROGRESS_SCHEDULING_SLACK_MS),
+  };
 }
 
 export type DaemonRequestMethod =

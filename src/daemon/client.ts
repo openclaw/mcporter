@@ -16,7 +16,7 @@ import {
   DAEMON_PROTOCOL_VERSION,
   DaemonFrameDecoder,
   isDaemonProgressFrame,
-  resolveProgressInterval,
+  resolveProgressTiming,
 } from './protocol.js';
 import { delay } from './request-utils.js';
 import { waitForDaemonReady } from './startup-readiness.js';
@@ -287,13 +287,13 @@ export class DaemonClient {
   }
 
   private async sendRequest<T>(method: DaemonRequestMethod, params: unknown, timeoutOverrideMs?: number): Promise<T> {
-    const idleTimeoutMs = resolveDaemonTimeout(timeoutOverrideMs);
+    const progressTiming = resolveProgressTiming(resolveDaemonTimeout(timeoutOverrideMs));
     const request: DaemonRequest = {
       id: randomUUID(),
       method,
       params,
       protocolVersion: DAEMON_PROTOCOL_VERSION,
-      progressIntervalMs: resolveProgressInterval(idleTimeoutMs),
+      progressIntervalMs: progressTiming.progressIntervalMs,
     };
     const payload = JSON.stringify(request);
     const parsed = await new Promise<DaemonResponse<T>>((resolve, reject) => {
@@ -315,7 +315,7 @@ export class DaemonClient {
         settled = true;
         resolve(value);
       };
-      socket.setTimeout(idleTimeoutMs);
+      socket.setTimeout(progressTiming.idleTimeoutMs);
       socket.on('timeout', () => {
         // Progress makes this an idle budget. Silence remains a transport failure and keeps the
         // existing restart-and-retry recovery for a genuinely wedged daemon.
@@ -325,7 +325,7 @@ export class DaemonClient {
         for (const frame of frames) {
           if (isDaemonProgressFrame(frame)) {
             if (frame.id === request.id) {
-              socket.setTimeout(idleTimeoutMs);
+              socket.setTimeout(progressTiming.idleTimeoutMs);
             }
             continue;
           }

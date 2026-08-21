@@ -9,7 +9,7 @@ import {
   DAEMON_PROTOCOL_VERSION,
   DaemonFrameDecoder,
   encodeDaemonFrame,
-  resolveProgressInterval,
+  resolveProgressTiming,
   type DaemonRequest,
 } from '../src/daemon/protocol.js';
 import type { Runtime } from '../src/runtime.js';
@@ -19,9 +19,9 @@ const describeUnixSocket = process.platform === 'win32' ? describe.skip : descri
 
 describe('daemon frame protocol', () => {
   it('bounds progress frequency for short and long idle budgets', () => {
-    expect(resolveProgressInterval(1)).toBe(25);
-    expect(resolveProgressInterval(60)).toBe(25);
-    expect(resolveProgressInterval(900)).toBe(250);
+    expect(resolveProgressTiming(1)).toEqual({ progressIntervalMs: 25, idleTimeoutMs: 100 });
+    expect(resolveProgressTiming(60)).toEqual({ progressIntervalMs: 25, idleTimeoutMs: 100 });
+    expect(resolveProgressTiming(900)).toEqual({ progressIntervalMs: 250, idleTimeoutMs: 900 });
   });
 
   it('decodes split and coalesced frames and reports malformed lines', () => {
@@ -72,6 +72,27 @@ describeUnixSocket('daemon socket liveness', () => {
     expect(listTools).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps a tiny-timeout request alive at the minimum progress cadence', async () => {
+    const listTools = vi.fn(async () => {
+      await delay(180);
+      return [{ name: 'tiny-timeout' }];
+    });
+    const served = await serveSocket(async (socket, request) => {
+      await __testHandleSocketRequest(
+        socket,
+        request,
+        { listTools } as unknown as Runtime,
+        managedServers(),
+        metadata(served.socketPath)
+      );
+    });
+    cleanups.push(served.close);
+    const client = clientForSocket(served.socketPath);
+
+    await expect(sendRequest(client, 'listTools', { server: 'oauth' }, 1)).resolves.toEqual([{ name: 'tiny-timeout' }]);
+    expect(listTools).toHaveBeenCalledTimes(1);
+  });
+
   it('destroys a genuinely silent daemon socket at the idle deadline', async () => {
     let observedClose!: () => void;
     const closed = new Promise<void>((resolve) => {
@@ -85,13 +106,13 @@ describeUnixSocket('daemon socket liveness', () => {
 
     await expect(
       Promise.race([
-        sendRequest(client, 'listTools', { server: 'oauth' }, 50),
-        delay(200).then(() => {
+        sendRequest(client, 'listTools', { server: 'oauth' }, 1),
+        delay(300).then(() => {
           throw new Error('silent daemon socket was not torn down');
         }),
       ])
     ).rejects.toMatchObject({ code: 'ETIMEDOUT' });
-    await expect(Promise.race([closed, delay(200).then(() => 'still-open')])).resolves.toBeUndefined();
+    await expect(Promise.race([closed, delay(300).then(() => 'still-open')])).resolves.toBeUndefined();
   });
 
   it('accepts a bare v1 response and retains the flat fallback deadline', async () => {
