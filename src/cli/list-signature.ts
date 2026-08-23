@@ -153,8 +153,24 @@ function inferReturnTypeName(schema: unknown): string | undefined {
   return inferSchemaDisplayType(schema as Record<string, unknown>);
 }
 
+const TYPE_NAME_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+// A schema title is prose, but this value is emitted as a TypeScript type name by `emit-ts`,
+// so anything that is not already an identifier has to be folded into one.
+function toTypeName(title: string): string | undefined {
+  if (TYPE_NAME_PATTERN.test(title)) {
+    return title;
+  }
+  const joined = title
+    .split(/[^A-Za-z0-9_$]+/)
+    .filter(Boolean)
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+    .join('');
+  return TYPE_NAME_PATTERN.test(joined) ? joined : undefined;
+}
+
 function inferSchemaDisplayType(descriptor: Record<string, unknown>): string {
-  const title = typeof descriptor.title === 'string' ? descriptor.title.trim() : undefined;
+  const title = typeof descriptor.title === 'string' ? toTypeName(descriptor.title.trim()) : undefined;
   if (title) {
     return title;
   }

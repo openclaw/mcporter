@@ -84,6 +84,29 @@ describe('emit-ts templates', () => {
     }
   });
 
+  it('keeps a multi-word outputSchema title parseable in the emitted module', () => {
+    const titledTool: ServerToolInfo = {
+      ...dashedTool,
+      name: 'search',
+      outputSchema: { title: 'Search Results' },
+    };
+    const docs = emitTsTestInternals.buildDocEntries('integration', [buildToolMetadata(titledTool)], true);
+    const types = renderTypesModule({
+      interfaceName: 'IntegrationTools',
+      docs,
+      metadata: {
+        server: integrationDefinition,
+        generatorLabel: 'mcporter@test',
+        generatedAt: new Date('2025-11-07T00:00:00Z'),
+      },
+    });
+
+    const parsed = ts.createSourceFile('emit.ts', types, ts.ScriptTarget.ES2022, false, ts.ScriptKind.TS);
+    const diagnostics = (parsed as { parseDiagnostics?: ts.Diagnostic[] }).parseDiagnostics ?? [];
+    expect(diagnostics.map((entry) => ts.flattenDiagnosticMessageText(entry.messageText, '\n'))).toEqual([]);
+    expect(types).toContain('Promise<SearchResults>');
+  });
+
   it('renders client module that wraps proxy calls', () => {
     const docs = emitTsTestInternals.buildDocEntries('integration', [buildToolMetadata(listCommentsTool)], true);
     const metadata = {
