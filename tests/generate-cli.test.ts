@@ -655,7 +655,7 @@ describeGenerateCli('generateCli', () => {
       includeTools: ['set_cells_batch'],
     });
     const content = await fs.readFile(renderedPath, 'utf8');
-    expect(content).toContain('.option("--cells <cells:value1,value2>"');
+    expect(content).toContain('defineOption("--cells <cells:value1,value2>"');
     expect(content).not.toContain('.requiredOption("--cells');
 
     const { execFile } = await import('node:child_process');
