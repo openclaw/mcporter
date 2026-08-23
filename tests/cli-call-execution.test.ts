@@ -41,6 +41,33 @@ describe('CLI call execution behavior', () => {
     logSpy.mockRestore();
   });
 
+  it('keeps every dot after the server name in a tool selector', async () => {
+    const { handleCall } = await cliModulePromise;
+    const { runtime, callTool } = createRuntimeStub({
+      browser: [
+        {
+          name: 'browser.navigate',
+          description: 'Navigate the browser',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              url: { type: 'string' },
+            },
+            required: ['url'],
+          },
+        },
+      ],
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await handleCall(runtime, ['browser.browser.navigate', '--url', 'https://example.com']);
+    expect(callTool).toHaveBeenCalledWith(
+      'browser',
+      'browser.navigate',
+      expect.objectContaining({ args: { url: 'https://example.com' } })
+    );
+    logSpy.mockRestore();
+  });
+
   it('restores numeric-looking key=value args to schema-declared strings', async () => {
     const { handleCall } = await cliModulePromise;
     const { runtime, callTool, listTools } = createRuntimeStub({

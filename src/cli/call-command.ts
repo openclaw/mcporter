@@ -308,9 +308,11 @@ function resolveCallTarget(
   let tool = parsed.tool;
 
   if (selector && !server && selector.includes('.')) {
-    const [left, right] = selector.split('.', 2);
-    server = left;
-    tool = right;
+    // Tool names may contain dots, so only the first one separates the server. Keep the
+    // remainder intact the way the ad-hoc HTTP path and the call-expression parser do.
+    const split = splitServerToolSelector(selector);
+    server = split?.server ?? selector.slice(0, selector.indexOf('.'));
+    tool = split?.tool;
   } else if (selector && !server) {
     server = selector;
   } else if (selector && !tool && selector !== server) {
