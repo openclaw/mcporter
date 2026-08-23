@@ -359,10 +359,10 @@ describe('flag names stay valid commander flags', () => {
     expect(buildPlaceholder('Query', 'array', ['web', 'news'])).toBe('<query:web|news,...>');
   });
 
-  it('avoids the --no- prefix commander reserves for negation', () => {
-    expect(toCliOption('no_cache').startsWith('no-')).toBe(false);
-    expect(toCliOption('noCache')).toBe(toCliOption('no_cache'));
-    expect(buildPlaceholder('no_cache', 'boolean')).toBe(`<${toCliOption('no_cache')}:true|false>`);
+  it('keeps distinct flags for property names that only differ by the no- prefix', () => {
+    expect(toCliOption('no_cache')).toBe('no-cache');
+    expect(toCliOption('nocache')).toBe('nocache');
+    expect(buildPlaceholder('no_cache', 'boolean')).toBe('<no-cache:true|false>');
   });
 
   it('keeps unaffected property names unchanged', () => {
@@ -380,8 +380,16 @@ function renderBlock(properties: Record<string, unknown>, required: string[]): s
   ).block;
 }
 
+// Mirrors defineOption in the generated module: mcporter derives flag names from schema
+// property names, so commander is told not to read a leading no- as a negation.
+function storedKey(flags: string): string {
+  const option = new Option(flags, 'Set the option.');
+  option.negate = false;
+  return option.attributeName();
+}
+
 function emittedFlags(block: string): string[] {
-  return [...block.matchAll(/\.option\("([^"]+)"/g)].flatMap((match) => (match[1] ? [match[1]] : []));
+  return [...block.matchAll(/\.addOption\(defineOption\("([^"]+)"/g)].flatMap((match) => (match[1] ? [match[1]] : []));
 }
 
 describe('generated commands agree with commander', () => {
@@ -394,11 +402,15 @@ describe('generated commands agree with commander', () => {
   });
 
   it('reads every option from the key commander stores it under', () => {
-    const block = renderBlock({ no_cache: { type: 'boolean' }, url: { type: 'string' } }, ['no_cache', 'url']);
+    const block = renderBlock(
+      { no_cache: { type: 'boolean' }, nocache: { type: 'boolean' }, url: { type: 'string' } },
+      ['no_cache', 'url']
+    );
     const flags = emittedFlags(block);
-    expect(flags).toHaveLength(2);
+    expect(flags).toHaveLength(3);
+    expect(new Set(flags).size).toBe(3);
     for (const flag of flags) {
-      expect(block).toContain(`cmdOpts.${new Option(flag, 'Set the option.').attributeName()}`);
+      expect(block).toContain(`cmdOpts.${storedKey(flag)}`);
     }
   });
 });

@@ -72,7 +72,7 @@ export function renderTemplate({
   const imports = [
     "import path from 'node:path';",
     "import { fileURLToPath } from 'node:url';",
-    "import { Command } from 'commander';",
+    "import { Command, Option } from 'commander';",
     "import { createGeneratedKeepAliveRuntime, createRuntime, createServerProxy, handleDaemonCli } from 'mcporter';",
     "import { createCallResult } from 'mcporter';",
   ].join('\n');
@@ -218,6 +218,18 @@ function unwrapRawPayload(value: unknown): unknown {
 \t\treturn (value as { raw: unknown }).raw;
 \t}
 \treturn value;
+}
+
+function defineOption(flags: string, description: string, parser?: (value: string) => unknown) {
+\tconst option = new Option(flags, description);
+\tif (parser) {
+\t\toption.argParser(parser);
+\t}
+\t// Flag names come from schema property names, so a leading no- is part of the name.
+\t// Commander would otherwise read it as a negation, store the value under the stripped
+\t// name and default it to true whenever the flag is absent.
+\toption.negate = false;
+\treturn option;
 }
 
 function parseArrayOption(value: string, itemType: 'string' | 'number' | 'boolean' | 'json') {
@@ -525,9 +537,9 @@ ${aliasSnippet ? `\t${aliasSnippet}` : ''}\t.action(async (cmdOpts) => {
 
 function renderOption(optionDoc: ToolOptionDoc): string {
   const parser = optionParser(optionDoc.option);
-  return `\t.option(${JSON.stringify(optionDoc.flagLabel)}, ${JSON.stringify(optionDoc.description)}${
+  return `\t.addOption(defineOption(${JSON.stringify(optionDoc.flagLabel)}, ${JSON.stringify(optionDoc.description)}${
     parser ? `, ${parser}` : ''
-  })`;
+  }))`;
 }
 
 function computeRelativeStdioCwd(definition: ServerDefinition, outputPath?: string): string | null {

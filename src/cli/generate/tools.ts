@@ -429,15 +429,14 @@ export function toProxyMethodName(toolName: string): string {
 }
 
 export function toCliOption(property: string): string {
-  const flag = property
-    .replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`)
-    .replace(/_/g, '-')
-    // A leading uppercase letter or underscore would otherwise produce `---flag`, which
-    // commander rejects while the generated command is being built.
-    .replace(/^-+/, '');
-  // Commander reads `--no-x` as a negated boolean: it stores the parsed value under `x` and
-  // defaults it to true when the flag is absent, so the generated command would never see it.
-  return flag.startsWith('no-') ? `no${flag.slice(3)}` : flag;
+  return (
+    property
+      .replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`)
+      .replace(/_/g, '-')
+      // A leading uppercase letter or underscore would otherwise produce `---flag`, which
+      // commander rejects while the generated command is being built.
+      .replace(/^-+/, '')
+  );
 }
 
 export const toolsTestHelpers = {
