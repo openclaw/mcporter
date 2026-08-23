@@ -60,9 +60,10 @@ export function splitHttpToolSelector(input: string): { baseUrl: string; tool: s
     return null;
   }
   const basePath = `${pathname.slice(0, Math.max(0, lastSlash + 1))}${baseSegment}`;
-  const normalizedPath = basePath.startsWith('/') ? basePath : `/${basePath}`;
-  const baseUrl = `${url.origin}${normalizedPath}`;
-  return { baseUrl, tool };
+  // Serialize through URL rather than concatenating the origin, so the query and fragment the
+  // user typed reach the server instead of being dropped from the connection target.
+  url.pathname = basePath.startsWith('/') ? basePath : `/${basePath}`;
+  return { baseUrl: url.href, tool };
 }
 
 export function normalizeHttpUrl(value: string | URL): string | undefined {
