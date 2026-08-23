@@ -1,3 +1,4 @@
+import { Option } from 'commander';
 import { describe, expect, it } from 'vitest';
 import {
   buildExampleValue,
@@ -16,6 +17,7 @@ import {
   toCliOption,
   toProxyMethodName,
 } from '../src/cli/generate/tools.js';
+import { renderToolCommand } from '../src/cli/generate/template.js';
 import type { ServerToolInfo } from '../src/runtime.js';
 
 describe('generate helpers', () => {
@@ -346,5 +348,57 @@ describe('generate helpers', () => {
         placeholder: '<fields>',
       })
     ).toBe('{"key":"value"}');
+  });
+});
+
+describe('flag names stay valid commander flags', () => {
+  it('does not leak a leading dash from an uppercase property name', () => {
+    expect(toCliOption('Query')).toBe('query');
+    expect(toCliOption('QueryText')).toBe('query-text');
+    expect(buildPlaceholder('Query', 'string')).toBe('<query>');
+    expect(buildPlaceholder('Query', 'array', ['web', 'news'])).toBe('<query:web|news,...>');
+  });
+
+  it('avoids the --no- prefix commander reserves for negation', () => {
+    expect(toCliOption('no_cache').startsWith('no-')).toBe(false);
+    expect(toCliOption('noCache')).toBe(toCliOption('no_cache'));
+    expect(buildPlaceholder('no_cache', 'boolean')).toBe(`<${toCliOption('no_cache')}:true|false>`);
+  });
+
+  it('keeps unaffected property names unchanged', () => {
+    expect(toCliOption('inputValue')).toBe('input-value');
+    expect(toCliOption('extra_path')).toBe('extra-path');
+    expect(toCliOption('nodes')).toBe('nodes');
+  });
+});
+
+function renderBlock(properties: Record<string, unknown>, required: string[]): string {
+  return renderToolCommand(
+    buildToolMetadata({ name: 'fetch', inputSchema: { type: 'object', properties, required } } as ServerToolInfo),
+    30_000,
+    'demo'
+  ).block;
+}
+
+function emittedFlags(block: string): string[] {
+  return [...block.matchAll(/\.option\("([^"]+)"/g)].flatMap((match) => (match[1] ? [match[1]] : []));
+}
+
+describe('generated commands agree with commander', () => {
+  it('emits option flags commander accepts', () => {
+    const flags = emittedFlags(renderBlock({ Query: { type: 'string' } }, ['Query']));
+    expect(flags).toHaveLength(1);
+    for (const flag of flags) {
+      expect(() => new Option(flag, 'Set the option.')).not.toThrow();
+    }
+  });
+
+  it('reads every option from the key commander stores it under', () => {
+    const block = renderBlock({ no_cache: { type: 'boolean' }, url: { type: 'string' } }, ['no_cache', 'url']);
+    const flags = emittedFlags(block);
+    expect(flags).toHaveLength(2);
+    for (const flag of flags) {
+      expect(block).toContain(`cmdOpts.${new Option(flag, 'Set the option.').attributeName()}`);
+    }
   });
 });

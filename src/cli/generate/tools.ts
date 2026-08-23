@@ -165,7 +165,7 @@ export function buildPlaceholder(
   enumValues?: string[],
   formatSlug?: string
 ): string {
-  const normalized = property.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`).replace(/_/g, '-');
+  const normalized = toCliOption(property);
   if (enumValues && enumValues.length > 0) {
     // Enum members can describe an array's items, and the generated parser splits those
     // flags on commas, so keep the multi-value hint next to the choices.
@@ -423,7 +423,15 @@ export function toProxyMethodName(toolName: string): string {
 }
 
 export function toCliOption(property: string): string {
-  return property.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`).replace(/_/g, '-');
+  const flag = property
+    .replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`)
+    .replace(/_/g, '-')
+    // A leading uppercase letter or underscore would otherwise produce `---flag`, which
+    // commander rejects while the generated command is being built.
+    .replace(/^-+/, '');
+  // Commander reads `--no-x` as a negated boolean: it stores the parsed value under `x` and
+  // defaults it to true when the flag is absent, so the generated command would never see it.
+  return flag.startsWith('no-') ? `no${flag.slice(3)}` : flag;
 }
 
 export const toolsTestHelpers = {
