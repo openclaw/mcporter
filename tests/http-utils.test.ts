@@ -10,11 +10,17 @@ describe('normalizeHttpUrl', () => {
 });
 
 describe('splitHttpToolSelector', () => {
-  it('keeps the query and fragment on the server URL', () => {
+  it('keeps the query on the server URL and drops the fragment', () => {
     expect(splitHttpToolSelector('https://example.com/a/mcp.tool?tenant=b#frag')).toEqual({
-      baseUrl: 'https://example.com/a/mcp?tenant=b#frag',
+      baseUrl: 'https://example.com/a/mcp?tenant=b',
       tool: 'tool',
     });
+  });
+
+  it('lets a configured server without a fragment still match a fragment selector', () => {
+    const selector = splitHttpToolSelector('https://example.com/mcp.tool#frag');
+    expect(selector).not.toBeNull();
+    expect(normalizeHttpUrl(selector!.baseUrl)).toBe(normalizeHttpUrl('https://example.com/mcp'));
   });
 
   it('keeps the port and the encoded path segments', () => {
