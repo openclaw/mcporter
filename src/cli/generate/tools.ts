@@ -135,7 +135,7 @@ export function getEnumValues(descriptor: unknown): string[] | undefined {
     const values = record.enum.filter((entry): entry is string => typeof entry === 'string');
     return values.length > 0 ? values : undefined;
   }
-  if (record.type === 'array' && typeof record.items === 'object' && record.items !== null) {
+  if (isArraySchema(record) && typeof record.items === 'object' && record.items !== null) {
     const nested = record.items as Record<string, unknown>;
     if (Array.isArray(nested.enum)) {
       const values = nested.enum.filter((entry): entry is string => typeof entry === 'string');
@@ -340,12 +340,18 @@ export function inferType(descriptor: unknown): GeneratedOption['type'] {
   return 'unknown';
 }
 
+// `type` may be a union such as `["array", "null"]`, so ask inferType instead of comparing the
+// raw value: these container checks have to agree with the type the option is generated with.
+function isArraySchema(record: Record<string, unknown>): boolean {
+  return inferType(record) === 'array';
+}
+
 export function inferArrayItemType(descriptor: unknown): GeneratedOption['arrayItemType'] {
   if (!descriptor || typeof descriptor !== 'object') {
     return 'unknown';
   }
   const record = descriptor as Record<string, unknown>;
-  if (record.type !== 'array' || !record.items || typeof record.items !== 'object') {
+  if (!isArraySchema(record) || !record.items || typeof record.items !== 'object') {
     return 'unknown';
   }
   const items = record.items as Record<string, unknown>;

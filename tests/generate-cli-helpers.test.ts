@@ -402,3 +402,34 @@ describe('generated commands agree with commander', () => {
     }
   });
 });
+
+function buildSourcesOption(type: unknown): unknown {
+  return extractOptions({
+    name: 'search',
+    inputSchema: {
+      type: 'object',
+      properties: { sources: { type, items: { type: 'string', enum: ['web', 'news'] } } },
+      required: [],
+    },
+  } as ServerToolInfo)[0];
+}
+
+describe('nullable array schemas keep their array shape', () => {
+  const nullableEnumArray = {
+    type: ['array', 'null'],
+    items: { type: 'string', enum: ['web', 'news'] },
+  };
+
+  it('resolves item types through a nullable array container', () => {
+    expect(inferArrayItemType(nullableEnumArray)).toBe('string');
+    expect(inferArrayItemType({ type: ['array', 'null'], items: { type: 'number' } })).toBe('number');
+  });
+
+  it('resolves enum members through a nullable array container', () => {
+    expect(getEnumValues(nullableEnumArray)).toEqual(['web', 'news']);
+  });
+
+  it('renders the same option for a nullable array as for a plain array', () => {
+    expect(buildSourcesOption(['array', 'null'])).toEqual(buildSourcesOption('array'));
+  });
+});
