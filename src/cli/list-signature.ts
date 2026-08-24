@@ -155,10 +155,54 @@ function inferReturnTypeName(schema: unknown): string | undefined {
 
 const TYPE_NAME_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
+// A reserved word is never a type reference: most of them fail to parse in a type position
+// (`Promise<class>`), and the few TypeScript reads as keyword types (`Promise<void>`) no longer
+// describe what the title said. Both spellings have to be folded like any other non-identifier.
+const RESERVED_WORDS = new Set([
+  'await',
+  'break',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'debugger',
+  'default',
+  'delete',
+  'do',
+  'else',
+  'enum',
+  'export',
+  'extends',
+  'false',
+  'finally',
+  'for',
+  'function',
+  'if',
+  'import',
+  'in',
+  'instanceof',
+  'new',
+  'null',
+  'return',
+  'super',
+  'switch',
+  'this',
+  'throw',
+  'true',
+  'try',
+  'typeof',
+  'var',
+  'void',
+  'while',
+  'with',
+  'yield',
+]);
+
 // A schema title is prose, but this value is emitted as a TypeScript type name by `emit-ts`,
 // so anything that is not already an identifier has to be folded into one.
 function toTypeName(title: string): string | undefined {
-  if (TYPE_NAME_PATTERN.test(title)) {
+  if (TYPE_NAME_PATTERN.test(title) && !RESERVED_WORDS.has(title)) {
     return title;
   }
   const joined = title
