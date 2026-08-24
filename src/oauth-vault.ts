@@ -105,8 +105,8 @@ export function vaultKeyForDefinition(definition: ServerDefinition): VaultKey {
         ? { command: definition.command.command, args: definition.command.args ?? [] }
         : null,
   };
-  const hash = crypto.createHash('sha256').update(JSON.stringify(descriptor)).digest('hex').slice(0, 16);
-  return `${definition.name}|${hash}`;
+  const digest = crypto.hash('sha256', JSON.stringify(descriptor), 'hex').slice(0, 16);
+  return `${definition.name}|${digest}`;
 }
 
 // A configured name is the user's stable identity for an MCP server. Its URL

@@ -122,7 +122,7 @@ function resolveTimeoutMs(explicit?: number): number | undefined {
  * and could still redeem the same refresh token concurrently.
  */
 function lockPathFor(label: string, identity: string): string {
-  const digest = crypto.createHash('sha256').update(identity).digest('hex').slice(0, IDENTITY_HASH_LENGTH);
+  const digest = crypto.hash('sha256', identity, 'hex').slice(0, IDENTITY_HASH_LENGTH);
   const safeLabel = filenameSafeLabel(label);
   return path.join(refreshLockDir(), safeLabel.length > 0 ? `${safeLabel}-${digest}` : digest);
 }

@@ -199,10 +199,27 @@ function resolveImplicitTemplateDir(serverName: string, definition: ReturnType<t
 }
 
 function sanitizePathSegment(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+  let segment = '';
+  let inRejectedRun = false;
+
+  for (const character of value.toLowerCase()) {
+    const code = character.charCodeAt(0);
+    const isLetter = code >= 97 && code <= 122;
+    const isDigit = code >= 48 && code <= 57;
+    if (isLetter || isDigit || character === '.' || character === '_' || character === '-') {
+      segment += character;
+      inRejectedRun = false;
+    } else if (!inRejectedRun) {
+      segment += '-';
+      inRejectedRun = true;
+    }
+  }
+
+  let start = 0;
+  let end = segment.length;
+  while (segment.charAt(start) === '-') start += 1;
+  while (end > start && segment.charAt(end - 1) === '-') end -= 1;
+  return segment.slice(start, end);
 }
 
 function applyToolFilters(tools: ServerToolInfo[], includeTools?: string[], excludeTools?: string[]): ServerToolInfo[] {

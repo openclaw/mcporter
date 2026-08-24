@@ -139,6 +139,12 @@ describe('resolveEphemeralServer', () => {
     expect(() => splitCommandLine(`node 'unterminated`)).toThrow('Unterminated quote');
   });
 
+  it('normalizes long separator runs without changing slug semantics', () => {
+    expect(resolveEphemeralServer({ name: `alpha${'-'.repeat(100_000)}beta`, stdioCommand: 'node' }).name).toBe(
+      'alpha-beta'
+    );
+  });
+
   it('persists into new and existing config containers without dropping unrelated keys', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-adhoc-persist-'));
     const configPath = path.join(dir, 'nested', 'mcporter.json');

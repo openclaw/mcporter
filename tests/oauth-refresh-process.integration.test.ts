@@ -1,5 +1,5 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { randomBytes, scryptSync } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -18,6 +18,7 @@ import { budget } from './helpers/timing.js';
 
 const CLI_ENTRY = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 const PROCESS_FIXTURE = fileURLToPath(new URL('./fixtures/oauth-refresh-process.mjs', import.meta.url));
+const MARKER_KEY = randomBytes(32);
 
 /**
  * A refresh token generation belonging to a rotation family. Redeeming a spent
@@ -30,7 +31,7 @@ interface Generation {
 }
 
 function marker(value: string): string {
-  return createHash('sha256').update(value).digest('hex').slice(0, 12);
+  return scryptSync(value, MARKER_KEY, 8).toString('hex').slice(0, 12);
 }
 
 describe('OAuth refresh across fresh built-artifact processes', () => {
@@ -186,6 +187,7 @@ describe('OAuth refresh across fresh built-artifact processes', () => {
       MCPORTER_TEST_OAUTH_CACHE_DIR: path.join(root, 'oauth-cache'),
       MCPORTER_TEST_OAUTH_SERVER_NAME: name,
       MCPORTER_TEST_OAUTH_SEED_REFRESH: seedRefresh,
+      MCPORTER_TEST_OAUTH_MARKER_KEY: MARKER_KEY.toString('hex'),
     };
   }
 

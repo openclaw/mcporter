@@ -42,7 +42,6 @@ const OFFLINE_PATTERNS = [
   'failed to start',
   'spawn enoent',
 ];
-const HTTP_STATUS_FALLBACK = /\bhttps?:\/\/[^\s]+(?:\s+returned\s+)?(?:status|code)?\s*(\d{3})\b/i;
 const STATUS_DIRECT_PATTERN = /\b(?:status(?:\s+code)?|http(?:\s+(?:status|code|error))?)[:\s]*(\d{3})\b/i;
 const STDIO_EXIT_PATTERN = /exit(?:ed)?(?:\s+with)?(?:\s+(?:code|status))\s+(-?\d+)/i;
 const STDIO_SIGNAL_PATTERN = /signal\s+([A-Z0-9]+)/i;
@@ -124,7 +123,7 @@ function extractStatusCode(message: string): number | undefined {
   const candidates = [
     message.match(/status code\s*\((\d{3})\)/i)?.[1],
     message.match(STATUS_DIRECT_PATTERN)?.[1],
-    message.match(HTTP_STATUS_FALLBACK)?.[1],
+    extractStatusAfterUrl(message),
   ].filter(Boolean) as string[];
   for (const candidate of candidates) {
     const parsed = Number.parseInt(candidate, 10);
@@ -151,6 +150,66 @@ function extractStatusCode(message: string): number | undefined {
     }
   }
   return undefined;
+}
+
+function extractStatusAfterUrl(message: string): string | undefined {
+  const normalized = message.toLowerCase();
+  let searchStart = 0;
+  while (searchStart < message.length) {
+    const urlStart = findNextHttpUrl(normalized, searchStart);
+    if (urlStart === -1) {
+      return undefined;
+    }
+    let separatorIndex = urlStart;
+    while (separatorIndex < normalized.length && !/\s/.test(normalized.charAt(separatorIndex))) {
+      separatorIndex += 1;
+    }
+    if (separatorIndex < normalized.length) {
+      const candidate = extractStatusFromUrlTail(normalized, separatorIndex);
+      if (candidate !== undefined) {
+        return candidate;
+      }
+    }
+    searchStart = separatorIndex;
+  }
+  return undefined;
+}
+
+function extractStatusFromUrlTail(value: string, start: number): string | undefined {
+  let cursor = skipWhitespace(value, start);
+  for (const prefix of ['returned status', 'returned code', 'returned', 'status', 'code']) {
+    if (value.startsWith(prefix, cursor)) {
+      cursor = skipWhitespace(value, cursor + prefix.length);
+      break;
+    }
+  }
+  const candidate = value.slice(cursor, cursor + 3);
+  const boundary = value.charAt(cursor + 3);
+  return /^\d{3}$/.test(candidate) && !/[a-z0-9_]/i.test(boundary) ? candidate : undefined;
+}
+
+function skipWhitespace(value: string, start: number): number {
+  let index = start;
+  while (index < value.length && /\s/.test(value.charAt(index))) {
+    index += 1;
+  }
+  return index;
+}
+
+function findNextHttpUrl(value: string, searchStart: number): number {
+  let index = searchStart;
+  while (index < value.length) {
+    const candidate = value.indexOf('http', index);
+    if (candidate === -1) {
+      return -1;
+    }
+    const isUrl = value.startsWith('http://', candidate) || value.startsWith('https://', candidate);
+    if (isUrl && (candidate === 0 || !/[a-z0-9_]/i.test(value.charAt(candidate - 1)))) {
+      return candidate;
+    }
+    index = candidate + 1;
+  }
+  return -1;
 }
 
 function matchesAny(patterns: readonly RegExp[], normalizedMessage: string): boolean {

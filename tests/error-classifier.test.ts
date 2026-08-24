@@ -26,6 +26,24 @@ describe('analyzeConnectionError', () => {
     expect(issue.statusCode).toBe(429);
   });
 
+  it('extracts a status after a long URL without backtracking', () => {
+    const issue = analyzeConnectionError(new Error(`https://example.com/${'a'.repeat(100_000)} returned status 503`));
+    expect(issue).toMatchObject({ kind: 'http', statusCode: 503 });
+  });
+
+  it('continues to a later URL when the first has no adjacent status', () => {
+    const issue = analyzeConnectionError(
+      new Error('Proxy failed at https://first.example/ then https://second.example/mcp 503')
+    );
+    expect(issue).toMatchObject({ kind: 'http', statusCode: 503 });
+  });
+
+  it('scans many status-less URL candidates without rescanning their suffixes', () => {
+    const candidates = Array.from({ length: 5_000 }, (_, index) => `https://example.com/${index} skipped`).join(' ');
+    const issue = analyzeConnectionError(new Error(`${candidates} https://final.example/mcp returned status 503`));
+    expect(issue).toMatchObject({ kind: 'http', statusCode: 503 });
+  });
+
   it.each([401, 403] as const)('keeps %s classified as auth', (status) => {
     const issue = analyzeConnectionError(new Error(`SSE error: Non-200 status code (${status})`));
     expect(issue.kind).toBe('auth');

@@ -10,7 +10,7 @@ import { NON_INTERACTIVE_ELICITATION_HINT } from '../src/runtime/elicitation.js'
 import { DAEMON_OAUTH_FLOW_ERROR_CODE } from '../src/daemon/protocol.js';
 import { makeShortTempDir } from './fixtures/test-helpers.js';
 
-const timeoutRecords: Array<{ method: string; timeout: number }> = [];
+const timeoutRecords: Array<{ method: string; timeout: number; progressInterval?: number }> = [];
 
 class MockSocket extends EventEmitter {
   currentTimeout = 0;
@@ -22,7 +22,11 @@ class MockSocket extends EventEmitter {
 
   write(data: string, cb?: (err?: Error | null) => void): boolean {
     const payload = JSON.parse(data.toString());
-    timeoutRecords.push({ method: payload.method, timeout: this.currentTimeout });
+    timeoutRecords.push({
+      method: payload.method,
+      timeout: this.currentTimeout,
+      progressInterval: payload.progressIntervalMs,
+    });
     const response = buildResponse(payload.method, payload.id);
     setTimeout(() => {
       this.emit('data', responseOverrides.get(payload.method) ?? JSON.stringify(response));
@@ -143,6 +147,18 @@ describe('DaemonClient timeouts', () => {
     expect(callRecord?.timeout).toBe(4_500);
   });
 
+  it('caps oversized MCPORTER_DAEMON_TIMEOUT_MS values at the Node timer maximum', async () => {
+    process.env.MCPORTER_DAEMON_TIMEOUT_MS = String(Number.MAX_SAFE_INTEGER);
+    const configPath = 'mcporter.config.json';
+    await writeFreshMetadata(configPath);
+    const client = new DaemonClient({ configPath, configExplicit: true });
+    await client.callTool({ server: 'foo', tool: 'bar' });
+    const statusRecord = timeoutRecords.find((entry) => entry.method === 'status');
+    const callRecord = timeoutRecords.find((entry) => entry.method === 'callTool');
+    expect(statusRecord?.timeout).toBe(2_147_483_647);
+    expect(callRecord?.timeout).toBe(2_147_483_647);
+  });
+
   it('honors per-call timeout overrides', async () => {
     const configPath = 'mcporter.config.json';
     await writeFreshMetadata(configPath);
@@ -152,6 +168,17 @@ describe('DaemonClient timeouts', () => {
     const callRecord = timeoutRecords.find((entry) => entry.method === 'callTool');
     expect(statusRecord?.timeout).toBe(12_345);
     expect(callRecord?.timeout).toBe(12_345);
+  });
+
+  it('caps oversized per-call timeouts at the Node timer maximum', async () => {
+    const configPath = 'mcporter.config.json';
+    await writeFreshMetadata(configPath);
+    const client = new DaemonClient({ configPath, configExplicit: true });
+    await client.callTool({ server: 'foo', tool: 'bar', timeoutMs: Number.MAX_SAFE_INTEGER });
+    const statusRecord = timeoutRecords.find((entry) => entry.method === 'status');
+    const callRecord = timeoutRecords.find((entry) => entry.method === 'callTool');
+    expect(statusRecord?.timeout).toBe(2_147_483_647);
+    expect(callRecord?.timeout).toBe(2_147_483_647);
   });
 
   it('honors per-listTools timeout overrides', async () => {
@@ -165,7 +192,7 @@ describe('DaemonClient timeouts', () => {
     expect(listRecord?.timeout).toBe(300_000);
   });
 
-  it('clamps daemon status preflight timeout for tiny per-call timeouts', async () => {
+  it('keeps tiny daemon request idle budgets above the progress cadence', async () => {
     const configPath = 'mcporter.config.json';
     await writeFreshMetadata(configPath);
     const client = new DaemonClient({ configPath, configExplicit: true });
@@ -173,7 +200,7 @@ describe('DaemonClient timeouts', () => {
     const statusRecord = timeoutRecords.find((entry) => entry.method === 'status');
     const callRecord = timeoutRecords.find((entry) => entry.method === 'callTool');
     expect(statusRecord?.timeout).toBe(1_000);
-    expect(callRecord?.timeout).toBe(1);
+    expect(callRecord).toMatchObject({ timeout: 100, progressInterval: 25 });
   });
 
   it('surfaces daemon notices to the calling CLI process', async () => {

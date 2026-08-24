@@ -52,4 +52,8 @@ describe('generated CLI command naming', () => {
     expect(inferNameFromCommand({ command: 'runner', args: ['chosen', '--verbose'] })).toBe('chosen');
     expect(inferNameFromCommand({ command: 'runner', args: ['chosen', 'TOKEN=value'] })).toBe('chosen');
   });
+
+  it('normalizes long separator runs without backtracking', () => {
+    expect(inferNameFromCommand({ command: `alpha${'-'.repeat(100_000)}beta` })).toBe('alpha-beta');
+  });
 });

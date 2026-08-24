@@ -5,6 +5,7 @@ import { __configInternals } from '../config.js';
 import { expandHome } from '../env.js';
 import { withFileLock, writeTextFileAtomic } from '../fs-json.js';
 import { canonicalKeepAliveName, resolveLifecycle } from '../lifecycle.js';
+import { toAsciiSlug } from './ascii-slug.js';
 
 export interface EphemeralServerSpec {
   name?: string;
@@ -197,17 +198,8 @@ function stripPackageVersion(token: string): string {
   return token;
 }
 
-function slugify(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/-{2,}/g, '-');
-}
-
 function normalizeEphemeralName(value: string): string {
-  const name = slugify(value);
+  const name = toAsciiSlug(value);
   if (!name) {
     throw new Error('Ad-hoc server name must contain at least one letter or digit.');
   }

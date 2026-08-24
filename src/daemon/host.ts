@@ -33,9 +33,9 @@ import {
 import {
   DAEMON_OAUTH_FLOW_ERROR_CODE,
   DAEMON_OPERATION_TIMEOUT_CODE,
-  DAEMON_PROGRESS_INTERVAL_MS,
   DAEMON_PROTOCOL_VERSION,
   encodeDaemonFrame,
+  resolveProgressInterval,
   type DaemonRequest,
   type DaemonResponse,
   type CallToolParams,
@@ -593,7 +593,9 @@ function startProgressFrames(socket: net.Socket, request?: DaemonRequest): () =>
   ) {
     return () => {};
   }
-  const intervalMs = Math.min(request.progressIntervalMs, DAEMON_PROGRESS_INTERVAL_MS);
+  // Only fixed protocol-owned cadences reach the timer. Raw clients cannot
+  // create a tight loop or retain arbitrary-duration interval resources.
+  const intervalMs = resolveProgressInterval(request.progressIntervalMs);
   const emit = (): void => {
     if (!socket.destroyed && !socket.writableEnded) {
       socket.write(encodeDaemonFrame({ type: 'progress', id: request.id }));

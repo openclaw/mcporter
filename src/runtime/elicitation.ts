@@ -229,12 +229,8 @@ function formatDefault(value: PrimitiveValue): string {
   return sanitizeTerminalText(Array.isArray(value) ? value.join(', ') : String(value));
 }
 
-const ANSI_ESCAPE_PATTERN =
-  // eslint-disable-next-line no-control-regex -- Terminal escape bytes are the exact untrusted input being removed.
-  /(?:\u001b\][^\u0007]*(?:\u0007|\u001b\\)|\u001b[P^_][\s\S]*?\u001b\\|(?:\u001b\[|\u009b)[0-?]*[ -/]*[@-~]|\u001b[@-_])/gu;
-
 export function sanitizeTerminalText(value: string): string {
-  const withoutEscapes = value.replace(ANSI_ESCAPE_PATTERN, '');
+  const withoutEscapes = stripAnsiSequences(value);
   let withoutControls = '';
   for (const character of withoutEscapes) {
     const codePoint = character.codePointAt(0) ?? 0;
@@ -244,7 +240,71 @@ export function sanitizeTerminalText(value: string): string {
       withoutControls += character;
     }
   }
-  return withoutControls.replace(/ {2,}/gu, ' ').trim();
+  return collapseSpaces(withoutControls).trim();
+}
+
+function stripAnsiSequences(value: string): string {
+  let output = '';
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code === 0x9b) {
+      index = consumeControlSequence(value, index + 1);
+      continue;
+    }
+    if (code !== 0x1b) {
+      output += value[index];
+      continue;
+    }
+
+    const introducer = value.charAt(index + 1);
+    if (introducer === '[') {
+      index = consumeControlSequence(value, index + 2);
+    } else if (introducer === ']' || introducer === 'P' || introducer === '^' || introducer === '_') {
+      index = consumeStringSequence(value, index + 2, introducer === ']');
+    } else if (introducer) {
+      index += 1;
+    }
+  }
+  return output;
+}
+
+function consumeControlSequence(value: string, start: number): number {
+  for (let index = start; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0x40 && code <= 0x7e) {
+      return index;
+    }
+  }
+  return value.length;
+}
+
+function consumeStringSequence(value: string, start: number, allowBell: boolean): number {
+  for (let index = start; index < value.length; index += 1) {
+    if (allowBell && value.charCodeAt(index) === 0x07) {
+      return index;
+    }
+    if (value.charCodeAt(index) === 0x1b && value.charAt(index + 1) === '\\') {
+      return index + 1;
+    }
+  }
+  return value.length;
+}
+
+function collapseSpaces(value: string): string {
+  let output = '';
+  let previousWasSpace = false;
+  for (const character of value) {
+    if (character === ' ') {
+      if (!previousWasSpace) {
+        output += character;
+      }
+      previousWasSpace = true;
+    } else {
+      output += character;
+      previousWasSpace = false;
+    }
+  }
+  return output;
 }
 
 function writeLine(output: NodeJS.WritableStream, message: string): void {
