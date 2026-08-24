@@ -1,4 +1,4 @@
-import { Option } from 'commander';
+import { Command, Option } from 'commander';
 import { describe, expect, it } from 'vitest';
 import {
   buildExampleValue,
@@ -365,6 +365,18 @@ describe('flag names stay valid commander flags', () => {
     expect(buildPlaceholder('no_cache', 'boolean')).toBe('<no-cache:true|false>');
   });
 
+  it('skips a suffix another property already spells', () => {
+    const names = extractOptions({
+      name: 'search',
+      inputSchema: {
+        type: 'object',
+        properties: { Query: { type: 'string' }, query: { type: 'string' }, query_2: { type: 'string' } },
+        required: [],
+      },
+    } as ServerToolInfo).map((option) => option.cliName);
+    expect(names).toEqual(['query', 'query-3', 'query-2']);
+  });
+
   it('keeps unaffected property names unchanged', () => {
     expect(toCliOption('inputValue')).toBe('input-value');
     expect(toCliOption('extra_path')).toBe('extra-path');
@@ -399,6 +411,37 @@ describe('generated commands agree with commander', () => {
     for (const flag of flags) {
       expect(() => new Option(flag, 'Set the option.')).not.toThrow();
     }
+  });
+
+  it('gives every property its own flag when two spellings normalize onto one', () => {
+    const block = renderBlock(
+      {
+        Query: { type: 'string' },
+        query: { type: 'string' },
+        no_cache: { type: 'boolean' },
+        noCache: { type: 'boolean' },
+      },
+      ['Query']
+    );
+    const flags = emittedFlags(block);
+    expect(flags).toEqual([
+      '--query <query>',
+      '--query-2 <query-2>',
+      '--no-cache <no-cache:true|false>',
+      '--no-cache-2 <no-cache-2:true|false>',
+    ]);
+    // commander refuses a command that declares one flag twice, so the emitted set has to be
+    // free of duplicates before the generated module can even be loaded.
+    const command = new Command('search');
+    for (const flag of flags) {
+      const option = new Option(flag, 'Set the option.');
+      option.negate = false;
+      expect(() => command.addOption(option)).not.toThrow();
+    }
+    const properties = ['Query', 'query', 'no_cache', 'noCache'];
+    properties.forEach((property, index) => {
+      expect(block).toContain(`args.${property} = cmdOpts.${storedKey(flags[index] as string)}`);
+    });
   });
 
   it('reads every option from the key commander stores it under', () => {

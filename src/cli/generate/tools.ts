@@ -102,17 +102,20 @@ export function extractOptions(tool: ServerToolInfo): GeneratedOption[] {
   // Flatten schema properties into Commander-friendly option descriptors.
   const properties = record.properties as Record<string, unknown>;
   const requiredList = Array.isArray(record.required) ? (record.required as string[]) : [];
-  return Object.entries(properties).map(([property, descriptor]) => {
+  const entries = Object.entries(properties);
+  const cliNames = assignCliNames(entries.map(([property]) => property));
+  return entries.map(([property, descriptor], index) => {
+    const cliName = cliNames[index] as string;
     const type = inferType(descriptor);
     const arrayItemType = type === 'array' ? inferArrayItemType(descriptor) : undefined;
     const enumValues = getEnumValues(descriptor);
     const defaultValue = getDescriptorDefault(descriptor);
     const formatInfo = getDescriptorFormatHint(descriptor);
-    const placeholder = buildPlaceholder(property, type, enumValues, formatInfo?.slug);
+    const placeholder = buildPlaceholder(cliName, type, enumValues, formatInfo?.slug);
     const exampleValue = buildExampleValue(property, type, enumValues, defaultValue, arrayItemType);
     return {
       property,
-      cliName: toCliOption(property),
+      cliName,
       description: getDescriptorDescription(descriptor),
       required: requiredList.includes(property),
       type,
@@ -123,6 +126,26 @@ export function extractOptions(tool: ServerToolInfo): GeneratedOption[] {
       defaultValue,
       formatHint: formatInfo?.display,
     };
+  });
+}
+
+// Two legal property spellings can normalize onto one flag - `Query` beside `query`, or
+// `no_cache` beside `noCache` - and commander would then declare that flag twice and read one
+// value into both arguments. Schema order keeps the plain flag; a later property takes the first
+// suffix no other property claims.
+function assignCliNames(properties: string[]): string[] {
+  const natural = properties.map((property) => toCliOption(property));
+  const claimed = new Set(natural);
+  const used = new Set<string>();
+  return natural.map((base) => {
+    let name = base;
+    let suffix = 2;
+    while (used.has(name) || (name !== base && claimed.has(name))) {
+      name = `${base}-${suffix}`;
+      suffix += 1;
+    }
+    used.add(name);
+    return name;
   });
 }
 
