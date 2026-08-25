@@ -10,6 +10,92 @@ import type { Runtime } from '../src/runtime.js';
 import type { ServerToolInfo } from '../src/runtime.js';
 import { integrationDefinition, listCommentsTool } from './fixtures/tool-fixtures.js';
 
+// Every reserved word, contextual keyword and intrinsic type name TypeScript spells; a schema is
+// free to carry any of them as an `outputSchema.title`.
+const TYPESCRIPT_KEYWORDS = [
+  'abstract',
+  'accessor',
+  'any',
+  'as',
+  'asserts',
+  'async',
+  'await',
+  'bigint',
+  'boolean',
+  'break',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'constructor',
+  'continue',
+  'debugger',
+  'declare',
+  'default',
+  'delete',
+  'do',
+  'else',
+  'enum',
+  'export',
+  'extends',
+  'false',
+  'finally',
+  'for',
+  'from',
+  'function',
+  'get',
+  'global',
+  'if',
+  'implements',
+  'import',
+  'in',
+  'infer',
+  'instanceof',
+  'interface',
+  'intrinsic',
+  'is',
+  'keyof',
+  'let',
+  'module',
+  'namespace',
+  'never',
+  'new',
+  'null',
+  'number',
+  'object',
+  'of',
+  'out',
+  'override',
+  'package',
+  'private',
+  'protected',
+  'public',
+  'readonly',
+  'require',
+  'return',
+  'satisfies',
+  'set',
+  'static',
+  'string',
+  'super',
+  'switch',
+  'symbol',
+  'this',
+  'throw',
+  'true',
+  'try',
+  'type',
+  'typeof',
+  'undefined',
+  'unique',
+  'unknown',
+  'var',
+  'void',
+  'while',
+  'with',
+  'yield',
+];
+
 const dashedTool: ServerToolInfo = {
   name: 'API-post-page',
   description: 'Create a Notion page',
@@ -42,6 +128,12 @@ function createRuntimeStub(): Runtime {
     },
     close: async () => {},
   } as unknown as Runtime;
+}
+
+function parseDiagnosticsOf(source: string): string[] {
+  const parsed = ts.createSourceFile('emit.ts', source, ts.ScriptTarget.ES2022, false, ts.ScriptKind.TS);
+  const diagnostics = (parsed as { parseDiagnostics?: ts.Diagnostic[] }).parseDiagnostics ?? [];
+  return diagnostics.map((entry) => ts.flattenDiagnosticMessageText(entry.messageText, '\n'));
 }
 
 describe('emit-ts templates', () => {
@@ -78,20 +170,20 @@ describe('emit-ts templates', () => {
     expect(client).toContain('proxy.aPIPostPage');
 
     for (const source of [types, client]) {
-      const parsed = ts.createSourceFile('emit.ts', source, ts.ScriptTarget.ES2022, false, ts.ScriptKind.TS);
-      const diagnostics = (parsed as { parseDiagnostics?: ts.Diagnostic[] }).parseDiagnostics ?? [];
-      expect(diagnostics.map((entry) => ts.flattenDiagnosticMessageText(entry.messageText, '\n'))).toEqual([]);
+      expect(parseDiagnosticsOf(source)).toEqual([]);
     }
   });
 
-  it('keeps a multi-word outputSchema title parseable in the emitted module', () => {
+  // Four cases render the same module for a different title, so the rendering lives here and each
+  // case is left with the title it is about.
+  function renderTypesForTitle(title: string): string {
     const titledTool: ServerToolInfo = {
       ...dashedTool,
       name: 'search',
-      outputSchema: { title: 'Search Results' },
+      outputSchema: { title },
     };
     const docs = emitTsTestInternals.buildDocEntries('integration', [buildToolMetadata(titledTool)], true);
-    const types = renderTypesModule({
+    return renderTypesModule({
       interfaceName: 'IntegrationTools',
       docs,
       metadata: {
@@ -100,34 +192,36 @@ describe('emit-ts templates', () => {
         generatedAt: new Date('2025-11-07T00:00:00Z'),
       },
     });
+  }
 
-    const parsed = ts.createSourceFile('emit.ts', types, ts.ScriptTarget.ES2022, false, ts.ScriptKind.TS);
-    const diagnostics = (parsed as { parseDiagnostics?: ts.Diagnostic[] }).parseDiagnostics ?? [];
-    expect(diagnostics.map((entry) => ts.flattenDiagnosticMessageText(entry.messageText, '\n'))).toEqual([]);
+  it('keeps a multi-word outputSchema title parseable in the emitted module', () => {
+    const types = renderTypesForTitle('Search Results');
+
+    expect(parseDiagnosticsOf(types)).toEqual([]);
     expect(types).toContain('Promise<SearchResults>');
   });
 
   it('keeps a reserved-word outputSchema title parseable in the emitted module', () => {
-    const titledTool: ServerToolInfo = {
-      ...dashedTool,
-      name: 'search',
-      outputSchema: { title: 'class' },
-    };
-    const docs = emitTsTestInternals.buildDocEntries('integration', [buildToolMetadata(titledTool)], true);
-    const types = renderTypesModule({
-      interfaceName: 'IntegrationTools',
-      docs,
-      metadata: {
-        server: integrationDefinition,
-        generatorLabel: 'mcporter@test',
-        generatedAt: new Date('2025-11-07T00:00:00Z'),
-      },
-    });
+    const types = renderTypesForTitle('class');
 
-    const parsed = ts.createSourceFile('emit.ts', types, ts.ScriptTarget.ES2022, false, ts.ScriptKind.TS);
-    const diagnostics = (parsed as { parseDiagnostics?: ts.Diagnostic[] }).parseDiagnostics ?? [];
-    expect(diagnostics.map((entry) => ts.flattenDiagnosticMessageText(entry.messageText, '\n'))).toEqual([]);
+    expect(parseDiagnosticsOf(types)).toEqual([]);
     expect(types).toContain('Promise<Class>');
+  });
+
+  it('keeps a type-context keyword outputSchema title parseable in the emitted module', () => {
+    const types = renderTypesForTitle('keyof');
+
+    expect(parseDiagnosticsOf(types)).toEqual([]);
+    expect(types).toContain('Promise<Keyof>');
+  });
+
+  // Which spellings TypeScript refuses in a type position is the parser's answer rather than ours,
+  // so every keyword is rendered and handed back to the parser instead of compared against a copy
+  // of the set the source keeps.
+  it.each(TYPESCRIPT_KEYWORDS)('keeps the outputSchema title %s parseable in the emitted module', (keyword) => {
+    const types = renderTypesForTitle(keyword);
+
+    expect(parseDiagnosticsOf(types)).toEqual([]);
   });
 
   it('renders client module that wraps proxy calls', () => {

@@ -155,11 +155,17 @@ function inferReturnTypeName(schema: unknown): string | undefined {
 
 const TYPE_NAME_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
-// A reserved word is never a type reference: most of them fail to parse in a type position
-// (`Promise<class>`), and the few TypeScript reads as keyword types (`Promise<void>`) no longer
-// describe what the title said. Both spellings have to be folded like any other non-identifier.
-const RESERVED_WORDS = new Set([
+// A keyword is never a type reference: most of them fail to parse in a type position
+// (`Promise<class>`, `Promise<keyof>`), and the ones TypeScript reads as keyword types
+// (`Promise<void>`, `Promise<string>`) no longer describe what the title said. Both spellings
+// have to be folded like any other non-identifier. The set is measured against the parser rather
+// than assumed: `tests/emit-ts.test.ts` renders a title for every TypeScript keyword and asserts
+// the emitted module still parses.
+const RESERVED_TYPE_NAMES = new Set([
+  'any',
   'await',
+  'bigint',
+  'boolean',
   'break',
   'case',
   'catch',
@@ -181,17 +187,28 @@ const RESERVED_WORDS = new Set([
   'if',
   'import',
   'in',
+  'infer',
   'instanceof',
+  'keyof',
+  'never',
   'new',
   'null',
+  'number',
+  'object',
+  'readonly',
   'return',
+  'string',
   'super',
   'switch',
+  'symbol',
   'this',
   'throw',
   'true',
   'try',
   'typeof',
+  'undefined',
+  'unique',
+  'unknown',
   'var',
   'void',
   'while',
@@ -202,7 +219,7 @@ const RESERVED_WORDS = new Set([
 // A schema title is prose, but this value is emitted as a TypeScript type name by `emit-ts`,
 // so anything that is not already an identifier has to be folded into one.
 function toTypeName(title: string): string | undefined {
-  if (TYPE_NAME_PATTERN.test(title) && !RESERVED_WORDS.has(title)) {
+  if (TYPE_NAME_PATTERN.test(title) && !RESERVED_TYPE_NAMES.has(title)) {
     return title;
   }
   const joined = title
