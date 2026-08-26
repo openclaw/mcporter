@@ -129,6 +129,8 @@ export function extractOptions(tool: ServerToolInfo): GeneratedOption[] {
   });
 }
 
+const EMPTY_CLI_OPTION_STEM = 'option';
+
 // Two legal property spellings can normalize onto one flag - `Query` beside `query`, or
 // `no_cache` beside `noCache` - and commander would then declare that flag twice and read one
 // value into both arguments. Schema order keeps the plain flag; a later property takes the first
@@ -452,14 +454,17 @@ export function toProxyMethodName(toolName: string): string {
 }
 
 export function toCliOption(property: string): string {
-  return (
-    property
-      .replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`)
-      .replace(/_/g, '-')
-      // A leading uppercase letter or underscore would otherwise produce `---flag`, which
-      // commander rejects while the generated command is being built.
-      .replace(/^-+/, '')
-  );
+  const normalized = property
+    .replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`)
+    .replace(/_/g, '-')
+    // A leading uppercase letter or underscore would otherwise produce `---flag`, which
+    // commander rejects while the generated command is being built.
+    .replace(/^-+/, '');
+  // Every character of a property such as `___` normalizes away, and commander rejects the
+  // `--` that name would spell. The stem stands in for the whole name, so `assignCliNames`
+  // sees it before it hands out suffixes and a schema declaring `option` beside `___` still
+  // gets two distinct flags.
+  return normalized === '' ? EMPTY_CLI_OPTION_STEM : normalized;
 }
 
 export const toolsTestHelpers = {

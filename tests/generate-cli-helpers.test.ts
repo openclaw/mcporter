@@ -1,4 +1,5 @@
 import { Command, Option } from 'commander';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import {
   buildExampleValue,
@@ -377,6 +378,24 @@ describe('flag names stay valid commander flags', () => {
     expect(names).toEqual(['query', 'query-3', 'query-2']);
   });
 
+  it('gives a property whose characters all normalize away a usable flag name', () => {
+    expect(toCliOption('___')).toBe('option');
+    expect(toCliOption('_')).toBe('option');
+    expect(buildPlaceholder('___', 'string')).toBe('<option>');
+  });
+
+  it('assigns the fallback stem before suffixing so every name stays a long flag', () => {
+    const names = extractOptions({
+      name: 'search',
+      inputSchema: {
+        type: 'object',
+        properties: { ___: { type: 'string' }, _: { type: 'boolean' }, option: { type: 'string' } },
+        required: [],
+      },
+    } as ServerToolInfo).map((option) => option.cliName);
+    expect(names).toEqual(['option', 'option-2', 'option-3']);
+  });
+
   it('keeps unaffected property names unchanged', () => {
     expect(toCliOption('inputValue')).toBe('input-value');
     expect(toCliOption('extra_path')).toBe('extra-path');
@@ -398,6 +417,14 @@ function storedKey(flags: string): string {
   const option = new Option(flags, 'Set the option.');
   option.negate = false;
   return option.attributeName();
+}
+
+// The generated block is spliced into a TypeScript module, so a flag name that cannot be
+// spelled as a property access has to be read through a subscript for the module to parse.
+function parseDiagnosticsOf(source: string): string[] {
+  const parsed = ts.createSourceFile('command.ts', source, ts.ScriptTarget.ES2022, false, ts.ScriptKind.TS);
+  const diagnostics = (parsed as { parseDiagnostics?: ts.Diagnostic[] }).parseDiagnostics ?? [];
+  return diagnostics.map((entry) => ts.flattenDiagnosticMessageText(entry.messageText, '\n'));
 }
 
 function emittedFlags(block: string): string[] {
@@ -442,6 +469,20 @@ describe('generated commands agree with commander', () => {
     properties.forEach((property, index) => {
       expect(block).toContain(`args.${property} = cmdOpts.${storedKey(flags[index] as string)}`);
     });
+  });
+
+  it('emits a long flag for a property whose characters all normalize away', () => {
+    const block = renderBlock({ ___: { type: 'string' }, _: { type: 'boolean' } }, ['___']);
+    const flags = emittedFlags(block);
+    expect(flags).toEqual(['--option <option>', '--option-2 <option-2:true|false>']);
+    const command = new Command('fetch');
+    for (const flag of flags) {
+      const option = new Option(flag, 'Set the option.');
+      option.negate = false;
+      expect(() => command.addOption(option)).not.toThrow();
+    }
+    expect(block).toContain('args.___ = cmdOpts.option;');
+    expect(parseDiagnosticsOf(block)).toEqual([]);
   });
 
   it('reads every option from the key commander stores it under', () => {
