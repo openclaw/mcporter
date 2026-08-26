@@ -435,6 +435,13 @@ if (process.env.MCPORTER_DISABLE_AUTORUN !== '1') {
 `;
 }
 
+// Commander stores each option under the camelCase form of its flag, and a schema property
+// name can legally produce a key no property access can spell - `2fa` is stored under `2fa`,
+// and `cmdOpts.2fa` does not parse. Those keys are read through a subscript instead.
+function propertyAccess(target: string, key: string): string {
+  return /^[A-Za-z_$][\w$]*$/.test(key) ? `${target}.${key}` : `${target}[${JSON.stringify(key)}]`;
+}
+
 export function renderToolCommand(
   tool: ToolMetadata,
   defaultTimeout: number,
@@ -463,8 +470,8 @@ export function renderToolCommand(
         .filter(Boolean)
         .map((segment, index) => (index === 0 ? segment : `${segment.charAt(0).toUpperCase()}${segment.slice(1)}`))
         .join('');
-      const source = `cmdOpts.${camelCaseProp}`;
-      return `if (${source} !== undefined) args.${option.property} = ${source};`;
+      const source = propertyAccess('cmdOpts', camelCaseProp);
+      return `if (${source} !== undefined) ${propertyAccess('args', option.property)} = ${source};`;
     })
     .join('\n\t\t');
   const requiredChecks = tool.options
@@ -482,7 +489,7 @@ export function renderToolCommand(
       ? `const missingRequired = [${requiredChecks
           .map(
             ({ option, camelCaseProp }) =>
-              `{ value: cmdOpts.${camelCaseProp}, flag: ${JSON.stringify(`--${option.cliName}`)} }`
+              `{ value: ${propertyAccess('cmdOpts', camelCaseProp)}, flag: ${JSON.stringify(`--${option.cliName}`)} }`
           )
           .join(
             ', '

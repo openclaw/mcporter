@@ -485,6 +485,13 @@ describe('generated commands agree with commander', () => {
     expect(parseDiagnosticsOf(block)).toEqual([]);
   });
 
+  it('emits a parseable command for a flag commander stores under a non-identifier key', () => {
+    const block = renderBlock({ '2fa': { type: 'string' } }, ['2fa']);
+    expect(emittedFlags(block)).toEqual(['--2fa <2fa>']);
+    expect(block).toContain('args["2fa"] = cmdOpts["2fa"];');
+    expect(parseDiagnosticsOf(block)).toEqual([]);
+  });
+
   it('reads every option from the key commander stores it under', () => {
     const block = renderBlock(
       { no_cache: { type: 'boolean' }, nocache: { type: 'boolean' }, url: { type: 'string' } },
