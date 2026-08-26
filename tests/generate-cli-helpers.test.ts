@@ -396,6 +396,23 @@ describe('flag names stay valid commander flags', () => {
     expect(names).toEqual(['option', 'option-2', 'option-3']);
   });
 
+  it('collapses a run of separators into a single dash', () => {
+    expect(toCliOption('foo__bar')).toBe('foo-bar');
+    expect(toCliOption('foo-_bar')).toBe('foo-bar');
+    expect(toCliOption('a__b__c')).toBe('a-b-c');
+    // An underscore in front of a capital spells the same run, and it is the shape a schema
+    // reaches by mixing the two conventions rather than by repeating one.
+    expect(toCliOption('filter_Query')).toBe('filter-query');
+    expect(buildPlaceholder('foo__bar', 'string')).toBe('<foo-bar>');
+  });
+
+  it('drops a trailing separator', () => {
+    expect(toCliOption('foo_')).toBe('foo');
+    expect(toCliOption('foo__')).toBe('foo');
+    // Every character still normalizing away keeps the stem rather than collapsing to nothing.
+    expect(toCliOption('_-_')).toBe('option');
+  });
+
   it('keeps unaffected property names unchanged', () => {
     expect(toCliOption('inputValue')).toBe('input-value');
     expect(toCliOption('extra_path')).toBe('extra-path');
@@ -483,6 +500,38 @@ describe('generated commands agree with commander', () => {
     }
     expect(block).toContain('args.___ = cmdOpts.option;');
     expect(parseDiagnosticsOf(block)).toEqual([]);
+  });
+
+  it('registers a flag for a property that repeats or trails a separator', () => {
+    const block = renderBlock(
+      { foo__bar: { type: 'string' }, baz_: { type: 'string' }, filter_Query: { type: 'string' } },
+      ['foo__bar']
+    );
+    const flags = emittedFlags(block);
+    expect(flags).toEqual(['--foo-bar <foo-bar>', '--baz <baz>', '--filter-query <filter-query>']);
+    // commander derives the storage key while addOption registers the flag, so an empty
+    // segment left by a dash run only surfaces here - constructing the Option alone passes.
+    const command = new Command('fetch');
+    for (const flag of flags) {
+      const option = new Option(flag, 'Set the option.');
+      option.negate = false;
+      expect(() => command.addOption(option)).not.toThrow();
+    }
+    expect(block).toContain('args.foo__bar = cmdOpts.fooBar;');
+    expect(block).toContain('args.baz_ = cmdOpts.baz;');
+    expect(parseDiagnosticsOf(block)).toEqual([]);
+  });
+
+  it('keeps distinct flags for two spellings that collapse onto one', () => {
+    const names = extractOptions({
+      name: 'search',
+      inputSchema: {
+        type: 'object',
+        properties: { foo__bar: { type: 'string' }, foo_bar: { type: 'string' } },
+        required: [],
+      },
+    } as ServerToolInfo).map((option) => option.cliName);
+    expect(names).toEqual(['foo-bar', 'foo-bar-2']);
   });
 
   it('emits a parseable command for a flag commander stores under a non-identifier key', () => {

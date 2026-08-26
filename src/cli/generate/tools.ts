@@ -457,9 +457,12 @@ export function toCliOption(property: string): string {
   const normalized = property
     .replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`)
     .replace(/_/g, '-')
-    // A leading uppercase letter or underscore would otherwise produce `---flag`, which
-    // commander rejects while the generated command is being built.
-    .replace(/^-+/, '');
+    // Commander derives an option's storage key by splitting the flag on dashes and
+    // upper-casing each segment, so any empty segment - a run of separators in `foo__bar`,
+    // a leading one from `Query`, a trailing one from `foo_` - makes `addOption` throw while
+    // the generated command is being built.
+    .replace(/-{2,}/g, '-')
+    .replace(/^-|-$/g, '');
   // Every character of a property such as `___` normalizes away, and commander rejects the
   // `--` that name would spell. The stem stands in for the whole name, so `assignCliNames`
   // sees it before it hands out suffixes and a schema declaring `option` beside `___` still
