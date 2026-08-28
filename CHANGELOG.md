@@ -1,5 +1,11 @@
 # mcporter Changelog
 
+## Unreleased
+
+### Maintenance
+
+- Refresh runtime, build, test, and lint dependencies plus GitHub Actions caching while preserving the 48-hour dependency release-age policy.
+
 ## [0.13.7] - 2026-08-14
 
 ### OAuth
