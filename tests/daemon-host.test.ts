@@ -558,8 +558,12 @@ describeUnixSocket('runDaemonHost lifecycle', () => {
       };
       expect(metadata.relayRuntimeIdentityVersion).toBe(CHROME_DEVTOOLS_RELAY_RUNTIME_IDENTITY_VERSION);
       expect(metadata.relayRuntimeIdentity).toMatch(/^[a-f0-9]{16}$/u);
+      const shutdownComplete = new Promise<void>((resolve) => {
+        exitSpy.mockImplementation((() => resolve()) as never);
+      });
       await requestDaemon<boolean>(socketPath, { id: 'stop-relay', method: 'stop', params: {} });
-      await waitForMissing(metadataPath);
+      await shutdownComplete;
+      await expect(fs.access(metadataPath)).rejects.toMatchObject({ code: 'ENOENT' });
     } finally {
       exitSpy.mockRestore();
       for (const signal of ['SIGINT', 'SIGTERM', 'SIGQUIT'] as const) {
@@ -658,9 +662,15 @@ describeUnixSocket('runDaemonHost lifecycle', () => {
       expect(exitSpy).toHaveBeenCalledWith(0);
       expect(JSON.parse(await fs.readFile(metadataPath, 'utf8'))).toMatchObject({ pid: process.pid, socketPath });
 
+      // Metadata disappears before shutdown reaches process.exit; wait for the
+      // actual exit before restoring the spy, ignoring the earlier repair exit.
+      const shutdownComplete = new Promise<void>((resolve) => {
+        exitSpy.mockImplementation((() => resolve()) as never);
+      });
       const stopped = await requestDaemon<boolean>(socketPath, { id: 'stop', method: 'stop', params: {} });
       expect(stopped).toMatchObject({ id: 'stop', ok: true, result: true });
-      await waitForMissing(metadataPath);
+      await shutdownComplete;
+      await expect(fs.access(metadataPath)).rejects.toMatchObject({ code: 'ENOENT' });
       expect(exitSpy).toHaveBeenCalledWith(0);
     } finally {
       exitSpy.mockRestore();
@@ -933,16 +943,4 @@ async function requestDaemon<T>(socketPath: string, request: DaemonRequest, spli
     socket.once('end', () => resolve(JSON.parse(response) as DaemonResponse<T>));
     socket.once('error', reject);
   });
-}
-
-async function waitForMissing(filePath: string): Promise<void> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    try {
-      await fs.access(filePath);
-    } catch {
-      return;
-    }
-    await new Promise<void>((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error(`Timed out waiting for ${filePath} to be removed.`);
 }

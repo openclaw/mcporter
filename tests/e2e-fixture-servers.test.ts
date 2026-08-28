@@ -13,9 +13,9 @@ import { Client as LegacyClient } from '@modelcontextprotocol/sdk/client/index.j
 import { StreamableHTTPClientTransport as LegacyHttpTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ServerDefinition } from '../src/config.js';
-import { waitForChildExit } from '../src/process-utils.js';
 import { createRuntime } from '../src/runtime.js';
 import { makeShortTempDir } from './fixtures/test-helpers.js';
+import { closeFixtureResources, stopFixtureChild as stopChild } from './helpers/fixture-lifecycle.js';
 import { budget } from './helpers/timing.js';
 
 // These tests spawn the real CLI repeatedly, and Windows pays a far higher
@@ -66,8 +66,7 @@ beforeAll(async () => {
 }, budget(20_000));
 
 afterAll(async () => {
-  await delayedLegacyHeadersProxy.close();
-  await Promise.allSettled([...spawnedChildren].map((child) => stopChild(child)));
+  await closeFixtureResources(delayedLegacyHeadersProxy, spawnedChildren);
 });
 
 // Each real CLI invocation over stdio owns a fresh fixture process. Keep the
@@ -599,17 +598,6 @@ function trackChild(child: ChildProcess): ChildProcess {
   spawnedChildren.add(child);
   child.once('exit', () => spawnedChildren.delete(child));
   return child;
-}
-
-async function stopChild(child: ChildProcess | undefined): Promise<void> {
-  if (!child || child.exitCode !== null || child.signalCode !== null) return;
-  child.kill('SIGTERM');
-  try {
-    await waitForChildExit(child, budget(2_000));
-  } catch {
-    child.kill('SIGKILL');
-    await waitForChildExit(child, budget(2_000)).catch(() => {});
-  }
 }
 
 async function readDaemonLogs(root: string): Promise<string> {

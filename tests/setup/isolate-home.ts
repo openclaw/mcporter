@@ -33,6 +33,10 @@ process.env.XDG_DATA_HOME = path.join(root, '.local', 'share');
 process.env.XDG_STATE_HOME = path.join(root, '.local', 'state');
 process.env.XDG_CACHE_HOME = path.join(root, '.cache');
 
+// tsx indexes its shared disk cache at startup. Keep fixture transforms in memory
+// so unrelated projects' cache sizes cannot consume the subprocess deadlines.
+process.env.TSX_DISABLE_CACHE = '1';
+
 afterAll(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
