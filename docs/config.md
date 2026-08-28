@@ -77,6 +77,8 @@ Rules:
 
 Use `--scope home|project` with `mcporter config add` to pick the write target explicitly. `project` is always the default (creating `config/mcporter.json` if needed); `home` writes to the XDG config path when `XDG_CONFIG_HOME` is set, otherwise `~/.mcporter/mcporter.json`, even when a project config is present. `--persist <path>` still takes precedence when you need a custom file.
 
+`config add`, `config remove`, and `config import --copy` preserve supported unrelated top-level settings, including `daemonIdleTimeoutMs` and `daemon_idle_timeout_ms` as written, along with the `imports` list and unaffected server entries. Adding an existing server name or copying an import with a colliding name replaces the whole server entry rather than patching individual fields; omitted fields from the old entry are not retained.
+
 ### `mcporter config list [filter]`
 
 - Shows **local** entries by default. Pass `--source import` to list imported editor configs, or `--json` for machine output.

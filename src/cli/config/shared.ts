@@ -19,6 +19,7 @@ export type ConfigLocationSummary = {
 
 export function cloneConfig(config: RawConfig): RawConfig {
   return {
+    ...config,
     mcpServers: config.mcpServers ? { ...config.mcpServers } : {},
     imports: config.imports ? [...config.imports] : undefined,
   };

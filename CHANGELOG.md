@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### CLI
+
+- Preserve top-level daemon idle timeout settings when adding, removing, or copying config server entries.
+
 ### Maintenance
 
 - Refresh runtime, build, test, and lint dependencies plus GitHub Actions caching while preserving the 48-hour dependency release-age policy.
