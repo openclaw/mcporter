@@ -4,6 +4,8 @@
 
 ### CLI
 
+- Preserve dotted tool names and HTTP selector query parameters, including configured-server headers and OAuth settings. (PR #333, thanks @Yigtwxx)
+- Generate valid, distinct flags and property accesses for unusual schema names, preserve nullable-array item types, and normalize output schema titles into TypeScript identifiers. (PR #332, thanks @Yigtwxx)
 - Preserve top-level daemon idle timeout settings when adding, removing, or copying config server entries.
 
 ### Maintenance

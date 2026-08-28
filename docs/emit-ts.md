@@ -27,6 +27,10 @@ mcporter emit-ts <server> --out linear-client.ts \
   creates.
 - `--include-optional` mirrors `mcporter list --all-parameters`, ensuring every
   parameter is shown even when optional.
+- Output schema titles are normalized to TypeScript identifiers (`Search Results`
+  becomes `SearchResults`, and `class` becomes `Class`). Titles that cannot form
+  an identifier fall back to the schema's structural display type. Named return
+  types still need their corresponding declarations in the consuming project.
 
 Outputs overwrite existing files automatically so you can regenerate artifacts
 whenever the server schema changes.

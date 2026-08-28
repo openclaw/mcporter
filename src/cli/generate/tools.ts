@@ -1,3 +1,4 @@
+import { Option } from 'commander';
 import type { ServerToolInfo } from '../../runtime.js';
 
 export interface ToolMetadata {
@@ -102,17 +103,20 @@ export function extractOptions(tool: ServerToolInfo): GeneratedOption[] {
   // Flatten schema properties into Commander-friendly option descriptors.
   const properties = record.properties as Record<string, unknown>;
   const requiredList = Array.isArray(record.required) ? (record.required as string[]) : [];
-  return Object.entries(properties).map(([property, descriptor]) => {
+  const entries = Object.entries(properties);
+  const cliNames = assignCliNames(entries.map(([property]) => property));
+  return entries.map(([property, descriptor], index) => {
+    const cliName = cliNames[index] as string;
     const type = inferType(descriptor);
     const arrayItemType = type === 'array' ? inferArrayItemType(descriptor) : undefined;
     const enumValues = getEnumValues(descriptor);
     const defaultValue = getDescriptorDefault(descriptor);
     const formatInfo = getDescriptorFormatHint(descriptor);
-    const placeholder = buildPlaceholder(property, type, enumValues, formatInfo?.slug);
+    const placeholder = buildPlaceholder(cliName, type, enumValues, formatInfo?.slug);
     const exampleValue = buildExampleValue(property, type, enumValues, defaultValue, arrayItemType);
     return {
       property,
-      cliName: toCliOption(property),
+      cliName,
       description: getDescriptorDescription(descriptor),
       required: requiredList.includes(property),
       type,
@@ -126,6 +130,31 @@ export function extractOptions(tool: ServerToolInfo): GeneratedOption[] {
   });
 }
 
+const EMPTY_CLI_OPTION_STEM = 'option';
+
+// Reserve storage keys too: distinct flags such as --query-2 and --query2 both use query2.
+function assignCliNames(properties: string[]): string[] {
+  const natural = properties.map((property) => toCliOption(property));
+  const claimed = new Set(natural.map(toCliOptionKey));
+  const used = new Set<string>();
+  return natural.map((base) => {
+    let name = base;
+    let suffix = 2;
+    while (used.has(toCliOptionKey(name)) || (name !== base && claimed.has(toCliOptionKey(name)))) {
+      name = `${base}-${suffix}`;
+      suffix += 1;
+    }
+    used.add(toCliOptionKey(name));
+    return name;
+  });
+}
+
+export function toCliOptionKey(cliName: string): string {
+  const option = new Option(`--${cliName} <value>`);
+  option.negate = false;
+  return option.attributeName();
+}
+
 export function getEnumValues(descriptor: unknown): string[] | undefined {
   if (!descriptor || typeof descriptor !== 'object') {
     return undefined;
@@ -135,7 +164,7 @@ export function getEnumValues(descriptor: unknown): string[] | undefined {
     const values = record.enum.filter((entry): entry is string => typeof entry === 'string');
     return values.length > 0 ? values : undefined;
   }
-  if (record.type === 'array' && typeof record.items === 'object' && record.items !== null) {
+  if (isArraySchema(record) && typeof record.items === 'object' && record.items !== null) {
     const nested = record.items as Record<string, unknown>;
     if (Array.isArray(nested.enum)) {
       const values = nested.enum.filter((entry): entry is string => typeof entry === 'string');
@@ -165,7 +194,7 @@ export function buildPlaceholder(
   enumValues?: string[],
   formatSlug?: string
 ): string {
-  const normalized = property.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`).replace(/_/g, '-');
+  const normalized = toCliOption(property);
   if (enumValues && enumValues.length > 0) {
     // Enum members can describe an array's items, and the generated parser splits those
     // flags on commas, so keep the multi-value hint next to the choices.
@@ -340,12 +369,18 @@ export function inferType(descriptor: unknown): GeneratedOption['type'] {
   return 'unknown';
 }
 
+// `type` may be a union such as `["array", "null"]`, so ask inferType instead of comparing the
+// raw value: these container checks have to agree with the type the option is generated with.
+function isArraySchema(record: Record<string, unknown>): boolean {
+  return inferType(record) === 'array';
+}
+
 export function inferArrayItemType(descriptor: unknown): GeneratedOption['arrayItemType'] {
   if (!descriptor || typeof descriptor !== 'object') {
     return 'unknown';
   }
   const record = descriptor as Record<string, unknown>;
-  if (record.type !== 'array' || !record.items || typeof record.items !== 'object') {
+  if (!isArraySchema(record) || !record.items || typeof record.items !== 'object') {
     return 'unknown';
   }
   const items = record.items as Record<string, unknown>;
@@ -423,7 +458,20 @@ export function toProxyMethodName(toolName: string): string {
 }
 
 export function toCliOption(property: string): string {
-  return property.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`).replace(/_/g, '-');
+  const normalized = property
+    .replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`)
+    .replace(/_/g, '-')
+    // Commander derives an option's storage key by splitting the flag on dashes and
+    // upper-casing each segment, so any empty segment - a run of separators in `foo__bar`,
+    // a leading one from `Query`, a trailing one from `foo_` - makes `addOption` throw while
+    // the generated command is being built.
+    .replace(/-{2,}/g, '-')
+    .replace(/^-|-$/g, '');
+  // Every character of a property such as `___` normalizes away, and commander rejects the
+  // `--` that name would spell. The stem stands in for the whole name, so `assignCliNames`
+  // sees it before it hands out suffixes and a schema declaring `option` beside `___` still
+  // gets two distinct flags.
+  return normalized === '' ? EMPTY_CLI_OPTION_STEM : normalized;
 }
 
 export const toolsTestHelpers = {

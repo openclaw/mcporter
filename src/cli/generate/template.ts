@@ -8,7 +8,7 @@ import { buildToolDoc, type ToolOptionDoc } from '../list-detail-helpers.js';
 import { markExecutable } from './fs-helpers.js';
 import { renderEmbeddedHelpSource } from './template-help.js';
 import type { GeneratedOption, ToolMetadata } from './tools.js';
-import { buildEmbeddedSchemaMap } from './tools.js';
+import { buildEmbeddedSchemaMap, toCliOptionKey } from './tools.js';
 import { stableJsonStringify } from '../../stable-json.js';
 
 export interface TemplateInput {
@@ -72,7 +72,7 @@ export function renderTemplate({
   const imports = [
     "import path from 'node:path';",
     "import { fileURLToPath } from 'node:url';",
-    "import { Command } from 'commander';",
+    "import { Command, Option } from 'commander';",
     "import { createGeneratedKeepAliveRuntime, createRuntime, createServerProxy, handleDaemonCli } from 'mcporter';",
     "import { createCallResult } from 'mcporter';",
   ].join('\n');
@@ -218,6 +218,18 @@ function unwrapRawPayload(value: unknown): unknown {
 \t\treturn (value as { raw: unknown }).raw;
 \t}
 \treturn value;
+}
+
+function defineOption(flags: string, description: string, parser?: (value: string) => unknown) {
+\tconst option = new Option(flags, description);
+\tif (parser) {
+\t\toption.argParser(parser);
+\t}
+\t// Flag names come from schema property names, so a leading no- is part of the name.
+\t// Commander would otherwise read it as a negation, store the value under the stripped
+\t// name and default it to true whenever the flag is absent.
+\toption.negate = false;
+\treturn option;
 }
 
 function parseArrayOption(value: string, itemType: 'string' | 'number' | 'boolean' | 'json') {
@@ -423,6 +435,13 @@ if (process.env.MCPORTER_DISABLE_AUTORUN !== '1') {
 `;
 }
 
+// Commander stores each option under the camelCase form of its flag, and a schema property
+// name can legally produce a key no property access can spell - `2fa` is stored under `2fa`,
+// and `cmdOpts.2fa` does not parse. Those keys are read through a subscript instead.
+function propertyAccess(target: string, key: string): string {
+  return /^[A-Za-z_$][\w$]*$/.test(key) ? `${target}.${key}` : `${target}[${JSON.stringify(key)}]`;
+}
+
 export function renderToolCommand(
   tool: ToolMetadata,
   defaultTimeout: number,
@@ -445,32 +464,19 @@ export function renderToolCommand(
     });
   const buildArgs = tool.options
     .map((option) => {
-      // Commander.js camelcases flag names (e.g. --relative-path => relativePath).
-      const camelCaseProp = option.cliName
-        .split('-')
-        .filter(Boolean)
-        .map((segment, index) => (index === 0 ? segment : `${segment.charAt(0).toUpperCase()}${segment.slice(1)}`))
-        .join('');
-      const source = `cmdOpts.${camelCaseProp}`;
-      return `if (${source} !== undefined) args.${option.property} = ${source};`;
+      const source = propertyAccess('cmdOpts', toCliOptionKey(option.cliName));
+      return `if (${source} !== undefined) ${propertyAccess('args', option.property)} = ${source};`;
     })
     .join('\n\t\t');
   const requiredChecks = tool.options
     .filter((option) => option.required)
-    .map((option) => {
-      const camelCaseProp = option.cliName
-        .split('-')
-        .filter(Boolean)
-        .map((segment, index) => (index === 0 ? segment : `${segment.charAt(0).toUpperCase()}${segment.slice(1)}`))
-        .join('');
-      return { option, camelCaseProp };
-    });
+    .map((option) => ({ option, camelCaseProp: toCliOptionKey(option.cliName) }));
   const requiredValidation =
     requiredChecks.length > 0
       ? `const missingRequired = [${requiredChecks
           .map(
             ({ option, camelCaseProp }) =>
-              `{ value: cmdOpts.${camelCaseProp}, flag: ${JSON.stringify(`--${option.cliName}`)} }`
+              `{ value: ${propertyAccess('cmdOpts', camelCaseProp)}, flag: ${JSON.stringify(`--${option.cliName}`)} }`
           )
           .join(
             ', '
@@ -525,9 +531,9 @@ ${aliasSnippet ? `\t${aliasSnippet}` : ''}\t.action(async (cmdOpts) => {
 
 function renderOption(optionDoc: ToolOptionDoc): string {
   const parser = optionParser(optionDoc.option);
-  return `\t.option(${JSON.stringify(optionDoc.flagLabel)}, ${JSON.stringify(optionDoc.description)}${
+  return `\t.addOption(defineOption(${JSON.stringify(optionDoc.flagLabel)}, ${JSON.stringify(optionDoc.description)}${
     parser ? `, ${parser}` : ''
-  })`;
+  }))`;
 }
 
 function computeRelativeStdioCwd(definition: ServerDefinition, outputPath?: string): string | null {

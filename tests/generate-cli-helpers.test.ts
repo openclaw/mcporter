@@ -1,3 +1,5 @@
+import { Command, Option } from 'commander';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import {
   buildExampleValue,
@@ -16,6 +18,7 @@ import {
   toCliOption,
   toProxyMethodName,
 } from '../src/cli/generate/tools.js';
+import { renderToolCommand } from '../src/cli/generate/template.js';
 import type { ServerToolInfo } from '../src/runtime.js';
 
 describe('generate helpers', () => {
@@ -346,5 +349,239 @@ describe('generate helpers', () => {
         placeholder: '<fields>',
       })
     ).toBe('{"key":"value"}');
+  });
+});
+
+describe('flag names stay valid commander flags', () => {
+  it('does not leak a leading dash from an uppercase property name', () => {
+    expect(toCliOption('Query')).toBe('query');
+    expect(toCliOption('QueryText')).toBe('query-text');
+    expect(buildPlaceholder('Query', 'string')).toBe('<query>');
+    expect(buildPlaceholder('Query', 'array', ['web', 'news'])).toBe('<query:web|news,...>');
+  });
+
+  it('keeps distinct flags for property names that only differ by the no- prefix', () => {
+    expect(toCliOption('no_cache')).toBe('no-cache');
+    expect(toCliOption('nocache')).toBe('nocache');
+    expect(buildPlaceholder('no_cache', 'boolean')).toBe('<no-cache:true|false>');
+  });
+
+  it('skips a suffix another property already spells', () => {
+    const names = extractOptions({
+      name: 'search',
+      inputSchema: {
+        type: 'object',
+        properties: { Query: { type: 'string' }, query: { type: 'string' }, query_2: { type: 'string' } },
+        required: [],
+      },
+    } as ServerToolInfo).map((option) => option.cliName);
+    expect(names).toEqual(['query', 'query-3', 'query-2']);
+  });
+
+  it('gives a property whose characters all normalize away a usable flag name', () => {
+    expect(toCliOption('___')).toBe('option');
+    expect(toCliOption('_')).toBe('option');
+    expect(buildPlaceholder('___', 'string')).toBe('<option>');
+  });
+
+  it('assigns the fallback stem before suffixing so every name stays a long flag', () => {
+    const names = extractOptions({
+      name: 'search',
+      inputSchema: {
+        type: 'object',
+        properties: { ___: { type: 'string' }, _: { type: 'boolean' }, option: { type: 'string' } },
+        required: [],
+      },
+    } as ServerToolInfo).map((option) => option.cliName);
+    expect(names).toEqual(['option', 'option-2', 'option-3']);
+  });
+
+  it('collapses a run of separators into a single dash', () => {
+    expect(toCliOption('foo__bar')).toBe('foo-bar');
+    expect(toCliOption('foo-_bar')).toBe('foo-bar');
+    expect(toCliOption('a__b__c')).toBe('a-b-c');
+    // An underscore in front of a capital spells the same run, and it is the shape a schema
+    // reaches by mixing the two conventions rather than by repeating one.
+    expect(toCliOption('filter_Query')).toBe('filter-query');
+    expect(buildPlaceholder('foo__bar', 'string')).toBe('<foo-bar>');
+  });
+
+  it('drops a trailing separator', () => {
+    expect(toCliOption('foo_')).toBe('foo');
+    expect(toCliOption('foo__')).toBe('foo');
+    // Every character still normalizing away keeps the stem rather than collapsing to nothing.
+    expect(toCliOption('_-_')).toBe('option');
+  });
+
+  it('keeps unaffected property names unchanged', () => {
+    expect(toCliOption('inputValue')).toBe('input-value');
+    expect(toCliOption('extra_path')).toBe('extra-path');
+    expect(toCliOption('nodes')).toBe('nodes');
+  });
+});
+
+function renderBlock(properties: Record<string, unknown>, required: string[]): string {
+  return renderToolCommand(
+    buildToolMetadata({ name: 'fetch', inputSchema: { type: 'object', properties, required } } as ServerToolInfo),
+    30_000,
+    'demo'
+  ).block;
+}
+
+// Mirrors defineOption in the generated module: mcporter derives flag names from schema
+// property names, so commander is told not to read a leading no- as a negation.
+function storedKey(flags: string): string {
+  const option = new Option(flags, 'Set the option.');
+  option.negate = false;
+  return option.attributeName();
+}
+
+// The generated block is spliced into a TypeScript module, so a flag name that cannot be
+// spelled as a property access has to be read through a subscript for the module to parse.
+function parseDiagnosticsOf(source: string): string[] {
+  const parsed = ts.createSourceFile('command.ts', source, ts.ScriptTarget.ES2022, false, ts.ScriptKind.TS);
+  const diagnostics = (parsed as { parseDiagnostics?: ts.Diagnostic[] }).parseDiagnostics ?? [];
+  return diagnostics.map((entry) => ts.flattenDiagnosticMessageText(entry.messageText, '\n'));
+}
+
+function emittedFlags(block: string): string[] {
+  return [...block.matchAll(/\.addOption\(defineOption\("([^"]+)"/g)].flatMap((match) => (match[1] ? [match[1]] : []));
+}
+
+describe('generated commands agree with commander', () => {
+  it('emits option flags commander accepts', () => {
+    const flags = emittedFlags(renderBlock({ Query: { type: 'string' } }, ['Query']));
+    expect(flags).toHaveLength(1);
+    for (const flag of flags) {
+      expect(() => new Option(flag, 'Set the option.')).not.toThrow();
+    }
+  });
+
+  it('gives every property its own flag when two spellings normalize onto one', () => {
+    const block = renderBlock(
+      {
+        Query: { type: 'string' },
+        query: { type: 'string' },
+        no_cache: { type: 'boolean' },
+        noCache: { type: 'boolean' },
+      },
+      ['Query']
+    );
+    const flags = emittedFlags(block);
+    expect(flags).toEqual([
+      '--query <query>',
+      '--query-2 <query-2>',
+      '--no-cache <no-cache:true|false>',
+      '--no-cache-2 <no-cache-2:true|false>',
+    ]);
+    // commander refuses a command that declares one flag twice, so the emitted set has to be
+    // free of duplicates before the generated module can even be loaded.
+    const command = new Command('search');
+    for (const flag of flags) {
+      const option = new Option(flag, 'Set the option.');
+      option.negate = false;
+      expect(() => command.addOption(option)).not.toThrow();
+    }
+    const properties = ['Query', 'query', 'no_cache', 'noCache'];
+    properties.forEach((property, index) => {
+      expect(block).toContain(`args.${property} = cmdOpts.${storedKey(flags[index] as string)}`);
+    });
+  });
+
+  it('emits a long flag for a property whose characters all normalize away', () => {
+    const block = renderBlock({ ___: { type: 'string' }, _: { type: 'boolean' } }, ['___']);
+    const flags = emittedFlags(block);
+    expect(flags).toEqual(['--option <option>', '--option-2 <option-2:true|false>']);
+    const command = new Command('fetch');
+    for (const flag of flags) {
+      const option = new Option(flag, 'Set the option.');
+      option.negate = false;
+      expect(() => command.addOption(option)).not.toThrow();
+    }
+    expect(block).toContain('args.___ = cmdOpts.option;');
+    expect(parseDiagnosticsOf(block)).toEqual([]);
+  });
+
+  it('registers a flag for a property that repeats or trails a separator', () => {
+    const block = renderBlock(
+      { foo__bar: { type: 'string' }, baz_: { type: 'string' }, filter_Query: { type: 'string' } },
+      ['foo__bar']
+    );
+    const flags = emittedFlags(block);
+    expect(flags).toEqual(['--foo-bar <foo-bar>', '--baz <baz>', '--filter-query <filter-query>']);
+    // commander derives the storage key while addOption registers the flag, so an empty
+    // segment left by a dash run only surfaces here - constructing the Option alone passes.
+    const command = new Command('fetch');
+    for (const flag of flags) {
+      const option = new Option(flag, 'Set the option.');
+      option.negate = false;
+      expect(() => command.addOption(option)).not.toThrow();
+    }
+    expect(block).toContain('args.foo__bar = cmdOpts.fooBar;');
+    expect(block).toContain('args.baz_ = cmdOpts.baz;');
+    expect(parseDiagnosticsOf(block)).toEqual([]);
+  });
+
+  it('keeps distinct flags for two spellings that collapse onto one', () => {
+    const names = extractOptions({
+      name: 'search',
+      inputSchema: {
+        type: 'object',
+        properties: { foo__bar: { type: 'string' }, foo_bar: { type: 'string' } },
+        required: [],
+      },
+    } as ServerToolInfo).map((option) => option.cliName);
+    expect(names).toEqual(['foo-bar', 'foo-bar-2']);
+  });
+
+  it('emits a parseable command for a flag commander stores under a non-identifier key', () => {
+    const block = renderBlock({ '2fa': { type: 'string' } }, ['2fa']);
+    expect(emittedFlags(block)).toEqual(['--2fa <2fa>']);
+    expect(block).toContain('args["2fa"] = cmdOpts["2fa"];');
+    expect(parseDiagnosticsOf(block)).toEqual([]);
+  });
+
+  it('reads every option from the key commander stores it under', () => {
+    const block = renderBlock(
+      { no_cache: { type: 'boolean' }, nocache: { type: 'boolean' }, url: { type: 'string' } },
+      ['no_cache', 'url']
+    );
+    const flags = emittedFlags(block);
+    expect(flags).toHaveLength(3);
+    expect(new Set(flags).size).toBe(3);
+    for (const flag of flags) {
+      expect(block).toContain(`cmdOpts.${storedKey(flag)}`);
+    }
+  });
+});
+
+function buildSourcesOption(type: unknown): unknown {
+  return extractOptions({
+    name: 'search',
+    inputSchema: {
+      type: 'object',
+      properties: { sources: { type, items: { type: 'string', enum: ['web', 'news'] } } },
+      required: [],
+    },
+  } as ServerToolInfo)[0];
+}
+
+describe('nullable array schemas keep their array shape', () => {
+  const nullableEnumArray = {
+    type: ['array', 'null'],
+    items: { type: 'string', enum: ['web', 'news'] },
+  };
+
+  it('resolves item types through a nullable array container', () => {
+    expect(inferArrayItemType(nullableEnumArray)).toBe('string');
+    expect(inferArrayItemType({ type: ['array', 'null'], items: { type: 'number' } })).toBe('number');
+  });
+
+  it('resolves enum members through a nullable array container', () => {
+    expect(getEnumValues(nullableEnumArray)).toEqual(['web', 'news']);
+  });
+
+  it('renders the same option for a nullable array as for a plain array', () => {
+    expect(buildSourcesOption(['array', 'null'])).toEqual(buildSourcesOption('array'));
   });
 });

@@ -14,6 +14,8 @@ read_when:
 - Default timeout for tool calls is 30 seconds, overridable via `--timeout`.
 - Runtime flag remains (`--runtime bun`) to tailor shebang/usage instructions, but Node.js is the default.
 - Generated CLI embeds the resolved server definition and always targets that snapshot (no external `--config` or `--server` overrides at runtime).
+- Schema property names become long flags: `QueryText` becomes `--query-text`, repeated separators collapse, and names made only of separators use `--option`. Collisions receive numeric suffixes in schema order, skipping both existing flags and Commander storage keys. Use the generated help to find the assigned spelling; calls retain the original JSON property names.
+- A schema flag such as `--no-cache` takes an explicit value and is not a negated Commander option. Nullable arrays keep their item types and enum choices.
 
 ## Usage Examples
 

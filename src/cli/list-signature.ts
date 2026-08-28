@@ -153,8 +153,85 @@ function inferReturnTypeName(schema: unknown): string | undefined {
   return inferSchemaDisplayType(schema as Record<string, unknown>);
 }
 
+const TYPE_NAME_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+// A keyword is never a type reference: most of them fail to parse in a type position
+// (`Promise<class>`, `Promise<keyof>`), and the ones TypeScript reads as keyword types
+// (`Promise<void>`, `Promise<string>`) no longer describe what the title said. Both spellings
+// have to be folded like any other non-identifier. The set is measured against the parser rather
+// than assumed: `tests/emit-ts.test.ts` renders a title for every TypeScript keyword and asserts
+// the emitted module still parses.
+const RESERVED_TYPE_NAMES = new Set([
+  'any',
+  'await',
+  'bigint',
+  'boolean',
+  'break',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'debugger',
+  'default',
+  'delete',
+  'do',
+  'else',
+  'enum',
+  'export',
+  'extends',
+  'false',
+  'finally',
+  'for',
+  'function',
+  'if',
+  'import',
+  'in',
+  'infer',
+  'instanceof',
+  'keyof',
+  'never',
+  'new',
+  'null',
+  'number',
+  'object',
+  'readonly',
+  'return',
+  'string',
+  'super',
+  'switch',
+  'symbol',
+  'this',
+  'throw',
+  'true',
+  'try',
+  'typeof',
+  'undefined',
+  'unique',
+  'unknown',
+  'var',
+  'void',
+  'while',
+  'with',
+  'yield',
+]);
+
+// A schema title is prose, but this value is emitted as a TypeScript type name by `emit-ts`,
+// so anything that is not already an identifier has to be folded into one.
+function toTypeName(title: string): string | undefined {
+  if (TYPE_NAME_PATTERN.test(title) && !RESERVED_TYPE_NAMES.has(title)) {
+    return title;
+  }
+  const joined = title
+    .split(/[^A-Za-z0-9_$]+/)
+    .filter(Boolean)
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+    .join('');
+  return TYPE_NAME_PATTERN.test(joined) ? joined : undefined;
+}
+
 function inferSchemaDisplayType(descriptor: Record<string, unknown>): string {
-  const title = typeof descriptor.title === 'string' ? descriptor.title.trim() : undefined;
+  const title = typeof descriptor.title === 'string' ? toTypeName(descriptor.title.trim()) : undefined;
   if (title) {
     return title;
   }
