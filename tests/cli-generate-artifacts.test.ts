@@ -235,7 +235,7 @@ describe('artifact implementation behavior', () => {
       if (String(filePath).endsWith(path.join('jsonc-parser', 'package.json'))) {
         return '{}';
       }
-      return originalReadFileSync(filePath, options as never);
+      return originalReadFileSync(filePath, options);
     });
     expect(artifactsTestHooks.resolveLocalDependency('jsonc-parser')).toBeDefined();
     readSpy.mockRestore();
