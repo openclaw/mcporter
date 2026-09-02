@@ -2,6 +2,10 @@
 
 ## [0.13.9] - Unreleased
 
+### OAuth
+
+- Swallow spawn errors from the macOS `open` and Windows `rundll32` browser helpers so a missing helper cannot crash `mcporter auth`.
+
 ### Maintenance
 
 - Refresh runtime schema validation and generated CLI bundling dependencies, including Zod's reserved-key parsing fixes, while preserving the 48-hour dependency release-age policy.
