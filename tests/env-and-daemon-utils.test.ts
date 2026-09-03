@@ -76,6 +76,23 @@ describe('environment helpers', () => {
       withEnvOverrides({ MCPORTER_EXISTING: '${env:MCPORTER_EXISTING}' }, async () => 'unreachable')
     ).rejects.toThrow("Unsupported environment placeholder '${env:MCPORTER_EXISTING}'");
   });
+
+  it.each([
+    ['${env:MCPORTER_REQUIRED}', 'Unsupported environment placeholder'],
+    ['$env:MCPORTER_REQUIRED', "Environment variable 'MCPORTER_REQUIRED' is required"],
+  ])('cleans up earlier overrides when setup rejects %s', async (invalidValue, message) => {
+    delete process.env.MCPORTER_TEMP;
+    delete process.env.MCPORTER_REQUIRED;
+    delete process.env.MCPORTER_INVALID;
+    const task = vi.fn();
+
+    await expect(
+      withEnvOverrides({ MCPORTER_TEMP: 'temporary', MCPORTER_INVALID: invalidValue }, task)
+    ).rejects.toThrow(message);
+
+    expect(task).not.toHaveBeenCalled();
+    expect(process.env.MCPORTER_TEMP).toBeUndefined();
+  });
 });
 
 describe('daemon request utilities', () => {

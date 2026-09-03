@@ -106,20 +106,20 @@ export async function withEnvOverrides<T>(
   }
 
   const applied: string[] = [];
-  for (const [key, rawValue] of Object.entries(envOverrides)) {
-    rejectUnsupportedBracedEnvPlaceholder(rawValue);
-    if (process.env[key]) {
-      continue;
-    }
-    const resolved = resolveEnvValue(rawValue);
-    if (resolved === '') {
-      continue;
-    }
-    process.env[key] = resolved;
-    applied.push(key);
-  }
-
   try {
+    for (const [key, rawValue] of Object.entries(envOverrides)) {
+      rejectUnsupportedBracedEnvPlaceholder(rawValue);
+      if (process.env[key]) {
+        continue;
+      }
+      const resolved = resolveEnvValue(rawValue);
+      if (resolved === '') {
+        continue;
+      }
+      process.env[key] = resolved;
+      applied.push(key);
+    }
+
     return await fn();
   } finally {
     for (const key of applied) {
