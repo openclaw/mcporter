@@ -42,6 +42,46 @@ describe('openExternal', () => {
     expect(child.unref).toHaveBeenCalled();
   });
 
+  it('swallows open error events on darwin', () => {
+    const child = new EventEmitter() as EventEmitter & { unref: () => void };
+    child.unref = vi.fn();
+    const launch = vi.fn(() => child as unknown as ReturnType<typeof import('node:child_process').spawn>);
+
+    expect(() =>
+      __oauthInternals.openExternal(
+        'https://example.com/auth',
+        'darwin',
+        launch as unknown as typeof import('node:child_process').spawn
+      )
+    ).not.toThrow();
+    expect(launch).toHaveBeenCalledWith('open', ['https://example.com/auth'], {
+      stdio: 'ignore',
+      detached: true,
+    });
+    expect(child.listenerCount('error')).toBeGreaterThan(0);
+    expect(() => child.emit('error', Object.assign(new Error('ENOENT'), { code: 'ENOENT' }))).not.toThrow();
+    expect(child.unref).toHaveBeenCalled();
+  });
+
+  it('swallows rundll32 error events on win32', () => {
+    const child = new EventEmitter() as EventEmitter & { unref: () => void };
+    child.unref = vi.fn();
+    const launch = vi.fn(() => child as unknown as ReturnType<typeof import('node:child_process').spawn>);
+    const url = 'https://example.com/auth?client_id=abc&redirect_uri=http://127.0.0.1:1234/callback';
+
+    expect(() =>
+      __oauthInternals.openExternal(url, 'win32', launch as unknown as typeof import('node:child_process').spawn)
+    ).not.toThrow();
+    expect(launch).toHaveBeenCalledWith('rundll32', ['url.dll,FileProtocolHandler', url], {
+      stdio: 'ignore',
+      detached: true,
+      windowsHide: true,
+    });
+    expect(child.listenerCount('error')).toBeGreaterThan(0);
+    expect(() => child.emit('error', Object.assign(new Error('ENOENT'), { code: 'ENOENT' }))).not.toThrow();
+    expect(child.unref).toHaveBeenCalled();
+  });
+
   it('opens the browser via rundll32 FileProtocolHandler on Windows (no cmd.exe)', () => {
     const child = new EventEmitter() as EventEmitter & { unref: () => void };
     child.unref = vi.fn();

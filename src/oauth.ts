@@ -122,6 +122,7 @@ function openExternal(url: string, platform: NodeJS.Platform = process.platform,
   try {
     if (platform === 'darwin') {
       const child = launch('open', [url], { stdio, detached: true });
+      child.on('error', () => {}); // swallow ENOENT when `open` is missing
       child.unref();
     } else if (platform === 'win32') {
       // Shell-free: do not pass the OAuth URL through cmd.exe. Command metacharacters
@@ -132,6 +133,7 @@ function openExternal(url: string, platform: NodeJS.Platform = process.platform,
         detached: true,
         windowsHide: true,
       });
+      child.on('error', () => {}); // swallow ENOENT when rundll32 is missing
       child.unref();
     } else {
       try {

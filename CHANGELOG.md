@@ -6,8 +6,13 @@
 
 - Remove temporary environment overrides when a later value fails validation or resolution, preventing failed setup from affecting subsequent MCP connections. (PR #342, thanks @oodadoudou)
 
+### OAuth
+
+- Keep OAuth running when macOS `open` or Windows `rundll32` cannot start, so the printed authorization URL remains usable. (PR #341, thanks @SebTardif)
+
 ### Maintenance
 
+- Refresh schema validation, query parsing, and development tools, including Zod's default-factory cycle-walk fix and bounded `tsx` transform caching, while preserving Node 24 support and the 48-hour dependency release-age policy.
 - Refresh runtime schema validation and generated CLI bundling dependencies, including Zod's reserved-key parsing fixes, while preserving the 48-hour dependency release-age policy.
 
 ## [0.13.8] - 2026-08-28
