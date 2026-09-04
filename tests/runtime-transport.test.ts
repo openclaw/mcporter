@@ -189,11 +189,10 @@ describe('createClientContext (HTTP)', () => {
     const onTransportCreated = vi.fn();
 
     await expect(createClientContext(definition, logger, clientInfo, { onTransportCreated })).rejects.toThrow(
-      "relay policy 'require'"
+      'Existing Chrome owner conflict'
     );
     expect(onTransportCreated).not.toHaveBeenCalled();
-    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('"route":"unavailable"'));
-    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('"reason":"missing-credential"'));
+    expect(logger.info).not.toHaveBeenCalled();
   });
 
   it('falls back to SSE when primary fails with a legacy transport mismatch (405)', async () => {
@@ -444,7 +443,7 @@ describe('createClientContext (HTTP)', () => {
     });
 
     expect(mocks.createOAuthSession).not.toHaveBeenCalled();
-    expect(mocks.readCachedAccessToken).toHaveBeenCalledWith(definition, logger);
+    expect(mocks.readCachedAccessToken).toHaveBeenCalledWith(expect.objectContaining(definition), logger);
   });
 
   it('preserves explicit Authorization headers for refreshable bearer HTTP servers', async () => {

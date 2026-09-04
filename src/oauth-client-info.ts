@@ -26,7 +26,7 @@ export function resolveOAuthClientSecret(
   options: { rejectBlank?: boolean } = {}
 ): string | undefined {
   if (definition.oauthClientSecretEnv) {
-    const value = process.env[definition.oauthClientSecretEnv];
+    const value = (definition.env ?? process.env)[definition.oauthClientSecretEnv];
     if (!value || (options.rejectBlank && value.trim().length === 0)) {
       throw new Error(`Environment variable '${definition.oauthClientSecretEnv}' is required for OAuth client secret.`);
     }

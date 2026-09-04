@@ -1,7 +1,8 @@
 import type { ChromeDevtoolsRelayDecision } from '../chrome-devtools-relay.js';
 import { normalizeTimeout } from '../runtime/utils.js';
 
-export const DAEMON_PROTOCOL_VERSION = 2;
+export const DAEMON_PROTOCOL_VERSION = 3;
+export const MAX_DAEMON_PAYLOAD_BYTES = 4 * 1024 * 1024;
 export const DAEMON_OPERATION_TIMEOUT_CODE = 'operation_timeout';
 export const DAEMON_OAUTH_FLOW_ERROR_CODE = 'oauth_flow_error';
 export const DAEMON_PROGRESS_INTERVAL_MS = 250;
@@ -30,6 +31,8 @@ export function resolveProgressTiming(requestedIdleTimeoutMs: number): {
 }
 
 export type DaemonRequestMethod =
+  | 'registerView'
+  | 'releaseView'
   | 'callTool'
   | 'listTools'
   | 'listResources'
@@ -45,6 +48,8 @@ export interface DaemonRequest<T extends DaemonRequestMethod = DaemonRequestMeth
   /** Protocol v2 clients opt in to progress frames by sending both fields. */
   readonly protocolVersion?: number;
   readonly progressIntervalMs?: number;
+  readonly view?: string;
+  readonly generation?: string;
 }
 
 export interface DaemonResponse<T = unknown> {
@@ -152,6 +157,9 @@ export interface CloseServerParams {
 }
 
 export interface StatusResult {
+  readonly generation?: string;
+  readonly views?: number;
+  readonly browserOwner?: { readonly connectionId: string; readonly state: string };
   readonly pid: number;
   /** Absent on daemons predating progress framing. */
   readonly protocolVersion?: number;
@@ -169,10 +177,17 @@ export interface StatusResult {
   readonly oauthNoBrowser?: boolean;
   readonly socketPath: string;
   readonly logPath?: string;
+  readonly idleTimeoutMs?: number;
+  readonly idleShutdownBlocked?: boolean;
   readonly servers: Array<{
     readonly name: string;
     readonly connected: boolean;
     readonly lastUsedAt?: number;
+    readonly activeCalls?: number;
+    readonly connectionId?: string;
+    readonly connectionGeneration?: number;
+    readonly idleTimeoutMs?: number;
+    readonly idleBlocked?: 'browser-owner' | 'unknown-outcome';
     readonly chromeDevtoolsRelay?: ChromeDevtoolsRelayDecision;
   }>;
 }

@@ -552,7 +552,7 @@ async function refreshBearerToken(definition: ServerDefinition, refreshToken: st
   if (!refresh) {
     throw new Error('Missing refresh configuration.');
   }
-  const clientId = readEnvOrConfig(refresh.clientIdEnv, definition.oauthClientId);
+  const clientId = readEnvOrConfig(refresh.clientIdEnv, definition.oauthClientId, definition.env);
   const method = refresh.clientAuthMethod ?? definition.oauthTokenEndpointAuthMethod ?? 'client_secret_basic';
   const clientSecret = method === 'none' ? undefined : readClientSecret(definition, refresh.clientSecretEnv);
   const body = new URLSearchParams({
@@ -636,11 +636,15 @@ function coerceExpiresIn(value: unknown): Pick<OAuthTokens, 'expires_in'> {
   return {};
 }
 
-function readEnvOrConfig(envName: string | undefined, fallback: string | undefined): string | undefined {
+function readEnvOrConfig(
+  envName: string | undefined,
+  fallback: string | undefined,
+  env: NodeJS.ProcessEnv = process.env
+): string | undefined {
   if (!envName) {
     return fallback;
   }
-  const value = process.env[envName];
+  const value = env[envName];
   if (value === undefined || value.trim().length === 0) {
     throw new Error(`Environment variable '${envName}' is required for bearer token refresh.`);
   }
@@ -656,7 +660,7 @@ function readClientSecret(
   refreshClientSecretEnv: string | undefined
 ): string | undefined {
   if (refreshClientSecretEnv) {
-    return readEnvOrConfig(refreshClientSecretEnv, undefined);
+    return readEnvOrConfig(refreshClientSecretEnv, undefined, definition.env);
   }
   return resolveOAuthClientSecret(definition, { rejectBlank: true });
 }

@@ -345,6 +345,7 @@ async function ensureRuntime() {
 	const server = normalizeEmbeddedServer(embeddedServer);
 	const baseRuntime = await createRuntime({
 		servers: [server as any],
+		clientInfo: { name: 'mcporter', version: ${JSON.stringify(MCPORTER_VERSION)} },
 	});
 	return await createGeneratedKeepAliveRuntime(baseRuntime, server as any);
 }
@@ -401,10 +402,7 @@ function parseGeneratedDaemonInvocation(rawArgs: string[]): { args: string[]; co
 \tif (args[0] !== 'daemon') {
 \t\treturn null;
 \t}
-\tif (!configPath) {
-\t\tthrow new Error('Generated daemon invocation is missing --config.');
-\t}
-\treturn { args: args.slice(1), configPath, rootDir };
+\treturn { args: args.slice(1), configPath: configPath ?? '', rootDir };
 }
 
 async function runCli(): Promise<void> {

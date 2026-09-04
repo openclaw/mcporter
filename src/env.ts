@@ -7,11 +7,10 @@ const UNSUPPORTED_BRACED_ENV_PATTERN = /\$\{env:[^}]*\}/;
 const ENV_DIRECT_PREFIX = '$env:';
 
 // expandHome replaces a leading '~' with the current user's home directory.
-export function expandHome(input: string): string {
+export function expandHome(input: string, home = os.homedir()): string {
   if (!input.startsWith('~')) {
     return input;
   }
-  const home = os.homedir();
   if (input === '~') {
     return home;
   }

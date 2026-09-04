@@ -1,7 +1,6 @@
-import { ProtocolErrorCode as ErrorCode } from '@modelcontextprotocol/client';
+import { MCPORTER_VERSION } from '../version.js';
 import type { ServerDefinition } from '../config.js';
 import { isKeepAliveServer } from '../lifecycle.js';
-import { isUnauthorizedError } from '../runtime-oauth-support.js';
 import type {
   CallOptions,
   ConnectOptions,
@@ -11,7 +10,6 @@ import type {
   Runtime,
 } from '../runtime.js';
 import type { DaemonClient } from './client.js';
-import { DAEMON_OAUTH_FLOW_ERROR_CODE, DAEMON_OPERATION_TIMEOUT_CODE } from './protocol.js';
 
 interface KeepAliveRuntimeOptions {
   readonly daemonClient: DaemonClient | null;
@@ -26,13 +24,19 @@ export function createKeepAliveRuntime(base: Runtime, options: KeepAliveRuntimeO
 }
 
 class KeepAliveRuntime implements Runtime {
-  private readonly restartPromises = new Map<string, Promise<void>>();
-
   constructor(
     private readonly base: Runtime,
     private readonly daemon: DaemonClient,
     private readonly keepAliveServers: Set<string>
-  ) {}
+  ) {
+    const info = base.getClientInfo?.();
+    if (info) this.daemon.setDefinitions(base.getDefinitions(), info);
+    else this.daemon.setDefinitions(base.getDefinitions());
+  }
+
+  getClientInfo(): { name: string; version: string } {
+    return this.base.getClientInfo?.() ?? { name: 'mcporter', version: MCPORTER_VERSION };
+  }
 
   listServers(): string[] {
     return this.base.listServers();
@@ -48,6 +52,7 @@ class KeepAliveRuntime implements Runtime {
 
   registerDefinition(definition: ServerDefinition, options?: { overwrite?: boolean }): void {
     this.base.registerDefinition(definition, options);
+    this.daemon.setDefinitions(this.base.getDefinitions(), this.base.getClientInfo?.());
     if (isKeepAliveServer(definition)) {
       this.keepAliveServers.add(definition.name);
     } else {
@@ -64,7 +69,7 @@ class KeepAliveRuntime implements Runtime {
       return this.base.listTools(server, options);
     }
     if (this.shouldUseDaemon(server)) {
-      return (await this.invokeWithRestart(server, 'listTools', () =>
+      return (await this.invokeOnce(server, 'listTools', () =>
         this.daemon.listTools({
           server,
           includeSchema: options?.includeSchema,
@@ -80,7 +85,7 @@ class KeepAliveRuntime implements Runtime {
 
   async callTool(server: string, toolName: string, options?: CallOptions): Promise<unknown> {
     if (this.shouldUseDaemon(server)) {
-      return this.invokeWithRestart(server, 'callTool', () =>
+      return this.invokeOnce(server, 'callTool', () =>
         this.daemon.callTool({
           server,
           tool: toolName,
@@ -99,7 +104,7 @@ class KeepAliveRuntime implements Runtime {
     }
     const { allowCachedAuth, disableOAuth, ...params } = options ?? {};
     if (this.shouldUseDaemon(server)) {
-      return this.invokeWithRestart(server, 'listResources', () =>
+      return this.invokeOnce(server, 'listResources', () =>
         this.daemon.listResources({ server, params, allowCachedAuth, disableOAuth })
       );
     }
@@ -111,7 +116,7 @@ class KeepAliveRuntime implements Runtime {
       return this.base.readResource(server, uri, options);
     }
     if (this.shouldUseDaemon(server)) {
-      return this.invokeWithRestart(server, 'readResource', () =>
+      return this.invokeOnce(server, 'readResource', () =>
         this.daemon.readResource({
           server,
           uri,
@@ -129,6 +134,7 @@ class KeepAliveRuntime implements Runtime {
 
   async close(server?: string): Promise<void> {
     if (!server) {
+      await this.daemon.release();
       await this.base.close();
       return;
     }
@@ -143,68 +149,7 @@ class KeepAliveRuntime implements Runtime {
     return this.keepAliveServers.has(server);
   }
 
-  private async invokeWithRestart<T>(server: string, operation: string, action: () => Promise<T>): Promise<T> {
-    try {
-      return await action();
-    } catch (error) {
-      if (!shouldRestartDaemonServer(error)) {
-        throw error;
-      }
-      // The daemon keeps STDIO transports warm; if a call fails due to a fatal error,
-      // force-close the cached server so the retry launches a fresh Chrome instance.
-      logDaemonRetry(server, operation, error);
-      await this.restartServer(server);
-      return action();
-    }
+  private async invokeOnce<T>(_server: string, _operation: string, action: () => Promise<T>): Promise<T> {
+    return action();
   }
-
-  private async restartServer(server: string): Promise<void> {
-    const existing = this.restartPromises.get(server);
-    if (existing) {
-      await existing;
-      return;
-    }
-
-    const restart = this.daemon.closeServer({ server }).catch(() => {});
-    this.restartPromises.set(server, restart);
-    try {
-      await restart;
-    } finally {
-      this.restartPromises.delete(server);
-    }
-  }
-}
-
-const NON_FATAL_CODES = new Set([ErrorCode.InvalidRequest, ErrorCode.MethodNotFound, ErrorCode.InvalidParams]);
-
-function shouldRestartDaemonServer(error: unknown): boolean {
-  if (!error) {
-    return false;
-  }
-  if (typeof error === 'object') {
-    const code = (error as { code?: unknown }).code;
-    if (code === DAEMON_OPERATION_TIMEOUT_CODE || code === DAEMON_OAUTH_FLOW_ERROR_CODE) {
-      return false;
-    }
-  }
-  // Restarting cannot repair a missing or rejected credential, and replaying the
-  // operation re-enters interactive authorization, duplicating prompts (issue #247).
-  if (isUnauthorizedError(error)) {
-    return false;
-  }
-  const code = protocolErrorCode(error);
-  if (code !== undefined) {
-    return !NON_FATAL_CODES.has(code);
-  }
-  return true;
-}
-
-function protocolErrorCode(error: unknown): number | undefined {
-  if (!error || typeof error !== 'object' || !('code' in error)) return undefined;
-  return typeof error.code === 'number' ? error.code : undefined;
-}
-
-function logDaemonRetry(server: string, operation: string, error: unknown): void {
-  const reason = error instanceof Error ? error.message : String(error);
-  console.error(`[mcporter] Restarting '${server}' before retrying ${operation}: ${reason}`);
 }

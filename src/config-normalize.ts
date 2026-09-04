@@ -17,14 +17,15 @@ export function normalizeServerEntry(
   raw: RawEntry,
   baseDir: string,
   source: ServerSource,
-  sources: readonly ServerSource[]
+  sources: readonly ServerSource[],
+  context: { env?: NodeJS.ProcessEnv; home?: string } = {}
 ): ServerDefinition {
-  const resolvedRaw = resolveConfigEnvPlaceholders(name, raw);
+  const resolvedRaw = resolveConfigEnvPlaceholders(name, raw, context.env);
   raw = resolvedRaw;
   const description = raw.description;
   const env = raw.env ? { ...raw.env } : undefined;
   const auth = normalizeAuth(raw.auth);
-  const tokenCacheDir = normalizePath(raw.tokenCacheDir ?? raw.token_cache_dir);
+  const tokenCacheDir = normalizePath(raw.tokenCacheDir ?? raw.token_cache_dir, context.home);
   const clientName = raw.clientName ?? raw.client_name;
   const protocolVersion = raw.protocolVersion ?? raw.protocol_version;
   const chromeDevtoolsRelay = raw.chromeDevtoolsRelay ?? raw.chrome_devtools_relay;
@@ -43,7 +44,7 @@ export function normalizeServerEntry(
   const headers = buildHeaders(raw);
 
   const httpUrl = getUrl(raw);
-  const stdio = getCommand(raw, baseDir);
+  const stdio = getCommand(raw, baseDir, context.home);
 
   let command: CommandSpec;
 
@@ -58,7 +59,7 @@ export function normalizeServerEntry(
       kind: 'stdio',
       command: stdio.command,
       args: stdio.args,
-      cwd: resolveCwd(raw.cwd, baseDir),
+      cwd: resolveCwd(raw.cwd, baseDir, context.home),
     };
   } else {
     throw new Error(`Server '${name}' is missing a baseUrl/url or command definition in mcporter.json`);
@@ -108,17 +109,22 @@ export const __configInternals = {
   resolveConfigEnvPlaceholders,
 };
 
-function resolveConfigEnvPlaceholders(name: string, raw: RawEntry): RawEntry {
-  return resolveConfigEnvValue(name, raw, []) as RawEntry;
+function resolveConfigEnvPlaceholders(name: string, raw: RawEntry, env = process.env): RawEntry {
+  return resolveConfigEnvValue(name, raw, [], env) as RawEntry;
 }
 
-function resolveConfigEnvValue(name: string, value: unknown, pathSegments: readonly string[]): unknown {
+function resolveConfigEnvValue(
+  name: string,
+  value: unknown,
+  pathSegments: readonly string[],
+  env: NodeJS.ProcessEnv
+): unknown {
   if (typeof value === 'string') {
     if (!value.includes('$') || shouldDeferEnvResolution(pathSegments)) {
       return value;
     }
     try {
-      return resolveEnvPlaceholders(value);
+      return resolveEnvPlaceholders(value, env);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const field = pathSegments.join('.') || '<root>';
@@ -127,13 +133,13 @@ function resolveConfigEnvValue(name: string, value: unknown, pathSegments: reado
   }
 
   if (Array.isArray(value)) {
-    return value.map((entry, index) => resolveConfigEnvValue(name, entry, [...pathSegments, String(index)]));
+    return value.map((entry, index) => resolveConfigEnvValue(name, entry, [...pathSegments, String(index)], env));
   }
 
   if (value && typeof value === 'object') {
     const resolved: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value)) {
-      resolved[key] = resolveConfigEnvValue(name, entry, [...pathSegments, key]);
+      resolved[key] = resolveConfigEnvValue(name, entry, [...pathSegments, key], env);
     }
     return resolved;
   }
@@ -186,25 +192,25 @@ function normalizeHttpFetch(value: 'default' | 'node-http1' | undefined): 'defau
   return value;
 }
 
-function normalizePath(input: string | undefined): string | undefined {
+function normalizePath(input: string | undefined, home?: string): string | undefined {
   if (!input) {
     return undefined;
   }
-  return expandHome(input);
+  return expandHome(input, home);
 }
 
-function resolveCwd(input: string | undefined, baseDir: string): string {
+function resolveCwd(input: string | undefined, baseDir: string, home?: string): string {
   if (!input) {
     return baseDir;
   }
-  return path.resolve(baseDir, expandHome(input));
+  return path.resolve(baseDir, expandHome(input, home));
 }
 
 function getUrl(raw: RawEntry): string | undefined {
   return raw.baseUrl ?? raw.base_url ?? raw.url ?? raw.serverUrl ?? raw.server_url ?? undefined;
 }
 
-function getCommand(raw: RawEntry, baseDir: string): { command: string; args: string[] } | undefined {
+function getCommand(raw: RawEntry, baseDir: string, home?: string): { command: string; args: string[] } | undefined {
   const commandValue = raw.command ?? raw.executable;
   if (Array.isArray(commandValue)) {
     if (commandValue.length === 0 || typeof commandValue[0] !== 'string') {
@@ -217,7 +223,7 @@ function getCommand(raw: RawEntry, baseDir: string): { command: string; args: st
     if (args.length > 0) {
       return { command: commandValue, args };
     }
-    if (isExistingCommandPath(commandValue, baseDir)) {
+    if (isExistingCommandPath(commandValue, baseDir, home)) {
       return { command: commandValue, args: [] };
     }
     const tokens = parseCommandString(commandValue);
@@ -233,7 +239,7 @@ function getCommand(raw: RawEntry, baseDir: string): { command: string; args: st
   return undefined;
 }
 
-function isExistingCommandPath(value: string, baseDir: string): boolean {
+function isExistingCommandPath(value: string, baseDir: string, home?: string): boolean {
   const trimmed = value.trim();
   if (!trimmed.includes(' ')) {
     return false;
@@ -241,7 +247,7 @@ function isExistingCommandPath(value: string, baseDir: string): boolean {
   if (!looksLikePath(trimmed)) {
     return false;
   }
-  const expanded = expandHome(trimmed);
+  const expanded = expandHome(trimmed, home);
   const resolved = path.isAbsolute(expanded) ? expanded : path.resolve(baseDir, expanded);
   try {
     return fs.statSync(resolved).isFile();

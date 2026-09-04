@@ -111,6 +111,7 @@ export interface ConnectOptions {
 }
 
 export interface Runtime {
+  getClientInfo?(): { name: string; version: string };
   listServers(): string[];
   getDefinitions(): ServerDefinition[];
   getDefinition(server: string): ServerDefinition;
@@ -169,6 +170,7 @@ class McpRuntime implements Runtime {
   private readonly definitions: Map<string, ServerDefinition>;
   private readonly connectionCache: RuntimeConnectionCache;
   private readonly logger: RuntimeLogger;
+  private readonly clientInfo: { name: string; version: string };
 
   constructor(servers: ServerDefinition[], options: RuntimeOptions = {}) {
     for (const server of servers) {
@@ -180,6 +182,7 @@ class McpRuntime implements Runtime {
       name: PACKAGE_NAME,
       version: MCPORTER_VERSION,
     };
+    this.clientInfo = clientInfo;
     const recordSession = process.env.MCPORTER_RECORD;
     const replaySession = process.env.MCPORTER_REPLAY;
     if (recordSession && replaySession) {
@@ -203,6 +206,10 @@ class McpRuntime implements Runtime {
       replayPath,
       elicitationHandler: options.elicitationHandler ?? defaultResponder.handler,
     });
+  }
+
+  getClientInfo(): { name: string; version: string } {
+    return { ...this.clientInfo };
   }
 
   // listServers returns configured names sorted alphabetically for stable CLI output.

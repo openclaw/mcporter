@@ -222,6 +222,8 @@ describe('mcporter serve bridge', () => {
       close: vi.fn().mockResolvedValue(undefined),
     } satisfies Runtime;
     const daemon = {
+      setDefinitions: vi.fn(),
+      release: vi.fn().mockResolvedValue(undefined),
       listTools: vi.fn().mockResolvedValue([
         {
           name: 'ping',
@@ -266,13 +268,15 @@ describe('mcporter serve bridge', () => {
       });
       expect(baseRuntime.listTools).not.toHaveBeenCalled();
 
+      await expect(client.callTool({ name: 'alpha__ping', arguments: {} })).rejects.toThrow('daemon transport died');
+      expect(daemon.callTool).toHaveBeenCalledTimes(1);
+      expect(daemon.closeServer).not.toHaveBeenCalled();
       await expect(client.callTool({ name: 'alpha__ping', arguments: {} })).resolves.toMatchObject({
         content: [{ type: 'text', text: 'daemon pong' }],
       });
       expect(daemon.callTool).toHaveBeenCalledTimes(2);
-      expect(daemon.closeServer).toHaveBeenCalledWith({ server: 'alpha' });
       expect(baseRuntime.callTool).not.toHaveBeenCalled();
-      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Restarting 'alpha'"));
+      expect(errorSpy).not.toHaveBeenCalled();
     } finally {
       errorSpy.mockRestore();
       await client.close().catch(() => {});

@@ -1,13 +1,12 @@
 import fsPromises from 'node:fs/promises';
+import { legacyDaemons, stopVerifiedLegacyDaemons } from '../daemon/migration.js';
 import path from 'node:path';
 import { DaemonClient, resolveDaemonPaths } from '../daemon/client.js';
 import { runDaemonHost } from '../daemon/host.js';
 import { launchDaemonDetached } from '../daemon/launch.js';
-import { getDaemonLogPath } from '../daemon/paths.js';
+import { getDaemonLogPath, secureDaemonDirectory } from '../daemon/paths.js';
 import { waitForDaemonReady } from '../daemon/startup-readiness.js';
 import { expandHome } from '../env.js';
-import { isKeepAliveServer } from '../lifecycle.js';
-import { createRuntime } from '../runtime.js';
 
 export interface DaemonCliOptions {
   readonly configPath: string;
@@ -37,12 +36,22 @@ export async function handleDaemonCli(args: string[], options: DaemonCliOptions)
     rootDir: options.rootDir,
   });
 
+  if (subcommand === 'migrate') {
+    if (args.includes('--stop-legacy')) {
+      if (!args.includes('--confirmed-drained'))
+        throw new Error('Drain all legacy clients first, then pass --confirmed-drained.');
+      await stopVerifiedLegacyDaemons();
+      console.log('Verified legacy daemons and observed owned children have retired.');
+    } else console.log(JSON.stringify((await legacyDaemons()).map(({ pid, verified }) => ({ pid, verified }))));
+    return;
+  }
   if (subcommand === 'start') {
     await handleDaemonStart(args, options, client);
     return;
   }
   if (subcommand === 'status') {
-    await handleDaemonStatus(client);
+    if (args.includes('--json')) console.log(JSON.stringify(await client.status()));
+    else await handleDaemonStatus(client);
     return;
   }
   if (subcommand === 'stop') {
@@ -59,18 +68,19 @@ export async function handleDaemonCli(args: string[], options: DaemonCliOptions)
 }
 
 function printDaemonHelp(): void {
-  console.log(`Usage: mcporter daemon <start|status|stop|restart>
+  console.log(`Usage: mcporter daemon <start|status|stop|restart|migrate>
 
 Commands:
-  start    Start the keep-alive daemon (auto-detects keep-alive servers).
+  start    Start the single-user daemon (configuration views register on demand).
   status   Show whether the daemon is running and which servers are active.
   stop     Shut down the daemon and all managed servers.
-  restart  Stop the daemon (if running) and start a fresh instance.
+  restart  Drain and stop the daemon, then start a fresh instance.
+  migrate  Inspect legacy ownership; --stop-legacy --confirmed-drained retires verified owners.
 
 Flags:
   --foreground        Run the daemon in the current process (debug only).
-  --log               Enable daemon logging (defaults to ~/.mcporter/daemon/daemon-<hash>.log,
-                      or $XDG_STATE_HOME/mcporter/daemon/... when set).
+  --json              Print machine-readable status.
+  --log               Enable bounded operation logging (OS-user .mcporter/daemon/user.log).
   --log-file <path>   Write daemon stdout/stderr to a specific log file.
   --log-servers <csv> Only log call activity for the listed servers (implies --log).`);
 }
@@ -81,20 +91,10 @@ async function handleDaemonStart(args: string[], options: DaemonCliOptions, clie
   const foreground = foregroundFlag || isChildLaunch;
 
   const paths = resolveDaemonPaths(options.configPath);
-  const socketPath = process.env.MCPORTER_DAEMON_SOCKET ?? paths.socketPath;
-  const metadataPath = process.env.MCPORTER_DAEMON_METADATA ?? paths.metadataPath;
+  const socketPath = paths.socketPath;
+  const metadataPath = paths.metadataPath;
+  await secureDaemonDirectory();
   const logging = await resolveDaemonLoggingOptions(args, paths.key);
-
-  const runtime = await createRuntime({
-    configPath: options.configExplicit ? options.configPath : undefined,
-    rootDir: options.rootDir,
-  });
-  const keepAlive = runtime.getDefinitions().filter(isKeepAliveServer);
-  await runtime.close().catch(() => {});
-  if (keepAlive.length === 0) {
-    console.log('No MCP servers are configured for keep-alive; daemon not started.');
-    return;
-  }
 
   if (foreground) {
     await runDaemonHost({
@@ -133,7 +133,7 @@ async function handleDaemonStart(args: string[], options: DaemonCliOptions, clie
     extraArgs: forwardedArgs,
   });
   await waitForDaemonReady((timeoutMs) => client.status(timeoutMs));
-  console.log(`Daemon started for ${keepAlive.length} server(s).`);
+  console.log('Single-user daemon started.');
 }
 
 async function handleDaemonRestart(args: string[], options: DaemonCliOptions, client: DaemonClient): Promise<void> {

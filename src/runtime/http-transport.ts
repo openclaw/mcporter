@@ -86,7 +86,7 @@ function createHttpTransportOptions(
 ): ResolvedHttpTransportOptions {
   const command = definition.command;
   if (command.kind !== 'http') throw new Error(`Server '${definition.name}' is not configured for HTTP transport.`);
-  const resolvedHeaders = materializeHeaders(command.headers, definition.name);
+  const resolvedHeaders = materializeHeaders(command.headers, definition.name, definition.env);
   const effectiveHeaders = shouldEstablishOAuth ? removeAuthorizationHeader(resolvedHeaders) : resolvedHeaders;
   const trackedFetch = trackStandaloneSseFetch(resolveHttpFetchOverride(definition));
   return {
@@ -180,7 +180,7 @@ async function connectHttpTransport<TTransport extends OAuthCapableTransport>(
     return (await connectWithAuth(client, transport, oauthSession, logger, connectOptions)) as TTransport;
   } catch (error) {
     if (!connectOptions.signal?.aborted) {
-      await closeTransportAndWait(logger, transport).catch(() => {});
+      await closeTransportAndWait(logger, transport, { throwOnCloseError: true, requireRetirement: true });
     }
     throw error;
   }

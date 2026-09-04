@@ -34,6 +34,7 @@ vi.mock('../src/daemon/host.js', () => ({
 
 vi.mock('../src/daemon/paths.js', () => ({
   getDaemonLogPath: vi.fn(() => '/tmp/mock-daemon.log'),
+  secureDaemonDirectory: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../src/daemon/startup-readiness.js', () => ({
@@ -113,10 +114,8 @@ describe('daemon CLI restart', () => {
 
     await handleDaemonCli(['restart'], { configPath: '/tmp/config.json', configExplicit: false });
 
-    expect(createRuntimeMock).toHaveBeenCalledWith({
-      configPath: undefined,
-      rootDir: undefined,
-    });
+    expect(createRuntimeMock).not.toHaveBeenCalled();
+    expect(launchDaemonDetachedMock).toHaveBeenCalledOnce();
   });
 
   it('prints help, rejects unknown commands, and stops directly', async () => {
@@ -183,23 +182,6 @@ describe('daemon CLI restart', () => {
     }
   });
 
-  it('does not launch when no keep-alive definitions exist', async () => {
-    isKeepAliveServerMock.mockReturnValue(false);
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    try {
-      await handleDaemonCli(['start'], {
-        configPath: '/tmp/config.json',
-        configExplicit: true,
-        rootDir: '/tmp/root',
-      });
-      expect(createRuntimeMock).toHaveBeenCalledWith({ configPath: '/tmp/config.json', rootDir: '/tmp/root' });
-      expect(launchDaemonDetachedMock).not.toHaveBeenCalled();
-      expect(log).toHaveBeenCalledWith('No MCP servers are configured for keep-alive; daemon not started.');
-    } finally {
-      log.mockRestore();
-    }
-  });
-
   it('runs foreground with parsed server logging options', async () => {
     await handleDaemonCli(['start', '--foreground', '--log-servers', ' alpha, beta,alpha '], {
       configPath: '/tmp/config.json',
@@ -242,7 +224,7 @@ describe('daemon CLI restart', () => {
         expect.objectContaining({ extraArgs: ['--log-file', expect.stringMatching(/daemon\.log$/u)] })
       );
       expect(waitForDaemonReadyMock).toHaveBeenCalledOnce();
-      expect(log).toHaveBeenCalledWith('Daemon started for 1 server(s).');
+      expect(log).toHaveBeenCalledWith('Single-user daemon started.');
     } finally {
       log.mockRestore();
     }

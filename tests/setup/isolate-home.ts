@@ -27,6 +27,7 @@ function shortTempBase(): string {
 const root = fs.mkdtempSync(path.join(shortTempBase(), 'mcp-home-'));
 
 process.env.HOME = root;
+process.env.MCPORTER_DAEMON_DIR = path.join(root, 'broker');
 process.env.USERPROFILE = root;
 process.env.XDG_CONFIG_HOME = path.join(root, '.config');
 process.env.XDG_DATA_HOME = path.join(root, '.local', 'share');

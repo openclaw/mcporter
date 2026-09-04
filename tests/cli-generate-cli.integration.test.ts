@@ -265,6 +265,8 @@ describe('mcporter CLI integration', () => {
     const generatedConfigDir = path.join(stateDir, 'generated-configs');
     const cliEnv = {
       ...process.env,
+      HOME: stateDir,
+      USERPROFILE: stateDir,
       MCPORTER_NO_FORCE_EXIT: '1',
       MCPORTER_DAEMON_DIR: daemonDir,
       MCPORTER_GENERATED_CONFIG_DIR: generatedConfigDir,
@@ -330,19 +332,22 @@ await new Promise((resolve) => { transport.onclose = resolve; });
       expect(first.count).toBe(1);
       expect(second.count).toBe(2);
       expect(second.instanceId).toBe(first.instanceId);
-    } finally {
-      const configFiles = await fs.readdir(generatedConfigDir).catch(() => []);
-      await Promise.all(
-        configFiles
-          .filter((entry) => entry.endsWith('.json'))
-          .map((entry) =>
-            runGeneratedCli(
-              bundlePath,
-              ['--config', path.join(generatedConfigDir, entry), 'daemon', 'stop'],
-              cliEnv
-            ).catch(() => '')
-          )
+      const config = path.join(tempDir, 'ordinary.json');
+      await fs.writeFile(
+        config,
+        JSON.stringify({ imports: [], mcpServers: { ordinary: { ...JSON.parse(inlineServer), cwd: tempDir } } })
       );
+      const ordinary = parseGeneratedDaemonJson(
+        await runGeneratedCli(
+          CLI_ENTRY,
+          ['--config', config, 'call', 'ordinary.next_value', '--output', 'json'],
+          cliEnv
+        )
+      );
+      expect(ordinary.instanceId).toBe(first.instanceId);
+      expect(ordinary.count).toBe(3);
+    } finally {
+      await runGeneratedCli(CLI_ENTRY, ['daemon', 'stop'], cliEnv);
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
       await fs.rm(stateDir, { recursive: true, force: true }).catch(() => {});
     }

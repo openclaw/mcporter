@@ -26,7 +26,13 @@ export async function waitForDaemonReady<T>(
       throw daemonStartupTimeoutError();
     }
 
-    const result = await probe(Math.min(DAEMON_STARTUP_POLL_INTERVAL_MS, remainingBeforeProbe));
+    const result = await probe(Math.min(DAEMON_STARTUP_POLL_INTERVAL_MS, remainingBeforeProbe)).catch(
+      (error: unknown) => {
+        // Only readiness's read-only status probe can be repeated after a timeout.
+        if (error && typeof error === 'object' && 'code' in error && error.code === 'ETIMEDOUT') return null;
+        throw error;
+      }
+    );
     if (result !== null) {
       return result;
     }

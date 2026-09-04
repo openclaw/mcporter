@@ -26,11 +26,15 @@ export function mcporterDir(kind: McporterPathKind): string {
   return legacyMcporterDir();
 }
 
-export function mcporterConfigCandidates(): string[] {
-  const base = mcporterDir('config');
+export function mcporterConfigCandidates(context?: { home: string; configHome?: string }): string[] {
+  const legacy = context ? path.join(context.home, '.mcporter') : legacyMcporterDir();
+  const base = context
+    ? context.configHome
+      ? path.join(context.configHome, 'mcporter')
+      : legacy
+    : mcporterDir('config');
   const candidates = [path.join(base, 'mcporter.json'), path.join(base, 'mcporter.jsonc')];
-  if (base !== legacyMcporterDir()) {
-    const legacy = legacyMcporterDir();
+  if (base !== legacy) {
     candidates.push(path.join(legacy, 'mcporter.json'), path.join(legacy, 'mcporter.jsonc'));
   }
   return candidates;

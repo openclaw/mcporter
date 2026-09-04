@@ -1,45 +1,21 @@
+import { privateFixtureDirectory } from './helpers/private-directory.js';
+import { expect, it } from 'vitest';
+import { loadConfigSnapshot } from '../src/config.js';
+import { DaemonBroker } from '../src/daemon/broker.js';
 import fs from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-const mocks = vi.hoisted(() => ({ loadConfigLayers: vi.fn() }));
-
-vi.mock('../src/config/read-config.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/config/read-config.js')>();
-  mocks.loadConfigLayers.mockImplementation(actual.loadConfigLayers);
-  return { ...actual, loadConfigLayers: mocks.loadConfigLayers };
-});
-
-import { loadDaemonRuntimeState } from '../src/daemon/host.js';
-
-describe('daemon config snapshot', () => {
-  const tempDirs: string[] = [];
-
-  afterEach(async () => {
-    mocks.loadConfigLayers.mockClear();
-    await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
-  });
-
-  it('loads config layers once for daemon policy and runtime definitions', async () => {
-    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-daemon-snapshot-'));
-    tempDirs.push(rootDir);
-    const configPath = path.join(rootDir, 'mcporter.json');
-    await fs.writeFile(
-      configPath,
-      JSON.stringify({
-        daemonIdleTimeoutMs: 12_345,
-        imports: [],
-        mcpServers: {
-          local: { command: 'node', args: ['server.js'] },
-        },
-      })
-    );
-
-    const { daemonConfig, runtime } = await loadDaemonRuntimeState({ configPath, rootDir });
-    expect(mocks.loadConfigLayers).toHaveBeenCalledOnce();
-    expect(daemonConfig).toEqual({ idleTimeoutMs: 12_345 });
-    expect(runtime.listServers()).toEqual(['local']);
-    await runtime.close();
-  });
+it('client config snapshots stay independent of host startup and project idle settings', async () => {
+  const root = await privateFixtureDirectory('mcp-snapshot-');
+  try {
+    const file = `${root}/config.json`;
+    await fs.writeFile(file, JSON.stringify({ imports: [], daemonIdleTimeoutMs: 1, mcpServers: {} }));
+    const snapshot = await loadConfigSnapshot({ configPath: file });
+    const b = new DaemonBroker();
+    b.register({ definitions: snapshot.servers });
+    expect(snapshot.daemon.idleTimeoutMs).toBe(1);
+    expect(b.status().views).toBe(1);
+    expect(b.status().servers).toEqual([]);
+    await b.close();
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });

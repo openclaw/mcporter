@@ -64,12 +64,18 @@ export function createChromeDevtoolsRelayHandoff(
 
 function createWindowsHandoffDirectory(): string {
   const directory = path.join(os.tmpdir(), `${HANDOFF_DIR_PREFIX}${randomBytes(16).toString('hex')}`);
+  ensureWindowsPrivateDirectory(directory);
+  return directory;
+}
+
+export function ensureWindowsPrivateDirectory(directory: string, allowExisting = false): void {
   const script = String.raw`
 $ErrorActionPreference = 'Stop'
 $stage = 'identity'
 try {
 $target = $env:${WINDOWS_ACL_PATH_ENV}
-if ([System.IO.Directory]::Exists($target)) { throw 'handoff path already exists' }
+${allowExisting ? '' : "if ([System.IO.Directory]::Exists($target)) { throw 'handoff path already exists' }"}
+if ([System.IO.Directory]::Exists($target) -and (([System.IO.File]::GetAttributes($target) -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)) { throw 'unsafe reparse point' }
 $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
 $stage = 'descriptor'
 $security = New-Object System.Security.AccessControl.DirectorySecurity
@@ -106,7 +112,7 @@ if ($ruleSid -ne $sid.Value -or $rules[0].IsInherited -or -not $hasFullControl -
   );
   if (result.status !== 0) {
     try {
-      fs.rmdirSync(directory);
+      if (!allowExisting) fs.rmdirSync(directory);
     } catch {}
     const stderr = typeof result.stderr === 'string' ? result.stderr.trim() : '';
     const safeDetail = /^[A-Za-z0-9_.:=\- ]{1,240}$/u.test(stderr)
@@ -114,10 +120,9 @@ if ($ruleSid -ne $sid.Value -or $rules[0].IsInherited -or -not $hasFullControl -
       : `stage=spawn type=${(result.error as NodeJS.ErrnoException | undefined)?.code ?? 'unknown'} hresult=unknown`;
     throw new Error(`Windows ACL setup failed: ${safeDetail}`);
   }
-  return directory;
 }
 
-function resolveSystemPowerShellPath(): string {
+export function resolveSystemPowerShellPath(): string {
   const systemRoot = process.env.SystemRoot?.trim() || process.env.WINDIR?.trim();
   if (!systemRoot || !path.win32.isAbsolute(systemRoot)) throw new Error('unsafe Windows system root');
   const executable = path.win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');

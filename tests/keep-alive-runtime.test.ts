@@ -87,6 +87,8 @@ describe('createKeepAliveRuntime', () => {
   it('routes keep-alive servers through the daemon client', async () => {
     const runtime = new FakeRuntime(definitions);
     const daemon = {
+      setDefinitions: vi.fn(),
+      release: vi.fn().mockResolvedValue(undefined),
       callTool: vi.fn().mockResolvedValue('daemon-call'),
       listTools: vi.fn().mockResolvedValue([{ name: 'remote-tool' }]),
       listResources: vi.fn().mockResolvedValue(['resource']),
@@ -158,6 +160,8 @@ describe('createKeepAliveRuntime', () => {
   it('forwards disableOAuth through daemon requests and connect wrappers', async () => {
     const runtime = new FakeRuntime(definitions);
     const daemon = {
+      setDefinitions: vi.fn(),
+      release: vi.fn().mockResolvedValue(undefined),
       callTool: vi.fn().mockResolvedValue('daemon-call'),
       listTools: vi.fn().mockResolvedValue([{ name: 'remote-tool' }]),
       listResources: vi.fn().mockResolvedValue(['resource']),
@@ -208,69 +212,31 @@ describe('createKeepAliveRuntime', () => {
     expect(runtime.connectMock).toHaveBeenCalledWith('alpha', { disableOAuth: true });
   });
 
-  it('restarts daemon servers after fatal errors and retries the operation', async () => {
+  it('returns uncertain failures once without closing or replaying either concurrent request', async () => {
     const runtime = new FakeRuntime(definitions);
     const daemon = {
-      callTool: vi.fn().mockRejectedValueOnce(new Error('transport hung up')).mockResolvedValueOnce('daemon-call'),
-      closeServer: vi.fn().mockResolvedValue(undefined),
-      listTools: vi.fn(),
-      listResources: vi.fn(),
-      readResource: vi.fn(),
+      setDefinitions: vi.fn(),
+      release: vi.fn(),
+      callTool: vi.fn().mockRejectedValue(new Error('transport hung up')),
+      closeServer: vi.fn(),
     };
-    const keepAliveRuntime = createKeepAliveRuntime(runtime as unknown as Runtime, {
+    const wrapped = createKeepAliveRuntime(runtime, {
       daemonClient: daemon as never,
       keepAliveServers: new Set(['alpha']),
     });
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-
-    await expect(keepAliveRuntime.callTool('alpha', 'ping', {})).resolves.toBe('daemon-call');
+    const results = await Promise.allSettled([wrapped.callTool('alpha', 'ping'), wrapped.callTool('alpha', 'pong')]);
+    expect(results.map((result) => result.status)).toEqual(['rejected', 'rejected']);
     expect(daemon.callTool).toHaveBeenCalledTimes(2);
-    expect(daemon.closeServer).toHaveBeenCalledWith({ server: 'alpha' });
-    expect(logSpy).not.toHaveBeenCalled();
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Restarting 'alpha'"));
-    logSpy.mockRestore();
-    errorSpy.mockRestore();
-  });
-
-  it('deduplicates concurrent restarts for the same server', async () => {
-    const runtime = new FakeRuntime(definitions);
-    let releaseClose!: () => void;
-    const closePromise = new Promise<void>((resolve) => {
-      releaseClose = resolve;
-    });
-    const daemon = {
-      callTool: vi
-        .fn()
-        .mockRejectedValueOnce(new Error('transport hung up'))
-        .mockRejectedValueOnce(new Error('transport hung up'))
-        .mockResolvedValue('daemon-call'),
-      closeServer: vi.fn().mockImplementation(async () => {
-        await closePromise;
-      }),
-      listTools: vi.fn(),
-      listResources: vi.fn(),
-      readResource: vi.fn(),
-    };
-    const keepAliveRuntime = createKeepAliveRuntime(runtime as unknown as Runtime, {
-      daemonClient: daemon as never,
-      keepAliveServers: new Set(['alpha']),
-    });
-
-    const first = keepAliveRuntime.callTool('alpha', 'ping', {});
-    const second = keepAliveRuntime.callTool('alpha', 'pong', {});
-    await Promise.resolve();
-    expect(daemon.closeServer).toHaveBeenCalledTimes(1);
-    releaseClose();
-
-    await expect(Promise.all([first, second])).resolves.toEqual(['daemon-call', 'daemon-call']);
-    expect(daemon.closeServer).toHaveBeenCalledTimes(1);
+    expect(daemon.closeServer).not.toHaveBeenCalled();
+    expect(daemon.setDefinitions).toHaveBeenCalledWith(definitions);
   });
 
   it('does not restart daemon servers for InvalidParams errors', async () => {
     const runtime = new FakeRuntime(definitions);
     const error = new McpError(ErrorCode.InvalidParams, 'Tool not found');
     const daemon = {
+      setDefinitions: vi.fn(),
+      release: vi.fn().mockResolvedValue(undefined),
       callTool: vi.fn().mockRejectedValue(error),
       closeServer: vi.fn().mockResolvedValue(undefined),
       listTools: vi.fn(),
@@ -290,6 +256,8 @@ describe('createKeepAliveRuntime', () => {
   it('does not restart or replay daemon operations after unauthorized errors', async () => {
     const runtime = new FakeRuntime(definitions);
     const daemon = {
+      setDefinitions: vi.fn(),
+      release: vi.fn().mockResolvedValue(undefined),
       callTool: vi.fn().mockRejectedValue(new Error('HTTP 401 Unauthorized')),
       closeServer: vi.fn().mockResolvedValue(undefined),
       listTools: vi.fn(),
@@ -310,6 +278,8 @@ describe('createKeepAliveRuntime', () => {
     const runtime = new FakeRuntime(definitions);
     const timeout = Object.assign(new Error('OAuth authorization timed out'), { code: 'operation_timeout' });
     const daemon = {
+      setDefinitions: vi.fn(),
+      release: vi.fn().mockResolvedValue(undefined),
       callTool: vi.fn(),
       closeServer: vi.fn().mockResolvedValue(undefined),
       listTools: vi.fn().mockRejectedValue(timeout),
@@ -332,6 +302,8 @@ describe('createKeepAliveRuntime', () => {
       code: DAEMON_OAUTH_FLOW_ERROR_CODE,
     });
     const daemon = {
+      setDefinitions: vi.fn(),
+      release: vi.fn().mockResolvedValue(undefined),
       callTool: vi.fn().mockRejectedValue(oauthFlowError),
       closeServer: vi.fn().mockResolvedValue(undefined),
       listTools: vi.fn(),

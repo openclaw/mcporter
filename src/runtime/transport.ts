@@ -1,3 +1,6 @@
+import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
+import { withRuntimeEnvironment } from './environment.js';
+import { isChromeDefinition } from '../daemon/connection-identity.js';
 import {
   Client,
   type ClientOptions,
@@ -15,10 +18,11 @@ import {
   formatChromeDevtoolsRelayDecision,
   recordChromeDevtoolsRelayDecision,
   resolveChromeDevtoolsRelayEnvironment,
+  resolveChromeDevtoolsRelayPolicy,
   rewriteChromeDevtoolsArgsForRelay,
 } from '../chrome-devtools-relay.js';
 import type { ServerDefinition } from '../config.js';
-import { withEnvOverrides } from '../env.js';
+import { assertChromeBrokerAuthority, isBrokerDefinition } from '../daemon/transport-authority.js';
 import type { Logger } from '../logging.js';
 import { closeTransportAndWait } from '../runtime-process-utils.js';
 import { applyCachedAuthIfAvailable } from './cached-auth.js';
@@ -132,9 +136,21 @@ async function createStdioClientContext(
   logger: Logger,
   options: CreateClientContextOptions
 ): Promise<ClientContext> {
-  const mergedEnv = resolveChromeDevtoolsRelayEnvironment(definition.env);
-  const command = resolveCommandArgument(definition.command.command);
-  const resolvedArgs = resolveCommandArguments(definition.command.args);
+  // Override the SDK's ambient default merge, including variables absent from this view.
+  const mergedEnv: NodeJS.ProcessEnv = {
+    ...Object.fromEntries(DEFAULT_INHERITED_ENV_VARS.map((key) => [key, undefined])),
+    ...definition.env,
+  };
+  if (
+    isBrokerDefinition(definition) &&
+    isChromeDefinition(definition) &&
+    resolveChromeDevtoolsRelayPolicy(definition.chromeDevtoolsRelay, definition.env) !== 'off'
+  ) {
+    mergedEnv.MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY = 'require';
+    delete mergedEnv.MCPORTER_DISABLE_CHROME_DEVTOOLS_RELAY;
+  }
+  const command = resolveCommandArgument(definition.command.command, mergedEnv);
+  const resolvedArgs = resolveCommandArguments(definition.command.args, mergedEnv);
   const publishRelayDecision = (decision: ChromeDevtoolsRelayDecision): void => {
     if (decision.reason === 'not-eligible') return;
     recordChromeDevtoolsRelayDecision(definition.name, decision);
@@ -148,7 +164,11 @@ async function createStdioClientContext(
       resolvedArgs,
       mergedEnv as NodeJS.ProcessEnv,
       { onDecision: (decision) => (relayDecision = decision) },
-      definition.chromeDevtoolsRelay
+      isBrokerDefinition(definition) &&
+        isChromeDefinition(definition) &&
+        resolveChromeDevtoolsRelayPolicy(definition.chromeDevtoolsRelay, definition.env) !== 'off'
+        ? 'require'
+        : definition.chromeDevtoolsRelay
     );
   } catch (error) {
     if (relayDecision) publishRelayDecision(relayDecision);
@@ -191,6 +211,7 @@ async function createStdioClientContext(
       args: commandArgs,
       cwd: definition.command.cwd,
       env: compat.env,
+      redactDiagnostics: isBrokerDefinition(definition),
       cleanup: activeProxy
         ? async () => {
             await handoff?.close();
@@ -207,13 +228,13 @@ async function createStdioClientContext(
   try {
     transport = wrapRecordTransport(rawTransport, definition, options);
   } catch (error) {
-    await closeTransportAndWait(logger, rawTransport).catch(() => {});
+    await closeTransportAndWait(logger, rawTransport, { throwOnCloseError: true, requireRetirement: true });
     throw error;
   }
   try {
     await client.connect(transport, { signal: options.signal });
   } catch (error) {
-    await closeTransportAndWait(logger, transport).catch(() => {});
+    await closeTransportAndWait(logger, transport, { throwOnCloseError: true, requireRetirement: true });
     throw error;
   }
   return { client, transport, definition, oauthSession: undefined };
@@ -228,9 +249,15 @@ export async function createClientContext(
   if (options.replayPath && shouldUseModeForServer(definition, process.env.MCPORTER_REPLAY_SERVER)) {
     return createReplayClientContext(definition, options.replayPath, clientInfo, options);
   }
-  const activeDefinition = await applyCachedAuthIfAvailable(definition, logger, options.allowCachedAuth);
+  assertChromeBrokerAuthority(definition);
+  const env = isBrokerDefinition(definition) ? definition.env : resolveChromeDevtoolsRelayEnvironment(definition.env);
+  return withRuntimeEnvironment(env ?? {}, async () => {
+    const activeDefinition = await applyCachedAuthIfAvailable(
+      { ...definition, env: env as Record<string, string> },
+      logger,
+      options.allowCachedAuth
+    );
 
-  return withEnvOverrides(activeDefinition.env, async () => {
     if (activeDefinition.command.kind === 'stdio') {
       const stdioDefinition = activeDefinition as ServerDefinition & {
         command: Extract<ServerDefinition['command'], { kind: 'stdio' }>;

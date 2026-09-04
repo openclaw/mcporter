@@ -2,6 +2,26 @@ import { describe, expect, it, vi } from 'vitest';
 import { DAEMON_STARTUP_TIMEOUT_MS, waitForDaemonReady } from '../src/daemon/startup-readiness.js';
 
 describe('daemon startup readiness', () => {
+  it('repeats timed-out status probes within the existing deadline and never swallows authentication errors', async () => {
+    let currentTime = 0;
+    const probe = vi
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error('status timeout'), { code: 'ETIMEDOUT' }))
+      .mockResolvedValue({ pid: 42 });
+    const timing = {
+      now: () => currentTime,
+      delay: async (ms: number) => {
+        currentTime += ms;
+      },
+    };
+    await expect(waitForDaemonReady(probe, timing)).resolves.toEqual({ pid: 42 });
+    expect(probe).toHaveBeenCalledTimes(2);
+    expect(probe.mock.calls).toEqual([[100], [100]]);
+    expect(currentTime).toBe(100);
+    const denied = vi.fn().mockRejectedValue(new Error('Daemon authentication failed.'));
+    await expect(waitForDaemonReady(denied, timing)).rejects.toThrow('Daemon authentication failed.');
+    expect(denied).toHaveBeenCalledOnce();
+  });
   it('keeps polling beyond ten seconds and reports a slow start once', async () => {
     let currentTime = 0;
     const probe = vi.fn(async () => (currentTime >= 12_000 ? { pid: 42 } : null));

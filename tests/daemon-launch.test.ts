@@ -1,4 +1,4 @@
-import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { buildDaemonLaunchInvocation, launchDaemonDetached, type DaemonLaunchOptions } from '../src/daemon/launch.js';
 
@@ -38,11 +38,7 @@ describe('buildDaemonLaunchInvocation', () => {
     expect(invocation.command).toBe('/usr/local/bin/node');
     expect(invocation.args).toEqual([
       '--enable-source-maps',
-      path.resolve('/repo/dist/cli.js'),
-      '--config',
-      '/tmp/mcporter/config.json',
-      '--root',
-      '/tmp/project',
+      fileURLToPath(new URL('../dist/cli.js', import.meta.url)),
       'daemon',
       'start',
       '--foreground',
@@ -66,10 +62,6 @@ describe('buildDaemonLaunchInvocation', () => {
     expect(invocation.command).toBe('nohup');
     expect(invocation.args).toEqual([
       '/opt/homebrew/bin/mcporter',
-      '--config',
-      '/tmp/mcporter/config.json',
-      '--root',
-      '/tmp/project',
       'daemon',
       'start',
       '--foreground',
@@ -89,6 +81,8 @@ describe('buildDaemonLaunchInvocation', () => {
     });
 
     expect(invocation.command).toBe('/usr/local/bin/mcporter');
-    expect(invocation.args[0]).toBe('--config');
+    expect(invocation.args[0]).toBe('daemon');
+    expect(invocation.args).not.toContain('--config');
+    expect(invocation.env.MCPORTER_DISABLE_AUTORUN).toBe('0');
   });
 });

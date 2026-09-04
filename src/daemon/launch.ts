@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 export interface DaemonLaunchOptions {
   readonly configPath: string;
@@ -45,12 +47,9 @@ export function buildDaemonLaunchInvocation(
   }
 ): DaemonLaunchInvocation {
   const cliEntry = resolveCliEntry(processInfo.argvEntry);
-  const configArgs = options.configExplicit ? ['--config', options.configPath] : [];
   const args = [
     ...processInfo.execArgv,
     ...(cliEntry ? [cliEntry] : []),
-    ...configArgs,
-    ...(options.rootDir ? ['--root', options.rootDir] : []),
     'daemon',
     'start',
     '--foreground',
@@ -59,6 +58,7 @@ export function buildDaemonLaunchInvocation(
   const env = {
     ...processInfo.env,
     MCPORTER_DAEMON_CHILD: '1',
+    MCPORTER_DISABLE_AUTORUN: '0',
     MCPORTER_DAEMON_SOCKET: options.socketPath,
     MCPORTER_DAEMON_METADATA: options.metadataPath,
   };
@@ -90,5 +90,9 @@ function resolveCliEntry(entry = process.argv[1]): string | undefined {
   if (entry.startsWith('/$bunfs/')) {
     return undefined;
   }
+  const candidate = fileURLToPath(new URL('../cli.js', import.meta.url));
+  if (existsSync(candidate)) return candidate;
+  const sourceBuild = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
+  if (existsSync(sourceBuild)) return sourceBuild;
   return path.resolve(entry);
 }

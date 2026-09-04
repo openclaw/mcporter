@@ -5,6 +5,7 @@ import type { Logger } from './logging.js';
 export interface CloseTransportAndWaitOptions {
   readonly throwOnCloseError?: boolean;
   readonly close?: () => Promise<void>;
+  readonly requireRetirement?: boolean;
 }
 
 // closeTransportAndWait closes transports and ensures backing processes exit cleanly.
@@ -30,7 +31,7 @@ export async function closeTransportAndWait(
 
   if (pidBeforeClose) {
     destroyTransportStreams(transport);
-    await ensureProcessTreeTerminated(logger, pidBeforeClose, targetsBeforeClose);
+    await ensureProcessTreeTerminated(logger, pidBeforeClose, targetsBeforeClose, options.requireRetirement);
     if (!closeSettled) {
       await Promise.race([closePromise, delay(100)]);
     }
@@ -39,6 +40,10 @@ export async function closeTransportAndWait(
   }
 
   if (closeError && options.throwOnCloseError) {
+    if (options.requireRetirement)
+      throw Object.assign(new Error('Transport retirement failed.', { cause: closeError }), {
+        code: 'transport_retirement_failed',
+      });
     throw closeError;
   }
 }
@@ -65,7 +70,8 @@ function isProcessAlive(pid: number): boolean {
 async function ensureProcessTreeTerminated(
   logger: Logger,
   rootPid: number,
-  capturedTargets: readonly number[] = []
+  capturedTargets: readonly number[] = [],
+  requireRetirement = false
 ): Promise<void> {
   let targets = uniquePids([...capturedTargets, ...(await collectProcessTreePids(rootPid))]);
   if (targets.length === 0 || (await waitForTreeExit(targets, 700))) {
@@ -84,6 +90,10 @@ async function ensureProcessTreeTerminated(
     return;
   }
 
+  if (requireRetirement)
+    throw Object.assign(new Error('Transport process retirement could not be verified.'), {
+      code: 'transport_retirement_failed',
+    });
   logger.warn(`Process tree rooted at pid=${rootPid} did not exit after SIGKILL.`);
 }
 

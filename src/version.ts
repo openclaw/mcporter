@@ -1,9 +1,4 @@
-import { createRequire } from 'node:module';
+import packageMetadata from '../package.json' with { type: 'json' };
 
-export const MCPORTER_VERSION = (() => {
-  try {
-    return createRequire(import.meta.url)('../package.json').version as string;
-  } catch {
-    return process.env.MCPORTER_VERSION ?? '0.0.0-dev';
-  }
-})();
+// A static import also embeds the generating version in standalone bundles.
+export const MCPORTER_VERSION = packageMetadata.version;

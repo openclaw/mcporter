@@ -1,3 +1,4 @@
+import { isBrokerDefinition } from '../daemon/transport-authority.js';
 import type { ServerDefinition } from '../config.js';
 import type { ConnectionInfo, RuntimeLogger, ConnectOptions } from '../runtime.js';
 import { closeTransportAndWait } from '../runtime-process-utils.js';
@@ -474,12 +475,14 @@ export class RuntimeConnectionCache {
   }
 
   public async closeContext(context: ClientContext): Promise<void> {
-    const propagateReplayCloseErrors = context.transport instanceof ReplayTransport;
+    const propagateReplayCloseErrors =
+      context.transport instanceof ReplayTransport || isBrokerDefinition(context.definition);
     let closeError: unknown;
 
     try {
       await closeTransportAndWait(this.logger, context.transport, {
         throwOnCloseError: propagateReplayCloseErrors,
+        requireRetirement: isBrokerDefinition(context.definition),
         close: async () => {
           let firstError: unknown;
           const clientClose = (context.client as { close?: () => Promise<void> }).close;
@@ -514,7 +517,7 @@ export class RuntimeConnectionCache {
   }
 
   public async resetConnectionOnError(server: string, error: unknown, failedContext?: ClientContext): Promise<void> {
-    if (!shouldResetConnection(error)) {
+    if (isBrokerDefinition(this.definitions.get(server.trim())!) || !shouldResetConnection(error)) {
       return;
     }
     const normalized = server.trim();

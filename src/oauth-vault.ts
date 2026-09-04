@@ -14,7 +14,7 @@ import {
   withOAuthClientGeneration,
   withOAuthTokenGeneration,
 } from './oauth-token-generation.js';
-import { mcporterDir } from './paths.js';
+import { runtimeStateDir } from './runtime/environment.js';
 
 type VaultKey = string;
 
@@ -55,7 +55,7 @@ interface SameUrlCredentials {
 }
 
 export function getOAuthVaultPath(): string {
-  return path.join(mcporterDir('data'), 'credentials.json');
+  return path.join(runtimeStateDir('data'), 'credentials.json');
 }
 
 async function readVaultState(): Promise<VaultReadState> {

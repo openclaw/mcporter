@@ -158,6 +158,8 @@ describe('bridged Streamable HTTP reauthorization concurrency', () => {
     const baseRuntime = makeBaseRuntime(definition);
     let daemonListCalls = 0;
     const daemon = {
+      setDefinitions: vi.fn(),
+      release: vi.fn().mockResolvedValue(undefined),
       listTools: vi.fn(async () => {
         daemonListCalls += 1;
         if (rejectProtectedResource && daemonListCalls > 1) {

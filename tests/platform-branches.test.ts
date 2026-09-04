@@ -85,12 +85,12 @@ describe('host-independent platform paths', () => {
 
   it('selects named pipes on Windows and filesystem sockets on POSIX', () => {
     const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
-    expect(getDaemonSocketPath('abc')).toBe('\\\\.\\pipe\\mcporter-daemon-abc');
+    expect(getDaemonSocketPath('abc')).toMatch(/^\\\\\.\\pipe\\mcporter-user-[a-f0-9]{24}$/);
 
     platformSpy.mockReturnValue('linux');
-    expect(getDaemonSocketPath('abc')).toBe(path.join(homeDir, 'state', 'daemon', 'daemon-abc.sock'));
-    expect(getDaemonMetadataPath('abc')).toBe(path.join(homeDir, 'state', 'daemon', 'daemon-abc.json'));
-    expect(getDaemonLogPath('abc')).toBe(path.join(homeDir, 'state', 'daemon', 'daemon-abc.log'));
+    expect(getDaemonSocketPath('abc')).toBe(path.join(homeDir, 'state', 'daemon', 'user.sock'));
+    expect(getDaemonMetadataPath('abc')).toBe(path.join(homeDir, 'state', 'daemon', 'user.json'));
+    expect(getDaemonLogPath('abc')).toBe(path.join(homeDir, 'state', 'daemon', 'user.log'));
   });
 
   it('honors config overrides and Windows fallback directories', () => {

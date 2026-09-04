@@ -1,3 +1,4 @@
+import { runtimeEnvironment } from './environment.js';
 import {
   auth as sdkAuth,
   type Client,
@@ -421,5 +422,7 @@ export function parseOAuthTimeout(raw: string | undefined): number {
 }
 
 export function resolveOAuthTimeoutFromEnv(): number {
-  return parseOAuthTimeout(process.env.MCPORTER_OAUTH_TIMEOUT_MS ?? process.env.MCPORTER_OAUTH_TIMEOUT);
+  return parseOAuthTimeout(
+    runtimeEnvironment().MCPORTER_OAUTH_TIMEOUT_MS ?? runtimeEnvironment().MCPORTER_OAUTH_TIMEOUT
+  );
 }

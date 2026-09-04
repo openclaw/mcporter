@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { ServerDefinition } from './config.js';
 import { canonicalizeFilePath, withFileLock } from './fs-json.js';
 import { vaultCredentialKeys } from './oauth-vault.js';
-import { mcporterDir } from './paths.js';
+import { runtimeEnvironment, runtimeStateDir } from './runtime/environment.js';
 
 /**
  * Serializes the whole OAuth refresh transaction — re-read, redeem, persist —
@@ -36,7 +36,7 @@ export interface RefreshLockOptions {
 }
 
 export function refreshLockDir(): string {
-  return path.join(mcporterDir('data'), REFRESH_LOCK_DIR);
+  return path.join(runtimeStateDir('data'), REFRESH_LOCK_DIR);
 }
 
 /**
@@ -103,7 +103,7 @@ function resolveTimeoutMs(explicit?: number): number | undefined {
   if (explicit !== undefined) {
     return explicit;
   }
-  const raw = process.env[TIMEOUT_OVERRIDE_ENV];
+  const raw = runtimeEnvironment()[TIMEOUT_OVERRIDE_ENV];
   if (raw === undefined || raw.trim().length === 0) {
     return undefined;
   }

@@ -8,6 +8,7 @@ import {
 } from '../sdk-stdio-logging.js';
 
 export interface McporterStdioTransportParameters extends StdioServerParameters {
+  readonly redactDiagnostics?: boolean;
   readonly cleanup?: () => Promise<void> | void;
 }
 
@@ -28,7 +29,8 @@ export class McporterStdioTransport extends StdioClientTransport {
     this.closeDelegate?.();
   };
   private readonly messageInterceptor = (message: JSONRPCMessage) => {
-    if (STDIO_TRACE_ENABLED) this.meta.stdoutChunks?.push(JSON.stringify(message));
+    if (STDIO_TRACE_ENABLED && !this.parameters.redactDiagnostics)
+      this.meta.stdoutChunks?.push(JSON.stringify(message));
     this.messageDelegate?.(message);
   };
 
@@ -49,7 +51,8 @@ export class McporterStdioTransport extends StdioClientTransport {
     if (stderr) {
       (stderr as { setEncoding?: (encoding: string) => void }).setEncoding?.('utf8');
       const handleChunk = (chunk: unknown) => {
-        this.meta.stderrChunks.push(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk));
+        if (!this.parameters.redactDiagnostics)
+          this.meta.stderrChunks.push(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk));
       };
       stderr.on('data', handleChunk);
       stderr.on('error', ignoreStdioEmitterError);
@@ -61,10 +64,11 @@ export class McporterStdioTransport extends StdioClientTransport {
   }
 
   override async start(): Promise<void> {
-    if (STDIO_TRACE_ENABLED) console.log('[mcporter] STDIO trace: start() invoked for stdio transport.');
+    if (STDIO_TRACE_ENABLED && !this.parameters.redactDiagnostics)
+      console.log('[mcporter] STDIO trace: start() invoked for stdio transport.');
     this.installInterceptors();
     await super.start();
-    if (STDIO_TRACE_ENABLED) {
+    if (STDIO_TRACE_ENABLED && !this.parameters.redactDiagnostics) {
       console.log(
         `[mcporter] STDIO trace: spawned ${this.meta.command ?? 'stdio server'} (pid=${this.pid ?? 'unknown'}).`
       );
@@ -76,7 +80,7 @@ export class McporterStdioTransport extends StdioClientTransport {
     // restores them. Reinstall before every send so the live post-probe
     // connection retains logging without patching SDK internals.
     this.installInterceptors();
-    if (STDIO_TRACE_ENABLED) this.meta.stdinChunks?.push(JSON.stringify(message));
+    if (STDIO_TRACE_ENABLED && !this.parameters.redactDiagnostics) this.meta.stdinChunks?.push(JSON.stringify(message));
     await super.send(message);
   }
 

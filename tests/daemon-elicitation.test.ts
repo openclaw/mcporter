@@ -3,9 +3,9 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import type { ServerDefinition } from '../src/config.js';
-import { __testProcessRequest, loadDaemonRuntimeState } from '../src/daemon/host.js';
-import type { DaemonResponse } from '../src/daemon/protocol.js';
+import { DaemonBroker } from '../src/daemon/broker.js';
+import { loadServerDefinitions } from '../src/config.js';
+import { effectiveDefinition } from '../src/daemon/connection-identity.js';
 import { NON_INTERACTIVE_ELICITATION_HINT } from '../src/runtime/elicitation.js';
 import { makeShortTempDir } from './fixtures/test-helpers.js';
 import { budget } from './helpers/timing.js';
@@ -36,36 +36,26 @@ describe('daemon elicitation', () => {
         'utf8'
       );
 
-      const { runtime } = await loadDaemonRuntimeState({ configPath });
+      const broker = new DaemonBroker();
+      const definitions = await Promise.all(
+        (await loadServerDefinitions({ configPath })).map((definition) => effectiveDefinition(definition))
+      );
+      const handle = broker.register({ definitions });
       try {
-        const definition = runtime.getDefinition('modern');
-        const result = await __testProcessRequest(
-          '',
-          runtime,
-          new Map<string, ServerDefinition>([['modern', definition]]),
-          new Map(),
-          {
-            configPath,
-            configLayers: [],
-            configMtimeMs: null,
-            socketPath: path.join(tempDir, 'daemon.sock'),
-            startedAt: Date.now(),
-            logPath: null,
-          },
-          { enabled: false, logAllServers: false, servers: new Set() },
-          {
+        const response = {
+          ok: true,
+          ...(await broker.invokeWithNotices({
             id: 'elicitation-call',
             method: 'callTool',
             params: { server: 'modern', tool: 'confirm_delete', args: { target: 'fixture-item' } },
-          }
-        );
-        const response = result.response as DaemonResponse & { notices?: string[] };
-
+            ...handle,
+          })),
+        };
         expect(response.ok).toBe(true);
         expect(response.notices).toEqual([NON_INTERACTIVE_ELICITATION_HINT]);
         expect(JSON.stringify(response.result)).toContain('delete declined');
       } finally {
-        await runtime.close().catch(() => {});
+        await broker.close();
         await fs.rm(tempDir, { recursive: true, force: true });
       }
     },

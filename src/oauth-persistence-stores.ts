@@ -1,5 +1,4 @@
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import type { OAuthClientInformationMixed, OAuthDiscoveryState, OAuthTokens } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from './config.js';
@@ -25,7 +24,7 @@ import {
   reconcileVaultServerUrl,
   saveVaultEntry,
 } from './oauth-vault.js';
-import { legacyMcporterDir } from './paths.js';
+import { runtimeHome } from './runtime/environment.js';
 
 type StoredOAuthTokens = OAuthTokens & {
   expires_at?: number;
@@ -663,7 +662,7 @@ export async function createOAuthPersistenceStores(
   }
 
   // Migrate legacy default per-server cache (~/.mcporter/<name>) into the vault if present.
-  const legacyDir = path.join(legacyMcporterDir(), definition.name);
+  const legacyDir = path.join(path.join(runtimeHome(), '.mcporter'), definition.name);
   if (!definition.tokenCacheDir) {
     const legacy = new DirectoryPersistence(legacyDir, logger, serverUrl, true);
     const snapshot = await legacy.readSnapshot();
@@ -711,7 +710,7 @@ export async function clearLegacyOAuthArtifacts(
   logger: Logger | undefined,
   scope: OAuthClearScope
 ): Promise<void> {
-  const legacyDir = path.join(legacyMcporterDir(), definition.name);
+  const legacyDir = path.join(path.join(runtimeHome(), '.mcporter'), definition.name);
   if (!definition.tokenCacheDir || legacyDir !== definition.tokenCacheDir) {
     const legacy = new DirectoryPersistence(legacyDir, logger);
     await legacy.clear(scope);
@@ -720,7 +719,7 @@ export async function clearLegacyOAuthArtifacts(
   // Known provider-specific legacy paths (gmail server writes to ~/.gmail-mcp/credentials.json).
   const legacyFiles: string[] = [];
   if (definition.name.toLowerCase() === 'gmail') {
-    legacyFiles.push(path.join(os.homedir(), '.gmail-mcp', 'credentials.json'));
+    legacyFiles.push(path.join(runtimeHome(), '.gmail-mcp', 'credentials.json'));
   }
   await Promise.all(
     legacyFiles.map(async (file) => {
