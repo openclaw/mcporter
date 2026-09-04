@@ -84,14 +84,20 @@ describe('environment helpers', () => {
     delete process.env.MCPORTER_TEMP;
     delete process.env.MCPORTER_REQUIRED;
     delete process.env.MCPORTER_INVALID;
+    process.env.MCPORTER_EXISTING = 'original';
     const task = vi.fn();
 
     await expect(
-      withEnvOverrides({ MCPORTER_TEMP: 'temporary', MCPORTER_INVALID: invalidValue }, task)
+      withEnvOverrides(
+        { MCPORTER_EXISTING: 'replacement', MCPORTER_TEMP: 'temporary', MCPORTER_INVALID: invalidValue },
+        task
+      )
     ).rejects.toThrow(message);
 
     expect(task).not.toHaveBeenCalled();
     expect(process.env.MCPORTER_TEMP).toBeUndefined();
+    expect(process.env.MCPORTER_INVALID).toBeUndefined();
+    expect(process.env.MCPORTER_EXISTING).toBe('original');
   });
 });
 

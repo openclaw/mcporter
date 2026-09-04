@@ -272,5 +272,6 @@ For keep-alive stdio servers, refresh happens before process start. If that proc
 
 - `mcporter list --http-url ...` refuses to auto-run OAuth to keep listing commands quick; use `mcporter config login ...` or `mcporter auth ...` to finish credential setup.
 - When env placeholders are missing, commands fail fast with the exact variable name. Add the variable or wrap it in `${VAR:-fallback}` to provide defaults.
+- Temporary server environment overrides are removed after connection setup, including when a later override fails validation or resolution. Values inherited from the process keep their existing precedence.
 - Use `mcporter config get <name>` to confirm where a server came from. If a teammate’s Cursor config keeps overriding your local entry, reorder the `imports` array to move Cursor later or set it to `[]` to disable imports entirely.
 - `docs/adhoc.md` covers deeper debugging, including tmux workflows and OAuth promotion logs.

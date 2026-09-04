@@ -2,6 +2,10 @@
 
 ## [0.13.9] - Unreleased
 
+### Reliability
+
+- Remove temporary environment overrides when a later value fails validation or resolution, preventing failed setup from affecting subsequent MCP connections. (PR #342, thanks @oodadoudou)
+
 ### Maintenance
 
 - Refresh runtime schema validation and generated CLI bundling dependencies, including Zod's reserved-key parsing fixes, while preserving the 48-hour dependency release-age policy.
