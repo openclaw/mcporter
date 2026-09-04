@@ -31,10 +31,9 @@ const MIN_RELAY_PROBE_TIMEOUT_MS = 100;
 const MAX_RELAY_PROBE_TIMEOUT_MS = 30_000;
 const DEFAULT_RELAY_URL = 'http://127.0.0.1:18799';
 const DEFAULT_RELAY_IDENTITY_URL = new URL(DEFAULT_RELAY_URL).toString();
-const RELAY_CWD_SENTINEL = '$MCPORTER_CHROME_RELAY_CWD';
-const RELAY_CREDENTIAL_SENTINEL = '$MCPORTER_CHROME_RELAY_CREDENTIAL:';
+const RELAY_DEPENDENCY_SENTINEL = '$MCPORTER_CHROME_RELAY_DEPENDENCY:';
 const RELAY_DISCOVERY_SENTINEL = '$MCPORTER_CHROME_RELAY_DISCOVERY:';
-export const CHROME_DEVTOOLS_RELAY_RUNTIME_IDENTITY_VERSION = 1;
+export const CHROME_DEVTOOLS_RELAY_RUNTIME_IDENTITY_VERSION = 2;
 export const CHROME_DEVTOOLS_RELAY_RUNTIME_ENV_KEYS = [
   'MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY',
   'MCPORTER_DISABLE_CHROME_DEVTOOLS_RELAY',
@@ -455,7 +454,9 @@ function sanitizeRelayIdentityEnvironment(env: NodeJS.ProcessEnv): NodeJS.Proces
   const selected = selectChromeDevtoolsRelayRuntimeEnvironment(env);
   if (selected.MCPORTER_CHROME_DEVTOOLS_RELAY_URL !== undefined) {
     const explicit = explicitRelayBaseUrl(selected);
-    selected.MCPORTER_CHROME_DEVTOOLS_RELAY_URL = explicit.url?.toString() ?? 'invalid-endpoint';
+    selected.MCPORTER_CHROME_DEVTOOLS_RELAY_URL = explicit.explicit
+      ? (explicit.url?.toString() ?? 'invalid-endpoint')
+      : '';
   }
   return selected;
 }
@@ -476,50 +477,27 @@ export function chromeDevtoolsRelayEnvironmentKeys(
     if (!relevant) {
       continue;
     }
-    for (const key of commandEnvironmentKeys) keys.add(key);
+    for (const key of commandEnvironmentKeys) keys.add(`${RELAY_DEPENDENCY_SENTINEL}${key}`);
     const resolvedDefinitionEnv = resolveRelayIdentityEnvOverrides(definition.env, env);
-    for (const pathKey of [
-      'HOME',
-      'USERPROFILE',
-      'OPENCLAW_HOME',
-      'OPENCLAW_STATE_DIR',
-      'OPENCLAW_OAUTH_DIR',
-      'OPENCLAW_CONFIG_PATH',
-    ] as const) {
-      const override = resolvedDefinitionEnv[pathKey]?.trim();
-      if (
-        override &&
-        override !== '~' &&
-        !override.startsWith('~/') &&
-        !override.startsWith('~\\') &&
-        !path.isAbsolute(override)
-      ) {
-        keys.add(RELAY_CWD_SENTINEL);
-      }
-    }
     for (const key of CHROME_DEVTOOLS_RELAY_RUNTIME_ENV_KEYS) {
-      keys.add(key);
       const override = definition.env?.[key];
       if (!override) continue;
-      for (const referenced of referencedEnvironmentVariables(override)) keys.add(referenced);
+      for (const referenced of referencedEnvironmentVariables(override))
+        keys.add(`${RELAY_DEPENDENCY_SENTINEL}${referenced}`);
     }
-    const effectiveEnv = { ...env, ...resolvedDefinitionEnv };
     const resolvedCommand = resolveCommandArgument(definition.command.command, env);
     const resolvedArgs = resolveCommandArguments(definition.command.args, env);
-    if (!isChromeDevtoolsAutoConnectCommand(resolvedCommand, resolvedArgs)) continue;
-    const credentialPath = path.join(resolveOpenClawCredentialDir(effectiveEnv), 'browser-extension-relay.secret');
-    keys.add(`${RELAY_CREDENTIAL_SENTINEL}${credentialPath}`);
-    const environment = sanitizeRelayIdentityEnvironment(
-      Object.fromEntries(
-        CHROME_DEVTOOLS_RELAY_RUNTIME_ENV_KEYS.flatMap((key) => {
-          const value = resolvedDefinitionEnv[key];
-          return value === undefined ? [] : [[key, value]];
-        })
-      )
-    );
+    const eligible = isChromeDevtoolsAutoConnectCommand(resolvedCommand, resolvedArgs);
+    if (!eligible && !isAmbiguousChromeDevtoolsAutoConnectCommand(resolvedCommand, resolvedArgs)) continue;
+    const environment = sanitizeRelayIdentityEnvironment(resolvedDefinitionEnv);
     keys.add(
       `${RELAY_DISCOVERY_SENTINEL}${Buffer.from(
-        JSON.stringify({ credentialPath, environment, configuredPolicy: definition.chromeDevtoolsRelay }),
+        JSON.stringify({
+          server: definition.name,
+          eligible,
+          environment,
+          configuredPolicy: definition.chromeDevtoolsRelay,
+        }),
         'utf8'
       ).toString('base64url')}`
     );
@@ -531,8 +509,8 @@ export function hashChromeDevtoolsRelayProcessEnvironment(
   keys: readonly string[],
   env: NodeJS.ProcessEnv = process.env
 ): string {
-  const credentialId = createRelayCredentialIdResolver();
-  return hashRelayIdentityValues(relayEnvironmentIdentityValues(keys, env, credentialId));
+  const { values, relays } = relayEnvironmentIdentityValues(keys, env);
+  return hashRelayIdentityValues([...values, ...relays.map((relay) => [relay.server, relay.endpoint] as const)]);
 }
 
 export async function resolveChromeDevtoolsRelayRuntimeIdentity(
@@ -540,55 +518,28 @@ export async function resolveChromeDevtoolsRelayRuntimeIdentity(
   env: NodeJS.ProcessEnv = process.env,
   options: ChromeDevtoolsRelayIdentityOptions = {}
 ): Promise<string> {
-  const credentialId = createRelayCredentialIdResolver();
-  const environmentValues = relayEnvironmentIdentityValues(keys, env, credentialId);
-  const discoveryValues: Array<readonly [string, string]> = [];
-  for (const key of keys) {
-    if (!key.startsWith(RELAY_DISCOVERY_SENTINEL)) continue;
-    const payload = parseRelayDiscoveryIdentity(key.slice(RELAY_DISCOVERY_SENTINEL.length));
-    if (!payload) {
-      discoveryValues.push([key, DEFAULT_RELAY_IDENTITY_URL]);
-      continue;
+  const { values, relays } = relayEnvironmentIdentityValues(keys, env);
+  for (const relay of relays) {
+    let endpoint = relay.endpoint;
+    if (relay.discover && relay.keyId !== 'missing-credential' && relay.keyId !== 'invalid-credential') {
+      try {
+        const discovered = await discoverOpenClawRelayUrl({
+          env: relay.env,
+          keyId: relay.keyId,
+          timeoutMs: relay.timeoutMs,
+          run: options.discover,
+          platform: options.discovery?.platform,
+          isFile: options.discovery?.isFile,
+          cwd: options.discovery?.cwd,
+        });
+        endpoint = discovered.url?.toString() ?? DEFAULT_RELAY_IDENTITY_URL;
+      } catch {
+        endpoint = DEFAULT_RELAY_IDENTITY_URL;
+      }
     }
-    const effectiveEnv = {
-      ...selectChromeDevtoolsRelayRuntimeEnvironment(env),
-      ...payload.environment,
-    };
-    const explicit = explicitRelayBaseUrl(effectiveEnv);
-    if (explicit.explicit) {
-      discoveryValues.push([key, explicit.url?.toString() ?? 'invalid-endpoint']);
-      continue;
-    }
-    if (resolveChromeDevtoolsRelayPolicy(payload.configuredPolicy, effectiveEnv) === 'off') {
-      discoveryValues.push([key, 'disabled']);
-      continue;
-    }
-    const keyId = credentialId(payload.credentialPath);
-    if (keyId === 'missing-credential' || keyId === 'invalid-credential') {
-      discoveryValues.push([key, DEFAULT_RELAY_IDENTITY_URL]);
-      continue;
-    }
-    try {
-      const discovered = await discoverOpenClawRelayUrl({
-        env: effectiveEnv,
-        keyId,
-        timeoutMs: resolveChromeDevtoolsRelayProbeTimeoutMs(effectiveEnv),
-        run: options.discover,
-        platform: options.discovery?.platform,
-        isFile: options.discovery?.isFile,
-        cwd: options.discovery?.cwd,
-      });
-      discoveryValues.push([key, discovered.url?.toString() ?? DEFAULT_RELAY_IDENTITY_URL]);
-    } catch {
-      discoveryValues.push([key, DEFAULT_RELAY_IDENTITY_URL]);
-    }
+    values.push([relay.server, endpoint]);
   }
-  if (discoveryValues.length === 0) return hashRelayIdentityValues(environmentValues);
-  return hashRelayIdentityValues([
-    ...environmentValues,
-    ['$relayRuntimeIdentity', CHROME_DEVTOOLS_RELAY_RUNTIME_IDENTITY_VERSION],
-    ...discoveryValues,
-  ]);
+  return hashRelayIdentityValues(values);
 }
 
 function createRelayCredentialIdResolver(): (credentialPath: string) => string {
@@ -604,65 +555,159 @@ function createRelayCredentialIdResolver(): (credentialPath: string) => string {
   };
 }
 
+interface RelayDiscoveryIdentity {
+  readonly server: string;
+  readonly eligible: boolean;
+  readonly environment: NodeJS.ProcessEnv;
+  readonly configuredPolicy?: ChromeDevtoolsRelayPolicy;
+}
+
+interface EffectiveRelayIdentity {
+  readonly server: string;
+  readonly env: NodeJS.ProcessEnv;
+  readonly timeoutMs: number;
+  readonly keyId: string;
+  readonly endpoint: string;
+  readonly discover: boolean;
+}
+
+type RelayIdentityValue = readonly [string, string | number | null];
+
 function relayEnvironmentIdentityValues(
   keys: readonly string[],
-  env: NodeJS.ProcessEnv,
-  credentialId: (credentialPath: string) => string
-): Array<readonly [string, string | number | null]> {
-  const values: Array<readonly [string, string | number | null]> = keys.map((key) => {
-    if (key === RELAY_CWD_SENTINEL) return [key, process.cwd()];
-    if (key.startsWith(RELAY_CREDENTIAL_SENTINEL)) {
-      const credentialPath = key.slice(RELAY_CREDENTIAL_SENTINEL.length);
-      return [key, credentialId(credentialPath)];
+  env: NodeJS.ProcessEnv
+): { values: RelayIdentityValue[]; relays: EffectiveRelayIdentity[] } {
+  const credentialId = createRelayCredentialIdResolver();
+  const values: RelayIdentityValue[] = [];
+  const relays: EffectiveRelayIdentity[] = [];
+  for (const key of keys) {
+    if (key.startsWith(RELAY_DEPENDENCY_SENTINEL)) {
+      // Substitution consumes raw bytes even if the same variable is a normalized relay control.
+      values.push([key, env[key.slice(RELAY_DEPENDENCY_SENTINEL.length)] ?? null]);
+      continue;
     }
-    if (key.startsWith(RELAY_DISCOVERY_SENTINEL)) {
-      return [key, 'async-discovery'];
+    if (!key.startsWith(RELAY_DISCOVERY_SENTINEL)) {
+      values.push([key, relayEnvironmentIdentityValue(key, env)]);
+      continue;
     }
-    return [key, env[key] ?? null];
-  });
-  if (keys.length > 0) {
-    values.push(['$relayAuth', 'v2-async-metadata-discovery']);
+    const payload = parseRelayDiscoveryIdentity(key.slice(RELAY_DISCOVERY_SENTINEL.length));
+    if (!payload) throw new Error('Invalid Chrome DevTools relay identity metadata');
+    const effectiveEnv = { ...selectChromeDevtoolsRelayRuntimeEnvironment(env), ...payload.environment };
+    const policy = resolveChromeDevtoolsRelayPolicy(payload.configuredPolicy, effectiveEnv);
+    const timeoutMs = resolveChromeDevtoolsRelayProbeTimeoutMs(effectiveEnv);
+    const explicit = explicitRelayBaseUrl(effectiveEnv);
+    const credentialDir = resolveOpenClawCredentialDir(effectiveEnv);
+    const keyId = payload.eligible
+      ? credentialId(path.join(credentialDir, 'browser-extension-relay.secret'))
+      : 'not-eligible';
+    const server = `$relay:${payload.server}`;
+    values.push([
+      server,
+      JSON.stringify({
+        policy,
+        timeoutMs,
+        eligible: payload.eligible,
+        credentialDir,
+        keyId,
+        // These values also reach the discovery subprocess; retain inputs whose equivalence it does not guarantee.
+        discovery: OPENCLAW_RELAY_DISCOVERY_ENV_KEYS.map((name) => [
+          name,
+          relayEnvironmentIdentityValue(name, effectiveEnv),
+        ]),
+        cwd: relayIdentityDependsOnCwd(effectiveEnv) ? process.cwd() : null,
+      }),
+    ]);
+    relays.push({
+      server,
+      env: effectiveEnv,
+      timeoutMs,
+      keyId,
+      endpoint:
+        policy === 'off'
+          ? 'disabled'
+          : explicit.explicit
+            ? (explicit.url?.toString() ?? 'invalid-endpoint')
+            : DEFAULT_RELAY_IDENTITY_URL,
+      discover: payload.eligible && policy !== 'off' && !explicit.explicit,
+    });
   }
-  return values;
+  if (keys.length > 0) values.push(['$relayAuth', 'v2-effective-metadata-discovery']);
+  return { values, relays };
 }
 
-function hashRelayIdentityValues(values: ReadonlyArray<readonly [string, string | number | null]>): string {
-  return createHash('sha256').update(JSON.stringify(values)).digest('hex').slice(0, 16);
-}
-
-function parseRelayDiscoveryIdentity(encoded: string):
-  | {
-      readonly credentialPath: string;
-      readonly environment: NodeJS.ProcessEnv;
-      readonly configuredPolicy?: ChromeDevtoolsRelayPolicy;
+function relayEnvironmentIdentityValue(key: string, env: NodeJS.ProcessEnv): string | number | null {
+  switch (key) {
+    case 'MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY':
+    case 'MCPORTER_DISABLE_CHROME_DEVTOOLS_RELAY':
+      return resolveChromeDevtoolsRelayPolicy(undefined, env);
+    case 'MCPORTER_CHROME_DEVTOOLS_RELAY_TIMEOUT_MS':
+      return resolveChromeDevtoolsRelayProbeTimeoutMs(env);
+    case 'MCPORTER_CHROME_DEVTOOLS_RELAY_URL': {
+      const explicit = explicitRelayBaseUrl(env);
+      return explicit.explicit ? (explicit.url?.toString() ?? 'invalid-endpoint') : DEFAULT_RELAY_IDENTITY_URL;
     }
-  | undefined {
+    case 'OPENCLAW_PROFILE':
+      return normalizeOpenClawProfile(env.OPENCLAW_PROFILE) ?? null;
+    default:
+      return env[key] ?? null;
+  }
+}
+
+function relayIdentityDependsOnCwd(env: NodeJS.ProcessEnv): boolean {
+  const paths = [
+    env.HOME,
+    env.USERPROFILE,
+    env.OPENCLAW_HOME,
+    env.OPENCLAW_STATE_DIR,
+    env.OPENCLAW_OAUTH_DIR,
+    env.OPENCLAW_CONFIG_PATH,
+    ...((env.PATH ?? env.Path)?.split(path.delimiter) ?? []),
+  ];
+  return paths.some((value) => value !== undefined && !path.isAbsolute(value) && !value.startsWith('~'));
+}
+
+function hashRelayIdentityValues(values: ReadonlyArray<RelayIdentityValue>): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify(
+        values.toSorted((a, b) => a[0].localeCompare(b[0]) || JSON.stringify(a[1]).localeCompare(JSON.stringify(b[1])))
+      )
+    )
+    .digest('hex')
+    .slice(0, 16);
+}
+
+function parseRelayDiscoveryIdentity(encoded: string): RelayDiscoveryIdentity | undefined {
   try {
     const value = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as unknown;
     if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-    const candidate = value as { credentialPath?: unknown; environment?: unknown; configuredPolicy?: unknown };
+    const candidate = value as {
+      server?: unknown;
+      eligible?: unknown;
+      environment?: unknown;
+      configuredPolicy?: unknown;
+    };
     if (
-      typeof candidate.credentialPath !== 'string' ||
+      typeof candidate.server !== 'string' ||
+      typeof candidate.eligible !== 'boolean' ||
       !candidate.environment ||
       typeof candidate.environment !== 'object'
-    ) {
+    )
       return undefined;
-    }
     if (
       candidate.configuredPolicy !== undefined &&
       !['off', 'prefer', 'require'].includes(candidate.configuredPolicy as string)
-    ) {
+    )
       return undefined;
-    }
     const environment: NodeJS.ProcessEnv = {};
     for (const [key, raw] of Object.entries(candidate.environment)) {
-      if (!(CHROME_DEVTOOLS_RELAY_RUNTIME_ENV_KEYS as readonly string[]).includes(key) || typeof raw !== 'string') {
+      if (!(CHROME_DEVTOOLS_RELAY_RUNTIME_ENV_KEYS as readonly string[]).includes(key) || typeof raw !== 'string')
         return undefined;
-      }
       environment[key] = raw;
     }
     return {
-      credentialPath: candidate.credentialPath,
+      server: candidate.server,
+      eligible: candidate.eligible,
       environment,
       configuredPolicy: candidate.configuredPolicy as ChromeDevtoolsRelayPolicy | undefined,
     };

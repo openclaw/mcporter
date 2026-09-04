@@ -1,8 +1,9 @@
 import fs from 'node:fs/promises';
+import syncFs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BROWSER_RELAY_AUTH_CHALLENGE_PATH,
   BROWSER_RELAY_AUTH_COMPLETE_PATH,
@@ -11,6 +12,7 @@ import {
   deriveBrowserRelayKeyId,
 } from '../src/browser-relay-auth-v2.js';
 import {
+  CHROME_DEVTOOLS_RELAY_RUNTIME_ENV_KEYS,
   chromeDevtoolsRelayEnvironmentKeys,
   hashChromeDevtoolsRelayEnvironment,
   resolveChromeDevtoolsRelayEnvironment,
@@ -29,6 +31,12 @@ const TOKEN_KEY_ID = deriveBrowserRelayKeyId(Buffer.from(TOKEN, 'hex'));
 const FAKE_PROXY_AUTHORIZATION = `Bearer ${'c'.repeat(43)}`;
 const AUTO_ARGS = ['-y', 'chrome-devtools-mcp@latest', '--autoConnect'];
 const TEST_DISCOVERY = { platform: 'linux' as const };
+
+vi.mock('node:child_process', () => ({
+  spawn: vi.fn(() => {
+    throw new Error('Relay tests must inject synthetic discovery');
+  }),
+}));
 
 function fakeUpstream() {
   return { socket: new net.Socket(), head: Buffer.alloc(0) };
@@ -72,8 +80,34 @@ function relayMetadata(keyId: string, port = 18_799): Buffer {
 }
 
 describe('chrome-devtools OpenClaw relay routing', () => {
+  beforeEach(() => {
+    const home = os.homedir();
+    for (const key of CHROME_DEVTOOLS_RELAY_RUNTIME_ENV_KEYS) vi.stubEnv(key, undefined);
+    vi.stubEnv('HOME', home);
+    vi.stubEnv('USERPROFILE', home);
+    const fixtureDirectories = [home];
+    const mkdtemp = fs.mkdtemp.bind(fs);
+    vi.spyOn(fs, 'mkdtemp').mockImplementation(async (prefix, options) => {
+      const directory = await mkdtemp(prefix, options);
+      fixtureDirectories.push(directory.toString());
+      return directory;
+    });
+    const openSync = syncFs.openSync.bind(syncFs);
+    vi.spyOn(syncFs, 'openSync').mockImplementation((file, flags, mode) => {
+      if (
+        String(file).endsWith('/browser-extension-relay.secret') &&
+        !fixtureDirectories.some((directory) => String(file).startsWith(`${directory}/`))
+      ) {
+        throw Object.assign(new Error('No synthetic credential at this path'), { code: 'ENOENT' });
+      }
+      return openSync(file, flags, mode);
+    });
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
   });
 
   it('only considers autoConnect chrome-devtools commands', () => {
@@ -160,6 +194,217 @@ describe('chrome-devtools OpenClaw relay routing', () => {
     );
     for (const raw of ['', '0', '-1', '1.5', 'nope']) {
       expect(resolveChromeDevtoolsRelayProbeTimeoutMs({ MCPORTER_CHROME_DEVTOOLS_RELAY_TIMEOUT_MS: raw })).toBe(5_000);
+    }
+  });
+
+  it.each([
+    [{}, { MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'prefer' }],
+    [{}, { MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: ' PREFER ' }],
+    [{ MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'off' }, { MCPORTER_DISABLE_CHROME_DEVTOOLS_RELAY: '1' }],
+    [{}, { MCPORTER_DISABLE_CHROME_DEVTOOLS_RELAY: '0' }],
+    [{}, { MCPORTER_CHROME_DEVTOOLS_RELAY_TIMEOUT_MS: '05000' }],
+    [{}, { MCPORTER_CHROME_DEVTOOLS_RELAY_TIMEOUT_MS: 'invalid' }],
+    [{ MCPORTER_CHROME_DEVTOOLS_RELAY_TIMEOUT_MS: '1' }, { MCPORTER_CHROME_DEVTOOLS_RELAY_TIMEOUT_MS: '100' }],
+    [{ MCPORTER_CHROME_DEVTOOLS_RELAY_TIMEOUT_MS: '30001' }, { MCPORTER_CHROME_DEVTOOLS_RELAY_TIMEOUT_MS: '30000' }],
+    [{}, { MCPORTER_CHROME_DEVTOOLS_RELAY_URL: '  ' }],
+    [{}, { MCPORTER_CHROME_DEVTOOLS_RELAY_URL: 'http://127.0.0.1:18799/' }],
+    [{}, { OPENCLAW_PROFILE: ' DEFAULT ' }],
+    [{}, { OPENCLAW_PROFILE: '../invalid' }],
+  ] satisfies Array<[NodeJS.ProcessEnv, NodeJS.ProcessEnv]>)(
+    'normalizes equivalent effective relay controls: %j and %j',
+    async (before, after) => {
+      const definition: ServerDefinition = {
+        name: 'chrome',
+        command: { kind: 'stdio', command: 'npx', args: AUTO_ARGS, cwd: '/tmp' },
+      };
+      const options = { discover: vi.fn(async () => ({ kind: 'unavailable' as const })), discovery: TEST_DISCOVERY };
+      const keys = chromeDevtoolsRelayEnvironmentKeys([definition], before);
+      const baseline = await resolveChromeDevtoolsRelayRuntimeIdentity(keys, before, options);
+      expect(await resolveChromeDevtoolsRelayRuntimeIdentity(keys, after, options)).toBe(baseline);
+      expect(
+        await resolveChromeDevtoolsRelayRuntimeIdentity(
+          chromeDevtoolsRelayEnvironmentKeys([definition], after),
+          after,
+          options
+        )
+      ).toBe(baseline);
+    }
+  );
+
+  it('normalizes explicitly selected policy keys while retaining custom identity inputs', async () => {
+    const keys = ['MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY', 'CUSTOM_IDENTITY'];
+    const baseline = await resolveChromeDevtoolsRelayRuntimeIdentity(keys, {});
+    expect(
+      await resolveChromeDevtoolsRelayRuntimeIdentity(keys, { MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'prefer' })
+    ).toBe(baseline);
+    expect(await resolveChromeDevtoolsRelayRuntimeIdentity(keys, { CUSTOM_IDENTITY: 'changed' })).not.toBe(baseline);
+  });
+
+  it('does not apply relay policy to a placeholder command that resolves to an unrelated server', async () => {
+    const definition: ServerDefinition = {
+      name: 'other',
+      command: { kind: 'stdio', command: '$env:LAUNCHER', args: [], cwd: '/tmp' },
+    };
+    const env = { LAUNCHER: 'other-mcp', MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'invalid' };
+    const keys = chromeDevtoolsRelayEnvironmentKeys([definition], env);
+    expect(await resolveChromeDevtoolsRelayRuntimeIdentity(keys, env)).toBe(
+      await resolveChromeDevtoolsRelayRuntimeIdentity(keys, { LAUNCHER: 'other-mcp' })
+    );
+  });
+
+  it('ignores controls fully shadowed by all servers, but retains partially inherited controls', async () => {
+    const definition: ServerDefinition = {
+      name: 'chrome',
+      command: { kind: 'stdio', command: 'npx', args: AUTO_ARGS, cwd: '/tmp' },
+      env: {
+        MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'require',
+        MCPORTER_CHROME_DEVTOOLS_RELAY_URL: 'http://127.0.0.1:19110',
+        MCPORTER_CHROME_DEVTOOLS_RELAY_TIMEOUT_MS: '5000',
+        OPENCLAW_PROFILE: 'work',
+        HOME: '/synthetic/home',
+        USERPROFILE: '/synthetic/user-profile',
+        OPENCLAW_HOME: '/synthetic/openclaw-home',
+        OPENCLAW_STATE_DIR: '/synthetic/state',
+        OPENCLAW_OAUTH_DIR: '/synthetic/credentials',
+        OPENCLAW_CONFIG_PATH: '/synthetic/config.json',
+        PATH: '/synthetic/bin',
+      },
+    };
+    const options = { discover: vi.fn(async () => ({ kind: 'unavailable' as const })), discovery: TEST_DISCOVERY };
+    const before = {};
+    const after = {
+      MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'off',
+      MCPORTER_CHROME_DEVTOOLS_RELAY_URL: 'http://127.0.0.1:19999',
+      MCPORTER_CHROME_DEVTOOLS_RELAY_TIMEOUT_MS: '9000',
+      OPENCLAW_PROFILE: 'personal',
+      HOME: '/synthetic/other-home',
+      USERPROFILE: '/synthetic/other-user-profile',
+      OPENCLAW_HOME: '/synthetic/other-openclaw-home',
+      OPENCLAW_STATE_DIR: '/synthetic/other-state',
+      OPENCLAW_OAUTH_DIR: '/synthetic/other-credentials',
+      OPENCLAW_CONFIG_PATH: '/synthetic/other-config.json',
+      PATH: '/synthetic/other-bin',
+    };
+    const keys = chromeDevtoolsRelayEnvironmentKeys([definition, { ...definition, name: 'second' }], before);
+    expect(await resolveChromeDevtoolsRelayRuntimeIdentity(keys, after, options)).toBe(
+      await resolveChromeDevtoolsRelayRuntimeIdentity(keys, before, options)
+    );
+    for (const command of [
+      definition.command,
+      { ...definition.command, command: 'npm', args: ['exec', '--', ...AUTO_ARGS] },
+    ]) {
+      const mixedKeys = chromeDevtoolsRelayEnvironmentKeys(
+        [definition, { ...definition, name: 'inherited', command, env: {} }],
+        before
+      );
+      const baseline = await resolveChromeDevtoolsRelayRuntimeIdentity(mixedKeys, before, options);
+      for (const [key, value] of Object.entries(after)) {
+        expect(await resolveChromeDevtoolsRelayRuntimeIdentity(mixedKeys, { [key]: value }, options), key).not.toBe(
+          baseline
+        );
+      }
+    }
+    expect(
+      await resolveChromeDevtoolsRelayRuntimeIdentity(keys, { MCPORTER_DISABLE_CHROME_DEVTOOLS_RELAY: '1' }, options)
+    ).not.toBe(await resolveChromeDevtoolsRelayRuntimeIdentity(keys, before, options));
+  });
+
+  it('retains raw placeholder dependencies even when they are relay controls overridden by every server', () => {
+    const definition: ServerDefinition = {
+      name: 'chrome',
+      command: {
+        kind: 'stdio',
+        command: 'npx',
+        args: [...AUTO_ARGS, '${MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY}'],
+        cwd: '/tmp',
+      },
+      env: { MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'prefer' },
+    };
+    expect(
+      hashChromeDevtoolsRelayEnvironment([definition], { MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'prefer' })
+    ).not.toBe(hashChromeDevtoolsRelayEnvironment([definition], { MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: ' PREFER ' }));
+    const indirect = {
+      ...definition,
+      command: { ...definition.command, args: AUTO_ARGS },
+      env: {
+        MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'prefer',
+        OPENCLAW_PROFILE: '$env:MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY',
+      },
+    };
+    expect(
+      hashChromeDevtoolsRelayEnvironment([indirect], { MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'prefer' })
+    ).not.toBe(hashChromeDevtoolsRelayEnvironment([indirect], { MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'require' }));
+  });
+
+  it('normalizes definition controls without losing empty-override fallback or configured require', async () => {
+    const definition: ServerDefinition = {
+      name: 'chrome',
+      command: { kind: 'stdio', command: 'npx', args: AUTO_ARGS, cwd: '/tmp' },
+    };
+    const options = { discover: vi.fn(async () => ({ kind: 'unavailable' as const })), discovery: TEST_DISCOVERY };
+    const identity = (server: ServerDefinition, env: NodeJS.ProcessEnv = {}) =>
+      resolveChromeDevtoolsRelayRuntimeIdentity(chromeDevtoolsRelayEnvironmentKeys([server], env), env, options);
+    const baseline = await identity(definition);
+    const equivalentOverrides: Array<Record<string, string>> = [
+      { MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: ' PREFER ' },
+      { MCPORTER_CHROME_DEVTOOLS_RELAY_TIMEOUT_MS: 'invalid' },
+      { MCPORTER_CHROME_DEVTOOLS_RELAY_URL: '   ' },
+      { OPENCLAW_PROFILE: 'default' },
+    ];
+    for (const env of equivalentOverrides) expect(await identity({ ...definition, env })).toBe(baseline);
+    expect(await identity({ ...definition, chromeDevtoolsRelay: 'prefer' })).toBe(baseline);
+    const required = { ...definition, chromeDevtoolsRelay: 'require' as const };
+    expect(await identity(required)).not.toBe(baseline);
+    expect(await identity(required, { MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: ' PREFER ' })).toBe(baseline);
+    expect(
+      await identity(
+        { ...definition, env: { MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: '' } },
+        {
+          MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'require',
+        }
+      )
+    ).toBe(await identity(required));
+    expect(
+      await identity(
+        { ...definition, env: { MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: '${MISSING_POLICY}' } },
+        {
+          MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'require',
+        }
+      )
+    ).not.toBe(baseline);
+  });
+
+  it('keeps launcher substitutions and discovery inputs distinct even when discovery returns the same URL', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-relay-inputs-'));
+    await fs.writeFile(path.join(directory, 'browser-extension-relay.secret'), TOKEN, { mode: 0o600 });
+    const definition: ServerDefinition = {
+      name: 'chrome',
+      command: { kind: 'stdio', command: '$env:RELAY_LAUNCHER', args: AUTO_ARGS, cwd: '/tmp' },
+      env: { OPENCLAW_OAUTH_DIR: directory },
+    };
+    const discover = vi.fn<NonNullable<ChromeDevtoolsRelayProbeOptions['discover']>>(async () => ({
+      kind: 'success',
+      stdout: relayMetadata(TOKEN_KEY_ID),
+    }));
+    const options = { discover, discovery: TEST_DISCOVERY };
+    const env = { RELAY_LAUNCHER: 'npx', PATH: '/synthetic/bin' };
+    const keys = chromeDevtoolsRelayEnvironmentKeys([definition], env);
+    try {
+      const baseline = await resolveChromeDevtoolsRelayRuntimeIdentity(keys, env, options);
+      for (const change of [
+        { RELAY_LAUNCHER: 'bunx' },
+        { PATH: '/synthetic/other-bin' },
+        { OPENCLAW_GATEWAY_PORT: '19999' },
+        { LANG: 'de_AT.UTF-8' },
+      ]) {
+        expect(await resolveChromeDevtoolsRelayRuntimeIdentity(keys, { ...env, ...change }, options)).not.toBe(
+          baseline
+        );
+      }
+      expect(discover).toHaveBeenCalledTimes(5);
+      expect(discover.mock.calls[0]?.[0]).toMatchObject({ executable: 'openclaw', env: { PATH: '/synthetic/bin' } });
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
     }
   });
 
@@ -337,6 +582,8 @@ describe('chrome-devtools OpenClaw relay routing', () => {
     }
     expect(identities[0]).not.toBe(identities[1]);
     expect(identities[2]).not.toBe(identities[3]);
+    expect(identities[0]).toBe(identities[2]);
+    expect(identities[1]).toBe(identities[3]);
     expect(discover).not.toHaveBeenCalled();
   });
 
@@ -574,6 +821,8 @@ describe('chrome-devtools OpenClaw relay routing', () => {
       {},
       {
         readToken: () => TOKEN,
+        discover: async () => ({ kind: 'unavailable' }),
+        discovery: TEST_DISCOVERY,
         connect: async () => ({ reason: 'success', durationMs: 1, status: 200, upstream: fakeUpstream() }),
       }
     );
