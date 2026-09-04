@@ -12,7 +12,6 @@ import {
   deriveBrowserRelayKeyId,
 } from '../src/browser-relay-auth-v2.js';
 import {
-  CHROME_DEVTOOLS_RELAY_RUNTIME_ENV_KEYS,
   chromeDevtoolsRelayEnvironmentKeys,
   hashChromeDevtoolsRelayEnvironment,
   resolveChromeDevtoolsRelayEnvironment,
@@ -25,6 +24,10 @@ import {
   type ChromeDevtoolsRelayProbeResult,
 } from '../src/chrome-devtools-relay.js';
 import type { ServerDefinition } from '../src/config.js';
+import {
+  assertSyntheticRelayCredentialPath,
+  isolateChromeRelayTestEnvironment,
+} from './helpers/chrome-relay-fixture.js';
 
 const TOKEN = 'a'.repeat(64);
 const TOKEN_KEY_ID = deriveBrowserRelayKeyId(Buffer.from(TOKEN, 'hex'));
@@ -80,11 +83,11 @@ function relayMetadata(keyId: string, port = 18_799): Buffer {
 }
 
 describe('chrome-devtools OpenClaw relay routing', () => {
+  let restoreEnvironment: () => void;
+
   beforeEach(() => {
     const home = os.homedir();
-    for (const key of CHROME_DEVTOOLS_RELAY_RUNTIME_ENV_KEYS) vi.stubEnv(key, undefined);
-    vi.stubEnv('HOME', home);
-    vi.stubEnv('USERPROFILE', home);
+    restoreEnvironment = isolateChromeRelayTestEnvironment(home);
     const fixtureDirectories = [home];
     const mkdtemp = fs.mkdtemp.bind(fs);
     vi.spyOn(fs, 'mkdtemp').mockImplementation(async (prefix, options) => {
@@ -94,12 +97,7 @@ describe('chrome-devtools OpenClaw relay routing', () => {
     });
     const openSync = syncFs.openSync.bind(syncFs);
     vi.spyOn(syncFs, 'openSync').mockImplementation((file, flags, mode) => {
-      if (
-        String(file).endsWith('/browser-extension-relay.secret') &&
-        !fixtureDirectories.some((directory) => String(file).startsWith(`${directory}/`))
-      ) {
-        throw Object.assign(new Error('No synthetic credential at this path'), { code: 'ENOENT' });
-      }
+      assertSyntheticRelayCredentialPath(String(file), fixtureDirectories);
       return openSync(file, flags, mode);
     });
   });
@@ -108,6 +106,7 @@ describe('chrome-devtools OpenClaw relay routing', () => {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
+    restoreEnvironment();
   });
 
   it('only considers autoConnect chrome-devtools commands', () => {

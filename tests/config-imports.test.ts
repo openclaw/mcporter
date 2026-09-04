@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadServerDefinitions } from '../src/config.js';
+import { pathsForImport } from '../src/config-imports.js';
 
 const FIXTURE_ROOT = path.resolve(__dirname, 'fixtures', 'imports');
 
@@ -17,13 +18,17 @@ function ensureFakeHomeDir(): string {
 }
 
 beforeEach(() => {
+  vi.stubEnv('OPENCODE_CONFIG', undefined);
+  vi.stubEnv('OPENCODE_CONFIG_DIR', undefined);
+  vi.stubEnv('OPENAI_WORKDIR', undefined);
   fakeHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcporter-home-'));
   homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(fakeHomeDir);
-  process.env.HOME = fakeHomeDir;
-  process.env.USERPROFILE = fakeHomeDir;
-  process.env.APPDATA = path.join(fakeHomeDir, 'AppData', 'Roaming');
-  process.env.XDG_CONFIG_HOME = path.join(fakeHomeDir, '.config');
-  fs.mkdirSync(process.env.APPDATA, { recursive: true });
+  vi.stubEnv('HOME', fakeHomeDir);
+  vi.stubEnv('USERPROFILE', fakeHomeDir);
+  const appData = path.join(fakeHomeDir, 'AppData', 'Roaming');
+  vi.stubEnv('APPDATA', appData);
+  vi.stubEnv('XDG_CONFIG_HOME', path.join(fakeHomeDir, '.config'));
+  fs.mkdirSync(appData, { recursive: true });
   const sourceCodex = path.join(FIXTURE_ROOT, '.codex', 'config.toml');
   const targetCodex = path.join(fakeHomeDir, '.codex', 'config.toml');
   fs.mkdirSync(path.dirname(targetCodex), { recursive: true });
@@ -58,12 +63,7 @@ beforeEach(() => {
 
 afterEach(() => {
   homedirSpy?.mockRestore();
-  process.env.HOME = undefined;
-  process.env.USERPROFILE = undefined;
-  process.env.APPDATA = undefined;
-  process.env.XDG_CONFIG_HOME = undefined;
-  process.env.OPENCODE_CONFIG = undefined;
-  process.env.OPENCODE_CONFIG_DIR = undefined;
+  vi.unstubAllEnvs();
   if (fakeHomeDir) {
     fs.rmSync(fakeHomeDir, { recursive: true, force: true });
     fakeHomeDir = undefined;
@@ -411,7 +411,7 @@ describe('config imports', () => {
         2
       )
     );
-    process.env.OPENCODE_CONFIG = tempConfig;
+    vi.stubEnv('OPENCODE_CONFIG', tempConfig);
     try {
       const servers = await loadServerDefinitions({ rootDir: FIXTURE_ROOT });
       const envServer = servers.find((server) => server.name === 'opencode-env-only');
@@ -422,7 +422,6 @@ describe('config imports', () => {
         importKind: 'opencode',
       });
     } finally {
-      process.env.OPENCODE_CONFIG = undefined;
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
   });
@@ -446,7 +445,7 @@ describe('config imports', () => {
         2
       )
     );
-    process.env.OPENCODE_CONFIG_DIR = tempDir;
+    vi.stubEnv('OPENCODE_CONFIG_DIR', tempDir);
     try {
       const servers = await loadServerDefinitions({ rootDir: FIXTURE_ROOT });
       const dirServer = servers.find((server) => server.name === 'opencode-dir-only');
@@ -457,8 +456,14 @@ describe('config imports', () => {
         importKind: 'opencode',
       });
     } finally {
-      process.env.OPENCODE_CONFIG_DIR = undefined;
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
+  });
+
+  it('leaves unset import overrides absent after earlier tests use them', () => {
+    expect(process.env.OPENCODE_CONFIG).toBeUndefined();
+    expect(process.env.OPENCODE_CONFIG_DIR).toBeUndefined();
+    expect(process.env.OPENAI_WORKDIR).toBeUndefined();
+    expect(pathsForImport('opencode', FIXTURE_ROOT).every((candidate) => path.isAbsolute(candidate))).toBe(true);
   });
 });

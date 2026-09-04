@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -12,12 +13,12 @@ import {
 import { makeShortTempDir } from './fixtures/test-helpers.js';
 import {
   CHROME_DEVTOOLS_RELAY_RUNTIME_IDENTITY_VERSION,
-  CHROME_DEVTOOLS_RELAY_RUNTIME_ENV_KEYS,
   chromeDevtoolsRelayEnvironmentKeys,
   hashChromeDevtoolsRelayEnvironment,
   resolveChromeDevtoolsRelayRuntimeIdentity,
 } from '../src/chrome-devtools-relay.js';
 import type { ServerDefinition } from '../src/config.js';
+import { isolateChromeRelayTestEnvironment } from './helpers/chrome-relay-fixture.js';
 
 const sentMethods: string[] = [];
 const launchDaemonDetached = vi.hoisted(() => vi.fn());
@@ -121,10 +122,10 @@ vi.mock('../src/daemon/launch.js', () => {
 const { DaemonClient, resolveDaemonPaths } = await import('../src/daemon/client.js');
 
 describe('DaemonClient config freshness', () => {
+  let restoreEnvironment: () => void;
+
   beforeEach(() => {
-    for (const key of CHROME_DEVTOOLS_RELAY_RUNTIME_ENV_KEYS) {
-      if (key !== 'HOME' && key !== 'USERPROFILE') vi.stubEnv(key, undefined);
-    }
+    restoreEnvironment = isolateChromeRelayTestEnvironment(os.homedir());
     sentMethods.length = 0;
     previousDaemonDir = process.env.MCPORTER_DAEMON_DIR;
     previousOauthNoBrowser = process.env.MCPORTER_OAUTH_NO_BROWSER;
@@ -169,6 +170,7 @@ describe('DaemonClient config freshness', () => {
       await fs.rm(fixtureDaemonDir, { recursive: true, force: true });
     }
     vi.unstubAllEnvs();
+    restoreEnvironment();
     if (previousDaemonDir === undefined) {
       delete process.env.MCPORTER_DAEMON_DIR;
     } else {
