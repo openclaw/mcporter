@@ -9,7 +9,7 @@ overrides:
   hono: 4.13.5
   ip-address: 10.7.0
   nanoid: 6.0.1
-  qs: 6.15.3
+  qs: 6.16.0
   vite: 8.2.2
 patchedDependencies:
   '@modelcontextprotocol/client@2.0.0': patches/@modelcontextprotocol__client@2.0.0.patch
