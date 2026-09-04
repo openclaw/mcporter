@@ -4,6 +4,7 @@
 
 ### Maintenance
 
+- Refresh schema validation, query parsing, and development tools, including Zod's default-factory cycle-walk fix and bounded `tsx` transform caching, while preserving Node 24 support and the 48-hour dependency release-age policy.
 - Refresh runtime schema validation and generated CLI bundling dependencies, including Zod's reserved-key parsing fixes, while preserving the 48-hour dependency release-age policy.
 
 ## [0.13.8] - 2026-08-28
