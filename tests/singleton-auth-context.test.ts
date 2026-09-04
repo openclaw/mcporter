@@ -68,9 +68,13 @@ it('uses each broker connection context for refreshable stdio credentials, retai
         return f.client(definition);
       })
     );
-    const values = await Promise.all(
+    const calls = await Promise.allSettled(
       clients.map((c) => c.callTool({ server: 'fixture', tool: 'identity' }).then(fixtureResult))
     );
+    const values = calls.map((call) => {
+      if (call.status === 'rejected') throw call.reason;
+      return call.value;
+    });
     expect(values.map((v) => v.value)).toEqual(['synthetic-a', 'synthetic-b']);
     expect(values[0]?.id).not.toBe(values[1]?.id);
   } finally {

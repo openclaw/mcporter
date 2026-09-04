@@ -5,6 +5,7 @@ import { withFileLock, writeJsonFile } from '../fs-json.js';
 import { DaemonBroker, BrokerError } from './broker.js';
 import { canonicalUserConfiguration } from './browser-owner.js';
 import { assertLegacyDrained } from './migration.js';
+import { ProcessObservationError } from './process-retirement.js';
 import { secureDaemonDirectory } from './paths.js';
 import { authenticateServer, daemonKey, requestDaemon, SocketFrames } from './socket-rpc.js';
 import { createLogContext, disposeLogContext, logEvent } from './log-context.js';
@@ -50,22 +51,28 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
     idleShutdownBlocked: !broker.canIdleShutdown(),
   });
   let shuttingDown = false;
+  let closing: Promise<void> | undefined;
   let lastActivity = Date.now();
   let idleTimer: NodeJS.Timeout | undefined;
   const onSignal = () => {
     void close().catch(() => {});
   };
-  const close = async () => {
-    await broker.close();
-    if (shuttingDown) return;
-    shuttingDown = true;
-    clearTimeout(idleTimer);
-    process.off('SIGINT', onSignal);
-    process.off('SIGTERM', onSignal);
-    server.close();
-    await cleanupDaemonArtifactsIfOwned(options, process.pid);
-    await disposeLogContext(log);
-    key.fill(0);
+  const close = (): Promise<void> => {
+    closing ??= (async () => {
+      await broker.close();
+      shuttingDown = true;
+      clearTimeout(idleTimer);
+      process.off('SIGINT', onSignal);
+      process.off('SIGTERM', onSignal);
+      server.close();
+      await cleanupDaemonArtifactsIfOwned(options, process.pid);
+      await disposeLogContext(log);
+      key.fill(0);
+    })().catch((error: unknown) => {
+      closing = undefined;
+      throw error;
+    });
+    return closing;
   };
   const server = net.createServer((socket) => {
     const frames = new SocketFrames(socket);
@@ -119,7 +126,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
       } catch (error) {
         const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'runtime_error';
         const message =
-          error instanceof BrokerError || code === 'browser_owner_conflict'
+          error instanceof BrokerError || error instanceof ProcessObservationError || code === 'browser_owner_conflict'
             ? (error as Error).message
             : `MCP operation failed (${code}); the request was not replayed.`;
         frames.write({ id, ok: false, error: { code, message } });

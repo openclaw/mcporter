@@ -22,10 +22,12 @@ it('blocks coexistence and waits for a verified legacy host and its owned child 
       '-e',
       `const net=require('node:net'),fs=require('node:fs'),{spawn}=require('node:child_process');
  const owned=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});
- const server=net.createServer(s=>s.on('data',chunk=>{const r=JSON.parse(chunk);s.end(JSON.stringify({id:r.id,ok:true,result:r.method==='status'?{pid:process.pid,socketPath:${JSON.stringify(socket)},protocolVersion:1,servers:[]}:true}));if(r.method==='stop'){server.close();setTimeout(()=>owned.kill(),250);}}));
+ let stopping=false;const stop=()=>{if(stopping)return;stopping=true;server.close();owned.kill();process.disconnect();};
+ process.on('message',stop);
+ const server=net.createServer(s=>s.on('data',chunk=>{const r=JSON.parse(chunk);s.end(JSON.stringify({id:r.id,ok:true,result:r.method==='status'?{pid:process.pid,socketPath:${JSON.stringify(socket)},protocolVersion:1,servers:[]}:true}));if(r.method==='stop')setTimeout(stop,250);}));
  server.listen(${JSON.stringify(socket)},()=>fs.writeFileSync(${JSON.stringify(metadata)},JSON.stringify({pid:process.pid,socketPath:${JSON.stringify(socket)}}),{mode:384}));`,
     ],
-    { stdio: 'ignore' }
+    { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] }
   );
   try {
     for (let i = 0; i < 100; i++) {
@@ -43,7 +45,7 @@ it('blocks coexistence and waits for a verified legacy host and its owned child 
     });
   } finally {
     if (child.exitCode === null && child.signalCode === null) {
-      child.kill();
+      if (child.connected) child.send('stop');
       await new Promise<void>((r) => child.once('exit', () => r()));
     }
     if (previous === undefined) delete process.env.MCPORTER_DAEMON_DIR;

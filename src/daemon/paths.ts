@@ -15,17 +15,29 @@ export function daemonRunDir(): string {
   return path.join(daemonBaseDir(), 'daemon');
 }
 
-let verifiedWindowsDirectory: string | undefined;
+let verifiedWindowsDirectory: { path: string; dev: number; ino: number; birthtimeMs: number } | undefined;
 
 export async function secureDaemonDirectory(): Promise<void> {
   if (process.platform === 'win32') {
     const directory = daemonRunDir();
-    if (verifiedWindowsDirectory !== directory) {
+    const previous = await fs.lstat(directory).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error;
+      return undefined;
+    });
+    if (
+      verifiedWindowsDirectory?.path !== directory ||
+      !previous ||
+      previous.dev !== verifiedWindowsDirectory.dev ||
+      previous.ino !== verifiedWindowsDirectory.ino ||
+      previous.birthtimeMs !== verifiedWindowsDirectory.birthtimeMs
+    ) {
       ensureWindowsPrivateDirectory(directory, true);
-      verifiedWindowsDirectory = directory;
+      const info = await fs.lstat(directory);
+      if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Unsafe daemon directory.');
+      verifiedWindowsDirectory = { path: directory, dev: info.dev, ino: info.ino, birthtimeMs: info.birthtimeMs };
+      return;
     }
-    const info = await fs.lstat(directory);
-    if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Unsafe daemon directory.');
+    if (!previous.isDirectory() || previous.isSymbolicLink()) throw new Error('Unsafe daemon directory.');
     return;
   }
   await fs.mkdir(daemonRunDir(), { recursive: true, mode: 0o700 });

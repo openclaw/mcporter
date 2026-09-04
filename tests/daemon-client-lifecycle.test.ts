@@ -24,3 +24,16 @@ it('serializes concurrent binds and repairs missing metadata without replacing t
     await f.close();
   }
 });
+
+it('settles concurrent host shutdowns before releasing the namespace', async () => {
+  const f = await singletonFixture();
+  try {
+    await f.client().callTool({ server: 'fixture', tool: 'identity' });
+    const closed = await Promise.allSettled([f.host.close(), f.host.close()]);
+    expect(closed.map((result) => result.status)).toEqual(['fulfilled', 'fulfilled']);
+    expect(f.host.status().servers).toEqual([]);
+    await expect(fs.stat(f.paths.metadataPath)).rejects.toMatchObject({ code: 'ENOENT' });
+  } finally {
+    await f.close();
+  }
+});

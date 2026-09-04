@@ -7,7 +7,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { isProcessRunning } from '../process-utils.js';
 import { mcporterDir } from '../paths.js';
-import { daemonRunDir } from './paths.js';
+import { daemonRunDir, secureDaemonDirectory } from './paths.js';
 import type { DaemonResponse, StatusResult } from './protocol.js';
 import { BrokerError } from './broker.js';
 
@@ -48,7 +48,10 @@ export async function legacyDaemons(): Promise<Array<{ pid: number; socketPath: 
   if (!process.env.MCPORTER_DAEMON_DIR) dirs.add(path.join(mcporterDir('state'), 'daemon'));
   const result: Array<{ pid: number; socketPath: string; verified: boolean }> = [];
   for (const dir of dirs) {
-    if (process.platform === 'win32') ensureWindowsPrivateDirectory(dir, true);
+    if (process.platform === 'win32') {
+      if (dir === daemonRunDir()) await secureDaemonDirectory();
+      else ensureWindowsPrivateDirectory(dir, true);
+    }
     const files = await fs.readdir(dir).catch((error: NodeJS.ErrnoException) => {
       if (error.code === 'ENOENT') return [];
       throw error;

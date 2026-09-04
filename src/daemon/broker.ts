@@ -1,4 +1,9 @@
-import { ownedProcessTree, awaitRetirement, type ProcessIdentity } from './process-retirement.js';
+import {
+  ownedProcessTree,
+  awaitRetirement,
+  ProcessObservationError,
+  type ProcessIdentity,
+} from './process-retirement.js';
 import { MCPORTER_VERSION } from '../version.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
@@ -212,10 +217,12 @@ export class DaemonBroker {
                 if (pid) {
                   try {
                     target.processes = await ownedProcessTree(pid);
-                  } catch {
+                  } catch (error) {
                     throw new BrokerError(
                       'transport_retirement_failed',
-                      'Transport ownership could not be verified; inspect it before recovery.'
+                      error instanceof ProcessObservationError
+                        ? error.message
+                        : 'Transport ownership could not be verified; inspect it before recovery.'
                     );
                   }
                 }
@@ -360,6 +367,7 @@ export class DaemonBroker {
     entry.idleTimer = setTimeout(() => {
       entry.serial = entry.serial.then(async () => {
         if (entry.active || this.draining) return;
+        entry.state = 'disconnected';
         try {
           await this.retire(entry);
           entry.state = 'idle';
