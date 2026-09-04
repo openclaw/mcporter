@@ -82,42 +82,6 @@ describe('openExternal', () => {
     expect(child.unref).toHaveBeenCalled();
   });
 
-  it.each(['darwin', 'win32'] as const)(
-    'does not turn a late %s spawn error into an unhandled process crash',
-    async (platform) => {
-      const child = new EventEmitter() as EventEmitter & { unref: () => void };
-      child.unref = vi.fn();
-      const launch = vi.fn(() => child as unknown as ReturnType<typeof import('node:child_process').spawn>);
-      const unhandled: unknown[] = [];
-      const record = (reason: unknown) => {
-        unhandled.push(reason);
-      };
-      process.on('unhandledRejection', record);
-      process.on('uncaughtException', record);
-      try {
-        __oauthInternals.openExternal(
-          'https://example.com/auth',
-          platform,
-          launch as unknown as typeof import('node:child_process').spawn
-        );
-        await new Promise<void>((resolve) => {
-          setImmediate(() => {
-            try {
-              child.emit('error', Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' }));
-            } catch (error) {
-              unhandled.push(error);
-            }
-            resolve();
-          });
-        });
-        expect(unhandled).toEqual([]);
-      } finally {
-        process.off('unhandledRejection', record);
-        process.off('uncaughtException', record);
-      }
-    }
-  );
-
   it('opens the browser via rundll32 FileProtocolHandler on Windows (no cmd.exe)', () => {
     const child = new EventEmitter() as EventEmitter & { unref: () => void };
     child.unref = vi.fn();

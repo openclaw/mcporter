@@ -60,6 +60,8 @@ The CLI still avoids surprise prompts during `mcporter list`; the upgrade happen
 
 ## Auth & Persistence
 
+Browser launch is best-effort: if the system browser helper cannot start, mcporter keeps the OAuth session running and prints the authorization URL for you to open manually.
+
 - OAuth flows are allowed; successful tokens store under the inferred name just like regular definitions.
 - `mcporter auth` accepts the same `--http-url/--stdio` flags (and even bare URLs), so you can immediately re-run `mcporter auth https://…` after a 401 without touching a config file.
 - Use `mcporter auth <url> --no-browser` for human-in-the-loop headless OAuth. Text mode writes only the authorization URL to stdout; `--json --no-browser` writes `authorizationUrl` plus `redirectUrl` as JSON. Keep that URL out of durable CI logs and support bundles. The `mcporter auth` process must keep running until the browser redirects to `redirectUrl`; process managers that capture stdout and then tear down the command can kill the local callback listener before tokens are saved. Use a persistent terminal, `tmux`, or a supervised background process such as `nohup` when completing OAuth outside an interactive shell.

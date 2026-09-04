@@ -4,7 +4,7 @@
 
 ### OAuth
 
-- Swallow spawn errors from the macOS `open` and Windows `rundll32` browser helpers so a missing helper cannot crash `mcporter auth`.
+- Keep OAuth running when macOS `open` or Windows `rundll32` cannot start, so the printed authorization URL remains usable. (PR #341, thanks @SebTardif)
 
 ### Maintenance
 
