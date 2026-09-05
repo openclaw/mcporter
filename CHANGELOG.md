@@ -2,6 +2,8 @@
 
 ## [0.13.10] - Unreleased
 
+- Refresh generated CLI bundling and URI parsing dependencies and upgrade test coverage tooling to Vitest 5, preserving Node 24 support and the 48-hour dependency release-age policy.
+
 ## [0.13.9] - 2026-09-05
 
 **Highlight:** One daemon per OS user now serves every configuration. Ordinary CLI invocations and generated CLIs reuse the same retained MCP connections and a single canonical Chrome owner instead of racing competing per-config hosts. The new protocol requires a one-time `mcporter daemon migrate` after upgrading all clients.

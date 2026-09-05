@@ -12,7 +12,7 @@ const require = createRequire(import.meta.url);
 const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 
 // Keep the same broker throughout, without putting unrelated CLI contracts under one deadline.
-describe.sequential('shared singleton CLI workflow', () => {
+describe('shared singleton CLI workflow', { concurrent: false }, () => {
   let root: string;
   let env: NodeJS.ProcessEnv;
   let configs: string[] = [];
