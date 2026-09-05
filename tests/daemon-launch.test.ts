@@ -30,7 +30,7 @@ describe('buildDaemonLaunchInvocation', () => {
 
   it('attaches an error listener before unref so spawn failures stay handled', () => {
     const child = new EventEmitter() as EventEmitter & { unref: () => void };
-    child.unref = vi.fn();
+    child.unref = vi.fn(() => child.emit('error', Object.assign(new Error('ENOENT'), { code: 'ENOENT' })));
     const launch = vi.fn(() => child as unknown as ReturnType<typeof import('node:child_process').spawn>);
 
     expect(() =>

@@ -1,20 +1,36 @@
 # mcporter Changelog
 
-## [0.13.9] - Unreleased
+## [0.13.10] - Unreleased
 
-### Reliability
+- Handle detached daemon spawn errors so a missing launch command reaches the normal startup failure path instead of crashing the parent CLI. (PR #347, thanks @SebTardif)
 
-- Handle spawn errors on detached daemon launch so a missing command does not crash `mcporter daemon start` or auto-launch. Thanks @SebTardif.
-- Remove temporary environment overrides when a later value fails validation or resolution, preventing failed setup from affecting subsequent MCP connections. (PR #342, thanks @oodadoudou)
+## [0.13.9] - 2026-09-05
+
+**Highlight:** One daemon per OS user now serves every configuration. Ordinary CLI invocations and generated CLIs reuse the same retained MCP connections and a single canonical Chrome owner instead of racing competing per-config hosts. The new protocol requires a one-time `mcporter daemon migrate` after upgrading all clients.
+
+### Daemon
+
+- Serve every resolved configuration as an immutable view of one shared OS-user daemon, so ordinary and generated clients reuse the same retained connections and one canonical Chrome owner; configuration filenames, working directories, and HOME/XDG overrides no longer select another production daemon. (PR #346)
+- Add `mcporter daemon migrate` to inspect live legacy per-config daemons, stop them after a confirmed drain, and upgrade current-user-owned `0755` state directories to `0700`; ordinary startup refuses legacy permissions with migration guidance instead of changing them silently. (PR #346)
+- Return protocol errors, daemon-generation changes, and expired view handles to the caller rather than replaying a request whose outcome is uncertain, and keep active or uncertain work safe from idle shutdown. (PR #346)
+- Keep list and serve visibility and tool filters local to each registered view, and scope OAuth vaults, refresh locks, and browser suppression to each connection while HTTP aliases retain separate credential identities. (PR #346)
+
+### Chrome relay
+
+- Decide daemon freshness from effective per-server relay settings, so unset policy, equivalent default controls, and fully overridden process values no longer restart a compatible daemon. Meaningful policy, profile, endpoint, credential rotation, and discovery inputs remain part of the retained relay identity, and key rotation or a changed discovery identity returns an owner conflict instead of silently replacing the host. (PR #345)
 
 ### OAuth
 
 - Keep OAuth running when macOS `open` or Windows `rundll32` cannot start, so the printed authorization URL remains usable. (PR #341, thanks @SebTardif)
 
+### Reliability
+
+- Remove temporary environment overrides when a later value fails validation or resolution, preventing failed setup from affecting subsequent MCP connections. (PR #342, thanks @oodadoudou)
+
 ### Maintenance
 
-- Refresh schema validation, query parsing, and development tools, including Zod's default-factory cycle-walk fix and bounded `tsx` transform caching, while preserving Node 24 support and the 48-hour dependency release-age policy.
-- Refresh runtime schema validation and generated CLI bundling dependencies, including Zod's reserved-key parsing fixes, while preserving the 48-hour dependency release-age policy.
+- Refresh runtime schema validation, query parsing, generated CLI bundling, and development tooling, including Zod's default-factory cycle-walk and reserved-key parsing fixes plus bounded `tsx` transform caching, while preserving Node 24 support and the 48-hour dependency release-age policy. (PRs #340 and #343)
+- Cover stored-credential validation guards for OAuth with additional tests. (PR #331, thanks @KrasimirKralev)
 
 ## [0.13.8] - 2026-08-28
 
