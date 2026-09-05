@@ -12,6 +12,10 @@ import { fixtureResult } from './helpers/singleton.js';
 import { generateCli } from '../src/generate-cli.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { budget } from './helpers/timing.js';
+
+// These end-to-end cases launch processes and bundle a CLI; Windows needs the shared spawn budget.
+vi.setConfig({ testTimeout: budget(10_000) });
 
 for (const conflictFirst of [true, false])
   it(`retains one real fixture child over authenticated relay after conflicts (conflict first=${conflictFirst})`, async () => {

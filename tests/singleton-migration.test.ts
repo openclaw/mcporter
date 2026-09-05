@@ -1,4 +1,6 @@
 import { randomBytes } from 'node:crypto';
+import { once } from 'node:events';
+import { budget } from './helpers/timing.js';
 import { privateFixtureDirectory } from './helpers/private-directory.js';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
@@ -26,15 +28,14 @@ it('blocks coexistence and waits for a verified legacy host and its owned child 
  let stopping=false;const stop=()=>{if(stopping)return;stopping=true;server.close();owned.kill();process.disconnect();};
  process.on('message',stop);
  const server=net.createServer(s=>s.on('data',chunk=>{const r=JSON.parse(chunk);s.end(JSON.stringify({id:r.id,ok:true,result:r.method==='status'?{pid:process.pid,socketPath:${JSON.stringify(socket)},protocolVersion:1,servers:[]}:true}));if(r.method==='stop')setTimeout(stop,250);}));
- server.listen(${JSON.stringify(socket)},()=>fs.writeFileSync(${JSON.stringify(metadata)},JSON.stringify({pid:process.pid,socketPath:${JSON.stringify(socket)}}),{mode:384}));`,
+ server.listen(${JSON.stringify(socket)},()=>{fs.writeFileSync(${JSON.stringify(metadata)},JSON.stringify({pid:process.pid,socketPath:${JSON.stringify(socket)}}),{mode:384});process.send('ready');});`,
     ],
     { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] }
   );
   try {
-    for (let i = 0; i < 100; i++) {
-      if (await fs.stat(metadata).catch(() => undefined)) break;
-      await new Promise((r) => setTimeout(r, 10));
-    }
+    // File existence can precede the child finishing its metadata write.
+    const [message] = await once(child, 'message', { signal: AbortSignal.timeout(budget(5_000)) });
+    expect(message).toBe('ready');
     expect(await legacyDaemons()).toEqual([{ pid: child.pid, socketPath: socket, verified: true }]);
     if (process.platform !== 'win32') expect((await fs.stat(daemonRunDir())).mode & 0o7777).toBe(0o755);
     await expect(assertLegacyDrained()).rejects.toMatchObject({ code: 'legacy_daemon_conflict' });
