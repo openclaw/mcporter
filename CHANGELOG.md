@@ -2,6 +2,8 @@
 
 ## [0.13.10] - Unreleased
 
+- Handle detached daemon spawn errors so a missing launch command reaches the normal startup failure path instead of crashing the parent CLI. (PR #347, thanks @SebTardif)
+
 ## [0.13.9] - 2026-09-05
 
 **Highlight:** One daemon per OS user now serves every configuration. Ordinary CLI invocations and generated CLIs reuse the same retained MCP connections and a single canonical Chrome owner instead of racing competing per-config hosts. The new protocol requires a one-time `mcporter daemon migrate` after upgrading all clients.

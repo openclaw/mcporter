@@ -33,6 +33,7 @@ export function launchDaemonDetached(options: DaemonLaunchOptions, launch: typeo
     stdio: 'ignore',
     env: invocation.env,
   });
+  child.on('error', () => {}); // swallow ENOENT when the launch command is missing
   child.unref();
 }
 
