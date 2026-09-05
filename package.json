@@ -78,7 +78,7 @@
     "es-toolkit": "^1.52.0",
     "jsonc-parser": "^3.3.1",
     "ora": "^9.4.1",
-    "rolldown": "1.2.6",
+    "rolldown": "1.2.7",
     "zod": "^4.5.4"
   },
   "devDependencies": {
@@ -87,7 +87,7 @@
     "@types/express": "^5.0.6",
     "@types/node": "^26.4.1",
     "@typescript/native": "npm:typescript@^7.0.2",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^5.0.0",
     "bun-types": "^1.4.0",
     "cross-env": "^10.1.0",
     "express": "^5.2.1",
@@ -98,7 +98,7 @@
     "tsx": "^4.23.13",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "vite": "8.2.2",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.0"
   },
   "devEngines": {
     "runtime": [
