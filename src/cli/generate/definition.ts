@@ -131,7 +131,7 @@ export async function fetchTools(
   const base = await createRuntime({
     configPath,
     rootDir,
-    servers: configPath ? undefined : [definition],
+    servers: [definition],
   });
   const { createGeneratedKeepAliveRuntime } = await import('../../generated-daemon-runtime.js');
   const context = await createGeneratedKeepAliveRuntime(base, definition);
