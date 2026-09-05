@@ -83,3 +83,23 @@ it('refuses raw/interactive pooled bypasses while preserving ephemeral connectio
     await f.close();
   }
 });
+
+it.each([false, true])('preserves explicit ephemeral discovery with config (same-name entry=%s)', async (conflict) => {
+  const f = await singletonFixture();
+  try {
+    const configPath = path.join(f.root, 'discovery.json');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        imports: [],
+        mcpServers: conflict ? { fixture: { command: process.execPath, args: ['-e', 'process.exit(1)'] } } : {},
+      })
+    );
+    const definition = { ...f.definition, lifecycle: { mode: 'ephemeral' as const }, allowedTools: ['identity'] };
+    const discovered = await fetchTools(definition, 'fixture', configPath);
+    expect(discovered.tools.map((tool) => tool.name)).toEqual(['identity']);
+    expect(discovered.derivedDescription).toBe('Operate the synthetic fixture.');
+  } finally {
+    await f.close();
+  }
+});
