@@ -9,6 +9,7 @@ import type {
   ReadResourceOptions,
   Runtime,
 } from '../runtime.js';
+import type { ServerMetadata } from './protocol.js';
 import type { DaemonClient } from './client.js';
 
 interface KeepAliveRuntimeOptions {
@@ -64,11 +65,33 @@ class KeepAliveRuntime implements Runtime {
     return this.base.getInstructions?.(server);
   }
 
-  async listTools(server: string, options?: ListToolsOptions): Promise<Awaited<ReturnType<Runtime['listTools']>>> {
-    if (options?.oauthSessionOptions) {
-      return this.base.listTools(server, options);
-    }
+  async getServerMetadata(server: string, options?: ListToolsOptions): Promise<ServerMetadata> {
     if (this.shouldUseDaemon(server)) {
+      this.assertBrokerOptions(options);
+      return this.daemon.getServerMetadata({
+        server,
+        autoAuthorize: options?.autoAuthorize,
+        allowCachedAuth: options?.allowCachedAuth,
+        disableOAuth: options?.disableOAuth,
+        timeoutMs: options?.timeoutMs,
+      });
+    }
+    if (this.base.getServerMetadata) return this.base.getServerMetadata(server, options);
+    const { client } = await this.base.connect(server, {
+      ...options,
+      disableOAuth: options?.autoAuthorize === false ? true : options?.disableOAuth,
+    });
+    return { instructions: client.getInstructions(), serverInfo: client.getServerVersion() };
+  }
+
+  private assertBrokerOptions(options?: { oauthSessionOptions?: unknown }): void {
+    if (options?.oauthSessionOptions)
+      throw new Error('Interactive OAuth sessions require explicit authentication outside the keep-alive runtime.');
+  }
+
+  async listTools(server: string, options?: ListToolsOptions): Promise<Awaited<ReturnType<Runtime['listTools']>>> {
+    if (this.shouldUseDaemon(server)) {
+      this.assertBrokerOptions(options);
       return (await this.invokeOnce(server, 'listTools', () =>
         this.daemon.listTools({
           server,
@@ -99,11 +122,9 @@ class KeepAliveRuntime implements Runtime {
   }
 
   async listResources(server: string, options?: ListResourcesOptions): Promise<unknown> {
-    if (options?.oauthSessionOptions) {
-      return this.base.listResources(server, options);
-    }
     const { allowCachedAuth, disableOAuth, ...params } = options ?? {};
     if (this.shouldUseDaemon(server)) {
+      this.assertBrokerOptions(options);
       return this.invokeOnce(server, 'listResources', () =>
         this.daemon.listResources({ server, params, allowCachedAuth, disableOAuth })
       );
@@ -112,10 +133,8 @@ class KeepAliveRuntime implements Runtime {
   }
 
   async readResource(server: string, uri: string, options?: ReadResourceOptions): Promise<unknown> {
-    if (options?.oauthSessionOptions) {
-      return this.base.readResource(server, uri, options);
-    }
     if (this.shouldUseDaemon(server)) {
+      this.assertBrokerOptions(options);
       return this.invokeOnce(server, 'readResource', () =>
         this.daemon.readResource({
           server,
@@ -129,13 +148,20 @@ class KeepAliveRuntime implements Runtime {
   }
 
   async connect(server: string, options?: ConnectOptions): Promise<Awaited<ReturnType<Runtime['connect']>>> {
+    if (this.shouldUseDaemon(server))
+      throw new Error(
+        'Raw connections are unavailable for broker-owned servers; use runtime operations or getServerMetadata.'
+      );
     return this.base.connect(server, options);
   }
 
   async close(server?: string): Promise<void> {
     if (!server) {
-      await this.daemon.release();
-      await this.base.close();
+      try {
+        await this.daemon.release();
+      } finally {
+        await this.base.close();
+      }
       return;
     }
     if (this.shouldUseDaemon(server)) {

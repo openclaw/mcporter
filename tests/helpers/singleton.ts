@@ -7,10 +7,17 @@ import { DaemonClient, resolveDaemonPaths } from '../../src/daemon/client.js';
 import { runDaemonHost } from '../../src/daemon/host.js';
 import type { ServerDefinition } from '../../src/config.js';
 
-export async function singletonFixture() {
+export async function singletonFixture(options: { exclusive?: boolean } = {}) {
   const root = await privateFixtureDirectory('mcp-broker-');
-  const previous = process.env.MCPORTER_DAEMON_DIR;
-  process.env.MCPORTER_DAEMON_DIR = root;
+  const isolatedEnv = {
+    MCPORTER_DAEMON_DIR: root,
+    HOME: root,
+    USERPROFILE: root,
+    XDG_CONFIG_HOME: path.join(root, 'config'),
+    XDG_DATA_HOME: path.join(root, 'data'),
+  };
+  const previous = Object.fromEntries(Object.keys(isolatedEnv).map((key) => [key, process.env[key]]));
+  Object.assign(process.env, isolatedEnv);
   const require = createRequire(import.meta.url);
   const script = path.join(root, 'fixture.mjs');
   await fs.writeFile(
@@ -20,7 +27,8 @@ import fs from 'node:fs';
 import { McpServer } from '${pathToFileURL(require.resolve('@modelcontextprotocol/sdk/server/mcp.js')).href}';
 import { StdioServerTransport } from '${pathToFileURL(require.resolve('@modelcontextprotocol/sdk/server/stdio.js')).href}';
 const id=randomUUID();let count=0;fs.appendFileSync(${JSON.stringify(path.join(root, 'instances'))},id+'\\n');
-const server=new McpServer({name:'synthetic',version:'1'});
+${options.exclusive ? `const lock=${JSON.stringify(path.join(root, 'exclusive.lock'))};fs.closeSync(fs.openSync(lock,'wx'));process.on('exit',()=>fs.unlinkSync(lock));` : ''}
+const server=new McpServer({name:'synthetic',version:'1',title:'Synthetic tools'}, {instructions:'Operate the synthetic fixture.'});
 for(const name of ['identity','secret','delayed','application_error','disconnect'])server.registerTool(name,{inputSchema:{}},async()=>{
  count++; if(name==='disconnect')setTimeout(()=>process.exit(0),10); if(name==='delayed'){fs.appendFileSync(${JSON.stringify(path.join(root, 'effects'))},'once\\n');await new Promise(r=>setTimeout(r,250));}
  return name==='application_error'?{isError:true,content:[{type:'text',text:'synthetic tool error'}]}:{content:[{type:'text',text:JSON.stringify({id,count,value:process.env.VALUE,cwd:process.cwd()})}]};
@@ -48,8 +56,10 @@ for(const name of ['identity','secret','delayed','application_error','disconnect
     client,
     async close() {
       await host.close();
-      if (previous === undefined) delete process.env.MCPORTER_DAEMON_DIR;
-      else process.env.MCPORTER_DAEMON_DIR = previous;
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
       await fs.rm(root, { recursive: true, force: true });
     },
   };

@@ -1,3 +1,4 @@
+import { idleTimerDelay } from './idle-timer.js';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
@@ -54,6 +55,20 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
   let closing: Promise<void> | undefined;
   let lastActivity = Date.now();
   let idleTimer: NodeJS.Timeout | undefined;
+  const scheduleIdle = () => {
+    clearTimeout(idleTimer);
+    if (!canonical.idleTimeoutMs || shuttingDown) return;
+    idleTimer = setTimeout(checkIdle, idleTimerDelay(canonical.idleTimeoutMs, lastActivity));
+    idleTimer.unref();
+  };
+  const checkIdle = () => {
+    if (shuttingDown || !canonical.idleTimeoutMs) return;
+    if (Date.now() - lastActivity >= canonical.idleTimeoutMs && broker.canIdleShutdown()) {
+      void close().catch(() => logEvent(log, 'idle shutdown blocked: transport retirement failed'));
+      return;
+    }
+    scheduleIdle();
+  };
   const onSignal = () => {
     void close().catch(() => {});
   };
@@ -95,6 +110,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
           throw new BrokerError('incompatible_daemon', 'Upgrade all invoking clients before cutover.');
         socket.setTimeout(0);
         lastActivity = Date.now();
+        scheduleIdle();
         if (typeof request.progressIntervalMs === 'number' && Number.isFinite(request.progressIntervalMs))
           timer = setInterval(() => {
             if (!socket.destroyed) frames.write({ type: 'progress', id });
@@ -133,6 +149,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
         socket.end();
       } finally {
         lastActivity = Date.now();
+        scheduleIdle();
         if (timer) clearInterval(timer);
       }
     })().catch(() => socket.destroy());
@@ -192,20 +209,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
   }
   process.once('SIGINT', onSignal);
   process.once('SIGTERM', onSignal);
-  if (canonical.idleTimeoutMs) {
-    const timeout = canonical.idleTimeoutMs;
-    const checkIdle = () => {
-      if (shuttingDown) return;
-      if (Date.now() - lastActivity >= timeout && broker.canIdleShutdown()) {
-        void close().catch(() => logEvent(log, 'idle shutdown blocked: transport retirement failed'));
-        return;
-      }
-      idleTimer = setTimeout(checkIdle, timeout);
-      idleTimer.unref();
-    };
-    idleTimer = setTimeout(checkIdle, timeout);
-    idleTimer.unref();
-  }
+  scheduleIdle();
   return { close, status };
 }
 

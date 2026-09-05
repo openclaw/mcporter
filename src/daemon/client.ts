@@ -19,6 +19,7 @@ import type {
   DaemonRequestMethod,
   ListResourcesParams,
   ListToolsParams,
+  ServerMetadata,
   ReadResourceParams,
   StatusResult,
 } from './protocol.js';
@@ -61,6 +62,15 @@ export function resolveDaemonPaths(configPath: string): DaemonPaths {
     socketPath: getDaemonSocketPath(key),
     metadataPath: getDaemonMetadataPath(key),
   };
+}
+
+interface ViewEpoch {
+  readonly definitions?: ServerDefinition[];
+  readonly clientInfo?: { name: string; version: string };
+  registration?: Promise<{ view: string; generation: string }>;
+  active: number;
+  drained?: () => void;
+  release?: Promise<void>;
 }
 
 export class DaemonClient {
@@ -109,39 +119,59 @@ export class DaemonClient {
     }
   }
 
-  private viewPromise?: Promise<{ view: string; generation: string }>;
-
-  private clientInfo?: { name: string; version: string };
-  setDefinitions(definitions: readonly ServerDefinition[], clientInfo?: { name: string; version: string }): void {
-    this.clientInfo = clientInfo;
-    const old = this.viewPromise;
-    this.definitions = definitions.map((definition) => ({
-      ...definition,
-      command:
-        definition.command.kind === 'http'
-          ? { ...definition.command, url: new URL(definition.command.url) }
-          : { ...definition.command, args: [...definition.command.args] },
-    }));
-    this.viewPromise = undefined;
-    void old?.then((handle) => this.sendRequest('releaseView', {}, undefined, handle)).catch(() => {});
-  }
+  private epoch?: ViewEpoch;
+  private readonly retiring = new Set<Promise<void>>();
   private definitions?: ServerDefinition[];
+  private clientInfo?: { name: string; version: string };
+
+  setDefinitions(definitions: readonly ServerDefinition[], clientInfo?: { name: string; version: string }): void {
+    this.definitions = definitions.map(({ command, ...definition }) => ({
+      ...structuredClone(definition),
+      command:
+        command.kind === 'http'
+          ? { ...structuredClone({ ...command, url: undefined }), url: new URL(command.url) }
+          : structuredClone(command),
+    }));
+    this.clientInfo = clientInfo ? { ...clientInfo } : undefined;
+    if (this.epoch) void this.retire(this.epoch).catch(() => {});
+  }
+
+  private retire(epoch: ViewEpoch): Promise<void> {
+    if (this.epoch === epoch) this.epoch = undefined;
+    if (!epoch.release) {
+      epoch.release = (async () => {
+        if (epoch.active)
+          await new Promise<void>((resolve) => {
+            epoch.drained = resolve;
+          });
+        // Failed registration has no handle to release; its callers retain the original error.
+        const handle = await epoch.registration?.catch(() => undefined);
+        if (handle) await this.sendRequest('releaseView', {}, undefined, handle);
+      })();
+      this.retiring.add(epoch.release);
+      void epoch.release.finally(() => this.retiring.delete(epoch.release!)).catch(() => {});
+    }
+    return epoch.release;
+  }
 
   async release(): Promise<void> {
-    const pending = this.viewPromise;
-    this.viewPromise = undefined;
-    if (pending) {
-      const handle = await pending;
-      await this.sendRequest('releaseView', {}, undefined, handle);
-    }
+    if (this.epoch) void this.retire(this.epoch).catch(() => {});
+    await Promise.all(this.retiring);
+  }
+
+  async getServerMetadata(params: ListToolsParams): Promise<ServerMetadata> {
+    return this.invoke('getServerMetadata', params, params.timeoutMs);
   }
 
   private async invoke<T = unknown>(method: DaemonRequestMethod, params: unknown, timeoutMs?: number): Promise<T> {
-    if (!this.viewPromise) {
-      this.viewPromise = (async () => {
+    const epoch = (this.epoch ??= { definitions: this.definitions, clientInfo: this.clientInfo, active: 0 });
+    // Retain before registration or authenticated RPC establishment can yield to a replacement/close.
+    epoch.active++;
+    try {
+      epoch.registration ??= (async () => {
         await this.ensureDaemon(timeoutMs);
         const definitions =
-          this.definitions ??
+          epoch.definitions ??
           (await loadServerDefinitions({
             configPath: this.options.configExplicit ? this.options.configPath : undefined,
             rootDir: this.options.rootDir,
@@ -153,21 +183,25 @@ export class DaemonClient {
         );
         return this.sendRequest<{ view: string; generation: string }>('registerView', {
           definitions: effective,
-          clientInfo: this.clientInfo,
+          clientInfo: epoch.clientInfo,
         });
       })();
-      this.viewPromise.catch(() => {
-        this.viewPromise = undefined;
-      });
-    }
-    const handle = await this.viewPromise;
-    try {
+      let handle: { view: string; generation: string };
+      try {
+        handle = await epoch.registration;
+      } catch (error) {
+        void this.retire(epoch).catch(() => {});
+        throw error;
+      }
       return await this.sendRequest<T>(method, params, timeoutMs, handle);
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === 'daemon_generation_changed' || code === 'view_expired' || isTransportError(error))
-        this.viewPromise = undefined;
+        void this.retire(epoch).catch(() => {});
       throw error;
+    } finally {
+      epoch.active--;
+      if (!epoch.active) epoch.drained?.();
     }
   }
 

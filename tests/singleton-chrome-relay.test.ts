@@ -24,6 +24,7 @@ for (const conflictFirst of [true, false])
     const require = createRequire(import.meta.url);
     const command = path.join(root, 'chrome-devtools-mcp');
     let host: DaemonHostHandle | undefined;
+    let queuedProof: Promise<unknown> | undefined;
     let setupClock: { mockRestore(): void } | undefined;
     try {
       await fs.writeFile(
@@ -38,7 +39,9 @@ const endpoint=process.argv[process.argv.indexOf('--wsEndpoint')+1];
 const headers=JSON.parse(process.argv[process.argv.indexOf('--wsHeaders')+1]);
 const url=new URL(endpoint);const ws=net.createConnection(Number(url.port),url.hostname);await new Promise((resolve,reject)=>{ws.once('connect',()=>ws.write('GET '+url.pathname+' HTTP/1.1\\r\\nHost: '+url.host+'\\r\\nConnection: Upgrade\\r\\nUpgrade: websocket\\r\\nSec-WebSocket-Version: 13\\r\\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\\r\\nAuthorization: '+headers.Authorization+'\\r\\n\\r\\n'));ws.once('data',chunk=>chunk.toString().includes('101')?resolve():reject(new Error('synthetic websocket failed')));ws.once('error',reject);});
 const id=randomUUID();fs.appendFileSync(${JSON.stringify(path.join(root, 'launches'))},id+'\\n');
-const server=new McpServer({name:'synthetic-chrome',version:'1'});server.registerTool('identity',{inputSchema:{}},async()=>({content:[{type:'text',text:JSON.stringify({id,relay:true})}]}));
+const server=new McpServer({name:'synthetic-chrome',version:'1'});
+server.registerTool('identity',{inputSchema:{}},async()=>{fs.appendFileSync(${JSON.stringify(path.join(root, 'effects'))},'effect\\n');return {content:[{type:'text',text:JSON.stringify({id,relay:true})}]};});
+server.registerTool('held',{inputSchema:{}},async()=>{fs.writeFileSync(${JSON.stringify(path.join(root, 'held'))},'entered');while(!fs.existsSync(${JSON.stringify(path.join(root, 'resume'))}))await new Promise(r=>setTimeout(r,5));return {content:[{type:'text',text:JSON.stringify({id,relay:true})}]};});
 await server.connect(new StdioServerTransport());
 `,
         { mode: 0o700 }
@@ -177,14 +180,36 @@ await server.connect(new StdioServerTransport());
       expect(host.status().servers[0]?.idleBlocked).toBe('browser-owner');
       expect(host.status().idleShutdownBlocked).toBe(true);
       expect((await fs.readFile(path.join(root, 'launches'), 'utf8')).trim().split('\n')).toEqual([first.id]);
-      await fs.writeFile(path.join(relay.directory, 'browser-extension-relay.secret'), 'b'.repeat(64));
-      await expect(client('rotated').callTool({ server: 'rotated', tool: 'identity' })).rejects.toMatchObject({
+      const ownerBefore = host.status().browserOwner;
+      const firstCall = a.callTool({ server: 'a', tool: 'held' });
+      queuedProof = Promise.allSettled([firstCall]);
+      await vi.waitFor(async () => expect(await fs.readFile(path.join(root, 'held'), 'utf8')).toBe('entered'));
+      const effectsBefore = await fs.readFile(path.join(root, 'effects'), 'utf8');
+      const queuedCall = expect(b.callTool({ server: 'b', tool: 'identity' })).rejects.toMatchObject({
+        code: 'browser_owner_conflict',
+      });
+      queuedProof = Promise.allSettled([firstCall, queuedCall]);
+      await vi.waitFor(() => expect(host!.status().servers[0]?.activeCalls).toBe(2));
+      const credential = path.join(relay.directory, 'browser-extension-relay.secret');
+      if (conflictFirst) await fs.writeFile(credential, 'b'.repeat(64));
+      else await fs.unlink(credential);
+      await fs.writeFile(path.join(root, 'resume'), 'continue');
+      expect(fixtureResult(await firstCall).id).toBe(first.id);
+      await queuedCall;
+      expect(await fs.readFile(path.join(root, 'effects'), 'utf8')).toBe(effectsBefore);
+      expect(host.status().browserOwner).toEqual(ownerBefore);
+      await expect(client('rotated').getServerMetadata({ server: 'rotated' })).rejects.toMatchObject({
         code: 'browser_owner_conflict',
       });
       expect((await fs.readFile(path.join(root, 'launches'), 'utf8')).trim().split('\n')).toEqual([first.id]);
-      await fs.writeFile(path.join(relay.directory, 'browser-extension-relay.secret'), 'a'.repeat(64));
+      await fs.writeFile(path.join(relay.directory, 'browser-extension-relay.secret'), 'a'.repeat(64), { mode: 0o600 });
       expect(fixtureResult(await a.callTool({ server: 'a', tool: 'identity' })).id).toBe(first.id);
+      expect((await fs.readFile(path.join(root, 'effects'), 'utf8')).split('effect').length).toBe(
+        effectsBefore.split('effect').length + 1
+      );
     } finally {
+      await fs.writeFile(path.join(root, 'resume'), 'cleanup');
+      await queuedProof;
       setupClock?.mockRestore();
       await host?.close();
       identity.mockRestore();

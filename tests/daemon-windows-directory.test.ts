@@ -52,3 +52,30 @@ it('does not accept a replaced directory symlink or a failed stat', async () => 
   stat.mockRejectedValue(Object.assign(new Error('denied'), { code: 'EACCES' }));
   await expect(secureDaemonDirectory()).rejects.toThrow('denied');
 });
+
+it('delegates migration inspection and upgrade to the existing Windows ACL verifier', async () => {
+  const { inspectLegacyDaemonDirectory, upgradeLegacyDaemonDirectory, daemonRunDir } =
+    await import('../src/daemon/paths.js');
+  const directoryPath = daemonRunDir();
+  await expect(inspectLegacyDaemonDirectory(directoryPath)).resolves.toBe(true);
+  expect(ensure).toHaveBeenCalledWith(directoryPath, true);
+  await upgradeLegacyDaemonDirectory(directoryPath);
+  expect(ensure).toHaveBeenCalledTimes(1);
+  stat.mockResolvedValue(directory(2));
+  ensure.mockImplementation(() => {
+    throw new Error('unsafe ACL');
+  });
+  await expect(upgradeLegacyDaemonDirectory(directoryPath)).rejects.toThrow('unsafe ACL');
+});
+
+it('does not create absent directories during inspection or bypass ACL checks for symlinks', async () => {
+  const { inspectLegacyDaemonDirectory, upgradeLegacyDaemonDirectory, daemonRunDir } =
+    await import('../src/daemon/paths.js');
+  stat.mockRejectedValue(Object.assign(new Error('missing'), { code: 'ENOENT' }));
+  await expect(inspectLegacyDaemonDirectory(daemonRunDir())).resolves.toBe(false);
+  await upgradeLegacyDaemonDirectory(daemonRunDir());
+  expect(ensure).not.toHaveBeenCalled();
+  stat.mockResolvedValue({ ...directory(), isSymbolicLink: () => true });
+  await expect(inspectLegacyDaemonDirectory(daemonRunDir())).rejects.toThrow('Unsafe daemon directory');
+  expect(ensure).not.toHaveBeenCalled();
+});

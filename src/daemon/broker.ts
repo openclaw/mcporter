@@ -1,3 +1,4 @@
+import { idleTimerDelay } from './idle-timer.js';
 import {
   ownedProcessTree,
   awaitRetirement,
@@ -149,7 +150,9 @@ export class DaemonBroker {
           : {
               allowCachedAuth: params.allowCachedAuth ?? true,
               disableOAuth:
-                params.disableOAuth === true || (request.method === 'listTools' && params.autoAuthorize === false),
+                params.disableOAuth === true ||
+                ((request.method === 'listTools' || request.method === 'getServerMetadata') &&
+                  params.autoAuthorize === false),
             };
       const key = `${identity}:${relay}:${JSON.stringify(policy)}:${JSON.stringify(view.clientInfo)}`;
       let entry = this.entries.get(key);
@@ -160,7 +163,7 @@ export class DaemonBroker {
             'Transport capacity reached; drain unused transports with daemon stop.'
           );
         const pooled = { ...definition, allowedTools: undefined, blockedTools: undefined };
-        authorizeBrokerDefinition(pooled);
+        authorizeBrokerDefinition(pooled, chrome ? () => this.owner.resolveIdentity(definition) : undefined);
         entry = {
           id: randomUUID(),
           definition: pooled,
@@ -179,6 +182,8 @@ export class DaemonBroker {
       const target = entry;
       const run = () =>
         withRuntimeEnvironment(target.definition.env ?? {}, async () => {
+          // Queued requests must still hold authority before any connection/recovery I/O.
+          if (chrome) await this.owner.resolveIdentity(definition);
           // Reconnect is owned by this serialized generation, only after all old calls settle.
           if (target.state === 'retirement-failed')
             throw new BrokerError(
@@ -240,10 +245,19 @@ export class DaemonBroker {
                 throw error;
               });
           }
-          await target.connection;
+          const context = await target.connection;
+          // Runtime operations validate again after their own connect await, at SDK dispatch.
           const server = target.definition.name;
           try {
             switch (request.method) {
+              case 'getServerMetadata': {
+                if (chrome) await this.owner.resolveIdentity(definition);
+                const info = context.client.getServerVersion();
+                return {
+                  instructions: context.client.getInstructions(),
+                  serverInfo: info ? { name: info.name, version: info.version, title: info.title } : undefined,
+                };
+              }
               case 'callTool':
                 return await runtime.callTool(server, params.tool, {
                   args: params.args,
@@ -364,18 +378,26 @@ export class DaemonBroker {
     const timeout =
       entry.definition.lifecycle?.mode === 'keep-alive' ? entry.definition.lifecycle.idleTimeoutMs : undefined;
     if (!timeout) return;
-    entry.idleTimer = setTimeout(() => {
-      entry.serial = entry.serial.then(async () => {
-        if (entry.active || this.draining) return;
-        entry.state = 'disconnected';
-        try {
-          await this.retire(entry);
-          entry.state = 'idle';
-        } catch {
-          entry.state = 'retirement-failed';
+    clearTimeout(entry.idleTimer);
+    entry.idleTimer = setTimeout(
+      () => {
+        if (Date.now() - entry.lastUsed < timeout) {
+          this.scheduleIdle(entry);
+          return;
         }
-      });
-    }, timeout);
+        entry.serial = entry.serial.then(async () => {
+          if (entry.active || this.draining) return;
+          entry.state = 'disconnected';
+          try {
+            await this.retire(entry);
+            entry.state = 'idle';
+          } catch {
+            entry.state = 'retirement-failed';
+          }
+        });
+      },
+      idleTimerDelay(timeout, entry.lastUsed)
+    );
     entry.idleTimer.unref();
   }
   private expireViews(): void {

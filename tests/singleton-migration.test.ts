@@ -12,6 +12,7 @@ it('blocks coexistence and waits for a verified legacy host and its owned child 
   const previous = process.env.MCPORTER_DAEMON_DIR;
   process.env.MCPORTER_DAEMON_DIR = root;
   await secureDaemonDirectory();
+  if (process.platform !== 'win32') await fs.chmod(daemonRunDir(), 0o755);
   const name = `daemon-${randomBytes(6).toString('hex')}`;
   const socket =
     process.platform === 'win32' ? `\\\\.\\pipe\\mcporter-${name}` : path.join(daemonRunDir(), `${name}.sock`);
@@ -35,9 +36,11 @@ it('blocks coexistence and waits for a verified legacy host and its owned child 
       await new Promise((r) => setTimeout(r, 10));
     }
     expect(await legacyDaemons()).toEqual([{ pid: child.pid, socketPath: socket, verified: true }]);
+    if (process.platform !== 'win32') expect((await fs.stat(daemonRunDir())).mode & 0o7777).toBe(0o755);
     await expect(assertLegacyDrained()).rejects.toMatchObject({ code: 'legacy_daemon_conflict' });
     const start = Date.now();
     await stopVerifiedLegacyDaemons();
+    if (process.platform !== 'win32') expect((await fs.stat(daemonRunDir())).mode & 0o7777).toBe(0o700);
     expect(Date.now() - start).toBeGreaterThanOrEqual(200);
     await expect(assertLegacyDrained()).resolves.toBeUndefined();
     await expect(fs.stat(path.join(daemonRunDir(), 'legacy-retirement.json'))).rejects.toMatchObject({

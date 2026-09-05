@@ -71,9 +71,9 @@ function parseCliJson(output: string): { instanceId: string; count: number } {
 }
 
 describeDaemon('daemon keep-alive integration', () => {
-  it(
-    'reuses stdio servers across mcporter invocations',
-    async () => {
+  it.each(['new', 'empty legacy', 'stopped legacy'])(
+    'reuses stdio servers across mcporter invocations with %s directory state',
+    async (directoryState) => {
       await ensureDistBuilt(CLI_ENTRY);
       const tempDir = await fs.mkdtemp(path.join(process.platform === 'win32' ? os.tmpdir() : '/tmp', 'mcp-e2e-'));
       const scriptPath = path.join(tempDir, 'daemon-server.mjs');
@@ -139,6 +139,9 @@ await new Promise((resolve) => {
 
       const logPath = path.join(tempDir, 'daemon.log');
       const cliEnv = {
+        HOME: tempDir,
+        XDG_CONFIG_HOME: path.join(tempDir, 'config'),
+        XDG_STATE_HOME: path.join(tempDir, 'state'),
         MCPORTER_DAEMON_LOG: '1',
         MCPORTER_DAEMON_LOG_PATH: logPath,
         MCPORTER_DAEMON_LOG_SERVERS: 'daemon-e2e',
@@ -147,6 +150,31 @@ await new Promise((resolve) => {
       const cli = (args: string[]) => runCli(args, configPath, cliEnv);
 
       try {
+        if (directoryState !== 'new') {
+          const directory = path.join(tempDir, 'daemon');
+          await fs.mkdir(directory, { mode: 0o755 });
+          await fs.chmod(directory, 0o755);
+          if (directoryState === 'stopped legacy') {
+            const stoppedPid = await new Promise<number>((resolve, reject) => {
+              const stopped = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
+              stopped.once('error', reject);
+              stopped.once('exit', () => resolve(stopped.pid!));
+            });
+            await fs.writeFile(
+              path.join(directory, 'daemon-abcdef.json'),
+              JSON.stringify({ pid: stoppedPid, socketPath: path.join(directory, 'daemon-abcdef.sock') })
+            );
+          }
+          await expect(cli(['daemon', 'start'])).rejects.toThrow('daemon migrate --stop-legacy --confirmed-drained');
+          expect((await fs.stat(directory)).mode & 0o7777).toBe(0o755);
+          expect((await cli(['daemon', 'migrate'])).stdout.trim()).toBe('[]');
+          expect((await fs.stat(directory)).mode & 0o7777).toBe(0o755);
+          await expect(cli(['daemon', 'migrate', '--stop-legacy'])).rejects.toThrow('--confirmed-drained');
+          expect((await fs.stat(directory)).mode & 0o7777).toBe(0o755);
+          await cli(['daemon', 'migrate', '--stop-legacy', '--confirmed-drained']);
+          expect((await fs.stat(directory)).mode & 0o7777).toBe(0o700);
+          await cli(['daemon', 'start']);
+        }
         await cli(['daemon', 'stop']);
 
         await cli(['list', 'daemon-e2e', '--json']);
@@ -155,6 +183,9 @@ await new Promise((resolve) => {
         const first = await cli(['call', 'daemon-e2e.next_value', '--output', 'json']);
         const firstResult = parseCliJson(first.stdout);
         expect(firstResult.count).toBe(1);
+        expect((await fs.stat(path.join(tempDir, 'daemon'))).mode & 0o7777).toBe(0o700);
+        expect((await fs.stat(path.join(tempDir, 'daemon', 'user.key'))).mode & 0o7777).toBe(0o600);
+        expect((await fs.stat(path.join(tempDir, 'daemon', 'user.sock'))).mode & 0o7777).toBe(0o600);
 
         const second = await cli(['call', 'daemon-e2e.next_value', '--output', 'json']);
         const secondResult = parseCliJson(second.stdout);

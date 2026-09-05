@@ -41,7 +41,7 @@ export async function handleDaemonCli(args: string[], options: DaemonCliOptions)
       if (!args.includes('--confirmed-drained'))
         throw new Error('Drain all legacy clients first, then pass --confirmed-drained.');
       await stopVerifiedLegacyDaemons();
-      console.log('Verified legacy daemons and observed owned children have retired.');
+      console.log('Daemon directory permissions verified; legacy daemons and observed owned children have retired.');
     } else console.log(JSON.stringify((await legacyDaemons()).map(({ pid, verified }) => ({ pid, verified }))));
     return;
   }
@@ -75,7 +75,9 @@ Commands:
   status   Show whether the daemon is running and which servers are active.
   stop     Shut down the daemon and all managed servers.
   restart  Drain and stop the daemon, then start a fresh instance.
-  migrate  Inspect legacy ownership; --stop-legacy --confirmed-drained retires verified owners.
+  migrate  Inspect legacy ownership without changing directory permissions.
+           --stop-legacy --confirmed-drained upgrades owned legacy 0755 directories
+           and retires verified owners (also works when old daemons are already stopped).
 
 Flags:
   --foreground        Run the daemon in the current process (debug only).

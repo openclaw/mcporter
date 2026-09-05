@@ -1,4 +1,3 @@
-import { ensureWindowsPrivateDirectory } from '../chrome-devtools-relay-handoff.js';
 import { ownedProcessTree, awaitRetirement, type ProcessIdentity } from './process-retirement.js';
 import { writeJsonFile } from '../fs-json.js';
 import fs from 'node:fs/promises';
@@ -7,7 +6,12 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { isProcessRunning } from '../process-utils.js';
 import { mcporterDir } from '../paths.js';
-import { daemonRunDir, secureDaemonDirectory } from './paths.js';
+import {
+  daemonRunDir,
+  secureDaemonDirectory,
+  inspectLegacyDaemonDirectory,
+  upgradeLegacyDaemonDirectory,
+} from './paths.js';
 import type { DaemonResponse, StatusResult } from './protocol.js';
 import { BrokerError } from './broker.js';
 
@@ -43,15 +47,16 @@ export async function probeDaemon(socketPath: string, method = 'status'): Promis
   });
 }
 
-export async function legacyDaemons(): Promise<Array<{ pid: number; socketPath: string; verified: boolean }>> {
+function legacyDirectories(): Set<string> {
   const dirs = new Set([daemonRunDir()]);
   if (!process.env.MCPORTER_DAEMON_DIR) dirs.add(path.join(mcporterDir('state'), 'daemon'));
+  return dirs;
+}
+
+export async function legacyDaemons(): Promise<Array<{ pid: number; socketPath: string; verified: boolean }>> {
   const result: Array<{ pid: number; socketPath: string; verified: boolean }> = [];
-  for (const dir of dirs) {
-    if (process.platform === 'win32') {
-      if (dir === daemonRunDir()) await secureDaemonDirectory();
-      else ensureWindowsPrivateDirectory(dir, true);
-    }
+  for (const dir of legacyDirectories()) {
+    if (!(await inspectLegacyDaemonDirectory(dir))) continue;
     const files = await fs.readdir(dir).catch((error: NodeJS.ErrnoException) => {
       if (error.code === 'ENOENT') return [];
       throw error;
@@ -99,6 +104,11 @@ export async function assertLegacyDrained(): Promise<void> {
 }
 
 export async function stopVerifiedLegacyDaemons(): Promise<void> {
+  const directories = legacyDirectories();
+  // Validate every known directory before upgrading any, including empty/stopped legacy state.
+  for (const directory of directories) await inspectLegacyDaemonDirectory(directory);
+  for (const directory of directories) await upgradeLegacyDaemonDirectory(directory);
+  await secureDaemonDirectory();
   const marker = path.join(daemonRunDir(), 'legacy-retirement.json');
   const pending = await fs
     .readFile(marker, 'utf8')

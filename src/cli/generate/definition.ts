@@ -149,6 +149,10 @@ export async function fetchTools(
 
 async function deriveDefinitionDescription(runtime: Runtime, serverName: string): Promise<string | undefined> {
   try {
+    if (runtime.getServerMetadata) {
+      const { instructions, serverInfo } = await runtime.getServerMetadata(serverName);
+      return pickDescription(instructions, serverInfo);
+    }
     const context = await runtime.connect(serverName);
     const instructions =
       typeof context.client.getInstructions === 'function' ? context.client.getInstructions() : undefined;

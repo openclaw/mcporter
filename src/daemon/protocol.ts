@@ -35,6 +35,7 @@ export type DaemonRequestMethod =
   | 'releaseView'
   | 'callTool'
   | 'listTools'
+  | 'getServerMetadata'
   | 'listResources'
   | 'readResource'
   | 'closeServer'
@@ -119,6 +120,11 @@ export class DaemonFrameDecoder {
       this.sawMalformedLine = true;
     }
   }
+}
+
+export interface ServerMetadata {
+  readonly instructions?: string;
+  readonly serverInfo?: { name: string; version: string; title?: string };
 }
 
 export interface CallToolParams {

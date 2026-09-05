@@ -157,12 +157,13 @@ describe('createKeepAliveRuntime', () => {
     expect(runtime.closeMock).toHaveBeenCalledWith(undefined);
   });
 
-  it('forwards disableOAuth through daemon requests and connect wrappers', async () => {
+  it('forwards auth policy through daemon metadata/operations and only connects ephemeral servers locally', async () => {
     const runtime = new FakeRuntime(definitions);
     const daemon = {
       setDefinitions: vi.fn(),
       release: vi.fn().mockResolvedValue(undefined),
       callTool: vi.fn().mockResolvedValue('daemon-call'),
+      getServerMetadata: vi.fn().mockResolvedValue({ instructions: 'synthetic' }),
       listTools: vi.fn().mockResolvedValue([{ name: 'remote-tool' }]),
       listResources: vi.fn().mockResolvedValue(['resource']),
       readResource: vi.fn().mockResolvedValue({ contents: [] }),
@@ -208,8 +209,22 @@ describe('createKeepAliveRuntime', () => {
       disableOAuth: true,
     });
 
-    await keepAliveRuntime.connect('alpha', { disableOAuth: true });
-    expect(runtime.connectMock).toHaveBeenCalledWith('alpha', { disableOAuth: true });
+    await keepAliveRuntime.getServerMetadata!('alpha', {
+      autoAuthorize: false,
+      allowCachedAuth: false,
+      disableOAuth: true,
+    });
+    expect(daemon.getServerMetadata).toHaveBeenCalledWith({
+      server: 'alpha',
+      autoAuthorize: false,
+      allowCachedAuth: false,
+      disableOAuth: true,
+      timeoutMs: undefined,
+    });
+    await expect(keepAliveRuntime.connect('alpha', { disableOAuth: true })).rejects.toThrow('Raw connections');
+    expect(runtime.connectMock).not.toHaveBeenCalled();
+    await keepAliveRuntime.connect('beta', { disableOAuth: true });
+    expect(runtime.connectMock).toHaveBeenCalledWith('beta', { disableOAuth: true });
   });
 
   it('returns uncertain failures once without closing or replaying either concurrent request', async () => {

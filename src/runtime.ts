@@ -1,3 +1,5 @@
+import { validateBrokerRequestAuthority } from './daemon/transport-authority.js';
+import type { ServerMetadata } from './daemon/protocol.js';
 import {
   type CallToolRequest,
   type ListResourcesRequest,
@@ -116,6 +118,7 @@ export interface Runtime {
   getDefinitions(): ServerDefinition[];
   getDefinition(server: string): ServerDefinition;
   registerDefinition(definition: ServerDefinition, options?: { overwrite?: boolean }): void;
+  getServerMetadata?(server: string, options?: ListToolsOptions): Promise<ServerMetadata>;
   getInstructions?(server: string): Promise<string | undefined>;
   getConnectionInfo?(server: string): Promise<ConnectionInfo | undefined>;
   listTools(server: string, options?: ListToolsOptions): Promise<ServerToolInfo[]>;
@@ -275,6 +278,7 @@ class McpRuntime implements Runtime {
     let closeError: unknown;
     let tools: ServerToolInfo[] = [];
     try {
+      await validateBrokerRequestAuthority(this.definitions.get(server.trim()));
       const listPromise = context.client.listTools(
         undefined,
         timeoutMs ? { timeout: timeoutMs, resetTimeoutOnProgress: true, maxTotalTimeout: timeoutMs } : undefined
@@ -330,6 +334,7 @@ class McpRuntime implements Runtime {
       // Forward the requested timeout to the MCP client so server-side requests don't hit the SDK's
       // default 60s cap. Keep our own outer race as a second guard.
       const timeoutMs = normalizeTimeout(options.timeoutMs);
+      await validateBrokerRequestAuthority(definition);
       const resultPromise = client.callTool(params, {
         timeout: timeoutMs,
         // Long runs (e.g., GPT-5 Pro) emit progress/logging; allow that to refresh the timer.
@@ -367,12 +372,14 @@ class McpRuntime implements Runtime {
       const { client } = context;
       const requestParams = params as NonNullable<ListResourcesRequest['params']>;
       if (requestParams.cursor !== undefined) {
+        await validateBrokerRequestAuthority(this.definitions.get(server.trim()));
         return await client.listResources(requestParams);
       }
 
       // v2 auto-aggregation throws when listMaxPages is reached, while
       // mcporter's existing resource contract returns the bounded partial
       // result. Use the low-level typed request path to preserve that behavior.
+      await validateBrokerRequestAuthority(this.definitions.get(server.trim()));
       let response = await client.request(
         { method: 'resources/list', params: requestParams },
         specTypeSchemas.ListResourcesResult
@@ -382,6 +389,7 @@ class McpRuntime implements Runtime {
       for (let page = 1; page < MAX_RESOURCE_LIST_PAGES && response.nextCursor; page += 1) {
         if (seenCursors.has(response.nextCursor)) break;
         seenCursors.add(response.nextCursor);
+        await validateBrokerRequestAuthority(this.definitions.get(server.trim()));
         response = await client.request(
           { method: 'resources/list', params: { ...requestParams, cursor: response.nextCursor } },
           specTypeSchemas.ListResourcesResult
@@ -411,6 +419,7 @@ class McpRuntime implements Runtime {
         disableOAuth: effectiveDisableOAuth,
       });
       const { client } = context;
+      await validateBrokerRequestAuthority(this.definitions.get(server.trim()));
       return await client.readResource({ uri } satisfies ReadResourceRequest['params']);
     } catch (error) {
       await this.resetConnectionOnError(server, error, context);
