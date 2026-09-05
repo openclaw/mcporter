@@ -4,6 +4,7 @@
 
 ### Reliability
 
+- Handle spawn errors on detached daemon launch so a missing command does not crash `mcporter daemon start` or auto-launch. Thanks @SebTardif.
 - Remove temporary environment overrides when a later value fails validation or resolution, preventing failed setup from affecting subsequent MCP connections. (PR #342, thanks @oodadoudou)
 
 ### OAuth

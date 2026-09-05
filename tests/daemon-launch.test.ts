@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { buildDaemonLaunchInvocation, launchDaemonDetached, type DaemonLaunchOptions } from '../src/daemon/launch.js';
@@ -13,8 +14,9 @@ const options: DaemonLaunchOptions = {
 
 describe('buildDaemonLaunchInvocation', () => {
   it('spawns and unreferences the detached daemon', () => {
-    const unref = vi.fn();
-    const launch = vi.fn(() => ({ unref }));
+    const child = new EventEmitter() as EventEmitter & { unref: () => void };
+    child.unref = vi.fn();
+    const launch = vi.fn(() => child as unknown as ReturnType<typeof import('node:child_process').spawn>);
 
     launchDaemonDetached(options, launch as unknown as typeof import('node:child_process').spawn);
 
@@ -23,7 +25,20 @@ describe('buildDaemonLaunchInvocation', () => {
       expect.arrayContaining(['daemon', 'start', '--foreground']),
       expect.objectContaining({ detached: true, stdio: 'ignore' })
     );
-    expect(unref).toHaveBeenCalled();
+    expect(child.unref).toHaveBeenCalled();
+  });
+
+  it('attaches an error listener before unref so spawn failures stay handled', () => {
+    const child = new EventEmitter() as EventEmitter & { unref: () => void };
+    child.unref = vi.fn();
+    const launch = vi.fn(() => child as unknown as ReturnType<typeof import('node:child_process').spawn>);
+
+    expect(() =>
+      launchDaemonDetached(options, launch as unknown as typeof import('node:child_process').spawn)
+    ).not.toThrow();
+    expect(child.listenerCount('error')).toBeGreaterThan(0);
+    expect(() => child.emit('error', Object.assign(new Error('ENOENT'), { code: 'ENOENT' }))).not.toThrow();
+    expect(child.unref).toHaveBeenCalled();
   });
 
   it('launches Node entrypoints directly with the CLI script path', () => {
