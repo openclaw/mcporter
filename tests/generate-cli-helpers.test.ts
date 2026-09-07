@@ -162,7 +162,21 @@ describe('generate helpers', () => {
     });
 
     expect(toProxyMethodName('some-tool_name')).toBe('someToolName');
+    expect(toProxyMethodName('1password_get_item')).toBe('_1passwordGetItem');
     expect(toCliOption('inputValue')).toBe('input-value');
+  });
+
+  it('emits a spellable proxy method for a tool name that starts with a digit', () => {
+    const block = renderToolCommand(
+      buildToolMetadata({
+        name: '1password_get_item',
+        inputSchema: { type: 'object', properties: {}, required: [] },
+      } as ServerToolInfo),
+      30_000,
+      'demo'
+    ).block;
+    expect(parseDiagnosticsOf(block)).toEqual([]);
+    expect(block).toContain('proxy._1passwordGetItem');
   });
 
   it('picks example literals and fallbacks consistently', () => {

@@ -2,6 +2,10 @@
 
 ## [0.13.11] - Unreleased
 
+### CLI generation
+
+- Prefix the generated proxy method name when a tool name normalizes to a leading digit, so `mcporter generate-cli` and `mcporter emit-ts --mode client` emit a module that parses for servers advertising tools such as `1password_get_item`.
+
 ### Chrome relay
 
 - Restore CLI generation and tool discovery for plain `chrome-devtools-mcp` launches without requiring an existing-Chrome owner, while retaining canonical ownership checks for auto-connect and refusing direct browser selectors and ambiguous wrappers. (PR #352)
