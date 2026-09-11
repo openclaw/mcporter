@@ -1,13 +1,14 @@
 # mcporter Changelog
 
-## [0.13.11] - Unreleased
+## [0.13.12] - Unreleased
 
-### CLI generation
+## [0.13.11] - 2026-09-11
 
-- Prefix the generated proxy method name when a tool name normalizes to a leading digit, so `mcporter generate-cli` and `mcporter emit-ts --mode client` emit a module that parses for servers advertising tools such as `1password_get_item`.
+**Highlights:** OpenClaw relay cold starts get enough time and clear discovery errors, while plain Chrome launches work again for CLI generation and tool discovery.
 
 ### Chrome relay
 
+- Allow 20 seconds for OpenClaw relay discovery, give Chrome auto-connect commands a 300-second cumulative startup deadline, and report discovery failures without guessing port 18799 or poisoning the retained browser owner. Preserve actionable discovery errors through daemon IPC and document canonical configuration for relay settings that must survive daemon respawns. (PR #358)
 - Restore CLI generation and tool discovery for plain `chrome-devtools-mcp` launches without requiring an existing-Chrome owner, while retaining canonical ownership checks for auto-connect and refusing direct browser selectors and ambiguous wrappers. (PR #352)
 
 ## [0.13.10] - 2026-09-05

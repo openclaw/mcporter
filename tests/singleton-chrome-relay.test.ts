@@ -12,6 +12,7 @@ import { fixtureResult } from './helpers/singleton.js';
 import { generateCli } from '../src/generate-cli.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import * as relayDiscovery from '../src/chrome-devtools-relay-discovery.js';
 import { budget } from './helpers/timing.js';
 
 // These end-to-end cases launch processes and bundle a CLI; Windows needs the shared spawn budget.
@@ -20,6 +21,10 @@ vi.setConfig({ testTimeout: budget(10_000) });
 for (const conflictFirst of [true, false])
   it(`retains one real fixture child over authenticated relay after conflicts (conflict first=${conflictFirst})`, async () => {
     const relay = await createRelayFixture();
+    const discoveredUrl = new URL(relay.definition.env!.MCPORTER_CHROME_DEVTOOLS_RELAY_URL!);
+    const discovery = vi
+      .spyOn(relayDiscovery, 'discoverOpenClawRelayUrl')
+      .mockResolvedValue({ reason: 'success', url: discoveredUrl });
     const root = await privateFixtureDirectory('mcp-chrome-');
     const previous = process.env.MCPORTER_DAEMON_DIR;
     process.env.MCPORTER_DAEMON_DIR = path.join(root, '.mcporter');
@@ -50,12 +55,13 @@ await server.connect(new StdioServerTransport());
 `,
         { mode: 0o700 }
       );
-      const env = {
+      const env: Record<string, string> = {
         ...relay.definition.env,
         HOME: root,
         USERPROFILE: root,
         MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'require',
       };
+      delete env.MCPORTER_CHROME_DEVTOOLS_RELAY_URL;
       const definition = {
         ...relay.definition,
         name: 'canonical',
@@ -146,6 +152,27 @@ await server.connect(new StdioServerTransport());
       }
       const a = client('a'),
         b = client('b');
+      if (conflictFirst) {
+        discovery.mockResolvedValue({ reason: 'timeout' });
+        await expect(a.callTool({ server: 'a', tool: 'identity' })).rejects.toMatchObject({
+          code: 'relay_discovery_failed',
+          message: expect.stringContaining('discovery-timeout'),
+        });
+        expect(relay.activeConnections).toBe(0);
+        await expect(fs.stat(path.join(root, 'launches'))).rejects.toMatchObject({ code: 'ENOENT' });
+        discovery.mockResolvedValueOnce({ reason: 'success', url: discoveredUrl });
+        await expect(a.callTool({ server: 'a', tool: 'identity' })).rejects.toMatchObject({
+          code: 'relay_discovery_failed',
+          message: expect.stringContaining('discovery-timeout'),
+        });
+        await expect(fs.stat(path.join(root, 'launches'))).rejects.toMatchObject({ code: 'ENOENT' });
+        // A known pending owner remains reserved even when its next validation times out.
+        discovery.mockResolvedValue({ reason: 'success', url: new URL('http://127.0.0.1:1') });
+        await expect(a.callTool({ server: 'a', tool: 'identity' })).rejects.toMatchObject({
+          code: 'browser_owner_conflict',
+        });
+        discovery.mockResolvedValue({ reason: 'success', url: discoveredUrl });
+      }
       const settled = await Promise.allSettled([
         a.callTool({ server: 'a', tool: 'identity' }),
         b.callTool({ server: 'b', tool: 'identity' }),
@@ -165,6 +192,26 @@ await server.connect(new StdioServerTransport());
       expect((await fs.readFile(path.join(root, 'launches'), 'utf8')).trim().split('\n')).toEqual([first.id]);
       expect(host.status().servers).toHaveLength(1);
       expect(relay.activeConnections).toBe(1);
+      const ownerBeforeTimeout = host.status().browserOwner;
+      discovery.mockResolvedValue({ reason: 'timeout' });
+      await expect(a.callTool({ server: 'a', tool: 'identity' })).rejects.toMatchObject({
+        code: 'relay_discovery_failed',
+        message: expect.stringContaining('canonical Chrome definition'),
+      });
+      expect(host.status().servers[0]?.chromeDevtoolsRelay).toMatchObject({
+        route: 'unavailable',
+        reason: 'discovery-timeout',
+        endpoint: undefined,
+      });
+      expect(host.status().browserOwner).toEqual(ownerBeforeTimeout);
+      discovery.mockResolvedValue({ reason: 'success', url: discoveredUrl });
+      expect(fixtureResult(await a.callTool({ server: 'a', tool: 'identity' })).id).toBe(first.id);
+      expect(host.status().servers[0]?.chromeDevtoolsRelay).toMatchObject({ route: 'relay', reason: 'success' });
+      discovery.mockResolvedValue({ reason: 'success', url: new URL('http://127.0.0.1:1') });
+      await expect(a.callTool({ server: 'a', tool: 'identity' })).rejects.toMatchObject({
+        code: 'browser_owner_conflict',
+      });
+      discovery.mockResolvedValue({ reason: 'success', url: discoveredUrl });
       const bundlePath = path.join(root, 'generated.cjs');
       await generateCli({
         serverRef: 'canonical',
@@ -221,6 +268,7 @@ await server.connect(new StdioServerTransport());
       setupClock?.mockRestore();
       await host?.close();
       identity.mockRestore();
+      discovery.mockRestore();
       if (previous === undefined) delete process.env.MCPORTER_DAEMON_DIR;
       else process.env.MCPORTER_DAEMON_DIR = previous;
       await relay.close();

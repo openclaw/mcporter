@@ -452,13 +452,9 @@ export function getDescriptorFormatHint(descriptor: unknown): { display: string;
 }
 
 export function toProxyMethodName(toolName: string): string {
-  const camelCased = toolName
+  return toolName
     .replace(/[-_](\w)/g, (_, char: string) => char.toUpperCase())
     .replace(/^(\w)/, (match) => match.toLowerCase());
-  // Both codegen call sites splice this into bare dot access, so a name that cannot
-  // start an identifier (a tool named 1password_get_item, say) has to be prefixed or
-  // the emitted module does not parse.
-  return /^[A-Za-z_$]/.test(camelCased) ? camelCased : `_${camelCased}`;
 }
 
 export function toCliOption(property: string): string {

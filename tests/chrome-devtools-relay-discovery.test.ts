@@ -92,13 +92,14 @@ describe('OpenClaw relay metadata discovery', () => {
 
     connect.mockClear();
     observed.length = 0;
-    await rewriteChromeDevtoolsArgsForRelay(
+    const mismatched = await rewriteChromeDevtoolsArgsForRelay(
       'npx',
       AUTO_ARGS,
       {},
       relayOptions({ discover: runner(metadata({ keyId: `${RELAY_KEY_ID}x` })), connect })
     );
-    expect(observed).toEqual(['http://127.0.0.1:18799/']);
+    expect(mismatched.decision).toMatchObject({ reason: 'discovery-key-id-mismatch', endpoint: undefined });
+    expect(connect).not.toHaveBeenCalled();
   });
 
   it('satisfies policy=require through a discovered nondefault relay', async () => {
@@ -188,7 +189,7 @@ describe('OpenClaw relay metadata discovery', () => {
     ['nonzero', { kind: 'nonzero' }],
     ['command-not-found', { kind: 'unavailable' }],
     ['overflow', { kind: 'overflow' }],
-  ] as const)('falls back for a %s command result', async (_case, result) => {
+  ] as const)('classifies a %s command result', async (_case, result) => {
     await expect(discoverCommand(result)).resolves.toEqual({ reason: result.kind });
   });
 
@@ -203,22 +204,32 @@ describe('OpenClaw relay metadata discovery', () => {
     expect(result.url?.hostname).toBe(new URL(`http://${host}:19110`).hostname);
   });
 
-  it('uses 18799 when discovery is unavailable and keeps require fail-closed when that relay is unavailable', async () => {
-    const observed: string[] = [];
-    const connect = vi.fn(async (url: URL) => {
-      observed.push(url.toString());
-      return { reason: 'network-error' as const, durationMs: 1 };
-    });
-    const options = relayOptions({ discover: async () => ({ kind: 'unavailable' }), connect });
+  it.each([
+    ['timeout', { kind: 'timeout' }],
+    ['unavailable', { kind: 'unavailable' }],
+    ['nonzero', { kind: 'nonzero' }],
+    ['overflow', { kind: 'overflow' }],
+    ['malformed', { kind: 'success', stdout: Buffer.from('{') }],
+    ['incompatible', { kind: 'success', stdout: metadata({ auth: { version: 1 } }) }],
+    ['unsafe', { kind: 'success', stdout: metadata({ browserUrl: 'https://127.0.0.1:19110' }) }],
+  ] as const)('reports discovery %s without probing a guessed port', async (reason, result) => {
+    const connect = vi.fn(async () => ({ reason: 'network-error' as const, durationMs: 1 }));
+    const onDecision = vi.fn();
+    const options = relayOptions({ discover: async () => result, connect, onDecision });
     const preferred = await rewriteChromeDevtoolsArgsForRelay('npx', AUTO_ARGS, {}, options);
-    expect(preferred.decision).toMatchObject({ route: 'legacy', endpoint: 'ws://127.0.0.1:18799/cdp' });
-    expect(observed).toEqual(['http://127.0.0.1:18799/']);
+    expect(preferred.decision).toMatchObject({ route: 'legacy', reason: `discovery-${reason}`, endpoint: undefined });
 
     await expect(
       rewriteChromeDevtoolsArgsForRelay('npx', AUTO_ARGS, { MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY: 'require' }, options)
     ).rejects.toMatchObject({
-      decision: expect.objectContaining({ route: 'unavailable', reason: 'network-error', policy: 'require' }),
+      code: 'relay_discovery_failed',
+      message: expect.stringContaining('canonical Chrome definition'),
+      decision: { route: 'unavailable', reason: `discovery-${reason}`, policy: 'require', endpoint: undefined },
     });
+    expect(connect).not.toHaveBeenCalled();
+    expect(onDecision).toHaveBeenLastCalledWith(
+      expect.objectContaining({ route: 'unavailable', reason: `discovery-${reason}`, endpoint: undefined })
+    );
   });
 });
 

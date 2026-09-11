@@ -37,7 +37,7 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
     `--schema`, or `--all-parameters`.
   - `--exit-code` – exit 1 when any checked server is unhealthy.
   - `--quiet` – suppress output and exit 1 when any checked server is unhealthy.
-  - `--timeout <ms>` – per-server timeout when enumerating all servers.
+  - `--timeout <ms>` – override the per-server list deadline; `MCPORTER_LIST_TIMEOUT` provides the environment override. Defaults to 30 s, or 300 s for Chrome auto-connect to cover cumulative relay startup.
   - `--no-oauth` – never start an interactive OAuth flow; use cached
     tokens only while keeping eligible connections pooled.
 
@@ -49,7 +49,7 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
   - `--server`, `--tool` – alternate way to target a tool.
   - `--args <json>`, `--params <json>` – provide a JSON object payload.
   - `--` – stop flag parsing so remaining tokens stay literal positional values.
-  - `--timeout <ms>` – override the 60 s call timeout; `MCPORTER_CALL_TIMEOUT` provides the equivalent environment override.
+  - `--timeout <ms>` – override the call timeout (60 s normally, 300 s for Chrome auto-connect to cover cumulative relay startup); `MCPORTER_CALL_TIMEOUT` provides the equivalent environment override.
   - `--output text|markdown|json|raw` – choose how to render the `CallResult`.
   - `--save-images <dir>` – persist image content blocks to files under the specified directory.
   - `--raw-strings` – disable numeric coercion for flag-style and positional values.

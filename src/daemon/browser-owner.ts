@@ -3,6 +3,8 @@ import path from 'node:path';
 import { resolveChromeDevtoolsAutoConnectCommand } from '../chrome-devtools-command.js';
 import {
   chromeDevtoolsRelayEnvironmentKeys,
+  ChromeDevtoolsRelayDiscoveryError,
+  type ChromeDevtoolsRelayDecision,
   resolveChromeDevtoolsRelayRuntimeIdentity,
   resolveChromeDevtoolsRelayPolicy,
 } from '../chrome-devtools-relay.js';
@@ -85,6 +87,10 @@ function supportedOwner(definition: ServerDefinition): boolean {
 export class BrowserOwner {
   private identity?: string;
   private logicalIdentity?: Promise<string>;
+  private discoveryFailure?: ChromeDevtoolsRelayDecision;
+  get discoveryDecision(): ChromeDevtoolsRelayDecision | undefined {
+    return this.discoveryFailure;
+  }
   private readonly canonicalKeys: Set<string>;
   private readonly canonical: readonly ResolvedServerDefinition[];
   get reserved(): boolean {
@@ -139,13 +145,28 @@ export class BrowserOwner {
         chromeDevtoolsRelayEnvironmentKeys([definition], definition.env),
         definition.env
       );
-    if (!this.logicalIdentity) this.logicalIdentity = resolve();
-    const retained = await this.logicalIdentity;
-    const current = await resolve();
+    if (!this.logicalIdentity) {
+      this.logicalIdentity = resolve().catch((error: unknown) => {
+        this.logicalIdentity = undefined;
+        throw error;
+      });
+    }
+    let retained: string;
+    let current: string;
+    try {
+      retained = await this.logicalIdentity;
+      current = await resolve();
+    } catch (error) {
+      if (error instanceof ChromeDevtoolsRelayDiscoveryError) {
+        this.discoveryFailure = error.decision;
+      }
+      throw error;
+    }
     if (retained !== current)
       throw new BrowserOwnerConflict(
         'relay endpoint, credential generation or security context changed; explicit retirement is required'
       );
+    this.discoveryFailure = undefined;
     return retained;
   }
 }

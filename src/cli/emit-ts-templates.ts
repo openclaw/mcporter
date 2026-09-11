@@ -80,7 +80,7 @@ export function renderClientModule(input: EmitClientTemplateInput): string {
     const indexKey = toIndexKey(entry.toolName);
     lines.push(`    async ${memberName}(params: Parameters<${input.interfaceName}[${indexKey}]>[0]) {`);
     lines.push(
-      `      const tool = proxy.${entry.methodName} as (args: Parameters<${input.interfaceName}[${indexKey}]>[0]) => Promise<unknown>;`
+      `      const tool = proxy[${JSON.stringify(entry.toolName)}] as (args: Parameters<${input.interfaceName}[${indexKey}]>[0]) => Promise<unknown>;`
     );
     lines.push('      const raw = await tool(params);');
     lines.push('      return wrapCallResult(raw).callResult;');

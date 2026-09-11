@@ -162,21 +162,25 @@ describe('generate helpers', () => {
     });
 
     expect(toProxyMethodName('some-tool_name')).toBe('someToolName');
-    expect(toProxyMethodName('1password_get_item')).toBe('_1passwordGetItem');
+    expect(toProxyMethodName('1password_get_item')).toBe('1passwordGetItem');
     expect(toCliOption('inputValue')).toBe('input-value');
   });
 
-  it('emits a spellable proxy method for a tool name that starts with a digit', () => {
-    const block = renderToolCommand(
-      buildToolMetadata({
-        name: '1password_get_item',
+  it('preserves distinct digit-leading tools and emits parseable proxy access', () => {
+    const tools = buildToolMetadataList(
+      ['1password_get_item', '__1password_get_item', 'tools.search', '__proto__', '__defineGetter__'].map((name) => ({
+        name,
         inputSchema: { type: 'object', properties: {}, required: [] },
-      } as ServerToolInfo),
-      30_000,
-      'demo'
-    ).block;
-    expect(parseDiagnosticsOf(block)).toEqual([]);
-    expect(block).toContain('proxy._1passwordGetItem');
+      }))
+    );
+    expect(new Set(tools.map((tool) => tool.methodName))).toEqual(
+      new Set(['1passwordGetItem', '_1passwordGetItem', 'tools.search', '_proto_', '_defineGetter_'])
+    );
+    for (const tool of tools) {
+      const { block } = renderToolCommand(tool, 30_000, 'demo');
+      expect(parseDiagnosticsOf(block)).toEqual([]);
+      expect(block).toContain(`proxy[${JSON.stringify(tool.tool.name)}]`);
+    }
   });
 
   it('picks example literals and fallbacks consistently', () => {

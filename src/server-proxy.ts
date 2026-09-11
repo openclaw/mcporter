@@ -315,10 +315,8 @@ export function createServerProxy(
       return;
     }
     const canonical = mapPropertyToTool(key);
-    toolSchemaCache.set(canonical, info);
-    if (canonical !== key) {
-      toolSchemaCache.set(key, info);
-    }
+    // Keep schemas under exact names; a mapped alias may name a different real tool.
+    toolSchemaCache.set(key, info);
     const canonicalAlias = canonicalizeToolName(key);
     if (!toolAliasMap.has(canonicalAlias)) {
       toolAliasMap.set(canonicalAlias, key);
@@ -372,14 +370,16 @@ export function createServerProxy(
 
   return new Proxy(base as ServerProxy & Record<string | symbol, unknown>, {
     get(target, property, receiver) {
-      if (Reflect.has(target, property)) {
+      if (Object.hasOwn(target, property)) {
         return Reflect.get(target, property, receiver);
       }
       const propertyKey = property;
       const canonicalKey = typeof propertyKey === 'string' ? canonicalizeToolName(propertyKey) : null;
       let resolvedToolName =
         typeof propertyKey === 'string' && canonicalKey
-          ? (toolAliasMap.get(canonicalKey) ?? mapPropertyToTool(propertyKey))
+          ? mapPropertyToTool === defaultToolNameMapper && toolSchemaCache.has(propertyKey)
+            ? propertyKey
+            : (toolAliasMap.get(canonicalKey) ?? mapPropertyToTool(propertyKey))
           : mapPropertyToTool(propertyKey);
 
       return async (...callArgs: unknown[]) => {
@@ -392,7 +392,11 @@ export function createServerProxy(
           schemaInfo = undefined;
         }
         if (typeof propertyKey === 'string' && canonicalKey) {
-          const alias = toolAliasMap.get(canonicalKey);
+          // Exact advertised names must survive punctuation-insensitive alias collisions.
+          const alias =
+            mapPropertyToTool === defaultToolNameMapper && toolSchemaCache.has(propertyKey)
+              ? propertyKey
+              : toolAliasMap.get(canonicalKey);
           if (alias && alias !== resolvedToolName) {
             resolvedToolName = alias;
             try {

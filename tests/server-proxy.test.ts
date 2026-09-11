@@ -45,6 +45,36 @@ function createMockRuntime(
 }
 
 describe('createServerProxy', () => {
+  it.each([false, true])('prefers exact names over loose aliases with initial schemas: %s', async (preload) => {
+    const names = [
+      '1password_get_item',
+      '__1password_get_item',
+      'tools.search',
+      '__proto__',
+      '__defineGetter__',
+      'foo-bar',
+      'fooBar',
+    ];
+    const schemas = Object.fromEntries(
+      names.map((name) => [name, { type: 'object', properties: { marker: { default: name } } }])
+    );
+    const runtime = createMockRuntime(schemas);
+    const proxy = createServerProxy(runtime as unknown as Runtime, 'digits', {
+      cacheSchemas: false,
+      ...(preload ? { initialSchemas: schemas } : {}),
+    }) as unknown as Record<string, () => Promise<CallResult>>;
+
+    // Start with the later alias so a cold metadata fetch must re-resolve the exact name.
+    for (const name of names.toReversed()) {
+      await proxy[name]!();
+      expect(runtime.callTool).toHaveBeenLastCalledWith('digits', name, { args: { marker: name } });
+    }
+    await proxy['1passwordGetItem']!();
+    expect(runtime.callTool).toHaveBeenLastCalledWith('digits', '1password_get_item', {
+      args: { marker: '1password_get_item' },
+    });
+  });
+
   it('exposes direct call and listTools methods without proxy name mapping', async () => {
     const runtime = createMockRuntime();
     const proxy = createServerProxy(runtime as unknown as Runtime, 'direct', { cacheSchemas: false });
@@ -291,7 +321,7 @@ describe('createServerProxy', () => {
 
   it('applies schema defaults and validates required arguments', async () => {
     const runtime = createMockRuntime({
-      someTool: {
+      'some-tool': {
         type: 'object',
         properties: {
           foo: { type: 'number', default: 42 },
@@ -299,13 +329,16 @@ describe('createServerProxy', () => {
         },
         required: ['foo'],
       },
-      otherTool: {
+      'other-tool': {
         type: 'object',
         required: ['value'],
       },
     });
 
-    const proxy = createServerProxy(runtime as unknown as Runtime, 'test') as Record<string, unknown>;
+    const proxy = createServerProxy(runtime as unknown as Runtime, 'test', { cacheSchemas: false }) as Record<
+      string,
+      unknown
+    >;
 
     const someTool = proxy.someTool as (options?: unknown) => Promise<CallResult>;
     const result = await someTool({ bar: 'baz' });

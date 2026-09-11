@@ -1,3 +1,4 @@
+import { ChromeDevtoolsRelayDiscoveryError } from '../chrome-devtools-relay.js';
 import { idleTimerDelay } from './idle-timer.js';
 import fs from 'node:fs/promises';
 import net from 'node:net';
@@ -142,7 +143,10 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
       } catch (error) {
         const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'runtime_error';
         const message =
-          error instanceof BrokerError || error instanceof ProcessObservationError || code === 'browser_owner_conflict'
+          error instanceof BrokerError ||
+          error instanceof ProcessObservationError ||
+          error instanceof ChromeDevtoolsRelayDiscoveryError ||
+          code === 'browser_owner_conflict'
             ? (error as Error).message
             : `MCP operation failed (${code}); the request was not replayed.`;
         frames.write({ id, ok: false, error: { code, message } });

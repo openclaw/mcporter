@@ -24,7 +24,7 @@ import {
   summarizeStatusCounts,
 } from './list-output.js';
 import { dimText, extraDimText, supportsSpinner, yellowText } from './terminal.js';
-import { LIST_TIMEOUT_MS, withTimeout } from './timeouts.js';
+import { resolveListTimeout, withTimeout } from './timeouts.js';
 import { loadToolMetadata } from './tool-cache.js';
 import { formatTransportSummary } from './transport-utils.js';
 
@@ -55,7 +55,8 @@ export async function handleList(runtime: Runtime, args: string[]): Promise<void
     const previousStdioLogMode = setStdioLogMode('silent');
     try {
       const servers = runtime.getDefinitions();
-      const perServerTimeoutMs = flags.timeoutMs ?? LIST_TIMEOUT_MS;
+      const perServerTimeoutMs = resolveListTimeout(flags.timeoutMs);
+      const serverTimeouts = servers.map((server) => resolveListTimeout(flags.timeoutMs, server));
       const perServerTimeoutSeconds = Math.round(perServerTimeoutMs / 1000);
 
       if (servers.length === 0) {
@@ -77,7 +78,7 @@ export async function handleList(runtime: Runtime, args: string[]): Promise<void
 
       if (!flags.quiet && flags.format === 'text') {
         console.log(
-          `mcporter ${MCPORTER_VERSION} — Listing ${servers.length} server(s) (per-server timeout: ${perServerTimeoutSeconds}s)`
+          `mcporter ${MCPORTER_VERSION} — Listing ${servers.length} server(s) (per-server timeout: ${perServerTimeoutSeconds}s${serverTimeouts.some((timeout) => timeout !== perServerTimeoutMs) ? `; Chrome auto-connect: ${Math.max(...serverTimeouts) / 1000}s` : ''})`
         );
       }
       const spinner =
@@ -97,10 +98,10 @@ export async function handleList(runtime: Runtime, args: string[]): Promise<void
       let completedCount = 0;
 
       const tasks = servers.map((server, index) =>
-        checkListServer(runtime, server, perServerTimeoutMs, flags.disableOAuth).then((result) => {
+        checkListServer(runtime, server, serverTimeouts[index]!, flags.disableOAuth).then((result) => {
           summaryResults[index] = result;
           if (renderedResults) {
-            const rendered = renderServerListRow(result, perServerTimeoutMs, { verbose: flags.verbose });
+            const rendered = renderServerListRow(result, serverTimeouts[index]!, { verbose: flags.verbose });
             renderedResults[index] = rendered;
             completedCount += 1;
             if (spinner) {
@@ -126,7 +127,7 @@ export async function handleList(runtime: Runtime, args: string[]): Promise<void
           throw new Error('Unable to resolve server definition for JSON output.');
         }
         const normalizedEntry = entry ?? createUnknownResult(serverDefinition);
-        return buildJsonListEntry(normalizedEntry, perServerTimeoutSeconds, {
+        return buildJsonListEntry(normalizedEntry, Math.round(serverTimeouts[index]! / 1000), {
           includeSchemas: Boolean(flags.schema),
           includeSources: Boolean(flags.verbose || flags.includeSources),
           includeConnectionInfo: flags.verbose,
@@ -180,7 +181,7 @@ export async function handleList(runtime: Runtime, args: string[]): Promise<void
   }
   target = resolved.name;
   const definition = resolved.definition;
-  const timeoutMs = flags.timeoutMs ?? LIST_TIMEOUT_MS;
+  const timeoutMs = resolveListTimeout(flags.timeoutMs, definition);
   const sourcePath =
     definition.sources?.length || definition.source
       ? formatSourceSuffix(definition.sources ?? definition.source, true, { verbose: flags.verbose })

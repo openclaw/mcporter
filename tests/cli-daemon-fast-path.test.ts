@@ -69,7 +69,7 @@ describe('daemon call fast path', () => {
       server: 'chrome-devtools',
       tool: 'list_pages',
       args: {},
-      timeoutMs: expect.any(Number),
+      timeoutMs: 300_000,
     });
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('"text": "ok"'));
   });
@@ -114,6 +114,7 @@ describe('daemon call fast path', () => {
         server: 'chrome-devtools',
         tool: 'list_pages',
         args: { includeHidden: true },
+        timeoutMs: 300_000,
       })
     );
   });

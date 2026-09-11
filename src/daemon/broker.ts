@@ -339,7 +339,9 @@ export class DaemonBroker {
         idleTimeoutMs:
           entry.definition.lifecycle?.mode === 'keep-alive' ? entry.definition.lifecycle.idleTimeoutMs : undefined,
         idleBlocked: entry.chrome ? 'browser-owner' : entry.uncertain ? 'unknown-outcome' : undefined,
-        chromeDevtoolsRelay: getChromeDevtoolsRelayDecision(entry.definition.name),
+        chromeDevtoolsRelay:
+          (entry.chrome ? this.owner.discoveryDecision : undefined) ??
+          getChromeDevtoolsRelayDecision(entry.definition.name),
       })),
       browserOwner: owner ? { connectionId: owner.id, state: owner.state } : undefined,
     };

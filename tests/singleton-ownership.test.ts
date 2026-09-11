@@ -22,38 +22,63 @@ const chrome = (policy: 'require' | 'off' = 'require'): ServerDefinition => ({
 });
 
 describe('single-user connection and owner contracts', () => {
-  it('resolves canonical config placeholders in the OS-account context, not caller HOME', async () => {
-    const root = await privateFixtureDirectory('mcp-canonical-');
-    const saved = process.env.MCPORTER_DAEMON_DIR;
-    const account = vi.spyOn(os, 'userInfo').mockReturnValue({ ...os.userInfo(), homedir: root });
-    process.env.MCPORTER_DAEMON_DIR = path.join(root, '.mcporter');
-    try {
-      await fs.mkdir(process.env.MCPORTER_DAEMON_DIR, { mode: 0o700 });
-      const executable = path.join(root, 'chrome-devtools-mcp');
-      await fs.writeFile(executable, '# synthetic metadata-only fixture', { mode: 0o700 });
-      await fs.writeFile(
-        path.join(process.env.MCPORTER_DAEMON_DIR, 'mcporter.jsonc'),
-        JSON.stringify({
-          imports: [],
-          mcpServers: {
-            'chrome-devtools': {
-              command: executable,
-              args: ['--autoConnect'],
-              cwd: '${HOME}',
+  it.each([false, true])(
+    'resolves canonical config independently of caller HOME and relay controls (configured=%s)',
+    async (configured) => {
+      const root = await privateFixtureDirectory('mcp-canonical-');
+      const saved = process.env.MCPORTER_DAEMON_DIR;
+      const account = vi.spyOn(os, 'userInfo').mockReturnValue({ ...os.userInfo(), homedir: root });
+      process.env.MCPORTER_DAEMON_DIR = path.join(root, '.mcporter');
+      try {
+        await fs.mkdir(process.env.MCPORTER_DAEMON_DIR, { mode: 0o700 });
+        const executable = path.join(root, 'chrome-devtools-mcp');
+        await fs.writeFile(executable, '# synthetic metadata-only fixture', { mode: 0o700 });
+        await fs.writeFile(
+          path.join(process.env.MCPORTER_DAEMON_DIR, 'mcporter.jsonc'),
+          JSON.stringify({
+            imports: [],
+            mcpServers: {
+              'chrome-devtools': {
+                command: executable,
+                args: ['--autoConnect'],
+                cwd: '${HOME}',
+                chromeDevtoolsRelay: 'require',
+                ...(configured
+                  ? {
+                      env: {
+                        MCPORTER_CHROME_DEVTOOLS_RELAY_URL: 'http://127.0.0.1:28799',
+                        MCPORTER_CHROME_DEVTOOLS_RELAY_TIMEOUT_MS: '23000',
+                      },
+                    }
+                  : {}),
+              },
             },
-          },
-        })
-      );
-      const [definition] = await canonicalChromeDefinitions();
-      expect(definition?.command.kind === 'stdio' && definition.command.cwd).toBe(await fs.realpath(root));
-      expect(definition?.env?.HOME).toBe(root);
-    } finally {
-      account.mockRestore();
-      if (saved === undefined) delete process.env.MCPORTER_DAEMON_DIR;
-      else process.env.MCPORTER_DAEMON_DIR = saved;
-      await fs.rm(root, { recursive: true, force: true });
+          })
+        );
+        for (const shell of ['first-launcher', 'replacement-launcher']) {
+          vi.stubEnv('MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY', 'off');
+          vi.stubEnv('MCPORTER_CHROME_DEVTOOLS_RELAY_URL', 'http://127.0.0.1:1');
+          vi.stubEnv('MCPORTER_CHROME_DEVTOOLS_RELAY_TIMEOUT_MS', '100');
+          vi.stubEnv('OPENCLAW_PROFILE', shell);
+          const [definition] = await canonicalChromeDefinitions();
+          expect(definition?.command.kind === 'stdio' && definition.command.cwd).toBe(await fs.realpath(root));
+          expect(definition?.env?.HOME).toBe(root);
+          expect(definition?.env?.MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY).toBe('require');
+          expect(definition?.env?.MCPORTER_CHROME_DEVTOOLS_RELAY_URL).toBe(
+            configured ? 'http://127.0.0.1:28799/' : undefined
+          );
+          expect(definition?.env?.MCPORTER_CHROME_DEVTOOLS_RELAY_TIMEOUT_MS).toBe(configured ? '23000' : '20000');
+          expect(definition?.env?.OPENCLAW_PROFILE).toBeUndefined();
+        }
+      } finally {
+        vi.unstubAllEnvs();
+        account.mockRestore();
+        if (saved === undefined) delete process.env.MCPORTER_DAEMON_DIR;
+        else process.env.MCPORTER_DAEMON_DIR = saved;
+        await fs.rm(root, { recursive: true, force: true });
+      }
     }
-  });
+  );
   it('excludes aliases, descriptions, sources and view filters from generic identity', () => {
     expect(connectionIdentity(generic())).toBe(
       connectionIdentity({

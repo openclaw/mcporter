@@ -5,7 +5,7 @@ import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { __test as emitTsTestInternals, handleEmitTs } from '../src/cli/emit-ts-command.js';
 import { renderClientModule, renderTypesModule } from '../src/cli/emit-ts-templates.js';
-import { buildToolMetadata } from '../src/cli/generate/tools.js';
+import { buildToolMetadata, buildToolMetadataList } from '../src/cli/generate/tools.js';
 import type { Runtime } from '../src/runtime.js';
 import type { ServerToolInfo } from '../src/runtime.js';
 import { integrationDefinition, listCommentsTool } from './fixtures/tool-fixtures.js';
@@ -137,6 +137,32 @@ function parseDiagnosticsOf(source: string): string[] {
 }
 
 describe('emit-ts templates', () => {
+  it('retains digit-leading and underscore-prefixed tools in types and clients', () => {
+    const names = ['1password_get_item', '__1password_get_item', 'tools.search', '__proto__', '__defineGetter__'];
+    const tools = buildToolMetadataList(
+      names.map((name) => ({ name, inputSchema: { type: 'object', properties: {}, required: [] } })),
+      { onCollision: 'skip' }
+    );
+    const docs = emitTsTestInternals.buildDocEntries('integration', tools, false);
+    expect(new Set(docs.map((entry) => entry.toolName))).toEqual(new Set(names));
+    const input = {
+      interfaceName: 'IntegrationTools',
+      docs,
+      metadata: {
+        server: integrationDefinition,
+        generatorLabel: 'mcporter@test',
+        generatedAt: new Date('2025-11-07T00:00:00Z'),
+      },
+    };
+    const types = renderTypesModule(input);
+    const client = renderClientModule({ ...input, typesImportPath: './integration-client' });
+    for (const source of [types, client]) {
+      expect(parseDiagnosticsOf(source)).toEqual([]);
+      for (const name of names) expect(source).toContain(name);
+    }
+    for (const tool of tools) expect(client).toContain(`proxy[${JSON.stringify(tool.tool.name)}]`);
+  });
+
   it('renders type declarations with CallResult returns', () => {
     const docs = emitTsTestInternals.buildDocEntries('integration', [buildToolMetadata(listCommentsTool)], false);
     const metadata = {
@@ -167,7 +193,7 @@ describe('emit-ts templates', () => {
 
     expect(types).toContain('"API-post-page"(parent: string): Promise<Page>;');
     expect(client).toContain('async "API-post-page"(params: Parameters<IntegrationTools["API-post-page"]>[0])');
-    expect(client).toContain('proxy.aPIPostPage');
+    expect(client).toContain('proxy["API-post-page"]');
 
     for (const source of [types, client]) {
       expect(parseDiagnosticsOf(source)).toEqual([]);
@@ -239,7 +265,7 @@ describe('emit-ts templates', () => {
     });
     expect(source).toContain('createIntegrationClient');
     expect(source).toContain('wrapCallResult');
-    expect(source).toContain('proxy.listComments');
+    expect(source).toContain('proxy["list_comments"]');
   });
 
   it('does not leave a .d suffix when importing generated declaration files', () => {

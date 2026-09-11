@@ -517,7 +517,7 @@ ${aliasSnippet ? `\t${aliasSnippet}` : ''}\t.action(async (cmdOpts) => {
 \t\t\t\t${requiredValidation}
 \t\t\t\t${buildArgs}
 \t\t\t}
-\t\t\tconst call = (proxy.${tool.methodName} as any)(args);
+\t\t\tconst call = (proxy[${JSON.stringify(tool.tool.name)}] as any)(args);
 \t\t\tconst result = await invokeWithTimeout(call, globalOptions.timeout || ${defaultTimeout});
 \t\t\tprintResult(result, globalOptions.output ?? 'text');
 \t\t} finally {

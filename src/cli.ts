@@ -503,7 +503,7 @@ async function maybeHandleSimpleDaemonFastCall(
   configResolution: { path: string; explicit: boolean },
   rootDir: string | undefined
 ): Promise<boolean> {
-  const [{ parseCallArguments }, { resolveCallTimeout }] = await Promise.all([
+  const [{ parseCallArguments }, { resolveServerCallTimeout }] = await Promise.all([
     import('./cli/call-arguments.js'),
     import('./cli/timeouts.js'),
   ]);
@@ -541,7 +541,7 @@ async function maybeHandleSimpleDaemonFastCall(
     server: parsed.server,
     tool: parsed.tool,
     args: Object.keys(parsed.args).length > 0 ? parsed.args : undefined,
-    timeoutMs: resolveCallTimeout(parsed.timeoutMs),
+    timeoutMs: resolveServerCallTimeout(parsed.timeoutMs, undefined, parsed.server),
     disableOAuth: parsed.disableOAuth,
   });
   const { callResult } = wrapCallResult(result);

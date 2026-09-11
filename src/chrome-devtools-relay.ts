@@ -24,13 +24,14 @@ import {
   OPENCLAW_RELAY_DISCOVERY_ENV_KEYS,
   type OpenClawRelayDiscoveryFileProbe,
   type OpenClawRelayDiscoveryRunner,
+  type OpenClawRelayDiscoveryReason,
+  type OpenClawRelayDiscoveryResult,
 } from './chrome-devtools-relay-discovery.js';
 
-const DEFAULT_RELAY_PROBE_TIMEOUT_MS = 5_000;
+const DEFAULT_RELAY_PROBE_TIMEOUT_MS = 20_000;
 const MIN_RELAY_PROBE_TIMEOUT_MS = 100;
 const MAX_RELAY_PROBE_TIMEOUT_MS = 30_000;
-const DEFAULT_RELAY_URL = 'http://127.0.0.1:18799';
-const DEFAULT_RELAY_IDENTITY_URL = new URL(DEFAULT_RELAY_URL).toString();
+const UNRESOLVED_RELAY_IDENTITY = 'undiscovered';
 const RELAY_DEPENDENCY_SENTINEL = '$MCPORTER_CHROME_RELAY_DEPENDENCY:';
 const RELAY_DISCOVERY_SENTINEL = '$MCPORTER_CHROME_RELAY_DISCOVERY:';
 export const CHROME_DEVTOOLS_RELAY_RUNTIME_IDENTITY_VERSION = 2;
@@ -45,6 +46,7 @@ export const CHROME_DEVTOOLS_RELAY_RUNTIME_ENV_KEYS = [
 export type ChromeDevtoolsRelayPolicy = 'off' | 'prefer' | 'require';
 export type ChromeDevtoolsRelayRoute = 'relay' | 'legacy' | 'unavailable';
 export type ChromeDevtoolsRelayReason =
+  | `discovery-${Exclude<OpenClawRelayDiscoveryReason, 'success'>}`
   | 'disabled'
   | 'not-eligible'
   | 'unsupported-command'
@@ -115,6 +117,50 @@ export class ChromeDevtoolsRelayRequiredError extends Error {
     );
     this.name = 'ChromeDevtoolsRelayRequiredError';
   }
+}
+
+export class ChromeDevtoolsRelayDiscoveryError extends Error {
+  readonly code = 'relay_discovery_failed';
+  readonly decision: ChromeDevtoolsRelayDecision;
+  constructor(
+    reason: Exclude<OpenClawRelayDiscoveryReason, 'success'>,
+    policy: ChromeDevtoolsRelayPolicy,
+    timeoutMs: number
+  ) {
+    super(
+      `OpenClaw relay discovery failed (discovery-${reason}; timeout budget ${timeoutMs}ms). ` +
+        'No relay endpoint was selected; this request was not dispatched. ' +
+        'Check the OpenClaw installation and the canonical Chrome definition in the global mcporter config. ' +
+        'For slow cold starts, set MCPORTER_CHROME_DEVTOOLS_RELAY_TIMEOUT_MS in that definition’s env map; ' +
+        'drain and stop the daemon after changing its configuration.'
+    );
+    this.name = 'ChromeDevtoolsRelayDiscoveryError';
+    this.decision = { route: 'unavailable', reason: `discovery-${reason}`, policy, endpoint: undefined };
+  }
+}
+
+async function discoverRelayBaseUrl(
+  env: NodeJS.ProcessEnv,
+  keyId: string,
+  timeoutMs: number,
+  policy: ChromeDevtoolsRelayPolicy,
+  options: ChromeDevtoolsRelayIdentityOptions
+): Promise<URL> {
+  const discovered = await discoverOpenClawRelayUrl({
+    env,
+    keyId,
+    timeoutMs,
+    run: options.discover,
+    platform: options.discovery?.platform,
+    isFile: options.discovery?.isFile,
+    cwd: options.discovery?.cwd,
+  }).catch((): OpenClawRelayDiscoveryResult => ({ reason: 'unavailable' }));
+  if (discovered.reason === 'success' && discovered.url) return discovered.url;
+  throw new ChromeDevtoolsRelayDiscoveryError(
+    discovered.reason === 'success' ? 'malformed' : discovered.reason,
+    policy,
+    timeoutMs
+  );
 }
 
 const lastDecisions = new Map<string, ChromeDevtoolsRelayDecision>();
@@ -326,34 +372,31 @@ export async function rewriteChromeDevtoolsArgsForRelay(
       })()
     : defaultReadCredential(relayEnv);
   if (!loaded.credential) {
-    const base = explicitBase.url ?? new URL(DEFAULT_RELAY_URL);
-    const upstreamEndpoint = new URL('/cdp', base);
-    upstreamEndpoint.protocol = 'ws:';
+    const upstreamEndpoint = explicitBase.url ? new URL('/cdp', explicitBase.url) : undefined;
+    if (upstreamEndpoint) upstreamEndpoint.protocol = 'ws:';
     return unavailableOrLegacy(
       args,
       policy,
       loaded.reason ?? 'invalid-credential',
-      upstreamEndpoint.toString(),
+      upstreamEndpoint?.toString(),
       options
     );
   }
 
   const timeoutMs = resolveChromeDevtoolsRelayProbeTimeoutMs(relayEnv);
   try {
-    const base =
-      explicitBase.url ??
-      (
-        await discoverOpenClawRelayUrl({
-          env: relayEnv,
-          keyId: loaded.credential.keyId,
-          timeoutMs,
-          run: options.discover,
-          platform: options.discovery?.platform,
-          isFile: options.discovery?.isFile,
-          cwd: options.discovery?.cwd,
-        })
-      ).url ??
-      new URL(DEFAULT_RELAY_URL);
+    let base: URL;
+    try {
+      base =
+        explicitBase.url ?? (await discoverRelayBaseUrl(relayEnv, loaded.credential.keyId, timeoutMs, policy, options));
+    } catch (error) {
+      if (!(error instanceof ChromeDevtoolsRelayDiscoveryError)) throw error;
+      if (policy === 'require') {
+        options.onDecision?.(error.decision);
+        throw error;
+      }
+      return unavailableOrLegacy(args, policy, error.decision.reason, undefined, options);
+    }
     const upstreamEndpoint = new URL('/cdp', base);
     upstreamEndpoint.protocol = 'ws:';
     const endpoint = upstreamEndpoint.toString();
@@ -522,20 +565,9 @@ export async function resolveChromeDevtoolsRelayRuntimeIdentity(
   for (const relay of relays) {
     let endpoint = relay.endpoint;
     if (relay.discover && relay.keyId !== 'missing-credential' && relay.keyId !== 'invalid-credential') {
-      try {
-        const discovered = await discoverOpenClawRelayUrl({
-          env: relay.env,
-          keyId: relay.keyId,
-          timeoutMs: relay.timeoutMs,
-          run: options.discover,
-          platform: options.discovery?.platform,
-          isFile: options.discovery?.isFile,
-          cwd: options.discovery?.cwd,
-        });
-        endpoint = discovered.url?.toString() ?? DEFAULT_RELAY_IDENTITY_URL;
-      } catch {
-        endpoint = DEFAULT_RELAY_IDENTITY_URL;
-      }
+      endpoint = (
+        await discoverRelayBaseUrl(relay.env, relay.keyId, relay.timeoutMs, relay.policy, options)
+      ).toString();
     }
     values.push([relay.server, endpoint]);
   }
@@ -569,6 +601,7 @@ interface EffectiveRelayIdentity {
   readonly keyId: string;
   readonly endpoint: string;
   readonly discover: boolean;
+  readonly policy: ChromeDevtoolsRelayPolicy;
 }
 
 type RelayIdentityValue = readonly [string, string | number | null];
@@ -619,6 +652,7 @@ function relayEnvironmentIdentityValues(
     ]);
     relays.push({
       server,
+      policy,
       env: effectiveEnv,
       timeoutMs,
       keyId,
@@ -627,7 +661,7 @@ function relayEnvironmentIdentityValues(
           ? 'disabled'
           : explicit.explicit
             ? (explicit.url?.toString() ?? 'invalid-endpoint')
-            : DEFAULT_RELAY_IDENTITY_URL,
+            : UNRESOLVED_RELAY_IDENTITY,
       discover: payload.eligible && policy !== 'off' && !explicit.explicit,
     });
   }
@@ -644,7 +678,7 @@ function relayEnvironmentIdentityValue(key: string, env: NodeJS.ProcessEnv): str
       return resolveChromeDevtoolsRelayProbeTimeoutMs(env);
     case 'MCPORTER_CHROME_DEVTOOLS_RELAY_URL': {
       const explicit = explicitRelayBaseUrl(env);
-      return explicit.explicit ? (explicit.url?.toString() ?? 'invalid-endpoint') : DEFAULT_RELAY_IDENTITY_URL;
+      return explicit.explicit ? (explicit.url?.toString() ?? 'invalid-endpoint') : UNRESOLVED_RELAY_IDENTITY;
     }
     case 'OPENCLAW_PROFILE':
       return normalizeOpenClawProfile(env.OPENCLAW_PROFILE) ?? null;
