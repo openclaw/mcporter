@@ -2,6 +2,12 @@
 
 ## [0.13.12] - Unreleased
 
+**Highlights:** OAuth logout preserves unrelated files, and generated CLIs and typed clients keep unusual tool names callable and distinct.
+
+- Clear only recognized OAuth credential files on reset and logout, preserving the configured cache directory and unrelated contents even when imported configuration points it at the home directory. (PR #357, thanks @SebTardif)
+- Generate valid calls for digit-leading, dotted, and prototype-like tool names without renaming shared metadata, and preserve exact tool names and schemas across loose proxy aliases. (PR #353, thanks @MohammedAlkindi)
+- Refresh runtime validation, CLI bundling, Bun types, lint/format tooling, and pnpm action setup while preserving Node 24 support and the 48-hour dependency release-age policy.
+
 ## [0.13.11] - 2026-09-11
 
 **Highlights:** OpenClaw relay cold starts get enough time and clear discovery errors, while plain Chrome launches work again for CLI generation and tool discovery.
