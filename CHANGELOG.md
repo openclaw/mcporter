@@ -1,5 +1,7 @@
 # mcporter Changelog
 
+## [0.13.14] - Unreleased
+
 ## [0.13.13] - 2026-09-14
 
 **Highlights:** Literal and prototype-named keys are preserved through proxies, schemas, and CLI selectors, and configuration diagnostics show the selected path.
