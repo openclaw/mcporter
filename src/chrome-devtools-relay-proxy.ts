@@ -29,6 +29,26 @@ export async function startChromeDevtoolsRelayProxy(options: {
   const server = http.createServer((_request, response) => {
     response.writeHead(404, { Connection: 'close', 'Content-Length': '0' }).end();
   });
+  const binding = Promise.withResolvers<void>();
+  const terminate = (reason: 'upstream' | 'downstream' | 'owner'): Promise<void> => {
+    if (closing) return closing;
+    closed = true;
+    // A pending listen can still succeed after termination; settle it before closing the listener.
+    closing = binding.promise.catch(() => {}).then(() => closeServer(server, sockets));
+    lifetime.abort(reason);
+    closeUpstream(options.upstream.socket);
+    for (const socket of sockets) socket.destroy();
+    return closing;
+  };
+  const onUpstreamError = (): void => {
+    void terminate('upstream');
+  };
+  const onUpstreamClose = (): void => {
+    options.upstream.socket.off('error', onUpstreamError);
+    void terminate('upstream');
+  };
+  options.upstream.socket.on('error', onUpstreamError);
+  options.upstream.socket.once('close', onUpstreamClose);
   server.on('connection', (socket) => trackSocket(sockets, socket));
 
   server.on('upgrade', (request, downstream, head) => {
@@ -60,50 +80,34 @@ export async function startChromeDevtoolsRelayProxy(options: {
     );
     if (options.upstream.head.length > 0) downstream.write(options.upstream.head);
     if (head.length > 0) options.upstream.socket.write(head);
-    options.upstream.socket.once('error', () => void terminate('upstream'));
     downstream.once('error', () => void terminate('downstream'));
     downstream.once('close', () => void terminate('downstream'));
     downstream.pipe(options.upstream.socket).pipe(downstream);
     server.close();
   });
 
+  const onBindError = (error: Error): void => binding.reject(error);
+  server.once('error', onBindError);
   try {
-    await new Promise<void>((resolve, reject) => {
-      const onError = (error: Error): void => reject(error);
-      server.once('error', onError);
-      server.listen(0, '127.0.0.1', () => {
-        server.off('error', onError);
-        resolve();
-      });
+    server.listen(0, '127.0.0.1', () => {
+      server.off('error', onBindError);
+      binding.resolve();
     });
+    await binding.promise;
   } catch (error) {
-    closeUpstream(options.upstream.socket);
+    binding.reject(error);
+    await terminate('owner');
     throw error;
+  }
+  if (closed || options.upstream.socket.destroyed) {
+    await terminate('upstream');
+    throw new Error('Chrome relay connection closed before child handoff.');
   }
 
   const address = server.address() as AddressInfo | null;
   if (!address || address.address !== '127.0.0.1') {
-    closeUpstream(options.upstream.socket);
-    server.close();
+    await terminate('owner');
     throw new Error('Chrome relay proxy failed to bind to IPv4 loopback.');
-  }
-
-  const terminate = (reason: 'upstream' | 'downstream' | 'owner'): Promise<void> => {
-    if (closing) return closing;
-    closed = true;
-    options.upstream.socket.off('close', onUpstreamClose);
-    closeUpstream(options.upstream.socket);
-    closing = closeServer(server, sockets);
-    lifetime.abort(reason);
-    return closing;
-  };
-  const onUpstreamClose = (): void => {
-    void terminate('upstream');
-  };
-  options.upstream.socket.once('close', onUpstreamClose);
-  if (options.upstream.socket.destroyed) {
-    await terminate('upstream');
-    throw new Error('Chrome relay connection closed before child handoff.');
   }
 
   let authorizationAvailable = true;

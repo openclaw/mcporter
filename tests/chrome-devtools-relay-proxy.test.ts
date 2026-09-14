@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import net, { type AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { startChromeDevtoolsRelayProxy } from '../src/chrome-devtools-relay-proxy.js';
+import { startChromeDevtoolsRelayProxy, type ChromeDevtoolsRelayProxy } from '../src/chrome-devtools-relay-proxy.js';
 
 const WEBSOCKET_KEY = Buffer.from('0123456789abcdef').toString('base64');
 const WEBSOCKET_ACCEPT = createHash('sha1')
@@ -25,6 +25,53 @@ afterEach(async () => {
 });
 
 describe('chrome-devtools authenticated relay proxy', () => {
+  it.each(['binding', 'handoff'] as const)('owns upstream socket errors during %s', async (phase) => {
+    const upstream = await createSocketPair();
+    const pending = startChromeDevtoolsRelayProxy({
+      upstream: { socket: upstream.client, head: Buffer.alloc(0) },
+    });
+    let proxy: ChromeDevtoolsRelayProxy | undefined;
+    try {
+      if (phase === 'handoff') proxy = await pending;
+      expect(() => upstream.client.emit('error', new Error('fixture upstream failed'))).not.toThrow();
+      if (proxy) {
+        expect(proxy.signal.aborted).toBe(true);
+        expect(proxy.signal.reason).toBe('upstream');
+        await proxy.close();
+        await expect(connectSocket(Number(new URL(proxy.endpoint).port))).rejects.toMatchObject({
+          code: 'ECONNREFUSED',
+        });
+      } else {
+        await expect(pending).rejects.toThrow('Chrome relay connection closed before child handoff.');
+      }
+      expect(upstream.client.destroyed).toBe(true);
+    } finally {
+      proxy ??= await pending.catch(() => undefined);
+      await proxy?.close();
+    }
+  });
+
+  it('retires an upstream reset before the child connects', async () => {
+    const upstream = await createSocketPair();
+    const proxy = await startChromeDevtoolsRelayProxy({
+      upstream: { socket: upstream.client, head: Buffer.alloc(0) },
+    });
+    try {
+      const terminal = new Promise<void>((resolve) => {
+        proxy.signal.addEventListener('abort', () => resolve(), { once: true });
+      });
+      upstream.peer.resetAndDestroy();
+      await terminal;
+      expect(proxy.signal.reason).toBe('upstream');
+      await proxy.close();
+      await expect(connectSocket(Number(new URL(proxy.endpoint).port))).rejects.toMatchObject({
+        code: 'ECONNREFUSED',
+      });
+    } finally {
+      await proxy.close();
+    }
+  });
+
   it('keeps the handoff authorization and bridges one child to the retained upstream socket', async () => {
     const upstream = await createSocketPair();
     const proxy = await startChromeDevtoolsRelayProxy({
@@ -161,8 +208,12 @@ async function connectSocket(port: number): Promise<net.Socket> {
   return await new Promise<net.Socket>((resolve, reject) => {
     const socket = net.createConnection({ host: '127.0.0.1', port });
     sockets.add(socket);
-    socket.once('connect', () => resolve(socket));
-    socket.once('error', reject);
+    const onError = (error: Error) => reject(error);
+    socket.once('connect', () => {
+      socket.off('error', onError);
+      resolve(socket);
+    });
+    socket.once('error', onError);
   });
 }
 
