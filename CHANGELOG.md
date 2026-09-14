@@ -2,6 +2,8 @@
 
 ## [0.13.14] - Unreleased
 
+- Accept narrowly normalized loopback redirects from fresh OAuth registrations, including Fastmail's portless localhost response, while preserving the actual callback and stale-client safeguards. Thanks @mikegreiling for the report (#354).
+
 ## [0.13.13] - 2026-09-14
 
 **Highlights:** Literal and prototype-named keys are preserved through proxies, schemas, and CLI selectors, and configuration diagnostics show the selected path.

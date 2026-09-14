@@ -19,7 +19,12 @@ import { buildStaticClientInformation } from './oauth-client-info.js';
 import type { OAuthPersistence, OAuthPersistenceSnapshot } from './oauth-persistence.js';
 import { buildOAuthPersistence } from './oauth-persistence.js';
 import { withRefreshLock } from './oauth-refresh-lock.js';
-import { sameOAuthTokenGeneration } from './oauth-token-generation.js';
+import {
+  sameOAuthClientGeneration,
+  sameOAuthTokenGeneration,
+  withOAuthClientGeneration,
+} from './oauth-token-generation.js';
+import { matchesFreshLoopbackRedirect } from './oauth-redirect-uri.js';
 import {
   oauthAccessTokenNeedsRefresh,
   readCachedAccessTokenWithPersistence,
@@ -146,6 +151,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   // prompt, because only one persisted PKCE verifier can complete (issue #247).
   private interactiveAuthorization: { challenge: string | null; claimedAt: number } | null = null;
   private readonly pendingVerifiersByChallenge = new Map<string, string>();
+  private freshClientRegistration?: StoredOAuthClientInformation;
   private server?: http.Server;
 
   private constructor(
@@ -339,7 +345,13 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   }
 
   async saveClientInformation(clientInformation: StoredOAuthClientInformation): Promise<void> {
-    await this.persistence.saveClientInfo(clientInformation);
+    const previous = await this.persistence.readClientInfo();
+    const saved = withOAuthClientGeneration(clientInformation);
+    await this.persistence.saveClientInfo(saved);
+    // The SDK also saves cached clients to add an issuer. That is not a new DCR.
+    if (!previous || previous.client_id !== saved.client_id) {
+      this.freshClientRegistration = saved;
+    }
   }
 
   async tokens(ctx?: { issuer: string }): Promise<StoredOAuthTokens | undefined> {
@@ -617,12 +629,21 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     if (cachedClient?.client_id === this.definition.oauthClientMetadataUrl) {
       return;
     }
-    const cachedRedirect = firstRedirectUri(cachedClient);
-    if (!cachedClient || !cachedRedirect || cachedRedirect === this.redirectUrlValue.toString()) {
+    const redirects = redirectUris(cachedClient);
+    const fresh = this.freshClientRegistration && sameOAuthClientGeneration(cachedClient, this.freshClientRegistration);
+    if (
+      !cachedClient ||
+      redirects.length === 0 ||
+      redirects.some(
+        (redirect) =>
+          redirect === this.redirectUrlValue.toString() ||
+          (fresh && matchesFreshLoopbackRedirect(redirect, this.redirectUrlValue))
+      )
+    ) {
       return;
     }
     this.logger.info(
-      `Redirect URI changed (${cachedRedirect} → ${this.redirectUrlValue.toString()}); replacing obsolete client registration before interactive authorization.`
+      `Redirect URI changed (${redirects.join(', ')} → ${this.redirectUrlValue.toString()}); replacing obsolete client registration before interactive authorization.`
     );
     try {
       // A failed refresh makes this exact token/client pair unusable for the
@@ -676,16 +697,15 @@ function challengeForVerifier(verifier: string): string {
   return createHash('sha256').update(verifier).digest('base64url');
 }
 
-function firstRedirectUri(client: OAuthClientInformationMixed | undefined): string | undefined {
+function redirectUris(client: OAuthClientInformationMixed | undefined): string[] {
   if (!client || typeof client !== 'object') {
-    return undefined;
+    return [];
   }
-  const redirectUris = (client as Record<string, unknown>).redirect_uris;
-  if (!Array.isArray(redirectUris)) {
-    return undefined;
+  const uris = (client as Record<string, unknown>).redirect_uris;
+  if (!Array.isArray(uris)) {
+    return [];
   }
-  const [first] = redirectUris;
-  return typeof first === 'string' ? first : undefined;
+  return uris.filter((uri): uri is string => typeof uri === 'string');
 }
 
 function issuersMatch(first: string, second: string): boolean {

@@ -660,7 +660,8 @@ await new Promise((resolve) => { transport.onclose = resolve; });
     expect(helpOutput.stdout).toContain('--echo <echo>');
 
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-  }, 20000);
+    // This first compile case also builds and executes the cold Bun support probe.
+  }, 60000);
 
   it('end-to-end: compiles a "bun" CLI and calls ping', async () => {
     if (!(await ensureRunnableBunCompile('Bun CLI end-to-end test'))) {
