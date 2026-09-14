@@ -1,5 +1,12 @@
 import { z } from 'zod';
 
+export const OAuthRequestedScopeSchema = z
+  .string()
+  .regex(
+    /^[\x21\x23-\x5B\x5D-\x7E]+(?: [\x21\x23-\x5B\x5D-\x7E]+)*$/,
+    'OAuth requested scope must be a non-empty, space-separated list of OAuth scope tokens.'
+  );
+
 export const ImportKindSchema = z
   .enum(['cursor', 'claude-code', 'claude-desktop', 'codex', 'windsurf', 'opencode', 'vscode'])
   .describe('Supported editor/client configurations to import MCP servers from');
@@ -154,6 +161,12 @@ export const RawEntrySchema = z
     oauth_client_metadata_url: z.string().optional().describe('OAuth Client ID Metadata Document URL (snake_case)'),
     oauthScope: z.string().optional().describe('OAuth scope override (camelCase)'),
     oauth_scope: z.string().optional().describe('OAuth scope override (snake_case)'),
+    oauthRequestedScope: OAuthRequestedScopeSchema.optional().describe(
+      'Exact scope string for OAuth authorization requests (camelCase)'
+    ),
+    oauth_requested_scope: OAuthRequestedScopeSchema.optional().describe(
+      'Exact scope string for OAuth authorization requests (snake_case)'
+    ),
     oauthCommand: z
       .object({
         args: z.array(z.string()).describe('Arguments for the OAuth command'),
@@ -284,6 +297,7 @@ export interface ServerDefinition {
   readonly oauthRedirectUrl?: string;
   readonly oauthClientMetadataUrl?: string;
   readonly oauthScope?: string;
+  readonly oauthRequestedScope?: string;
   readonly oauthCommand?: {
     readonly args: string[];
   };

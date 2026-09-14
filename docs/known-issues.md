@@ -26,7 +26,7 @@ This file tracks limitations that users regularly run into. Most of these requir
 
 ## Next Steps
 
-- Improve scope negotiation for providers with incomplete discovery metadata and expose the existing `oauthScope` override as a CLI flag.
+- For apps with fewer permissions than a provider advertises, configure `oauthRequestedScope` or `config add --oauth-requested-scope` to control authorization consent; see [requested OAuth scopes](config.md#requested-oauth-scopes).
 - Keep lobbying providers for spec-compliant OAuth behavior.
 - Consider adding schema override hooks or auto-caching schema snapshots per tool.
 

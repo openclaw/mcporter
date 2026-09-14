@@ -3,6 +3,8 @@
 ## [0.13.14] - Unreleased
 
 - Accept narrowly normalized loopback redirects from fresh OAuth registrations, including Fastmail's portless localhost response, while preserving the actual callback and stale-client safeguards. Thanks @mikegreiling for the report (#354).
+- Add per-server `oauthRequestedScope` and `config add --oauth-requested-scope` to control OAuth consent scopes across authorization and reauthorization without changing default scope negotiation. Thanks @ronyrus for the report (#356).
+- Start OAuth on an initial unauthenticated HTTP challenge instead of treating missing credentials as a failed refresh; reuse credentials that another flow saved before retrying.
 
 ## [0.13.13] - 2026-09-14
 

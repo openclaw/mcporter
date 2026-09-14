@@ -12,6 +12,7 @@ const SHARED_DEFINITION_FIELDS = [
   'oauthRedirectUrl',
   'oauthClientMetadataUrl',
   'oauthScope',
+  'oauthRequestedScope',
   'refresh',
   'httpFetch',
   'allowedTools',

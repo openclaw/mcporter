@@ -99,6 +99,7 @@ Use `--scope home|project` with `mcporter config add` to pick the write target e
   - `--url` or `--command`/`--stdio`
   - `--env`, `--header`, `--token-cache-dir`, `--description`, `--client-name`, `--oauth-redirect-url`
   - `--oauth-client-id`, `--oauth-client-secret-env`, `--oauth-token-endpoint-auth-method` for pre-registered OAuth clients.
+  - `--oauth-requested-scope "scope1 scope2"` to choose the exact scopes requested during OAuth authorization.
   - `--copy-from importKind:name` to clone settings from an imported entry before editing.
 - `--dry-run` shows the JSON diff without writing, while `--persist <path>` overrides the destination file.
 
@@ -140,6 +141,21 @@ Use `--scope home|project` with `mcporter config add` to pick the write target e
 - When an ad-hoc HTTP server returns an OAuth challenge during `list`, `call`, or `auth`, the persisted entry is rewritten with `auth: "oauth"` so later commands use the cached OAuth path instead of retrying unauthenticated HTTP.
 - `--env KEY=VAL` entries merge with existing `env` dictionaries if you later persist the same server; nothing is lost when you alternate between CLI flags and JSON edits.
 - `--header KEY=VAL` entries merge into the persisted HTTP `headers` object when used with `--persist`; values support the same `$env:VAR`, `${VAR}`, and `${VAR:-fallback}` placeholders as config-file headers.
+
+## Requested OAuth Scopes
+
+Use `oauthRequestedScope` (or `oauth_requested_scope`) on a server to request an exact, non-empty, space-separated scope string during authorization. This is useful for a read-only OAuth app when discovery advertises a provider's entire scope catalog:
+
+```sh
+mcporter config add slack-labs https://mcp.slack.com/mcp --auth oauth \
+  --oauth-client-id YOUR_APP_ID \
+  --oauth-requested-scope "search:read.public channels:history channels:read users:read"
+mcporter config login slack-labs --no-browser
+```
+
+The setting persists per server and applies to every authorization URL, including later reauthorization and server scope challenges. It takes precedence over advertised scopes, `oauthScope`, and SDK-added `offline_access`; include `offline_access` yourself if your provider requires it for refresh tokens. A provider that requires other scopes can still reject the grant or a tool call; mcporter will not broaden the configured consent request automatically.
+
+This controls authorization consent, not the provider's client-registration metadata or scopes already granted to cached tokens. After changing it, use `mcporter auth slack-labs --reset` to obtain a new grant; revoke old grants at the provider when needed. With the setting omitted, scope selection is unchanged. The existing `oauthScope` remains a client-metadata fallback for providers without usable discovery scope metadata.
 
 ## HTTP Compatibility
 
@@ -213,6 +229,7 @@ Server definition fields (subset of what `RawEntrySchema` accepts):
 | `oauthRedirectUrl`                              | Override the default localhost callback. Required for many pre-registered OAuth apps because the provider must allowlist the exact redirect URI. Also useful when tunneling OAuth through Codespaces or remote dev boxes.                                                                                                                                     |
 | `oauthClientMetadataUrl`                        | Optional HTTPS Client ID Metadata Document URL. When the authorization server supports URL-based client identity, the SDK uses this URL as the client id; otherwise it falls back to dynamic client registration.                                                                                                                                             |
 | `oauthScope`                                    | Optional explicit OAuth scope string. If omitted, mcporter lets the MCP SDK derive scope from server/auth metadata. Use this as an escape hatch for providers that require explicit scopes but don’t publish `scopes_supported`.                                                                                                                              |
+| `oauthRequestedScope`                           | Exact, non-empty, space-separated scope string for authorization consent; overrides discovery, scope challenges, and automatic `offline_access`. Omit to retain default negotiation. CLI: `config add --oauth-requested-scope "scope1 scope2"`.                                                                                                               |
 | `oauthCommand.args`                             | For STDIO servers that ship a custom auth subcommand (e.g., Gmail MCP). mcporter will spawn the stdio command with these args when you run `mcporter auth <name>`, so you don’t need to call `npx ... auth` manually.                                                                                                                                         |
 | `refresh`                                       | Explicit token refresh settings for `auth: "refreshable_bearer"`. Supports `tokenEndpoint`, `clientIdEnv`, `clientSecretEnv`, `clientAuthMethod`, `refreshSkewSeconds`, and `accessTokenEnv` (plus snake_case aliases).                                                                                                                                       |
 | `allowedTools` / `allowed_tools`                | Optional exact-name allowlist. Only listed tools appear in `mcporter list` and can be called. An empty array blocks all tools. Cannot be combined with `blockedTools`.                                                                                                                                                                                        |

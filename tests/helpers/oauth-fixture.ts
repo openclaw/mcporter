@@ -6,6 +6,7 @@ export async function startOAuthFixture(
   options: {
     redirectUris?: (requested: string[]) => string[];
     scopes?: string[];
+    challengeScope?: string;
   } = {}
 ) {
   let origin = '';
@@ -17,7 +18,13 @@ export async function startOAuthFixture(
       response.writeHead(status, { 'content-type': 'application/json' });
       response.end(JSON.stringify(body));
     };
-    if (url.pathname.includes('.well-known/oauth-protected-resource')) {
+    if (url.pathname === '/mcp') {
+      response.setHeader(
+        'www-authenticate',
+        `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"${options.challengeScope ? `, scope="${options.challengeScope}"` : ''}`
+      );
+      json({ error: 'unauthorized' }, 401);
+    } else if (url.pathname.includes('.well-known/oauth-protected-resource')) {
       json({ resource: `${origin}/mcp`, authorization_servers: [origin], scopes_supported: options.scopes });
     } else if (url.pathname.includes('.well-known/oauth-authorization-server')) {
       json({

@@ -36,6 +36,7 @@ export function normalizeServerEntry(
   const oauthRedirectUrl = raw.oauthRedirectUrl ?? raw.oauth_redirect_url ?? undefined;
   const oauthClientMetadataUrl = raw.oauthClientMetadataUrl ?? raw.oauth_client_metadata_url ?? undefined;
   const oauthScope = raw.oauthScope ?? raw.oauth_scope ?? undefined;
+  const oauthRequestedScope = raw.oauthRequestedScope ?? raw.oauth_requested_scope ?? undefined;
   const refresh = normalizeRefresh(raw.refresh);
   const httpFetch = raw.httpFetch ?? raw.http_fetch;
   const oauthCommandRaw = raw.oauthCommand ?? raw.oauth_command;
@@ -91,6 +92,7 @@ export function normalizeServerEntry(
     oauthRedirectUrl,
     oauthClientMetadataUrl,
     oauthScope,
+    oauthRequestedScope,
     oauthCommand: defaultedOauthCommand,
     refresh,
     httpFetch,

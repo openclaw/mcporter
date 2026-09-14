@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { OAuthRequestedScopeSchema } from '../../config-schema.js';
 import { writeRawConfig, type LoadConfigOptions, type RawEntry } from '../../config.js';
 import { pathsForImport, readExternalEntries } from '../../config-imports.js';
 import { expandHome } from '../../env.js';
@@ -23,6 +24,7 @@ export type AddFlags = {
   oauthClientSecretEnv?: string;
   oauthTokenEndpointAuthMethod?: string;
   oauthRedirectUrl?: string;
+  oauthRequestedScope?: string;
   auth?: string;
   copyFrom?: string;
   persistPath?: string;
@@ -168,6 +170,13 @@ function extractAddFlags(args: string[]): AddFlags {
         flags.oauthRedirectUrl = requireValue(args, index, token);
         args.splice(index, 2);
         continue;
+      case '--oauth-requested-scope': {
+        const parsed = OAuthRequestedScopeSchema.safeParse(requireValue(args, index, token));
+        if (!parsed.success) throw new CliUsageError(`${token}: ${parsed.error.issues[0]?.message}`);
+        flags.oauthRequestedScope = parsed.data;
+        args.splice(index, 2);
+        continue;
+      }
       case '--auth':
         flags.auth = requireValue(args, index, token);
         args.splice(index, 2);
@@ -312,6 +321,9 @@ function applyFlagsToEntry(entry: RawEntry, flags: AddFlags): void {
   }
   if (flags.oauthRedirectUrl) {
     entry.oauthRedirectUrl = flags.oauthRedirectUrl;
+  }
+  if (flags.oauthRequestedScope !== undefined) {
+    entry.oauthRequestedScope = flags.oauthRequestedScope;
   }
   if (flags.auth) {
     entry.auth = flags.auth;

@@ -207,6 +207,7 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
   const oauthRedirectUrl = stringFromAliases(record, 'oauthRedirectUrl', 'oauth_redirect_url');
   const oauthClientMetadataUrl = stringFromAliases(record, 'oauthClientMetadataUrl', 'oauth_client_metadata_url');
   const oauthScope = stringFromAliases(record, 'oauthScope', 'oauth_scope');
+  const oauthRequestedScope = stringFromAliases(record, 'oauthRequestedScope', 'oauth_requested_scope');
   const refresh = getRefresh(record.refresh);
   const httpFetch = normalizeHttpFetch(stringFromAliases(record, 'httpFetch', 'http_fetch'));
   const headers = toStringRecord((def as Record<string, unknown>).headers);
@@ -234,6 +235,7 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
     oauthRedirectUrl,
     oauthClientMetadataUrl,
     oauthScope,
+    oauthRequestedScope,
     oauthCommand,
     refresh,
     httpFetch,

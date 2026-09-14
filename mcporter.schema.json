@@ -179,6 +179,16 @@
             "description": "OAuth scope override (snake_case)",
             "type": "string"
           },
+          "oauthRequestedScope": {
+            "description": "Exact scope string for OAuth authorization requests (camelCase)",
+            "type": "string",
+            "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+(?: [\\x21\\x23-\\x5B\\x5D-\\x7E]+)*$"
+          },
+          "oauth_requested_scope": {
+            "description": "Exact scope string for OAuth authorization requests (snake_case)",
+            "type": "string",
+            "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+(?: [\\x21\\x23-\\x5B\\x5D-\\x7E]+)*$"
+          },
           "oauthCommand": {
             "description": "Custom OAuth command configuration for stdio servers (camelCase)",
             "type": "object",

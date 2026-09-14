@@ -13,6 +13,7 @@ import type {
 } from '@modelcontextprotocol/client';
 import { validateClientMetadataUrl } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from './config.js';
+import { OAuthRequestedScopeSchema } from './config-schema.js';
 import { isFileLockTimeoutError } from './fs-json.js';
 import { suppressBrowserLaunchFromEnv } from './oauth-browser-suppression.js';
 import { buildStaticClientInformation } from './oauth-client-info.js';
@@ -189,6 +190,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     close: () => Promise<void>;
   }> {
     validateClientMetadataUrl(definition.oauthClientMetadataUrl);
+    if (definition.oauthRequestedScope !== undefined) OAuthRequestedScopeSchema.parse(definition.oauthRequestedScope);
     const persistence = await buildOAuthPersistence(definition, logger);
 
     const server = http.createServer();
@@ -427,12 +429,15 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     continueDefault: ContinueOAuthUnauthorized
   ): Promise<void> {
     const rejected = context.presentedTokens;
-    if (!rejected) {
-      throw new OAuthRefreshUnavailableError(this.definition.name);
-    }
     try {
       await withRefreshLock(this.definition, async () => {
         const latest = await reconcilePersistedTokens(this.definition, this.persistence);
+        if (!rejected) {
+          // An initial unauthenticated 401 starts authorization. If another flow
+          // saved credentials meanwhile, retry with those instead of refreshing.
+          if (!latest) await continueDefault({ fetchFn: withRefreshRequestTimeout(oauthJsonFetch) });
+          return;
+        }
         if (!latest) {
           throw new OAuthRefreshUnavailableError(this.definition.name);
         }
@@ -454,6 +459,12 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
 
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {
     await this.invalidateObsoleteDynamicRegistration();
+    if (this.definition.oauthRequestedScope !== undefined) {
+      // Apply the operator's consent boundary after SDK discovery, challenge
+      // scope selection, and offline_access augmentation on every auth path.
+      authorizationUrl = new URL(authorizationUrl);
+      authorizationUrl.searchParams.set('scope', this.definition.oauthRequestedScope);
+    }
     this.authorizationRedirectStarted = true;
     this.ensureAuthorizationDeferred();
     const challenge = authorizationUrl.searchParams.get('code_challenge');
