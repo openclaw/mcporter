@@ -117,6 +117,7 @@ describe('OpenClaw relay metadata discovery', () => {
         }),
         startProxy: async () => ({
           endpoint: 'ws://127.0.0.1:45678/cdp',
+          signal: new AbortController().signal,
           consumeClientAuthorization: () => 'Bearer test-only-ephemeral-authorization',
           close: async () => {},
         }),

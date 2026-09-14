@@ -11,6 +11,7 @@ export async function createRelayFixture(): Promise<{
   directory: string;
   definition: ServerDefinition;
   readonly activeConnections: number;
+  disconnectCdp(): Promise<void>;
   close(): Promise<void>;
 }> {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-runtime-relay-'));
@@ -18,6 +19,7 @@ export async function createRelayFixture(): Promise<{
   const key = Buffer.from(STABLE_RELAY_TOKEN, 'hex');
   const states = new WeakMap<net.Socket, ReturnType<typeof createChallengeFields>>();
   const relaySockets = new Set<net.Socket>();
+  const cdpSockets = new Set<net.Socket>();
   const server = http.createServer(async (request, response) => {
     const socket = request.socket;
     if (request.url === '/_openclaw/relay/auth/v2/challenge') {
@@ -56,7 +58,10 @@ export async function createRelayFixture(): Promise<{
   server.on('connection', (socket) => {
     relaySockets.add(socket);
     socket.on('error', () => {});
-    socket.once('close', () => relaySockets.delete(socket));
+    socket.once('close', () => {
+      relaySockets.delete(socket);
+      cdpSockets.delete(socket);
+    });
   });
   server.on('upgrade', (request, socket) => {
     const relaySocket = socket as net.Socket;
@@ -64,11 +69,15 @@ export async function createRelayFixture(): Promise<{
       relaySocket.destroy();
       return;
     }
+    cdpSockets.add(relaySocket);
     const websocketKey = String(request.headers['sec-websocket-key'] ?? '');
     const accept = createHash('sha1').update(`${websocketKey}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest('base64');
     relaySocket.write(
       `HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`
     );
+    // Match a WebSocket server's EOF handling instead of retaining a half-open fixture socket.
+    relaySocket.once('end', () => relaySocket.end());
+    relaySocket.resume();
   });
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
@@ -93,6 +102,14 @@ export async function createRelayFixture(): Promise<{
     },
     get activeConnections() {
       return relaySockets.size;
+    },
+    async disconnectCdp() {
+      const [socket, ...others] = cdpSockets;
+      if (!socket || others.length) throw new Error('Expected exactly one owned CDP connection.');
+      await new Promise<void>((resolve) => {
+        socket.once('close', () => resolve());
+        socket.destroy();
+      });
     },
     async close() {
       for (const socket of relaySockets) socket.destroy();

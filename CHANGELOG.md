@@ -2,6 +2,7 @@
 
 ## [0.13.13] - Unreleased
 
+- Recover lost Chrome relay connections by retiring the current MCP child before the next explicit call creates a fresh authenticated connection, preserving setup cleanup and never replaying interrupted tool calls.
 - Verify Vitest 5 on Node 24 and 26 with strict CI engine checks, omit the unsupported non-LTS Node 25 development line while retaining the Node >=24 runtime floor, and ignore Vitest's generated reports.
 - Refresh Zod to 4.6.2 across the runtime and protocol fixtures, plus JOSE and test coverage dependencies, preserving Node 24 support and the 48-hour dependency release-age policy.
 - Preserve literal keys through proxies, generated schemas, and canonical JSON, including prototype-named and empty fields; keep distinct cached tool names and require own properties for required arguments.

@@ -8,6 +8,7 @@ const WEBSOCKET_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
 export interface ChromeDevtoolsRelayProxy {
   readonly endpoint: string;
+  readonly signal: AbortSignal;
   consumeClientAuthorization(): string;
   close(): Promise<void>;
 }
@@ -23,6 +24,8 @@ export async function startChromeDevtoolsRelayProxy(options: {
   const clientAuthorization = `Bearer ${randomBytes(32).toString('base64url')}`;
   let downstreamAccepted = false;
   let closed = false;
+  const lifetime = new AbortController();
+  let closing: Promise<void> | undefined;
   const server = http.createServer((_request, response) => {
     response.writeHead(404, { Connection: 'close', 'Content-Length': '0' }).end();
   });
@@ -57,18 +60,12 @@ export async function startChromeDevtoolsRelayProxy(options: {
     );
     if (options.upstream.head.length > 0) downstream.write(options.upstream.head);
     if (head.length > 0) options.upstream.socket.write(head);
-    options.upstream.socket.once('error', () => downstream.destroy());
-    options.upstream.socket.once('close', () => downstream.destroy());
-    downstream.once('error', () => options.upstream.socket.destroy());
-    downstream.once('close', () => options.upstream.socket.destroy());
+    options.upstream.socket.once('error', () => void terminate('upstream'));
+    downstream.once('error', () => void terminate('downstream'));
+    downstream.once('close', () => void terminate('downstream'));
     downstream.pipe(options.upstream.socket).pipe(downstream);
     server.close();
   });
-
-  const onUpstreamClose = (): void => {
-    void closeServer(server, sockets);
-  };
-  options.upstream.socket.once('close', onUpstreamClose);
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -91,21 +88,34 @@ export async function startChromeDevtoolsRelayProxy(options: {
     throw new Error('Chrome relay proxy failed to bind to IPv4 loopback.');
   }
 
+  const terminate = (reason: 'upstream' | 'downstream' | 'owner'): Promise<void> => {
+    if (closing) return closing;
+    closed = true;
+    options.upstream.socket.off('close', onUpstreamClose);
+    closeUpstream(options.upstream.socket);
+    closing = closeServer(server, sockets);
+    lifetime.abort(reason);
+    return closing;
+  };
+  const onUpstreamClose = (): void => {
+    void terminate('upstream');
+  };
+  options.upstream.socket.once('close', onUpstreamClose);
+  if (options.upstream.socket.destroyed) {
+    await terminate('upstream');
+    throw new Error('Chrome relay connection closed before child handoff.');
+  }
+
   let authorizationAvailable = true;
   return {
     endpoint: `ws://127.0.0.1:${address.port}/cdp`,
+    signal: lifetime.signal,
     consumeClientAuthorization() {
       if (!authorizationAvailable) throw new Error('Chrome relay authorization handoff already consumed.');
       authorizationAvailable = false;
       return clientAuthorization;
     },
-    async close() {
-      if (closed) return;
-      closed = true;
-      options.upstream.socket.off('close', onUpstreamClose);
-      closeUpstream(options.upstream.socket);
-      await closeServer(server, sockets);
-    },
+    close: () => terminate('owner'),
   };
 }
 

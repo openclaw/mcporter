@@ -5,6 +5,7 @@ import {
   Client,
   type ClientOptions,
   DEFAULT_REQUEST_TIMEOUT_MSEC,
+  SdkError,
   SdkErrorCode,
   type Transport,
   type VersionNegotiationMode,
@@ -24,7 +25,11 @@ import {
 import type { ServerDefinition } from '../config.js';
 import { assertChromeBrokerAuthority, isBrokerDefinition } from '../daemon/transport-authority.js';
 import type { Logger } from '../logging.js';
-import { closeTransportAndWait } from '../runtime-process-utils.js';
+import {
+  captureTransportProcessTree,
+  closeTransportAndWait,
+  type TransportProcessTree,
+} from '../runtime-process-utils.js';
 import { applyCachedAuthIfAvailable } from './cached-auth.js';
 import {
   createNonInteractiveElicitationResponder,
@@ -178,6 +183,9 @@ async function createStdioClientContext(
   let activeProxy = relay.proxy;
   let handoff: ChromeDevtoolsRelayHandoff | undefined;
   let rawTransport: McporterStdioTransport;
+  let processTree: Promise<TransportProcessTree> | undefined;
+  const captureProcesses = () => (processTree ??= captureTransportProcessTree(rawTransport));
+  let onProxyClosed: (() => void) | undefined;
   try {
     if (activeProxy) {
       try {
@@ -212,8 +220,11 @@ async function createStdioClientContext(
       cwd: definition.command.cwd,
       env: compat.env,
       redactDiagnostics: isBrokerDefinition(definition),
+      lifetime: activeProxy?.signal,
+      prepareClose: activeProxy ? async () => void (await captureProcesses()) : undefined,
       cleanup: activeProxy
         ? async () => {
+            if (onProxyClosed) activeProxy?.signal.removeEventListener('abort', onProxyClosed);
             await handoff?.close();
             await activeProxy?.close();
           }
@@ -231,10 +242,35 @@ async function createStdioClientContext(
     await closeTransportAndWait(logger, rawTransport, { throwOnCloseError: true, requireRetirement: true });
     throw error;
   }
+  let connected = false;
+  let setupRetirement: Promise<void> | undefined;
+  const retireSetup = () =>
+    (setupRetirement ??= (async () => {
+      const captured = await captureProcesses();
+      await closeTransportAndWait(logger, transport, {
+        throwOnCloseError: true,
+        requireRetirement: true,
+        processTree: captured,
+      });
+    })());
+  onProxyClosed = () => {
+    if (connected) {
+      rawTransport.notifyConnectionClosed();
+    } else {
+      void retireSetup().catch(() => {});
+    }
+  };
+  activeProxy?.signal.addEventListener('abort', onProxyClosed, { once: true });
+  if (activeProxy?.signal.aborted) onProxyClosed();
   try {
     await client.connect(transport, { signal: options.signal });
+    if (activeProxy?.signal.aborted)
+      throw new SdkError(SdkErrorCode.ConnectionClosed, 'Chrome relay connection closed during setup.');
+    connected = true;
   } catch (error) {
-    await closeTransportAndWait(logger, transport, { throwOnCloseError: true, requireRetirement: true });
+    const upstreamLost = activeProxy?.signal.aborted && activeProxy.signal.reason === 'upstream';
+    await retireSetup();
+    if (upstreamLost) throw new SdkError(SdkErrorCode.ConnectionClosed, 'Chrome relay connection closed during setup.');
     throw error;
   }
   return { client, transport, definition, oauthSession: undefined };

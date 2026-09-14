@@ -1,4 +1,4 @@
-import type { JSONRPCMessage } from '@modelcontextprotocol/client';
+import { SdkError, SdkErrorCode, type JSONRPCMessage } from '@modelcontextprotocol/client';
 import { StdioClientTransport, type StdioServerParameters } from '@modelcontextprotocol/client/stdio';
 import {
   flushStdioLogs,
@@ -10,6 +10,8 @@ import {
 export interface McporterStdioTransportParameters extends StdioServerParameters {
   readonly redactDiagnostics?: boolean;
   readonly cleanup?: () => Promise<void> | void;
+  readonly lifetime?: AbortSignal;
+  readonly prepareClose?: () => Promise<void>;
 }
 
 /**
@@ -20,15 +22,18 @@ export interface McporterStdioTransportParameters extends StdioServerParameters 
 export class McporterStdioTransport extends StdioClientTransport {
   private readonly meta: ProcessStreamMeta;
   private closing = false;
+  private closePromise: Promise<void> | undefined;
+  private closeNotified = false;
   private closeDelegate: (() => void) | undefined;
   private messageDelegate: ((message: JSONRPCMessage) => void) | undefined;
   private readonly closeInterceptor = () => {
     this.meta.code = this.closing ? 0 : 1;
     flushStdioLogs(this.meta);
     void this.cleanup();
-    this.closeDelegate?.();
+    this.notifyClosed();
   };
   private readonly messageInterceptor = (message: JSONRPCMessage) => {
+    if (this.parameters.lifetime?.aborted) return;
     if (STDIO_TRACE_ENABLED && !this.parameters.redactDiagnostics)
       this.meta.stdoutChunks?.push(JSON.stringify(message));
     this.messageDelegate?.(message);
@@ -64,10 +69,12 @@ export class McporterStdioTransport extends StdioClientTransport {
   }
 
   override async start(): Promise<void> {
+    this.assertOpen();
     if (STDIO_TRACE_ENABLED && !this.parameters.redactDiagnostics)
       console.log('[mcporter] STDIO trace: start() invoked for stdio transport.');
     this.installInterceptors();
     await super.start();
+    this.assertOpen();
     if (STDIO_TRACE_ENABLED && !this.parameters.redactDiagnostics) {
       console.log(
         `[mcporter] STDIO trace: spawned ${this.meta.command ?? 'stdio server'} (pid=${this.pid ?? 'unknown'}).`
@@ -76,6 +83,7 @@ export class McporterStdioTransport extends StdioClientTransport {
   }
 
   override async send(message: JSONRPCMessage): Promise<void> {
+    this.assertOpen();
     // The negotiation probe temporarily owns these public callbacks and then
     // restores them. Reinstall before every send so the live post-probe
     // connection retains logging without patching SDK internals.
@@ -84,16 +92,39 @@ export class McporterStdioTransport extends StdioClientTransport {
     await super.send(message);
   }
 
-  override async close(): Promise<void> {
+  override close(): Promise<void> {
+    if (this.closePromise) return this.closePromise;
     this.closing = true;
     this.installInterceptors();
+    this.closePromise = this.closeOnce();
+    return this.closePromise;
+  }
+
+  private async closeOnce(): Promise<void> {
     try {
+      await this.parameters.prepareClose?.();
       await super.close();
     } finally {
       this.meta.code ??= 0;
       flushStdioLogs(this.meta);
       await this.cleanup();
     }
+  }
+
+  private assertOpen(): void {
+    if (this.closing || this.parameters.lifetime?.aborted)
+      throw new SdkError(SdkErrorCode.ConnectionClosed, 'Transport connection closed.');
+  }
+
+  private notifyClosed(): void {
+    if (this.closeNotified) return;
+    this.closeNotified = true;
+    this.closeDelegate?.();
+  }
+
+  notifyConnectionClosed(): void {
+    this.installInterceptors();
+    this.notifyClosed();
   }
 
   private cleanup(): Promise<void> {

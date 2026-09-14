@@ -53,6 +53,7 @@ function successfulOptions(overrides: ChromeDevtoolsRelayProbeOptions = {}): Chr
     connect: async () => ({ reason: 'success', durationMs: 12, status: 200, upstream: fakeUpstream() }),
     startProxy: async () => ({
       endpoint: 'ws://127.0.0.1:45678/cdp',
+      signal: new AbortController().signal,
       consumeClientAuthorization: () => FAKE_PROXY_AUTHORIZATION,
       close: async () => {},
     }),
@@ -788,6 +789,7 @@ describe('chrome-devtools OpenClaw relay routing', () => {
           observed.push(options);
           return {
             endpoint: 'ws://127.0.0.1:45678/cdp',
+            signal: new AbortController().signal,
             consumeClientAuthorization: () => FAKE_PROXY_AUTHORIZATION,
             close,
           };
@@ -933,6 +935,7 @@ describe('chrome-devtools OpenClaw relay routing', () => {
         successfulOptions({
           startProxy: async () => ({
             endpoint: 'ws://127.0.0.1:45678/cdp',
+            signal: new AbortController().signal,
             consumeClientAuthorization: () => `Bearer ${'j'.repeat(43)}`,
             close,
           }),

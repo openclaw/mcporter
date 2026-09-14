@@ -219,6 +219,18 @@ export class DaemonBroker {
                 context.client.onclose = () => {
                   if (target.generation === generation && target.state !== 'retirement-failed') {
                     target.state = 'disconnected';
+                    if (target.chrome && !this.draining) {
+                      target.serial = target.serial.then(async () => {
+                        if (this.draining || target.generation !== generation || target.state !== 'disconnected')
+                          return;
+                        try {
+                          await this.retire(target);
+                          target.state = 'idle';
+                        } catch {
+                          target.state = 'retirement-failed';
+                        }
+                      });
+                    }
                   }
                   previous?.();
                 };

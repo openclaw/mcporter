@@ -9,8 +9,8 @@ it('does not replay timed-out side effects, quarantine application errors, or re
     await expect(c.callTool({ server: 'fixture', tool: 'delayed', timeoutMs: 30 })).rejects.toMatchObject({
       code: 'operation_timeout',
     });
-    expect((await fs.readFile(`${f.root}/effects`, 'utf8')).trim().split('\n')).toEqual(['once']);
     expect(fixtureResult(await c.callTool({ server: 'fixture', tool: 'identity' })).id).toBe(before.id);
+    expect((await fs.readFile(`${f.root}/effects`, 'utf8')).trim().split('\n')).toEqual(['once']);
     expect(await c.callTool({ server: 'fixture', tool: 'application_error' })).toMatchObject({ isError: true });
     expect(fixtureResult(await c.callTool({ server: 'fixture', tool: 'identity' })).id).toBe(before.id);
   } finally {

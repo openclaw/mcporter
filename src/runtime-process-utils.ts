@@ -7,6 +7,17 @@ export interface CloseTransportAndWaitOptions {
   readonly throwOnCloseError?: boolean;
   readonly close?: () => Promise<void>;
   readonly requireRetirement?: boolean;
+  readonly processTree?: TransportProcessTree;
+}
+
+export interface TransportProcessTree {
+  readonly pid: number | null;
+  readonly targets: readonly number[];
+}
+
+export async function captureTransportProcessTree(transport: Transport): Promise<TransportProcessTree> {
+  const pid = getTransportPid(transport);
+  return { pid, targets: pid ? await collectProcessTreePids(pid) : [] };
 }
 
 // closeTransportAndWait closes transports and ensures backing processes exit cleanly.
@@ -15,8 +26,9 @@ export async function closeTransportAndWait(
   transport: Transport & { close(): Promise<void> },
   options: CloseTransportAndWaitOptions = {}
 ): Promise<void> {
-  const pidBeforeClose = getTransportPid(transport);
-  const targetsBeforeClose = pidBeforeClose ? await collectProcessTreePids(pidBeforeClose) : [];
+  const processTree = options.processTree ?? (await captureTransportProcessTree(transport));
+  const pidBeforeClose = processTree.pid;
+  const targetsBeforeClose = processTree.targets;
   let closeError: unknown;
   let closeSettled = false;
   const closePromise = (options.close ?? (() => transport.close()))()
