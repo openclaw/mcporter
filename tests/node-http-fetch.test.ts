@@ -188,6 +188,44 @@ describe('nodeHttp1Fetch', () => {
     });
   });
 
+  it.each([
+    ['empty', undefined],
+    ['text', 'synthetic payload'],
+    ['blob', new Blob(['synthetic payload'])],
+  ])('does not send a request cancelled during %s body preparation', async (_case, body) => {
+    let requests = 0;
+    const { baseUrl, close } = await serve((_request, response) => {
+      requests += 1;
+      response.end('unexpected request');
+    });
+    cleanup = close;
+    const controller = new AbortController();
+
+    const pending = nodeHttp1Fetch(baseUrl, { method: 'POST', body, signal: controller.signal });
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(requests).toBe(0);
+  });
+
+  it('aborts an active SSE response and closes its connection', async () => {
+    const disconnected = Promise.withResolvers<void>();
+    const { baseUrl, close } = await serve((_request, response) => {
+      response.on('close', disconnected.resolve);
+      response.writeHead(200, { 'content-type': 'text/event-stream' });
+      response.write('data: synthetic\n\n');
+    });
+    cleanup = close;
+    const controller = new AbortController();
+    const response = await nodeHttp1Fetch(baseUrl, { signal: controller.signal });
+    const body = response.text();
+
+    controller.abort();
+
+    await expect(body).rejects.toThrow();
+    await disconnected.promise;
+  });
+
   it('turns POST redirects into bodyless GET requests for 302 responses', async () => {
     const { baseUrl, close } = await serve((request, response) => {
       if (request.url === '/start') {

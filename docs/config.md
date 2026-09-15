@@ -177,6 +177,8 @@ If a provider rejects the built-in stack entirely but accepts plain Node `https.
 
 The Sunsama endpoint is auto-detected and uses the all-request compatibility path by default.
 
+The HTTP/1.1 path honors cancellation both while preparing a request body and while receiving a response. A request cancelled before its connection starts is not sent; cancelling an active SSE response closes its connection.
+
 ## JSON Schema for IDE Support
 
 mcporter provides a JSON Schema for config file validation and autocompletion. Add the `$schema` property to your config file:

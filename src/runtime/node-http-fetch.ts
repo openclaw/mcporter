@@ -60,6 +60,7 @@ async function nodeHttp1FetchWithRedirects(
       {
         method: init.method ?? 'GET',
         headers,
+        signal: init.signal ?? undefined,
       },
       (response) => {
         const responseHeaders = new Headers();
@@ -112,11 +113,6 @@ async function nodeHttp1FetchWithRedirects(
       }
     );
 
-    const abort = () => {
-      request.destroy(new DOMException('The operation was aborted.', 'AbortError'));
-    };
-    init.signal?.addEventListener('abort', abort, { once: true });
-    request.once('close', () => init.signal?.removeEventListener('abort', abort));
     request.once('error', reject);
     if (body !== undefined) {
       request.write(body);

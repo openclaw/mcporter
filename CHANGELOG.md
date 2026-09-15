@@ -2,6 +2,7 @@
 
 ## [0.13.14] - Unreleased
 
+- Honor cancellation during HTTP/1.1 request preparation so an already-cancelled MCP request is never sent after body serialization.
 - Report asynchronous recording failures without unhandled rejections and always close the underlying MCP transport when recording writes fail.
 - Accept narrowly normalized loopback redirects from fresh OAuth registrations, including Fastmail's portless localhost response, while preserving the actual callback and stale-client safeguards. Thanks @mikegreiling for the report (#354).
 - Add per-server `oauthRequestedScope` and `config add --oauth-requested-scope` to control OAuth consent scopes across authorization and reauthorization without changing default scope negotiation. Thanks @ronyrus for the report (#356).
