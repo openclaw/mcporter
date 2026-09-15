@@ -39,6 +39,7 @@ import {
 import { createHttpClientContext, type HttpClientFactory } from './http-transport.js';
 import { RecordTransport } from './record-transport.js';
 import { ReplayTransport } from './replay-transport.js';
+import { createOutputSchemaValidator } from './schema-validator.js';
 import { McporterStdioTransport } from './stdio-transport.js';
 import type { ClientContext, CreateClientContextOptions, WrapRecordTransport } from './transport-types.js';
 import { resolveCommandArgument, resolveCommandArguments } from './utils.js';
@@ -103,6 +104,7 @@ function createClient(
 ): Client {
   const mode = options.forceLegacy ? 'legacy' : resolveNegotiationMode(definition);
   const clientOptions: ClientOptions = {
+    jsonSchemaValidator: createOutputSchemaValidator(),
     capabilities: { elicitation: { form: {}, url: {} } },
     listMaxPages: LIST_MAX_PAGES,
     versionNegotiation: {
