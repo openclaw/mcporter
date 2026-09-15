@@ -31,6 +31,7 @@ export class RecordTransport implements Transport {
 
   private writes: Promise<void> = Promise.resolve();
   private closeRecorded = false;
+  private writeErrorReported = false;
 
   constructor(private readonly opts: RecordTransportOptions) {
     // Preserve the SDK's structural stdio detection without making HTTP
@@ -60,14 +61,14 @@ export class RecordTransport implements Transport {
   async start(): Promise<void> {
     await initializeRecordingFile(this.opts.recordPath);
     this.opts.inner.onclose = () => {
-      void this.appendCloseOnce();
+      void this.appendCloseOnce().catch((error) => this.reportWriteError(error));
       this.onclose?.();
     };
     this.opts.inner.onerror = (error) => {
       this.onerror?.(error);
     };
     this.opts.inner.onmessage = (message, extra) => {
-      void this.appendLine(this.withMeta(message, 'recv'));
+      void this.appendLine(this.withMeta(message, 'recv')).catch((error) => this.reportWriteError(error));
       this.onmessage?.(message, extra);
     };
     await this.appendLifecycle('start');
@@ -80,9 +81,15 @@ export class RecordTransport implements Transport {
   }
 
   async close(): Promise<void> {
-    await this.appendCloseOnce();
-    await this.opts.inner.close();
-    await this.writes;
+    try {
+      await this.appendCloseOnce();
+    } finally {
+      try {
+        await this.opts.inner.close();
+      } finally {
+        await this.writes;
+      }
+    }
   }
 
   setProtocolVersion(version: string): void {
@@ -134,6 +141,14 @@ export class RecordTransport implements Transport {
       });
     });
     await this.writes;
+  }
+
+  private reportWriteError(error: unknown): void {
+    if (this.writeErrorReported) {
+      return;
+    }
+    this.writeErrorReported = true;
+    this.onerror?.(error instanceof Error ? error : new Error(String(error)));
   }
 }
 

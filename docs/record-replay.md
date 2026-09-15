@@ -17,6 +17,8 @@ mcporter replay demo-session -- mcporter call linear.list_issues limit:5
 
 Recordings contain raw JSON-RPC params and responses. Review and redact them before sharing, attaching to bug reports, or committing them to a repository because tool arguments and results can include credentials, private content, or customer data.
 
+If writing a recording fails, mcporter reports the filesystem error and still closes the underlying MCP connection. The capture may be incomplete; resolve the storage error and record a new session before replaying it. Programmatic transport users receive asynchronous recording failures through `onerror`, and `close()` rejects with the write failure after cleanup.
+
 To record or replay a later command, create the session configuration and export the matching environment variable:
 
 ```bash
