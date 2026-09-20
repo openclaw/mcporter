@@ -189,7 +189,7 @@ export async function processInventory(pids: readonly number[], tree = false): P
       });
     });
   }
-  const { stdout } = await exec('/bin/ps', ['-axo', 'pid=,ppid=,uid=,lstart='], {
+  const { stdout } = await exec('ps', ['-axo', 'pid=,ppid=,uid=,lstart='], {
     timeout: 5000,
     maxBuffer: 4 * 1024 * 1024,
   });
