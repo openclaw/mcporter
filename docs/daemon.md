@@ -73,6 +73,8 @@ Legacy daemons in nonstandard historic namespaces must be inventoried by the ope
 
 Process-query failures and unverified owner or start identities block retirement. Empty or malformed helper output is never accepted as proof of exit. Windows observations query owners only for the selected process tree; retirement polls target the captured PIDs and preserve start identities to detect reuse.
 
+On POSIX systems, process inventory uses `ps` from `PATH`; no fixed `/bin/ps` location is required.
+
 ## Explicit test namespaces
 
 `MCPORTER_DAEMON_DIR=/absolute/private/directory` preserves intentional isolation. Each explicit directory has its own `daemon/user.sock` and `daemon/user.json`, within that generic/test namespace. Use a short, mode-0700 temporary directory for fixtures and set HOME/XDG to throwaway locations as well. `daemon stop` in that namespace affects only that namespace.

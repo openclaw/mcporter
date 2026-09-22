@@ -2,6 +2,7 @@
 
 ## [0.13.14] - Unreleased
 
+- Resolve the daemon process inventory through `PATH`, allowing retirement and migration on NixOS and other systems without `/bin/ps`. Thanks @tsln1998 (#381).
 - Honor cancellation during HTTP/1.1 request preparation so an already-cancelled MCP request is never sent after body serialization.
 - Report asynchronous recording failures without unhandled rejections and always close the underlying MCP transport when recording writes fail.
 - Accept narrowly normalized loopback redirects from fresh OAuth registrations, including Fastmail's portless localhost response, while preserving the actual callback and stale-client safeguards. Thanks @mikegreiling for the report (#354).
