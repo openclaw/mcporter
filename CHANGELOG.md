@@ -2,6 +2,7 @@
 
 ## [0.13.14] - Unreleased
 
+- Avoid repeated warnings for already-ignored `uint32` and `uint64` output-schema annotations while preserving schema metadata, dialect handling, and validation. Thanks @0xCUB3 (#377).
 - Reject non-object `--persist` destinations and invalid `mcpServers` containers with clear errors, preserving the existing file instead of silently losing the new server or replacing invalid data. Thanks @SebTardif (#387).
 - Preserve the saved tool timeout when regenerating a CLI with `--from`, unless `--timeout` explicitly overrides it. Thanks @SebTardif (#384).
 - Bound `--tail-log` reads to the last MiB of regular files, reject special files without blocking even if the path changes during opening, and avoid padding short reads. Thanks @SebTardif (#388).

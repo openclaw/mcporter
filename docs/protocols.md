@@ -26,6 +26,10 @@ Set `protocolVersion` when a deployment needs a fixed policy:
 
 `auto` is the implicit default. A pinned modern connection fails instead of masking a negotiation error with a legacy retry. `mcporter list <server> --verbose` reports the negotiated revision and era.
 
+## Output validation
+
+Tool output validation follows the declared JSON Schema dialect. The already-ignored `uint32` and `uint64` format annotations are omitted only from the validator's private compilation copy, avoiding repeated warnings while keeping returned tool metadata unchanged. Types, explicit numeric bounds, required fields, standard formats, and unrelated diagnostics retain their normal behavior.
+
 ## Interactive requests
 
 Both protocol eras can ask the client for more input during a tool call. Legacy connections use MCP elicitation requests; modern servers can also return an `input_required` result that continues through the same handler.
