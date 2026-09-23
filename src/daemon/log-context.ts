@@ -65,23 +65,3 @@ export async function disposeLogContext(context: LogContext): Promise<void> {
     writer.on('error', () => resolve());
   });
 }
-
-export function shouldLogServer(context: LogContext, server: string): boolean {
-  if (!context.enabled) {
-    return false;
-  }
-  if (context.logAllServers) {
-    return true;
-  }
-  return context.servers.has(server);
-}
-
-export function formatError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  if (typeof error === 'string') {
-    return error;
-  }
-  return 'unknown';
-}
