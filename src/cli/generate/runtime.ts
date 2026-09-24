@@ -17,7 +17,7 @@ export async function resolveRuntimeKind(
 export async function verifyBunAvailable(): Promise<string> {
   const bunBin = process.env.BUN_BIN ?? 'bun';
   await new Promise<void>((resolve, reject) => {
-    execFile(bunBin, ['--version'], { cwd: process.cwd(), env: process.env }, (error) => {
+    execFile(bunBin, ['--version'], { cwd: process.cwd(), env: process.env, windowsHide: true }, (error) => {
       if (error) {
         reject(new Error('Unable to locate Bun runtime. Install Bun or set BUN_BIN to the bun executable.'));
         return;

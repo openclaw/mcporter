@@ -146,7 +146,7 @@ async function bundleWithBun({
       args.push('--minify');
     }
     await new Promise<void>((resolve, reject) => {
-      execFile(bunBin, args, { cwd: stagingDir, env: process.env }, (error) => {
+      execFile(bunBin, args, { cwd: stagingDir, env: process.env, windowsHide: true }, (error) => {
         if (error) {
           reject(error);
           return;
@@ -167,7 +167,7 @@ export async function compileBundleWithBun(bundlePath: string, outputPath: strin
     execFile(
       bunBin,
       ['build', bundlePath, '--compile', '--outfile', outputPath],
-      { cwd: process.cwd(), env: process.env },
+      { cwd: process.cwd(), env: process.env, windowsHide: true },
       (error) => {
         if (error) {
           reject(error);
@@ -330,7 +330,7 @@ async function installPublishedBundlerDeps(stagingDir: string): Promise<void> {
     execFile(
       'npm',
       ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--min-release-age=0'],
-      { cwd: stagingDir, env: process.env },
+      { cwd: stagingDir, env: process.env, windowsHide: true },
       (error) => {
         if (error) {
           reject(

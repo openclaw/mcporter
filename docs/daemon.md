@@ -51,6 +51,8 @@ Supported auto-connect commands use the relay implementation. Under shared owner
 
 A healthy retained connection avoids reattachment between ordinary invocations. A crash, deliberate restart, migration, or explicit recovery can still require another browser permission prompt.
 
+Background process-tree queries run without opening a Windows console window during stdio server cleanup.
+
 Windows directory verification reads ownership and access rules without requiring the audit-security privilege or an elevated shell. Existing owner, protected-DACL, access-rule, and reparse-point checks still apply.
 
 ## Deliberate migration from per-config daemons

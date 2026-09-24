@@ -11,6 +11,7 @@ read_when:
 ## Notes
 
 - Generated CLIs use `commander` for argument parsing.
+- Background Bun and npm commands run without opening console windows on Windows.
 - Default timeout for tool calls is 30 seconds, overridable via `--timeout`.
 - `--runtime node|bun` selects the generated runtime explicitly. When omitted, generation selects Bun if available, otherwise Node.js.
 - Generated CLI embeds the resolved server definition and always targets that snapshot (no external `--config` or `--server` overrides at runtime).

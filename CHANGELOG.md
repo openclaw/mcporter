@@ -2,6 +2,8 @@
 
 ## [0.14.1] - Unreleased
 
+- Prevent Windows console flashes during stdio server cleanup and CLI generation by hiding background PowerShell, Bun, and npm subprocesses. Thanks @VladislavEkimtcov and @KalebCole (#398).
+
 ## [0.14.0] - 2026-09-22
 
 **Highlights:** OAuth consent scopes are configurable, generated TypeScript clients preserve complete tool arguments, and cancellation, local state, and generated-code handling are safer.

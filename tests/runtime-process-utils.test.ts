@@ -23,7 +23,7 @@ describe('runtime-process-utils Windows process tree', () => {
     vi.restoreAllMocks();
   });
 
-  it('parses PowerShell output to enumerate descendants', async () => {
+  it('enumerates Windows descendants without showing a console window', async () => {
     const { __testHooks } = await import('../src/runtime-process-utils.js');
     const rootPid = process.pid;
     const powershellOutput = JSON.stringify([
@@ -47,7 +47,7 @@ describe('runtime-process-utils Windows process tree', () => {
     expect(execFileMock).toHaveBeenCalledWith(
       'powershell.exe',
       expect.arrayContaining(['-NoProfile', '-Command', expect.stringContaining('Get-CimInstance')]),
-      expect.any(Object),
+      expect.objectContaining({ encoding: 'utf8', windowsHide: true }),
       expect.any(Function)
     );
   });
