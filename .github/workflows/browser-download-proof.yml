@@ -1,0 +1,193 @@
+name: Browser Download Proof
+on:
+  push:
+    branches: [maintenance/mcporter-browser-0.14.1]
+permissions:
+  contents: read
+jobs:
+  browser-download:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-26
+            arch: arm64
+            size: 25854833
+            digest: c449c578de5fbda45ce51b775f4e95daf552b56d2877161902ce692447315c78
+          - runner: macos-15-intel
+            arch: x86_64
+            size: 28928539
+            digest: d5ace0d4b947f85c487093295e01db4580285b749e6e33752bbfeb16c42bae28
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    env:
+      RELEASE_VERSION: '0.14.1'
+      EXPECTED_ARCH: ${{ matrix.arch }}
+      EXPECTED_SHA256: ${{ matrix.digest }}
+      EXPECTED_SIZE: ${{ matrix.size }}
+    steps:
+      - name: Resolve one exact draft asset without exposing its temporary URL
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, pathlib, urllib.error, urllib.parse, urllib.request
+          version = os.environ["RELEASE_VERSION"]
+          name = f"mcporter_{version}_darwin_{os.environ['EXPECTED_ARCH']}.tar.gz"
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, request, file, code, message, headers, new_url):
+                  return None
+          opener = urllib.request.build_opener(NoRedirect())
+          def request(path, accept):
+              return urllib.request.Request("https://api.github.com/repos/openclaw/mcporter/" + path, headers={
+                  "Authorization": "Bearer " + os.environ["GH_TOKEN"],
+                  "Accept": accept,
+                  "X-GitHub-Api-Version": "2022-11-28",
+              })
+          with opener.open(request("releases/395681058", "application/vnd.github+json"), timeout=30) as response:
+              release = json.load(response)
+          assert release["id"] == 395681058 and release["tag_name"] == "v" + version
+          assert release["draft"] and not release["prerelease"]
+          expected = {f"mcporter_{version}_darwin_arm64.tar.gz", f"mcporter_{version}_darwin_x86_64.tar.gz",
+                      f"mcporter-{version}.tgz", "checksums.txt", "provenance.json"}
+          assert len(release["assets"]) == 5 and {a["name"] for a in release["assets"]} == expected
+          asset = next(a for a in release["assets"] if a["name"] == name)
+          assert asset["state"] == "uploaded" and asset["size"] == int(os.environ["EXPECTED_SIZE"])
+          try:
+              with opener.open(request(f"releases/assets/{asset['id']}", "application/octet-stream"), timeout=30):
+                  raise RuntimeError("Expected a short-lived HTTPS asset redirect")
+          except urllib.error.HTTPError as error:
+              if error.code not in (302, 303, 307, 308):
+                  raise RuntimeError(f"Asset redirect failed with HTTP {error.code}") from None
+              url = error.headers["Location"]
+              error.close()
+          target = urllib.parse.urlsplit(url)
+          assert target.scheme == "https" and target.hostname in {"release-assets.githubusercontent.com", "objects.githubusercontent.com"}
+          assert target.username is None and target.password is None and target.port in (None, 443)
+          assert "\r" not in url and "\n" not in url
+          metadata = {"releaseId": release["id"], "assetId": asset["id"], "name": name, "url": url}
+          path = pathlib.Path(os.environ["RUNNER_TEMP"]) / "browser-artifact.json"
+          descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+          with os.fdopen(descriptor, "w") as file:
+              json.dump(metadata, file)
+          print("Resolved exact draft asset", asset["id"], name)
+          PY
+
+      - name: Verify natural quarantine and first native execution without GitHub credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, http.server, json, os, pathlib, signal, subprocess, tempfile, threading, time
+          assert not os.environ.get("GH_TOKEN") and not os.environ.get("GITHUB_TOKEN")
+          metadata_path = pathlib.Path(os.environ["RUNNER_TEMP"]) / "browser-artifact.json"
+          metadata = json.loads(metadata_path.read_text())
+          metadata_path.unlink()
+          url = metadata.pop("url")
+          version = os.environ["RELEASE_VERSION"]
+          name = metadata["name"]
+          with tempfile.TemporaryDirectory() as temporary:
+              root = pathlib.Path(temporary)
+              profile, downloads, home = root / "profile", root / "downloads", root / "home"
+              for directory in (profile, downloads, home):
+                  directory.mkdir()
+              preferences = {
+                  "browser.download.folderList": 2,
+                  "browser.download.dir": str(downloads),
+                  "browser.download.useDownloadDir": True,
+                  "browser.helperApps.neverAsk.saveToDisk": "application/octet-stream,application/gzip,application/x-gzip",
+                  "browser.shell.checkDefaultBrowser": False,
+                  "browser.startup.homepage_override.mstone": "ignore",
+              }
+              (profile / "user.js").write_text("\n".join(
+                  "user_pref(" + json.dumps(key) + ", " + json.dumps(value) + ");"
+                  for key, value in preferences.items()
+              ))
+              child_env = {key: os.environ[key] for key in (
+                  "PATH", "TMPDIR", "USER", "LOGNAME", "SHELL", "LANG", "LC_CTYPE", "DISPLAY",
+                  "XPC_FLAGS", "XPC_SERVICE_NAME", "__CF_USER_TEXT_ENCODING", "RUNNER_TRACKING_ID",
+              ) if key in os.environ}
+              child_env.update(HOME=str(home), XDG_CONFIG_HOME=str(home / "config"), XDG_DATA_HOME=str(home / "data"))
+              class Redirect(http.server.BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      if self.path != "/artifact":
+                          self.send_error(404)
+                          return
+                      self.send_response(302)
+                      self.send_header("Location", url)
+                      self.send_header("Content-Length", "0")
+                      self.end_headers()
+                  def log_message(self, *args):
+                      pass
+              server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Redirect)
+              threading.Thread(target=server.serve_forever, daemon=True).start()
+              process = subprocess.Popen([
+                  "/Applications/Firefox.app/Contents/MacOS/firefox", "-headless", "-no-remote", "-profile", str(profile),
+                  f"http://127.0.0.1:{server.server_port}/artifact",
+              ], env=child_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+              try:
+                  downloaded, partial = downloads / name, downloads / (name + ".part")
+                  def complete():
+                      try:
+                          return downloaded.stat().st_size == int(os.environ["EXPECTED_SIZE"]) and not partial.exists()
+                      except FileNotFoundError:
+                          return False
+                  deadline = time.monotonic() + 180
+                  while not complete() and time.monotonic() < deadline:
+                      if process.poll() is not None:
+                          raise RuntimeError("The browser exited before downloading")
+                      time.sleep(0.25)
+                  assert complete(), "Browser download did not complete"
+                  digest = hashlib.sha256(downloaded.read_bytes()).hexdigest()
+                  assert digest == os.environ["EXPECTED_SHA256"], "Exact draft archive digest mismatch"
+                  def quarantine(path):
+                      value = subprocess.check_output(["xattr", "-p", "com.apple.quarantine", str(path)], text=True, timeout=30).strip()
+                      parts = value.split(";")
+                      assert len(parts) >= 3 and parts[2] in {"Firefox", "Archive Utility"}, "Missing natural quarantine attribution"
+                      return ";".join(parts[:3])
+                  archive_quarantine = quarantine(downloaded)
+                  assert subprocess.check_output(["tar", "-tzf", str(downloaded)], text=True, timeout=30).strip() == "mcporter"
+                  subprocess.run(["open", "-W", "-n", "-a", "/System/Library/CoreServices/Applications/Archive Utility.app", str(downloaded)], check=True, timeout=120)
+                  binaries = [path for path in downloads.rglob("mcporter") if path.is_file() and not path.is_symlink()]
+                  assert len(binaries) == 1, "Archive Utility did not produce one expected executable"
+                  binary = binaries[0]
+                  binary_quarantine = quarantine(binary)
+                  arch = subprocess.check_output(["uname", "-m"], text=True, timeout=30).strip()
+                  assert arch == os.environ["EXPECTED_ARCH"]
+                  assert subprocess.check_output(["lipo", "-archs", str(binary)], text=True, timeout=30).strip() == arch
+                  gatekeeper = subprocess.check_output(["spctl", "--status"], text=True, timeout=30).strip()
+                  assert gatekeeper == "assessments enabled", gatekeeper
+                  subprocess.run(["codesign", "--verify", "--strict", "--check-notarization", "-R=notarized", str(binary)],
+                                 check=True, timeout=60, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                  result = subprocess.run([str(binary), "--version"], env=child_env, cwd=home,
+                                          capture_output=True, text=True, timeout=30, check=True)
+                  assert result.stdout.strip() == version, "Native release version mismatch"
+                  proof = {**metadata, "arch": arch, "version": version, "sha256": digest,
+                           "binarySha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
+                           "archiveQuarantine": archive_quarantine, "binaryQuarantine": binary_quarantine,
+                           "gatekeeper": gatekeeper, "firstExecution": "passed"}
+                  (pathlib.Path(os.environ["RUNNER_TEMP"]) / "browser-proof.json").write_text(json.dumps(proof, indent=2) + "\n")
+                  print(json.dumps(proof, indent=2))
+              finally:
+                  if process.poll() is None:
+                      os.killpg(process.pid, signal.SIGTERM)
+                      try:
+                          process.wait(timeout=10)
+                      except subprocess.TimeoutExpired:
+                          os.killpg(process.pid, signal.SIGKILL)
+                          process.wait()
+                  server.shutdown()
+                  server.server_close()
+          PY
+
+      - name: Preserve browser Gatekeeper proof
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-gatekeeper-${{ matrix.arch }}
+          path: ${{ runner.temp }}/browser-proof.json
+          if-no-files-found: error
+          retention-days: 30
