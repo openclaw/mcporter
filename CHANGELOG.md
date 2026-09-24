@@ -2,6 +2,7 @@
 
 ## [0.14.1] - Unreleased
 
+- Honor `daemon start --log-servers` for each caller-visible server alias, suppressing unselected activity in both stdout and log files even when aliases share a connection.
 - Prevent Windows console flashes during stdio server cleanup and CLI generation by hiding background PowerShell, Bun, and npm subprocesses. Thanks @VladislavEkimtcov and @KalebCole (#398).
 
 ## [0.14.0] - 2026-09-22
