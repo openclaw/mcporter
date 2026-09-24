@@ -1,9 +1,12 @@
 # mcporter Changelog
 
-## [0.14.1] - Unreleased
+## [0.14.1] - 2026-09-24
+
+**Highlights:** Windows background commands stay quiet, and daemon activity logs honor the chosen server aliases.
 
 - Honor `daemon start --log-servers` for each caller-visible server alias, suppressing unselected activity in both stdout and log files even when aliases share a connection.
 - Prevent Windows console flashes during stdio server cleanup and CLI generation by hiding background PowerShell, Bun, and npm subprocesses. Thanks @VladislavEkimtcov and @KalebCole (#398).
+- Refresh eligible dependencies and development tools, including URI normalization and bounded brace parsing security fixes in development fixtures, while preserving Node 24 and the 48-hour dependency release-age policy (#400).
 
 ## [0.14.0] - 2026-09-22
 
