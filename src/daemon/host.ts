@@ -118,6 +118,11 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
           }, resolveProgressInterval(request.progressIntervalMs));
         let result: unknown;
         let notices: string[] = [];
+        const activityServer = 'server' in request.params ? request.params.server : undefined;
+        const logActivity =
+          log.logAllServers ||
+          log.servers.size === 0 ||
+          (typeof activityServer === 'string' && log.servers.has(activityServer));
         switch (request.method) {
           case 'status':
             result = status();
@@ -134,9 +139,9 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
             result = true;
             break;
           default:
-            logEvent(log, `${request.method} start`);
+            if (logActivity) logEvent(log, `${request.method} start`);
             ({ result, notices } = await broker.invokeWithNotices(request));
-            logEvent(log, `${request.method} success`);
+            if (logActivity) logEvent(log, `${request.method} success`);
         }
         frames.write({ id, ok: true, result, notices });
         socket.end();

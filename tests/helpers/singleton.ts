@@ -7,7 +7,7 @@ import { DaemonClient, resolveDaemonPaths } from '../../src/daemon/client.js';
 import { runDaemonHost } from '../../src/daemon/host.js';
 import type { ServerDefinition } from '../../src/config.js';
 
-export async function singletonFixture(options: { exclusive?: boolean } = {}) {
+export async function singletonFixture(options: { exclusive?: boolean; logServers?: string[] } = {}) {
   const root = await privateFixtureDirectory('mcp-broker-');
   const isolatedEnv = {
     MCPORTER_DAEMON_DIR: root,
@@ -42,7 +42,13 @@ for(const name of ['identity','secret','delayed','application_error','disconnect
     env: { VALUE: 'original' },
   };
   const paths = resolveDaemonPaths('');
-  const host = await runDaemonHost({ ...paths, configPath: '' });
+  const host = await runDaemonHost({
+    ...paths,
+    configPath: '',
+    logPath: options.logServers ? path.join(root, 'daemon.log') : undefined,
+    logServers: new Set(options.logServers),
+    logAllServers: options.logServers?.length === 0,
+  });
   const client = (def?: ServerDefinition) => {
     const c = new DaemonClient({ configPath: '' });
     c.setDefinitions([def ?? definition]);
