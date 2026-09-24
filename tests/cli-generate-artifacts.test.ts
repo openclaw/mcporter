@@ -374,16 +374,16 @@ describe('artifact implementation behavior', () => {
   });
 });
 
-describe.skipIf(process.platform === 'win32')('published dependency installation', () => {
-  async function prepareFakeNpm(tempDir: string): Promise<string> {
-    const binDir = path.join(tempDir, 'bin');
-    const npmPath = path.join(binDir, 'npm');
-    await fsPromises.mkdir(binDir);
-    await fsPromises.copyFile(FAKE_NPM_PATH, npmPath);
-    await fsPromises.chmod(npmPath, 0o755);
-    return binDir;
-  }
+async function prepareFakeNpm(tempDir: string): Promise<string> {
+  const binDir = path.join(tempDir, 'bin');
+  const npmPath = path.join(binDir, 'npm');
+  await fsPromises.mkdir(binDir);
+  await fsPromises.copyFile(FAKE_NPM_PATH, npmPath);
+  await fsPromises.chmod(npmPath, 0o755);
+  return binDir;
+}
 
+describe.skipIf(process.platform === 'win32')('published dependency installation', () => {
   it('runs a no-script npm install for the selected published package', async () => {
     const tempDir = await fsPromises.mkdtemp(TMP_PREFIX);
     const logPath = path.join(tempDir, 'npm.log');

@@ -8,6 +8,7 @@ import type { LoadConfigOptions } from '../src/config.js';
 describe('config add validation and persistence', () => {
   let tempDir: string;
   let loadOptions: LoadConfigOptions;
+  const run = (args: string[]) => handleAddCommand({ loadOptions } as never, args);
 
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-add-validation-'));
@@ -20,8 +21,6 @@ describe('config add validation and persistence', () => {
   });
 
   it('rejects incomplete and contradictory transport definitions', async () => {
-    const run = (args: string[]) => handleAddCommand({ loadOptions } as never, args);
-
     await expect(run([])).rejects.toThrow('Usage: mcporter config add <name> [target]');
     await expect(run(['empty'])).rejects.toThrow('require either a --url/target or a stdio command');
     await expect(run(['args-only', '--arg', 'server.js'])).rejects.toThrow('--arg/--args requires a stdio command');
@@ -37,8 +36,6 @@ describe('config add validation and persistence', () => {
   });
 
   it('rejects malformed flag values before touching the config file', async () => {
-    const run = (args: string[]) => handleAddCommand({ loadOptions } as never, args);
-
     await expect(run(['bad-scope', 'node', '--scope', 'workspace'])).rejects.toThrow(
       '--scope must be either "home" or "project"'
     );

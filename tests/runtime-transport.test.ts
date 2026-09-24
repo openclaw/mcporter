@@ -776,19 +776,19 @@ describe('createClientContext (HTTP)', () => {
   });
 });
 
-describe('createClientContext (stdio negotiation)', () => {
-  function stdioDefinition(mode: 'legacy-exit' | 'modern'): ServerDefinition {
-    return {
-      name: `stdio-${mode}`,
-      command: {
-        kind: 'stdio',
-        command: process.execPath,
-        args: [STDIO_NEGOTIATION_FIXTURE, mode],
-        cwd: process.cwd(),
-      },
-    };
-  }
+function stdioDefinition(mode: 'legacy-exit' | 'modern'): ServerDefinition {
+  return {
+    name: `stdio-${mode}`,
+    command: {
+      kind: 'stdio',
+      command: process.execPath,
+      args: [STDIO_NEGOTIATION_FIXTURE, mode],
+      cwd: process.cwd(),
+    },
+  };
+}
 
+describe('createClientContext (stdio negotiation)', () => {
   it('retries with a fresh legacy process when the discovery probe kills the first process', async () => {
     const context = await createClientContext(stdioDefinition('legacy-exit'), logger, clientInfo);
     try {

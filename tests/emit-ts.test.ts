@@ -151,6 +151,21 @@ function parseDiagnosticsOf(source: string): string[] {
   return diagnostics.map((entry) => ts.flattenDiagnosticMessageText(entry.messageText, '\n'));
 }
 
+function renderTypesForTitle(title: string): string {
+  const titledTool: ServerToolInfo = {
+    ...dashedTool,
+    name: 'search',
+    outputSchema: { title },
+  };
+  const docs = emitTsTestInternals.buildDocEntries('integration', [buildToolMetadata(titledTool)], true);
+  return renderTypesModule({
+    interfaceName: 'IntegrationTools',
+    docs,
+    metadata: testMetadata,
+    signatureStyle: 'positional',
+  });
+}
+
 describe('emit-ts templates', () => {
   it('retains digit-leading and underscore-prefixed tools in types and clients', () => {
     const names = ['1password_get_item', '__1password_get_item', 'tools.search', '__proto__', '__defineGetter__'];
@@ -205,23 +220,6 @@ describe('emit-ts templates', () => {
       expect(parseDiagnosticsOf(source)).toEqual([]);
     }
   });
-
-  // Four cases render the same module for a different title, so the rendering lives here and each
-  // case is left with the title it is about.
-  function renderTypesForTitle(title: string): string {
-    const titledTool: ServerToolInfo = {
-      ...dashedTool,
-      name: 'search',
-      outputSchema: { title },
-    };
-    const docs = emitTsTestInternals.buildDocEntries('integration', [buildToolMetadata(titledTool)], true);
-    return renderTypesModule({
-      interfaceName: 'IntegrationTools',
-      docs,
-      metadata: testMetadata,
-      signatureStyle: 'positional',
-    });
-  }
 
   it('keeps a multi-word outputSchema title parseable in the emitted module', () => {
     const types = renderTypesForTitle('Search Results');
