@@ -45,6 +45,14 @@ function fakeUpstream() {
   return { socket: new net.Socket(), head: Buffer.alloc(0) };
 }
 
+function relayUrlDefinition(url: string): ServerDefinition {
+  return {
+    name: 'chrome',
+    command: { kind: 'stdio', command: 'npx', args: AUTO_ARGS, cwd: '/tmp' },
+    env: { MCPORTER_CHROME_DEVTOOLS_RELAY_URL: url, UNRELATED_SECRET: 'do-not-store' },
+  };
+}
+
 function successfulOptions(overrides: ChromeDevtoolsRelayProbeOptions = {}): ChromeDevtoolsRelayProbeOptions {
   return {
     readToken: () => TOKEN,
@@ -550,16 +558,11 @@ describe('chrome-devtools OpenClaw relay routing', () => {
   });
 
   it('skips discovery for an explicit URL and honors definition env precedence', async () => {
-    const definition = (url: string): ServerDefinition => ({
-      name: 'chrome',
-      command: { kind: 'stdio', command: 'npx', args: AUTO_ARGS, cwd: '/tmp' },
-      env: { MCPORTER_CHROME_DEVTOOLS_RELAY_URL: url, UNRELATED_SECRET: 'do-not-store' },
-    });
     const discover = vi.fn(async () => ({ kind: 'unavailable' as const }));
     const identities: string[] = [];
     for (const baseEnv of [{}, { MCPORTER_CHROME_DEVTOOLS_RELAY_URL: 'http://127.0.0.1:19999' }]) {
-      const first = definition('http://127.0.0.1:18888');
-      const second = definition('http://127.0.0.1:18889');
+      const first = relayUrlDefinition('http://127.0.0.1:18888');
+      const second = relayUrlDefinition('http://127.0.0.1:18889');
       expect(resolveChromeDevtoolsRelayEnvironment(first.env, baseEnv).MCPORTER_CHROME_DEVTOOLS_RELAY_URL).toBe(
         'http://127.0.0.1:18888'
       );
