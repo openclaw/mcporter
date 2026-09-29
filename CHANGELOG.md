@@ -2,6 +2,8 @@
 
 ## [0.14.2] - Unreleased
 
+- Size the top-level help's global-flag column to its longest flag, so `--log-level <debug|info|warn|error>` no longer runs into its description. Thanks @KrasimirKralev.
+
 ## [0.14.1] - 2026-09-24
 
 **Highlights:** Windows background commands stay quiet, and daemon activity logs honor the chosen server aliases.

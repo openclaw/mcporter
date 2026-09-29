@@ -168,7 +168,8 @@ function formatGlobalFlags(colorize: boolean): string {
       summary: 'Time to wait for browser-based OAuth before giving up (default 300000)',
     },
   ];
-  const formatted = entries.map((entry) => `  ${entry.flag.padEnd(34)}${entry.summary}`);
+  const flagWidth = Math.max(...entries.map((entry) => entry.flag.length));
+  const formatted = entries.map((entry) => `  ${entry.flag.padEnd(flagWidth)}  ${entry.summary}`);
   return [title, ...formatted].join('\n');
 }
 
