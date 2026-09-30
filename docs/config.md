@@ -122,6 +122,7 @@ Use `--scope home|project` with `mcporter config add` to pick the write target e
 ### `mcporter config login <name|url>` / `logout`
 
 - Mirrors `mcporter auth`. `login` completes OAuth (or token provisioning) for either a named server or an ad-hoc URL. When a hosted MCP returns 401/403, mcporter automatically promotes that target to OAuth and re-runs the flow, matching the behavior documented in `docs/adhoc.md`.
+- Once an OAuth provider supplies a token, that token takes precedence over a configured `Authorization` header on HTTP and SSE requests. A later 401 refreshes against the OAuth token actually sent; the configured header remains available when the provider has no token.
 - `--no-browser` suppresses automatic browser launch and prints the authorization URL to stdout so it can be copied from a headless host. `--browser none` is accepted as a compatibility alias, and `MCPORTER_OAUTH_NO_BROWSER=1` / `true` / `yes` enables the same behavior by environment.
 - In `--json --no-browser` mode, stdout contains a JSON object with `authorizationUrl` and `redirectUrl`; diagnostics stay off stdout so scripts can parse the result. Treat emitted authorization URLs as sensitive operational output.
 - A configured server name is an OAuth trust boundary. Changing its URL clears cached tokens, dynamic client registration, PKCE verifier, and callback state from the shared vault and any `tokenCacheDir`; changing the URL back does not restore the old credentials, so re-authentication is required.

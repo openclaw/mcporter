@@ -1,8 +1,7 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 635f1c0134274c89e7efbcae2adf3d9ecba575ee..0a6c4876c6109eeb8eb5ddec0ece3956575b2089 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
-@@ -245,16 +245,23 @@ function isOAuthClientProvider(provider) {
+@@ -245,15 +245,21 @@
  * `WWW-Authenticate` parameters from the 401 response and runs {@linkcode auth}.
  * Used by {@linkcode adaptOAuthProvider} to bridge `OAuthClientProvider` to `AuthProvider`.
  */
@@ -17,19 +16,17 @@ index 635f1c0134274c89e7efbcae2adf3d9ecba575ee..0a6c4876c6109eeb8eb5ddec0ece3956
 +		fetchFn: options?.fetchFn ?? ctx.fetchFn,
  		...extraAuthOptions
  	}) !== "AUTHORIZED") throw new UnauthorizedError();
- }
++}
 +
-+function presentedBearerToken(headers, requestInit) {
-+	if (new Headers(requestInit?.headers).has("authorization")) return void 0;
++function presentedBearerToken(headers) {
 +	const authorization = headers.get("authorization");
 +	const match = authorization?.match(/^Bearer\s+(.+)$/i);
 +	return match?.[1];
-+}
+ }
  /**
  * Adapts an `OAuthClientProvider` to the minimal `AuthProvider` interface that
- * transports consume. Called once at transport construction — the transport stores
-@@ -271,11 +278,33 @@ async function handleOAuthUnauthorized(provider, ctx, extraAuthOptions) {
- * the token was minted for); providers that round-trip a single blob need no change.
+@@ -277,11 +283,33 @@
+ * the one layer that sees the real method, URL and response of every request.
  */
  function adaptOAuthProvider(provider, extraAuthOptions) {
 +	const tokensByAccessToken = /* @__PURE__ */ new Map();
@@ -64,23 +61,23 @@ index 635f1c0134274c89e7efbcae2adf3d9ecba575ee..0a6c4876c6109eeb8eb5ddec0ece3956
  	};
  }
  var UnauthorizedError = class extends Error {
-@@ -4707,6 +4736,7 @@ var SSEClientTransport = class {
+@@ -5021,6 +5049,7 @@
  		this._fetchWithInit = require_src.createFetchWithInit(opts?.fetch, opts?.requestInit);
  	}
  	_last401Response;
 +	_last401PresentedToken;
  	async _commonHeaders() {
- 		const headers = {};
+ 		const headers = new Headers(this._requestInit?.headers || void 0);
  		let token;
-@@ -4737,6 +4767,7 @@ var SSEClientTransport = class {
+@@ -5048,6 +5077,7 @@
  					});
  					if (response.status === 401) {
  						this._last401Response = response;
-+						this._last401PresentedToken = presentedBearerToken(headers, this._requestInit);
++						this._last401PresentedToken = presentedBearerToken(headers);
  						if (response.headers.has("www-authenticate")) {
  							const { resourceMetadataUrl, scope } = extractWWWAuthenticateParams(response);
  							this._resourceMetadataUrl = resourceMetadataUrl;
-@@ -4751,12 +4782,15 @@ var SSEClientTransport = class {
+@@ -5062,12 +5092,15 @@
  				if (event.code === 401 && this._authProvider) {
  					if (this._authProvider.onUnauthorized && this._last401Response) {
  						const response = this._last401Response;
@@ -97,41 +94,40 @@ index 635f1c0134274c89e7efbcae2adf3d9ecba575ee..0a6c4876c6109eeb8eb5ddec0ece3956
  						}).then(() => this._startOrAuth().then(resolve, reject), (error$2) => {
  							markAuthSeamEscape(error$2);
  							this.onerror?.(error$2);
-@@ -4853,7 +4887,8 @@ var SSEClientTransport = class {
+@@ -5164,7 +5197,8 @@
  							await this._authProvider.onUnauthorized({
  								response,
  								serverUrl: this._url,
 -								fetchFn: this._fetchWithInit
 +								fetchFn: this._fetchWithInit,
-+								presentedToken: presentedBearerToken(headers, this._requestInit)
++								presentedToken: presentedBearerToken(headers)
  							});
  						} catch (error) {
  							throw markAuthSeamEscape(error);
-@@ -5108,7 +5143,8 @@ var StreamableHTTPClientTransport = class {
+@@ -5416,7 +5450,8 @@
  							await this._authProvider.onUnauthorized({
  								response,
  								serverUrl: this._url,
 -								fetchFn: this._fetchWithInit
 +								fetchFn: this._fetchWithInit,
-+								presentedToken: presentedBearerToken(headers, this._requestInit)
++								presentedToken: presentedBearerToken(headers)
  							});
  						} catch (error) {
  							throw markAuthSeamEscape(error);
-@@ -5345,7 +5381,8 @@ var StreamableHTTPClientTransport = class {
+@@ -5653,7 +5688,8 @@
  							await this._authProvider.onUnauthorized({
  								response,
  								serverUrl: this._url,
 -								fetchFn: this._fetchWithInit
 +								fetchFn: this._fetchWithInit,
-+								presentedToken: presentedBearerToken(headers, this._requestInit)
++								presentedToken: presentedBearerToken(headers)
  							});
  						} catch (error) {
  							throw markAuthSeamEscape(error);
 diff --git a/dist/index.d.cts b/dist/index.d.cts
-index 2d74180d5402a97f7460305726d8dc7da6105dcf..a717b50cf6efc6fb74b4c1394c3e3f3ff7342254 100644
 --- a/dist/index.d.cts
 +++ b/dist/index.d.cts
-@@ -167,6 +167,13 @@ interface UnauthorizedContext {
+@@ -271,6 +271,13 @@
    /** Fetch function configured with the transport's `requestInit`, for making auth requests. */
    fetchFn: FetchLike;
  }
@@ -145,7 +141,7 @@ index 2d74180d5402a97f7460305726d8dc7da6105dcf..a717b50cf6efc6fb74b4c1394c3e3f3f
  /**
   * Minimal interface for authenticating MCP client transports with bearer tokens.
   *
-@@ -288,6 +295,11 @@ interface OAuthClientProvider {
+@@ -392,6 +399,11 @@
     *   keyed by `ctx.issuer`.
     */
    saveTokens(tokens: StoredOAuthTokens, ctx?: OAuthClientInformationContext): void | Promise<void>;
@@ -157,7 +153,7 @@ index 2d74180d5402a97f7460305726d8dc7da6105dcf..a717b50cf6efc6fb74b4c1394c3e3f3f
    /**
     * Invoked to redirect the user agent to the given URL to begin the authorization flow.
     */
-@@ -2895,6 +2907,7 @@ declare class SSEClientTransport implements Transport {
+@@ -3104,6 +3116,7 @@
    onmessage?: (message: JSONRPCMessage) => void;
    constructor(url: URL, opts?: SSEClientTransportOptions);
    private _last401Response?;
@@ -166,10 +162,9 @@ index 2d74180d5402a97f7460305726d8dc7da6105dcf..a717b50cf6efc6fb74b4c1394c3e3f3f
    private _startOrAuth;
    start(): Promise<void>;
 diff --git a/dist/index.d.mts b/dist/index.d.mts
-index d54447a08f0aa9876dacfe37f50ec1a48a77c132..10474dd36d463127d74243ead9137e770a4fa886 100644
 --- a/dist/index.d.mts
 +++ b/dist/index.d.mts
-@@ -167,6 +167,13 @@ interface UnauthorizedContext {
+@@ -271,6 +271,13 @@
    /** Fetch function configured with the transport's `requestInit`, for making auth requests. */
    fetchFn: FetchLike;
  }
@@ -183,7 +178,7 @@ index d54447a08f0aa9876dacfe37f50ec1a48a77c132..10474dd36d463127d74243ead9137e77
  /**
   * Minimal interface for authenticating MCP client transports with bearer tokens.
   *
-@@ -288,6 +295,11 @@ interface OAuthClientProvider {
+@@ -392,6 +399,11 @@
     *   keyed by `ctx.issuer`.
     */
    saveTokens(tokens: StoredOAuthTokens, ctx?: OAuthClientInformationContext): void | Promise<void>;
@@ -195,7 +190,7 @@ index d54447a08f0aa9876dacfe37f50ec1a48a77c132..10474dd36d463127d74243ead9137e77
    /**
     * Invoked to redirect the user agent to the given URL to begin the authorization flow.
     */
-@@ -2895,6 +2907,7 @@ declare class SSEClientTransport implements Transport {
+@@ -3104,6 +3116,7 @@
    onmessage?: (message: JSONRPCMessage) => void;
    constructor(url: URL, opts?: SSEClientTransportOptions);
    private _last401Response?;
@@ -204,10 +199,9 @@ index d54447a08f0aa9876dacfe37f50ec1a48a77c132..10474dd36d463127d74243ead9137e77
    private _startOrAuth;
    start(): Promise<void>;
 diff --git a/dist/index.mjs b/dist/index.mjs
-index f02ce3ca394e826fc27c9848dbe9a214bf6ba7a9..1c7496403ea92057e0f6fa4020d3d979a30cfebb 100644
 --- a/dist/index.mjs
 +++ b/dist/index.mjs
-@@ -242,16 +242,23 @@ function isOAuthClientProvider(provider) {
+@@ -242,15 +242,21 @@
  * `WWW-Authenticate` parameters from the 401 response and runs {@linkcode auth}.
  * Used by {@linkcode adaptOAuthProvider} to bridge `OAuthClientProvider` to `AuthProvider`.
  */
@@ -222,19 +216,17 @@ index f02ce3ca394e826fc27c9848dbe9a214bf6ba7a9..1c7496403ea92057e0f6fa4020d3d979
 +		fetchFn: options?.fetchFn ?? ctx.fetchFn,
  		...extraAuthOptions
  	}) !== "AUTHORIZED") throw new UnauthorizedError();
- }
++}
 +
-+function presentedBearerToken(headers, requestInit) {
-+	if (new Headers(requestInit?.headers).has("authorization")) return void 0;
++function presentedBearerToken(headers) {
 +	const authorization = headers.get("authorization");
 +	const match = authorization?.match(/^Bearer\s+(.+)$/i);
 +	return match?.[1];
-+}
+ }
  /**
  * Adapts an `OAuthClientProvider` to the minimal `AuthProvider` interface that
- * transports consume. Called once at transport construction — the transport stores
-@@ -268,11 +275,33 @@ async function handleOAuthUnauthorized(provider, ctx, extraAuthOptions) {
- * the token was minted for); providers that round-trip a single blob need no change.
+@@ -274,11 +280,33 @@
+ * the one layer that sees the real method, URL and response of every request.
  */
  function adaptOAuthProvider(provider, extraAuthOptions) {
 +	const tokensByAccessToken = /* @__PURE__ */ new Map();
@@ -269,23 +261,23 @@ index f02ce3ca394e826fc27c9848dbe9a214bf6ba7a9..1c7496403ea92057e0f6fa4020d3d979
  	};
  }
  var UnauthorizedError = class extends Error {
-@@ -4704,6 +4733,7 @@ var SSEClientTransport = class {
+@@ -5018,6 +5046,7 @@
  		this._fetchWithInit = createFetchWithInit(opts?.fetch, opts?.requestInit);
  	}
  	_last401Response;
 +	_last401PresentedToken;
  	async _commonHeaders() {
- 		const headers = {};
+ 		const headers = new Headers(this._requestInit?.headers || void 0);
  		let token;
-@@ -4734,6 +4764,7 @@ var SSEClientTransport = class {
+@@ -5045,6 +5074,7 @@
  					});
  					if (response.status === 401) {
  						this._last401Response = response;
-+						this._last401PresentedToken = presentedBearerToken(headers, this._requestInit);
++						this._last401PresentedToken = presentedBearerToken(headers);
  						if (response.headers.has("www-authenticate")) {
  							const { resourceMetadataUrl, scope } = extractWWWAuthenticateParams(response);
  							this._resourceMetadataUrl = resourceMetadataUrl;
-@@ -4748,12 +4779,15 @@ var SSEClientTransport = class {
+@@ -5059,12 +5089,15 @@
  				if (event.code === 401 && this._authProvider) {
  					if (this._authProvider.onUnauthorized && this._last401Response) {
  						const response = this._last401Response;
@@ -302,33 +294,33 @@ index f02ce3ca394e826fc27c9848dbe9a214bf6ba7a9..1c7496403ea92057e0f6fa4020d3d979
  						}).then(() => this._startOrAuth().then(resolve, reject), (error$2) => {
  							markAuthSeamEscape(error$2);
  							this.onerror?.(error$2);
-@@ -4850,7 +4884,8 @@ var SSEClientTransport = class {
+@@ -5161,7 +5194,8 @@
  							await this._authProvider.onUnauthorized({
  								response,
  								serverUrl: this._url,
 -								fetchFn: this._fetchWithInit
 +								fetchFn: this._fetchWithInit,
-+								presentedToken: presentedBearerToken(headers, this._requestInit)
++								presentedToken: presentedBearerToken(headers)
  							});
  						} catch (error) {
  							throw markAuthSeamEscape(error);
-@@ -5105,7 +5140,8 @@ var StreamableHTTPClientTransport = class {
+@@ -5413,7 +5447,8 @@
  							await this._authProvider.onUnauthorized({
  								response,
  								serverUrl: this._url,
 -								fetchFn: this._fetchWithInit
 +								fetchFn: this._fetchWithInit,
-+								presentedToken: presentedBearerToken(headers, this._requestInit)
++								presentedToken: presentedBearerToken(headers)
  							});
  						} catch (error) {
  							throw markAuthSeamEscape(error);
-@@ -5342,7 +5378,8 @@ var StreamableHTTPClientTransport = class {
+@@ -5650,7 +5685,8 @@
  							await this._authProvider.onUnauthorized({
  								response,
  								serverUrl: this._url,
 -								fetchFn: this._fetchWithInit
 +								fetchFn: this._fetchWithInit,
-+								presentedToken: presentedBearerToken(headers, this._requestInit)
++								presentedToken: presentedBearerToken(headers)
  							});
  						} catch (error) {
  							throw markAuthSeamEscape(error);
