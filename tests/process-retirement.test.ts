@@ -128,6 +128,43 @@ it('redacts command output and process arguments on execution failure', async ()
   );
 });
 
+it.each([{ code: 1 }, { code: null, killed: true, signal: 'SIGTERM' }])(
+  'retries a transient Windows observation failure with a fresh query: %j',
+  async (failure) => {
+    execute
+      .mockRejectedValueOnce(Object.assign(new Error('synthetic query failure'), failure))
+      .mockResolvedValueOnce({ stdout: envelope([root, child]) });
+    const { ownedProcessTree } = await import('../src/daemon/process-retirement.js');
+    await expect(ownedProcessTree(root.pid)).resolves.toEqual([root, child]);
+    expect(execute).toHaveBeenCalledTimes(2);
+  }
+);
+
+it('keeps retirement blocked after two failed Windows queries without exposing diagnostics', async () => {
+  execute.mockRejectedValue(Object.assign(new Error('sensitive argv and stdout'), { code: 1 }));
+  const { awaitRetirement } = await import('../src/daemon/process-retirement.js');
+  await expect(awaitRetirement([root])).rejects.toThrow(/^Windows process observation failed;/);
+  expect(execute).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+  { code: 'ENOENT' },
+  { code: 'EACCES' },
+  { code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER', killed: true, signal: 'SIGTERM' },
+])('does not retry permanent helper failures: %j', async (failure) => {
+  execute.mockRejectedValue(Object.assign(new Error('synthetic helper failure'), failure));
+  const { ownedProcessTree } = await import('../src/daemon/process-retirement.js');
+  await expect(ownedProcessTree(root.pid)).rejects.toThrow(/^Windows process observation failed;/);
+  expect(execute).toHaveBeenCalledTimes(1);
+});
+
+it('does not retry malformed output or accept it as proof of retirement', async () => {
+  execute.mockResolvedValue({ stdout: 'malformed' });
+  const { awaitRetirement } = await import('../src/daemon/process-retirement.js');
+  await expect(awaitRetirement([root])).rejects.toThrow(/invalid or empty JSON/);
+  expect(execute).toHaveBeenCalledTimes(1);
+});
+
 it('bounds request batches without omitting any retirement target', async () => {
   execute.mockResolvedValue({ stdout: envelope([]) });
   const { awaitRetirement } = await import('../src/daemon/process-retirement.js');

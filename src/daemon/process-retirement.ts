@@ -133,9 +133,8 @@ $checked=@(foreach ($item in $items) {
 [Console]::Write((@{version=1;owner=$sid;processes=$checked}|ConvertTo-Json -Compress -Depth 4))
 } catch { exit 1 }
 `;
-  let stdout: string;
-  try {
-    ({ stdout } = await exec(
+  const observe = () =>
+    exec(
       resolveSystemPowerShellPath(),
       [
         '-NoLogo',
@@ -145,7 +144,17 @@ $checked=@(foreach ($item in $items) {
         Buffer.from(script, 'utf16le').toString('base64'),
       ],
       { timeout: 5000, maxBuffer: 4 * 1024 * 1024, windowsHide: true, encoding: 'utf8' }
-    ));
+    );
+  let stdout: string;
+  try {
+    ({ stdout } = await observe().catch((error: unknown) => {
+      const failure = error as { code?: unknown; killed?: unknown; signal?: unknown } | null;
+      const timedOut = failure?.code === null && failure.killed === true && failure.signal === 'SIGTERM';
+      // A transient WMI exit or timeout gets one fresh, read-only observation.
+      // Spawn failures, oversized output, and invalid identities remain fail-closed.
+      if (failure?.code === 1 || timedOut) return observe();
+      throw error;
+    }));
   } catch {
     // execFile errors include the command and child output; neither is a safe diagnostic.
     throw observationFailure('failed');

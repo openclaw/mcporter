@@ -77,7 +77,7 @@ Ordinary startup refuses legacy 0755 permissions with guidance to use the explic
 
 Legacy daemons in nonstandard historic namespaces must be inventoried by the operator. Mixed old/new clients and unidentified legacy namespaces cannot provide universal exclusive ownership.
 
-Process-query failures and unverified owner or start identities block retirement. Empty or malformed helper output is never accepted as proof of exit. Windows observations query owners only for the selected process tree; retirement polls target the captured PIDs and preserve start identities to detect reuse.
+Process-query failures and unverified owner or start identities block retirement. Empty or malformed helper output is never accepted as proof of exit. Windows observations query owners only for the selected process tree; retirement polls target the captured PIDs and preserve start identities to detect reuse. A Windows query that times out or exits unsuccessfully gets one fresh read-only attempt, with a five-second timeout per attempt. Persistent failures, spawn errors, oversized output, and invalid observations still block retirement; tool calls and process-stop requests are not replayed.
 
 On POSIX systems, process inventory uses `ps` from `PATH`; no fixed `/bin/ps` location is required.
 

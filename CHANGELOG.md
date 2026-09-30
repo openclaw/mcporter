@@ -2,6 +2,7 @@
 
 ## [0.14.2] - Unreleased
 
+- Retry transient Windows process-query failures once before blocking daemon startup or retirement, while retaining strict ownership checks and refusing malformed observations.
 - Refresh MCP clients and fixtures, bundling and test tooling, and Hono; preserve OAuth refresh-token correlation when OAuth overrides a configured Authorization header, Node 24 support, and the 48-hour dependency release-age policy.
 - Size the top-level help's global-flag column to its longest flag, so `--log-level <debug|info|warn|error>` no longer runs into its description. Thanks @KrasimirKralev.
 
