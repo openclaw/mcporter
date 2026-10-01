@@ -54,6 +54,8 @@ MAC_RELEASE_CODESIGN_PASSWORDLESS=1 \
 
 `scripts/release.sh` finds `mac-release` on `PATH` or in a sibling `agent-scripts` checkout; set `MAC_RELEASE_HELPER=/absolute/path/to/mac-release` for another layout. The release helper wraps `scripts/package-release.sh` in `codesign-run`. Packaging refuses a dirty tree, a tag/HEAD mismatch, an untrusted tag signature, the wrong Developer ID identity, or an existing output directory. It deletes ignored `dist/`, rebuilds it from the exact tag, requires every declared CLI/library entry, packs without lifecycle repacking, and verifies this exact inventory in `dist-release/`:
 
+Use the official upstream Bun release binary for native packaging. Both archives must retain the macOS 13.0 deployment target (`LC_BUILD_VERSION` → `minos 13.0`), matching the previous release. A locally built Homebrew Bun can embed the build host's newer macOS target into an arm64 compiled CLI even when the Bun version is identical. Check the Bun executable with `otool -l "$(command -v bun)"` before packaging and each extracted release binary with `otool -l ./mcporter` before uploading.
+
 Set `TMPDIR` to an existing directory on a volume with enough free space for native staging. Set `MCPORTER_RELEASE_OUT_DIR` to place the final artifact directory on that volume too.
 
 - `mcporter_<version>_darwin_arm64.tar.gz`
