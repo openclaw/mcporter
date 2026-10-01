@@ -102,9 +102,9 @@ jobs:
             echo "No coverage summary produced." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Pack npm artifact
+      - name: Verify installed npm artifact
         if: matrix.os == 'ubuntu-latest' && matrix.node == 24
-        run: pnpm pack --pack-destination /tmp
+        run: pnpm test:package
 
       - name: Upload coverage report
         if: matrix.os == 'ubuntu-latest' && matrix.node == 24 && always()

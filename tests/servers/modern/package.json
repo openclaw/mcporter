@@ -7,10 +7,10 @@
     "start": "tsx server.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/server": "^2.0.0",
-    "zod": "^4.6.2"
+    "@modelcontextprotocol/server": "^2.2.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
-    "tsx": "^4.23.13"
+    "tsx": "^4.23.15"
   }
 }

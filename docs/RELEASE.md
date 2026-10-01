@@ -34,7 +34,7 @@ v0.12.3's standalone arm64 binary is not a continuity baseline: it was ad-hoc `a
    ./scripts/release.sh gates
    ```
 
-3. Require zero warnings/failures from formatting, lint, typecheck, tests, Node build, ordinary Bun build, release contract mocks, and `pnpm audit`.
+3. Require zero warnings/failures from formatting, lint, typecheck, tests, Node build, installed npm package OAuth regression, ordinary Bun build, release contract mocks, and `pnpm audit`.
 4. Review the complete diff, run autoreview to a clean result, commit, push, and wait for exact-head CI.
 5. From clean current `main`, create and push a signed annotated `v<version>` tag only after the serialized tag gate. The tag commit must remain the current protected default-branch commit for native verification.
 
@@ -62,7 +62,7 @@ Set `TMPDIR` to an existing directory on a volume with enough free space for nat
 - `checksums.txt`
 - `provenance.json`
 
-Checksums contain basenames only. The npm tarball must expose its declared executable, library, and type entries; verification installs that exact tarball into an isolated project from a blank npm config, then runs the installed CLI and imports its public library with isolated HOME/XDG roots. This proves dependency closure without borrowing checkout `node_modules`. The x86_64 payload uses Bun's baseline target so it does not require AVX. Both native archives contain exactly one executable named `mcporter`; each must pass strict exact embedded designated-requirement, identifier/team/authority, hardened-runtime, timestamp, exact-entitlement, online notarization constraint, architecture, and `--version` checks. Run `./scripts/release.sh verify-local` to repeat that proof with GitHub tokens removed. At the gated clean-VM stage, download each published archive through the browser so quarantine is applied, then require first execution and `--version` to complete without a Gatekeeper alert on matching arm64 and x86_64 hosts.
+Checksums contain basenames only. The npm tarball must expose its declared executable, library, and type entries; verification installs that exact tarball into an isolated project from a blank npm config, then runs the installed CLI and imports its public library with isolated HOME/XDG roots. This proves dependency closure without borrowing checkout `node_modules`. The patched MCP client is bundled in the npm archive; the installed-package check must preserve OAuth token correlation for both HTTP and SSE. pnpm uses a hoisted install because its packer requires that layout for bundled dependencies. The x86_64 payload uses Bun's baseline target so it does not require AVX. Both native archives contain exactly one executable named `mcporter`; each must pass strict exact embedded designated-requirement, identifier/team/authority, hardened-runtime, timestamp, exact-entitlement, online notarization constraint, architecture, and `--version` checks. Run `./scripts/release.sh verify-local` to repeat that proof with GitHub tokens removed. At the gated clean-VM stage, download each published archive through the browser so quarantine is applied, then require first execution and `--version` to complete without a Gatekeeper alert on matching arm64 and x86_64 hosts.
 
 ## 3. Protected draft verification
 

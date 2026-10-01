@@ -26,7 +26,7 @@ phase_gates() {
   banner "Credential-free gates"
   run_gate pnpm check
   run_gate pnpm test
-  run_gate pnpm build
+  run_gate pnpm test:package
   run_gate pnpm build:bun
   run "$ROOT/scripts/test-release.sh"
   run_gate pnpm audit

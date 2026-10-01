@@ -1,6 +1,6 @@
 {
   "name": "mcporter",
-  "version": "0.14.1",
+  "version": "0.14.2",
   "description": "TypeScript runtime and CLI for connecting to configured Model Context Protocol servers.",
   "keywords": [
     "cli",
@@ -52,6 +52,7 @@
     "test": "cross-env MCPORTER_TEST_REPORTER=quiet pnpm test:verbose",
     "test:quiet": "cross-env MCPORTER_TEST_REPORTER=quiet pnpm test:verbose",
     "test:verbose": "pnpm build && node scripts/test-runner.js",
+    "test:package": "pnpm build && bash scripts/test-npm-package.sh",
     "test:live": "MCP_LIVE_TESTS=1 vitest run tests/live",
     "test:coverage": "pnpm build && cross-env MCPORTER_TEST_REPORTER=quiet vitest run --coverage",
     "clean": "rimraf dist",
@@ -71,8 +72,8 @@
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",
-    "@modelcontextprotocol/client": "^2.1.0",
-    "@modelcontextprotocol/server": "^2.1.0",
+    "@modelcontextprotocol/client": "^2.2.0",
+    "@modelcontextprotocol/server": "^2.2.0",
     "acorn": "^8.18.0",
     "commander": "^15.0.0",
     "es-toolkit": "^1.52.0",
@@ -82,7 +83,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.1",
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "@types/estree": "^1.0.9",
     "@types/express": "^5.0.6",
     "@types/node": "^26.6.3",
@@ -91,8 +92,8 @@
     "bun-types": "^1.4.2",
     "cross-env": "^10.1.0",
     "express": "^5.2.1",
-    "oxfmt": "^0.70.0",
-    "oxlint": "^1.85.0",
+    "oxfmt": "^0.71.0",
+    "oxlint": "^1.86.0",
     "oxlint-tsgolint": "^7.0.2003",
     "rimraf": "^6.1.3",
     "tsx": "^4.23.15",
@@ -100,6 +101,9 @@
     "vite": "8.3.1",
     "vitest": "^5.0.2"
   },
+  "bundleDependencies": [
+    "@modelcontextprotocol/client"
+  ],
   "devEngines": {
     "runtime": [
       {

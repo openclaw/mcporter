@@ -1,6 +1,12 @@
 # mcporter Changelog
 
-## [0.14.2] - Unreleased
+## [0.14.2] - 2026-09-30
+
+**Highlights:** npm installs retain OAuth refresh protection, Windows daemon startup tolerates transient process-query failures, and long help flags remain readable.
+
+- Bundle the patched MCP client in npm releases so installed packages preserve request-correlated OAuth refresh locking; verify the installed tarball in CI and release gates.
+
+- Update the MCP client/server to 2.2.0, legacy SDK fixtures to 1.31.0, and lint/format tooling; retain the OAuth correlation patch, Node 24 support, and the 48-hour dependency release-age policy.
 
 - Retry transient Windows process-query failures once before blocking daemon startup or retirement, while retaining strict ownership checks and refusing malformed observations.
 - Refresh MCP clients and fixtures, bundling and test tooling, and Hono; preserve OAuth refresh-token correlation when OAuth overrides a configured Authorization header, Node 24 support, and the 48-hour dependency release-age policy.

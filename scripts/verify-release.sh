@@ -256,6 +256,8 @@ for (const name of ['callOnce', 'createRuntime', 'createServerProxy']) {
 }
 NODE
 
+"${packed_env[@]}" node "$ROOT/scripts/verify-packaged-oauth.mjs" "$installed_package"
+
 verify_native_archive() {
   local archive_name=$1 expected_arch=$2 stage binary listing signature embedded_requirement embedded host_arch output
   listing=$(tar -tzf "$OUT_DIR/$archive_name")

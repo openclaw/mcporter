@@ -1,7 +1,7 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
-@@ -245,15 +245,21 @@
+@@ -254,15 +254,21 @@
  * `WWW-Authenticate` parameters from the 401 response and runs {@linkcode auth}.
  * Used by {@linkcode adaptOAuthProvider} to bridge `OAuthClientProvider` to `AuthProvider`.
  */
@@ -25,7 +25,7 @@ diff --git a/dist/index.cjs b/dist/index.cjs
  }
  /**
  * Adapts an `OAuthClientProvider` to the minimal `AuthProvider` interface that
-@@ -277,11 +283,33 @@
+@@ -286,11 +292,33 @@
  * the one layer that sees the real method, URL and response of every request.
  */
  function adaptOAuthProvider(provider, extraAuthOptions) {
@@ -61,7 +61,7 @@ diff --git a/dist/index.cjs b/dist/index.cjs
  	};
  }
  var UnauthorizedError = class extends Error {
-@@ -5021,6 +5049,7 @@
+@@ -5066,6 +5094,7 @@
  		this._fetchWithInit = require_src.createFetchWithInit(opts?.fetch, opts?.requestInit);
  	}
  	_last401Response;
@@ -69,7 +69,7 @@ diff --git a/dist/index.cjs b/dist/index.cjs
  	async _commonHeaders() {
  		const headers = new Headers(this._requestInit?.headers || void 0);
  		let token;
-@@ -5048,6 +5077,7 @@
+@@ -5093,6 +5122,7 @@
  					});
  					if (response.status === 401) {
  						this._last401Response = response;
@@ -77,7 +77,7 @@ diff --git a/dist/index.cjs b/dist/index.cjs
  						if (response.headers.has("www-authenticate")) {
  							const { resourceMetadataUrl, scope } = extractWWWAuthenticateParams(response);
  							this._resourceMetadataUrl = resourceMetadataUrl;
-@@ -5062,12 +5092,15 @@
+@@ -5107,12 +5137,15 @@
  				if (event.code === 401 && this._authProvider) {
  					if (this._authProvider.onUnauthorized && this._last401Response) {
  						const response = this._last401Response;
@@ -94,7 +94,7 @@ diff --git a/dist/index.cjs b/dist/index.cjs
  						}).then(() => this._startOrAuth().then(resolve, reject), (error$2) => {
  							markAuthSeamEscape(error$2);
  							this.onerror?.(error$2);
-@@ -5164,7 +5197,8 @@
+@@ -5209,7 +5242,8 @@
  							await this._authProvider.onUnauthorized({
  								response,
  								serverUrl: this._url,
@@ -104,7 +104,7 @@ diff --git a/dist/index.cjs b/dist/index.cjs
  							});
  						} catch (error) {
  							throw markAuthSeamEscape(error);
-@@ -5416,7 +5450,8 @@
+@@ -5461,7 +5495,8 @@
  							await this._authProvider.onUnauthorized({
  								response,
  								serverUrl: this._url,
@@ -114,7 +114,7 @@ diff --git a/dist/index.cjs b/dist/index.cjs
  							});
  						} catch (error) {
  							throw markAuthSeamEscape(error);
-@@ -5653,7 +5688,8 @@
+@@ -5698,7 +5733,8 @@
  							await this._authProvider.onUnauthorized({
  								response,
  								serverUrl: this._url,
@@ -127,7 +127,7 @@ diff --git a/dist/index.cjs b/dist/index.cjs
 diff --git a/dist/index.d.cts b/dist/index.d.cts
 --- a/dist/index.d.cts
 +++ b/dist/index.d.cts
-@@ -271,6 +271,13 @@
+@@ -368,6 +368,13 @@
    /** Fetch function configured with the transport's `requestInit`, for making auth requests. */
    fetchFn: FetchLike;
  }
@@ -141,7 +141,7 @@ diff --git a/dist/index.d.cts b/dist/index.d.cts
  /**
   * Minimal interface for authenticating MCP client transports with bearer tokens.
   *
-@@ -392,6 +399,11 @@
+@@ -489,6 +496,11 @@
     *   keyed by `ctx.issuer`.
     */
    saveTokens(tokens: StoredOAuthTokens, ctx?: OAuthClientInformationContext): void | Promise<void>;
@@ -153,7 +153,7 @@ diff --git a/dist/index.d.cts b/dist/index.d.cts
    /**
     * Invoked to redirect the user agent to the given URL to begin the authorization flow.
     */
-@@ -3104,6 +3116,7 @@
+@@ -3231,6 +3243,7 @@
    onmessage?: (message: JSONRPCMessage) => void;
    constructor(url: URL, opts?: SSEClientTransportOptions);
    private _last401Response?;
@@ -164,7 +164,7 @@ diff --git a/dist/index.d.cts b/dist/index.d.cts
 diff --git a/dist/index.d.mts b/dist/index.d.mts
 --- a/dist/index.d.mts
 +++ b/dist/index.d.mts
-@@ -271,6 +271,13 @@
+@@ -368,6 +368,13 @@
    /** Fetch function configured with the transport's `requestInit`, for making auth requests. */
    fetchFn: FetchLike;
  }
@@ -178,7 +178,7 @@ diff --git a/dist/index.d.mts b/dist/index.d.mts
  /**
   * Minimal interface for authenticating MCP client transports with bearer tokens.
   *
-@@ -392,6 +399,11 @@
+@@ -489,6 +496,11 @@
     *   keyed by `ctx.issuer`.
     */
    saveTokens(tokens: StoredOAuthTokens, ctx?: OAuthClientInformationContext): void | Promise<void>;
@@ -190,7 +190,7 @@ diff --git a/dist/index.d.mts b/dist/index.d.mts
    /**
     * Invoked to redirect the user agent to the given URL to begin the authorization flow.
     */
-@@ -3104,6 +3116,7 @@
+@@ -3231,6 +3243,7 @@
    onmessage?: (message: JSONRPCMessage) => void;
    constructor(url: URL, opts?: SSEClientTransportOptions);
    private _last401Response?;
@@ -201,7 +201,7 @@ diff --git a/dist/index.d.mts b/dist/index.d.mts
 diff --git a/dist/index.mjs b/dist/index.mjs
 --- a/dist/index.mjs
 +++ b/dist/index.mjs
-@@ -242,15 +242,21 @@
+@@ -251,15 +251,21 @@
  * `WWW-Authenticate` parameters from the 401 response and runs {@linkcode auth}.
  * Used by {@linkcode adaptOAuthProvider} to bridge `OAuthClientProvider` to `AuthProvider`.
  */
@@ -225,7 +225,7 @@ diff --git a/dist/index.mjs b/dist/index.mjs
  }
  /**
  * Adapts an `OAuthClientProvider` to the minimal `AuthProvider` interface that
-@@ -274,11 +280,33 @@
+@@ -283,11 +289,33 @@
  * the one layer that sees the real method, URL and response of every request.
  */
  function adaptOAuthProvider(provider, extraAuthOptions) {
@@ -261,7 +261,7 @@ diff --git a/dist/index.mjs b/dist/index.mjs
  	};
  }
  var UnauthorizedError = class extends Error {
-@@ -5018,6 +5046,7 @@
+@@ -5063,6 +5091,7 @@
  		this._fetchWithInit = createFetchWithInit(opts?.fetch, opts?.requestInit);
  	}
  	_last401Response;
@@ -269,7 +269,7 @@ diff --git a/dist/index.mjs b/dist/index.mjs
  	async _commonHeaders() {
  		const headers = new Headers(this._requestInit?.headers || void 0);
  		let token;
-@@ -5045,6 +5074,7 @@
+@@ -5090,6 +5119,7 @@
  					});
  					if (response.status === 401) {
  						this._last401Response = response;
@@ -277,7 +277,7 @@ diff --git a/dist/index.mjs b/dist/index.mjs
  						if (response.headers.has("www-authenticate")) {
  							const { resourceMetadataUrl, scope } = extractWWWAuthenticateParams(response);
  							this._resourceMetadataUrl = resourceMetadataUrl;
-@@ -5059,12 +5089,15 @@
+@@ -5104,12 +5134,15 @@
  				if (event.code === 401 && this._authProvider) {
  					if (this._authProvider.onUnauthorized && this._last401Response) {
  						const response = this._last401Response;
@@ -294,7 +294,7 @@ diff --git a/dist/index.mjs b/dist/index.mjs
  						}).then(() => this._startOrAuth().then(resolve, reject), (error$2) => {
  							markAuthSeamEscape(error$2);
  							this.onerror?.(error$2);
-@@ -5161,7 +5194,8 @@
+@@ -5206,7 +5239,8 @@
  							await this._authProvider.onUnauthorized({
  								response,
  								serverUrl: this._url,
@@ -304,7 +304,7 @@ diff --git a/dist/index.mjs b/dist/index.mjs
  							});
  						} catch (error) {
  							throw markAuthSeamEscape(error);
-@@ -5413,7 +5447,8 @@
+@@ -5458,7 +5492,8 @@
  							await this._authProvider.onUnauthorized({
  								response,
  								serverUrl: this._url,
@@ -314,7 +314,7 @@ diff --git a/dist/index.mjs b/dist/index.mjs
  							});
  						} catch (error) {
  							throw markAuthSeamEscape(error);
-@@ -5650,7 +5685,8 @@
+@@ -5695,7 +5730,8 @@
  							await this._authProvider.onUnauthorized({
  								response,
  								serverUrl: this._url,

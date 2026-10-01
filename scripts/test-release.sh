@@ -156,6 +156,24 @@ mkdir -p "$stage/package"
 cp "$MCPORTER_TEST_ROOT/package.json" "$stage/package/package.json"
 cp "$MCPORTER_TEST_ROOT/README.md" "$MCPORTER_TEST_ROOT/LICENSE" "$stage/package/"
 cp -R "$MCPORTER_TEST_ROOT/dist" "$stage/package/dist"
+mkdir -p "$stage/package/node_modules/@modelcontextprotocol/client"
+cat >"$stage/package/node_modules/@modelcontextprotocol/client/package.json" <<'EOF'
+{"name":"@modelcontextprotocol/client","main":"index.cjs"}
+EOF
+cat >"$stage/package/node_modules/@modelcontextprotocol/client/index.cjs" <<'EOF'
+class Transport {
+  constructor(_url, options) { this.provider = options.authProvider; this.fetch = options.fetch; }
+  async start() {}
+  async send() {
+    const tokens = this.provider.tokens();
+    await this.fetch("https://mcp.example.test/mcp", { headers: { authorization: `Bearer ${tokens.access_token}` } });
+    await this.provider.onOAuthUnauthorized({ presentedTokens: tokens });
+  }
+  async close() {}
+}
+exports.StreamableHTTPClientTransport = Transport;
+exports.SSEClientTransport = Transport;
+EOF
 tar -czf "$destination/mcporter-$version.tgz" -C "$stage" package
 MOCK
 
