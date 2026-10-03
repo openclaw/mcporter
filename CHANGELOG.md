@@ -2,6 +2,8 @@
 
 ## [0.14.3] - Unreleased
 
+- Print `config get` and `config logout` unknown-server errors with a single `[mcporter]` prefix instead of `[mcporter] [mcporter]`.
+
 ## [0.14.2] - 2026-09-30
 
 **Highlights:** npm installs retain OAuth refresh protection, Windows daemon startup tolerates transient process-query failures, and long help flags remain readable.

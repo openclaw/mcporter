@@ -113,7 +113,7 @@ export function resolveServerDefinition(
     servers.map((server) => server.name)
   );
   if (!resolution) {
-    throw new CliUsageError(`[mcporter] Unknown server '${name}'.`);
+    throw new CliUsageError(`Unknown server '${name}'.`);
   }
   const messages = renderIdentifierResolutionMessages({
     entity: 'server',
@@ -132,7 +132,7 @@ export function resolveServerDefinition(
   if (messages.suggest && logger) {
     logger(dimText(messages.suggest));
   }
-  throw new CliUsageError(`[mcporter] Unknown server '${name}'.`);
+  throw new CliUsageError(`Unknown server '${name}'.`);
 }
 
 function buildSystemConfigCandidates(): string[] {
