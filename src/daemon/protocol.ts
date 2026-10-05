@@ -61,6 +61,8 @@ export interface DaemonResponse<T = unknown> {
   readonly error?: {
     readonly message: string;
     readonly code?: string;
+    /** Only emitted for a broker rejection before operation dispatch. */
+    readonly retry?: 'renew_view';
   };
 }
 

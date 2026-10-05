@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { withFileLock, writeJsonFile } from '../fs-json.js';
-import { DaemonBroker, BrokerError } from './broker.js';
+import { DaemonBroker, BrokerError, ExpiredViewError } from './broker.js';
 import { canonicalUserConfiguration } from './browser-owner.js';
 import { assertLegacyDrained } from './migration.js';
 import { ProcessObservationError } from './process-retirement.js';
@@ -154,7 +154,11 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
           code === 'browser_owner_conflict'
             ? (error as Error).message
             : `MCP operation failed (${code}); the request was not replayed.`;
-        frames.write({ id, ok: false, error: { code, message } });
+        frames.write({
+          id,
+          ok: false,
+          error: { code, message, ...(error instanceof ExpiredViewError ? { retry: 'renew_view' as const } : {}) },
+        });
         socket.end();
       } finally {
         lastActivity = Date.now();

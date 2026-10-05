@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { loadServerDefinitions, type ServerDefinition } from '../config.js';
 import { isKeepAliveServer } from '../lifecycle.js';
-import { effectiveDefinition } from './connection-identity.js';
+import { effectiveDefinition, type ResolvedServerDefinition } from './connection-identity.js';
 import { secureDaemonDirectory } from './paths.js';
 import { assertLegacyDrained } from './migration.js';
 import type { ChromeDevtoolsRelayIdentityOptions } from '../chrome-devtools-relay.js';
@@ -64,9 +64,17 @@ export function resolveDaemonPaths(configPath: string): DaemonPaths {
   };
 }
 
+class RenewViewError extends Error {
+  readonly code = 'view_expired';
+}
+
 interface ViewEpoch {
   readonly definitions?: ServerDefinition[];
   readonly clientInfo?: { name: string; version: string };
+  registrationParams?: Promise<{
+    definitions: ResolvedServerDefinition[];
+    clientInfo?: { name: string; version: string };
+  }>;
   registration?: Promise<{ view: string; generation: string }>;
   active: number;
   drained?: () => void;
@@ -146,7 +154,14 @@ export class DaemonClient {
           });
         // Failed registration has no handle to release; its callers retain the original error.
         const handle = await epoch.registration?.catch(() => undefined);
-        if (handle) await this.sendRequest('releaseView', {}, undefined, handle);
+        if (handle) {
+          try {
+            await this.sendRequest('releaseView', {}, undefined, handle);
+          } catch (error) {
+            // Expired views have already been removed by the broker.
+            if (!(error instanceof RenewViewError)) throw error;
+          }
+        }
       })();
       this.retiring.add(epoch.release);
       void epoch.release.finally(() => this.retiring.delete(epoch.release!)).catch(() => {});
@@ -168,7 +183,7 @@ export class DaemonClient {
     // Retain before registration or authenticated RPC establishment can yield to a replacement/close.
     epoch.active++;
     try {
-      epoch.registration ??= (async () => {
+      epoch.registrationParams ??= (async () => {
         await this.ensureDaemon(timeoutMs);
         const definitions =
           epoch.definitions ??
@@ -181,19 +196,45 @@ export class DaemonClient {
             .filter(isKeepAliveServer)
             .map((definition) => effectiveDefinition(definition, process.env, 'view'))
         );
-        return this.sendRequest<{ view: string; generation: string }>('registerView', {
-          definitions: effective,
-          clientInfo: epoch.clientInfo,
-        });
+        return { definitions: effective, clientInfo: epoch.clientInfo };
       })();
+      const register = () =>
+        epoch.registrationParams!.then((registrationParams) =>
+          this.sendRequest<{ view: string; generation: string }>('registerView', registrationParams)
+        );
+      const registration = (epoch.registration ??= register());
       let handle: { view: string; generation: string };
       try {
-        handle = await epoch.registration;
+        handle = await registration;
       } catch (error) {
         void this.retire(epoch).catch(() => {});
         throw error;
       }
-      return await this.sendRequest<T>(method, params, timeoutMs, handle);
+      try {
+        return await this.sendRequest<T>(method, params, timeoutMs, handle);
+      } catch (error) {
+        if (!(error instanceof RenewViewError) || this.epoch !== epoch) throw error;
+        // Compare the rejected registration so concurrent callers share one renewal.
+        // Keep the resolved authority snapshot, and never replay after config replacement/close.
+        if (epoch.registration === registration) epoch.registration = register();
+        let renewed: { view: string; generation: string };
+        try {
+          renewed = await epoch.registration;
+        } catch (registrationError) {
+          void this.retire(epoch).catch(() => {});
+          throw registrationError;
+        }
+        if (this.epoch !== epoch) throw error;
+        if (renewed.generation !== handle.generation)
+          throw Object.assign(
+            new Error('Daemon generation changed during config view renewal; request not replayed.'),
+            {
+              code: 'daemon_generation_changed',
+            }
+          );
+        // Deliberately outside the retry catch: repeated expiry gets no further replay.
+        return await this.sendRequest<T>(method, params, timeoutMs, renewed);
+      }
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === 'daemon_generation_changed' || code === 'view_expired' || isTransportError(error))
@@ -270,7 +311,11 @@ export class DaemonClient {
       console.warn(`[mcporter] ${notice}`);
     }
     if (!parsed.ok) {
-      const error = new Error(parsed.error?.message ?? 'Daemon error');
+      const message = parsed.error?.message ?? 'Daemon error';
+      const error =
+        parsed.error?.code === 'view_expired' && parsed.error.retry === 'renew_view'
+          ? new RenewViewError(message)
+          : new Error(message);
       (error as NodeJS.ErrnoException).code = parsed.error?.code;
       throw error;
     }
