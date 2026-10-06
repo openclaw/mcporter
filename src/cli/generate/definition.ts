@@ -10,6 +10,9 @@ import {
   type ServerLoggingOptions,
   type StdioCommand,
 } from '../../config.js';
+import { normalizeServerEntry } from '../../config-normalize.js';
+import { RawEntrySchema, type ServerSource } from '../../config-schema.js';
+import { parseJsonBuffer } from '../../config/imports/shared.js';
 import { resolveLifecycle } from '../../lifecycle.js';
 import type { Runtime, ServerToolInfo } from '../../runtime.js';
 import { createRuntime } from '../../runtime.js';
@@ -62,7 +65,7 @@ export async function resolveServerDefinition(
   const possiblePath = path.resolve(trimmed);
   try {
     const buffer = await fs.readFile(possiblePath, 'utf8');
-    const parsed = JSON.parse(buffer) as {
+    const parsed = parseJsonBuffer(buffer) as {
       mcpServers?: Record<string, unknown>;
     };
     if (!parsed.mcpServers || typeof parsed.mcpServers !== 'object') {
@@ -77,11 +80,18 @@ export async function resolveServerDefinition(
       throw new Error(`Config file ${possiblePath} does not define any servers.`);
     }
     const [name, value] = first;
+    const raw = value as Record<string, unknown>;
+    // Preserve the existing normalized-command and command-as-URL file forms.
+    // Ordinary mcporter config entries use the same parsing/normalization as discovery.
+    if (
+      (typeof raw.command === 'object' && !Array.isArray(raw.command)) ||
+      (typeof raw.command === 'string' && /^https?:\/\//i.test(raw.command))
+    ) {
+      return { definition: normalizeDefinition({ name, ...raw }), name };
+    }
+    const source: ServerSource = { kind: 'local', path: possiblePath };
     return {
-      definition: normalizeDefinition({
-        name,
-        ...(value as Record<string, unknown>),
-      }),
+      definition: normalizeServerEntry(name, RawEntrySchema.parse(value), path.dirname(possiblePath), source, [source]),
       name,
     };
   } catch (error) {
