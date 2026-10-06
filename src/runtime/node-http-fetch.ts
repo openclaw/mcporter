@@ -1,7 +1,8 @@
 import http from 'node:http';
 import https from 'node:https';
 import { Buffer } from 'node:buffer';
-import { Readable } from 'node:stream';
+import { Readable, pipeline } from 'node:stream';
+import { createGunzip, createInflate, createBrotliDecompress } from 'node:zlib';
 import type { FetchLike } from '@modelcontextprotocol/client';
 import { MCPORTER_VERSION } from '../version.js';
 
@@ -102,7 +103,9 @@ async function nodeHttp1FetchWithRedirects(
         }
         resolve(
           new Response(
-            NULL_BODY_STATUSES.has(status) ? null : (Readable.toWeb(response) as unknown as ReadableStream),
+            NULL_BODY_STATUSES.has(status)
+              ? null
+              : (Readable.toWeb(decodeResponseBody(response, responseHeaders)) as unknown as ReadableStream),
             {
               status,
               statusText: response.statusMessage,
@@ -119,6 +122,27 @@ async function nodeHttp1FetchWithRedirects(
     }
     request.end();
   });
+}
+
+function decodeResponseBody(response: http.IncomingMessage, headers: Headers): Readable {
+  const encodings = headers
+    .get('content-encoding')
+    ?.split(',')
+    .map((encoding) => encoding.trim().toLowerCase());
+  if (!encodings?.length || encodings.some((encoding) => !['gzip', 'deflate', 'br'].includes(encoding))) {
+    return response;
+  }
+  const decoders = encodings.toReversed().map((encoding) => {
+    if (encoding === 'gzip') return createGunzip();
+    if (encoding === 'deflate') return createInflate();
+    return createBrotliDecompress();
+  });
+  const output = decoders.at(-1);
+  if (!output) return response;
+  pipeline([response, ...decoders], (error) => {
+    if (error) output.destroy(error);
+  });
+  return output;
 }
 
 function buildRedirectInit(init: RequestInit, status: number, currentUrl: URL, nextUrl: URL): RequestInit {
