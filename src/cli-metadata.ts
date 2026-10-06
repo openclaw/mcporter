@@ -35,6 +35,8 @@ export interface SerializedServerDefinition {
   readonly oauthRequestedScope?: string;
   readonly refresh?: ServerDefinition['refresh'];
   readonly httpFetch?: ServerDefinition['httpFetch'];
+  readonly lifecycle?: ServerDefinition['lifecycle'];
+  readonly logging?: ServerDefinition['logging'];
   readonly allowedTools?: readonly string[];
   readonly blockedTools?: readonly string[];
 }
@@ -150,7 +152,11 @@ function isErrno(error: unknown, code: string): error is NodeJS.ErrnoException {
 
 // serializeDefinition converts an in-memory server definition into the metadata-friendly JSON form.
 export function serializeDefinition(definition: ServerDefinition): SerializedServerDefinition {
-  const sharedFields = pickSharedDefinitionFields(definition);
+  const sharedFields = {
+    ...pickSharedDefinitionFields(definition),
+    lifecycle: definition.lifecycle,
+    logging: definition.logging,
+  };
   if (definition.command.kind === 'http') {
     return {
       name: definition.name,
