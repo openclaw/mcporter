@@ -237,7 +237,8 @@ function buildInterfaceName(serverName: string): string {
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join('');
   const base = cleaned.length > 0 ? cleaned : 'Server';
-  return `${base}Tools`;
+  const identifier = /^[0-9]/.test(base) ? `Server${base}` : base;
+  return `${identifier}Tools`;
 }
 
 function deriveTypesOutPath(tsPath: string): string {
