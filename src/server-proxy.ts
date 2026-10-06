@@ -416,10 +416,11 @@ export function createServerProxy(
             const keys = Object.keys(arg);
             const treatAsArgs =
               !optionObjects.has(arg) &&
-              schemaInfo !== undefined &&
               keys.length > 0 &&
-              (keys.every((key) => schemaInfo.propertySet.has(key)) ||
-                keys.every((key) => !KNOWN_OPTION_KEYS.has(key)));
+              (schemaInfo
+                ? keys.every((key) => schemaInfo.propertySet.has(key)) ||
+                  keys.every((key) => !KNOWN_OPTION_KEYS.has(key))
+                : keys.every((key) => !isProxyOptionKey(key)));
 
             if (treatAsArgs) {
               Object.assign(argsAccumulator, arg as Record<string, unknown>);
