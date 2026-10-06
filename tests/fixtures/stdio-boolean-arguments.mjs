@@ -9,7 +9,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       name: 'apply',
       inputSchema: {
         type: 'object',
-        properties: { confirm: { type: 'boolean' }, flags: { type: 'array', items: { type: 'boolean' } } },
+        properties: {
+          confirm: { type: 'boolean' },
+          flags: { type: 'array', items: { type: 'boolean' } },
+          nullableFlags: { type: 'array', items: { type: ['null', 'boolean'] } },
+          mixedFlags: { type: 'array', items: { type: ['boolean', 'string'] } },
+        },
       },
     },
   ],

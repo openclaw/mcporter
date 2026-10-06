@@ -232,14 +232,14 @@ function defineOption(flags: string, description: string, parser?: (value: strin
 \treturn option;
 }
 
-function parseArrayOption(value: string, itemType: 'string' | 'number' | 'boolean' | 'json') {
+function parseArrayOption(value: string, itemType: 'string' | 'number' | 'boolean' | 'json', strictBooleanArray = false) {
 \tconst trimmed = value.trim();
 \tif (trimmed.startsWith('[')) {
 \t\tconst parsed = JSON.parse(trimmed);
 \t\tif (!Array.isArray(parsed)) {
 \t\t\tthrow new Error('Expected a JSON array.');
 \t\t}
-\t\tif (itemType === 'boolean' && !parsed.every((entry) => typeof entry === 'boolean')) {
+\t\tif (strictBooleanArray && !parsed.every((entry) => typeof entry === 'boolean')) {
 \t\t\tthrow new Error('Expected a boolean array.');
 \t\t}
 \t\treturn parsed;
@@ -587,7 +587,7 @@ function optionParser(option: GeneratedOption): string | undefined {
         case 'number':
           return "(value) => parseArrayOption(value, 'number')";
         case 'boolean':
-          return "(value) => parseArrayOption(value, 'boolean')";
+          return `(value) => parseArrayOption(value, 'boolean', ${option.strictBooleanArray === true})`;
         case 'object':
           return "(value) => parseArrayOption(value, 'json')";
         default:

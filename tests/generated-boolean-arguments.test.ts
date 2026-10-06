@@ -48,13 +48,15 @@ it(
         [['--confirm', 'true'], { confirm: true }],
         [['--flags', 'true,false'], { flags: [true, false] }],
         [['--flags', '[true,false]'], { flags: [true, false] }],
+        [['--nullable-flags', '[true,null]'], { nullableFlags: [true, null] }],
+        [['--mixed-flags', '[true,"label"]'], { mixedFlags: [true, 'label'] }],
       ] as const) {
         const { stdout } = await run(process.execPath, [tsx, artifact, 'apply', ...flag, '--output', 'json'], {
           timeout: budget(10000),
         });
         expect(JSON.parse(stdout)).toEqual(expected);
       }
-      expect((await fs.readFile(log, 'utf8')).trim().split('\n')).toHaveLength(4);
+      expect((await fs.readFile(log, 'utf8')).trim().split('\n')).toHaveLength(6);
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
