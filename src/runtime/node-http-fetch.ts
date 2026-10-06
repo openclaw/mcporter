@@ -127,7 +127,10 @@ function buildRedirectInit(init: RequestInit, status: number, currentUrl: URL, n
   if (currentUrl.origin !== nextUrl.origin) {
     stripCrossOriginRedirectHeaders(headers);
   }
-  if ((status === 301 || status === 302 || status === 303) && method !== 'GET' && method !== 'HEAD') {
+  if (
+    ((status === 301 || status === 302) && method === 'POST') ||
+    (status === 303 && method !== 'GET' && method !== 'HEAD')
+  ) {
     headers.delete('content-length');
     headers.delete('content-type');
     return {
