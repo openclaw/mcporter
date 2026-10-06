@@ -239,6 +239,9 @@ function parseArrayOption(value: string, itemType: 'string' | 'number' | 'boolea
 \t\tif (!Array.isArray(parsed)) {
 \t\t\tthrow new Error('Expected a JSON array.');
 \t\t}
+\t\tif (itemType === 'boolean' && !parsed.every((entry) => typeof entry === 'boolean')) {
+\t\t\tthrow new Error('Expected a boolean array.');
+\t\t}
 \t\treturn parsed;
 \t}
 \tif (itemType === 'json') {
@@ -253,9 +256,17 @@ function parseArrayOption(value: string, itemType: 'string' | 'number' | 'boolea
 \t\treturn values.map((entry) => parseFiniteNumber(entry));
 \t}
 \tif (itemType === 'boolean') {
-\t\treturn values.map((entry) => entry !== 'false');
+\t\treturn values.map((entry) => parseBoolean(entry));
 \t}
 \treturn values;
+}
+
+function parseBoolean(value: string): boolean {
+\tconst trimmed = value.trim();
+\tif (trimmed !== 'true' && trimmed !== 'false') {
+\t\tthrow new Error('Expected a boolean (true or false).');
+\t}
+\treturn trimmed === 'true';
 }
 
 function parseFiniteNumber(value: string): number {
@@ -567,7 +578,7 @@ function optionParser(option: GeneratedOption): string | undefined {
     case 'number':
       return '(value) => parseFiniteNumber(value)';
     case 'boolean':
-      return "(value) => value !== 'false'";
+      return '(value) => parseBoolean(value)';
     case 'object':
       return '(value) => JSON.parse(value)';
     case 'array':
