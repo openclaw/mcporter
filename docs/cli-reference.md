@@ -131,6 +131,10 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
   - `--mode client --out <file.ts>` – emit both the interface (`<file>.d.ts`)
     and a factory that wraps `createServerProxy`; each method takes one
     arguments object and resolves to `CallResult`.
+- Client mode rejects the entire client when its tool listing includes `close`
+  or `then`, before either output is written. This also blocks regeneration of
+  unrelated methods; existing files remain unchanged. Use types-only output or
+  direct `runtime.callTool()` invocation. See [reserved tool names and regeneration](emit-ts.md#reserved-tool-names-and-regeneration).
 - Other flags:
   - `--include-optional` (alias `--all-parameters`) – show every optional field.
   - `--types-out <file>` – override where the `.d.ts` sits when using client

@@ -102,6 +102,45 @@ in example 1, which match the positional form `createServerProxy()` accepts.
 If you pass an existing runtime (`{ runtime }`), the factory reuses it; the
 returned object’s `close()` becomes a no-op.
 
+### Reserved tool names and regeneration
+
+If the tool listing includes a tool named exactly `close` or `then`,
+`--mode client` rejects the entire client before writing either the `.ts` file
+or its companion `.d.ts`. `close` conflicts with the client's runtime cleanup
+helper; `then` would affect Promise resolution of the asynchronous factory.
+Other tools on that server are also blocked from client generation.
+
+This can stop regeneration of a previously working client, even when you only
+use unrelated tools. Existing output files remain unchanged, so they do not
+receive updated tool signatures or schema defaults from that generation attempt.
+
+Types-only output still includes these tool names and does not create a client:
+
+```sh
+mcporter emit-ts my-server --mode types --out types/my-server-tools.d.ts
+```
+
+For invocation, use `runtime.callTool()` with the exact advertised tool name:
+
+```ts
+import { createRuntime } from 'mcporter';
+
+const runtime = await createRuntime();
+try {
+  const result = await runtime.callTool('my-server', 'close', { args: {} });
+  console.log(result);
+} finally {
+  await runtime.close();
+}
+```
+
+Use `'then'` in place of `'close'` for a tool with that name. Supply `args`
+according to the tool's schema: direct runtime calls pass those arguments as-is,
+without the proxy's schema-default merging or required-argument validation, and
+return the raw MCP result rather than a `CallResult` helper. The final
+`runtime.close()` cleans up runtime connections; it does not invoke a server
+tool named `close`.
+
 ### Regenerating clients from 0.13.13 or earlier
 
 Client methods emitted by earlier versions were typed positionally and only
