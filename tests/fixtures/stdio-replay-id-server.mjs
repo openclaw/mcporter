@@ -10,11 +10,13 @@ const stringHandled = new Promise((resolve) => {
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (request.params.name === 'numeric') {
     await stringHandled;
-    // Let the string response reach stdout before the numeric response.
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  } else {
-    releaseNumeric();
   }
   return { content: [{ type: 'text', text: `${request.params.name}-response` }] };
 });
-await server.connect(new StdioServerTransport());
+const transport = new StdioServerTransport();
+const send = transport.send.bind(transport);
+transport.send = async (message) => {
+  await send(message);
+  if ('id' in message && message.id === '1' && 'result' in message) releaseNumeric();
+};
+await server.connect(transport);

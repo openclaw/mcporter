@@ -29,7 +29,13 @@ it('keeps numeric and string request IDs distinct through recording and replay',
       wireResponses.push(message);
       if (wireResponses.length === 2) completed.resolve();
     };
-    recorder.onerror = completed.reject;
+    // Install rejection handlers before start: either phase may fail first.
+    void initialized.promise.catch(() => {});
+    void completed.promise.catch(() => {});
+    recorder.onerror = (error) => {
+      initialized.reject(error);
+      completed.reject(error);
+    };
     await recorder.start();
     const initializeParams = {
       protocolVersion: '2025-03-26',
