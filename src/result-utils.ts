@@ -105,7 +105,7 @@ function collectCallContent(raw: unknown): CollectedCallContent {
   for (const entry of envelope.content) {
     if (typeof entry === 'string') {
       const parsed = tryParseJson(entry);
-      if (parsed !== null) {
+      if (parsed !== undefined) {
         jsonCandidates.push(parsed);
       }
       continue;
@@ -117,7 +117,7 @@ function collectCallContent(raw: unknown): CollectedCallContent {
     const typedEntry = entry as Record<string, unknown>;
     if (typedEntry.type === 'json') {
       const parsed = tryParseJson(entry);
-      if (parsed !== null) {
+      if (parsed !== undefined) {
         jsonCandidates.push(parsed);
       }
       continue;
@@ -148,7 +148,7 @@ function collectCallContent(raw: unknown): CollectedCallContent {
       markdownEntries.push(text);
     }
     const parsed = tryParseJson(text);
-    if (parsed !== null) {
+    if (parsed !== undefined) {
       jsonCandidates.push(parsed);
     }
   }
@@ -181,7 +181,7 @@ function collectResourcePayload(
       markdownEntries.push(record.text);
     }
     const parsed = tryParseJson(record.text);
-    if (parsed !== null) {
+    if (parsed !== undefined) {
       jsonCandidates.push(parsed);
     }
   } else if (typeof record.blob === 'string') {
@@ -205,37 +205,37 @@ function collectImages(images: ImageContent[]): ImageContent[] | null {
 
 function unwrapJsonEnvelope(record: Record<string, unknown>, fallback: unknown): unknown {
   if ('json' in record) {
-    return record.json ?? null;
+    return record.json;
   }
   if ('data' in record) {
-    return Object.keys(record).length === 1 ? (record.data ?? null) : fallback;
+    return Object.keys(record).length === 1 ? record.data : fallback;
   }
-  return null;
+  return undefined;
 }
 
 function parseStructuredContent(value: unknown): unknown {
   if (value === undefined || value === null) {
-    return null;
+    return undefined;
   }
   if (typeof value === 'string') {
     return tryParseJson(value);
   }
   if (typeof value !== 'object') {
-    return null;
+    return undefined;
   }
 
   const unwrapped = unwrapJsonEnvelope(value as Record<string, unknown>, value);
-  return unwrapped ?? value;
+  return unwrapped === undefined ? value : unwrapped;
 }
 
-// tryParseJson pulls JSON payloads out of structured responses or raw strings.
+// An undefined result means no JSON was recovered; null is valid JSON data.
 function tryParseJson(value: unknown): unknown {
   if (value === undefined || value === null) {
-    return null;
+    return undefined;
   }
   if (typeof value === 'object') {
     const unwrapped = unwrapJsonEnvelope(value as Record<string, unknown>, value);
-    if (unwrapped !== null) {
+    if (unwrapped !== undefined) {
       return unwrapped;
     }
   }
@@ -243,10 +243,10 @@ function tryParseJson(value: unknown): unknown {
     try {
       return JSON.parse(value);
     } catch {
-      return null;
+      return undefined;
     }
   }
-  return null;
+  return undefined;
 }
 
 // createCallResult wraps a tool response with helpers for common content types.
@@ -291,7 +291,7 @@ export function createCallResult<T = unknown>(raw: T): CallResult<T> {
     json<J = unknown>() {
       const collected = getCollectedContent();
       const parsedStructured = parseStructuredContent(collected.structuredContent);
-      if (parsedStructured !== null) {
+      if (parsedStructured !== undefined) {
         return parsedStructured as J;
       }
       if (collected.jsonCandidates.length === 1) {
@@ -302,21 +302,21 @@ export function createCallResult<T = unknown>(raw: T): CallResult<T> {
       }
       if (typeof raw === 'string') {
         const parsedRaw = tryParseJson(raw);
-        if (parsedRaw !== null) {
+        if (parsedRaw !== undefined) {
           return parsedRaw as J;
         }
       }
       const textContent = this.text?.();
       if (typeof textContent === 'string') {
         const parsedText = tryParseJson(textContent);
-        if (parsedText !== null) {
+        if (parsedText !== undefined) {
           return parsedText as J;
         }
       }
       const markdownContent = this.markdown?.();
       if (typeof markdownContent === 'string') {
         const parsedMarkdown = tryParseJson(markdownContent);
-        if (parsedMarkdown !== null) {
+        if (parsedMarkdown !== undefined) {
           return parsedMarkdown as J;
         }
       }
