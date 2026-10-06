@@ -467,7 +467,7 @@ export function renderToolCommand(
     })
     .join('\n\t\t');
   const requiredChecks = tool.options
-    .filter((option) => option.required)
+    .filter((option) => option.required && option.defaultValue === undefined)
     .map((option) => ({ option, camelCaseProp: toCliOptionKey(option.cliName) }));
   const requiredValidation =
     requiredChecks.length > 0
