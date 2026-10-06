@@ -52,7 +52,7 @@ export function coerceValue(value: string, coercionMode: CoercionMode = 'default
   if (trimmed === 'null' || trimmed === 'none') {
     return null;
   }
-  if (coercionMode === 'default' && !Number.isNaN(Number(trimmed)) && trimmed === `${Number(trimmed)}`) {
+  if (coercionMode === 'default' && Number.isFinite(Number(trimmed)) && trimmed === `${Number(trimmed)}`) {
     return Number(trimmed);
   }
   if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
