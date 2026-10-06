@@ -21,6 +21,7 @@ const KNOWN_OPTION_KEYS = new Set([
   'disableOAuth',
   'tailLog',
   'timeout',
+  'timeoutMs',
   'stream',
   'streamLog',
   'mimeType',

@@ -29,10 +29,14 @@ it('preserves named arguments when real MCP discovery fails but tool calls work'
   try {
     await expect(runtime.listTools('fixture')).rejects.toThrow('Discovery unavailable');
     expect((await proxy.echo!({ query: 'real input', count: 0 })).json()).toEqual({ query: 'real input', count: 0 });
-    expect((await proxy.echo!({ args: { query: 'explicit envelope' }, timeout: 1000 })).json()).toEqual({
+    expect((await proxy.echo!({ args: { query: 'explicit envelope' }, timeoutMs: 1000 })).json()).toEqual({
       query: 'explicit envelope',
     });
-    expect((await proxy.echo!({ timeout: 1000 })).json()).toEqual({});
+    expect((await proxy.echo!({ timeoutMs: 1000 })).json()).toEqual({});
+    expect((await proxy.echo!({ query: 'separate options' }, { timeoutMs: 1000 })).json()).toEqual({
+      query: 'separate options',
+    });
+    await expect(proxy.delayed!({ query: 'deadline' }, { timeoutMs: 100 })).rejects.toThrow(/Timeout|timed out/);
   } finally {
     await runtime.close();
     await fs.rm(dir, { recursive: true, force: true });
