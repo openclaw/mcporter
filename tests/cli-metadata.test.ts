@@ -59,6 +59,45 @@ describe('readCliMetadata', () => {
     }
   });
 
+  it('inspects generated Node templates through their interpreter on Windows', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-metadata-template-'));
+    const artifact = path.join(tempDir, 'artifact.ts');
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    await fs.writeFile(
+      artifact,
+      `#!/usr/bin/env node\nconst metadata: unknown = ${JSON.stringify(metadataPayload('template'))};\nconsole.log(JSON.stringify(metadata));\n`,
+      'utf8'
+    );
+    try {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      await expect(readCliMetadata(artifact)).resolves.toMatchObject({ server: { name: 'template' } });
+    } finally {
+      Object.defineProperty(process, 'platform', platform);
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves native PATH lookup when no script header is available on Windows', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-metadata-path-'));
+    const preload = path.join(tempDir, 'inspect.cjs');
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    const nodeOptions = process.env.NODE_OPTIONS;
+    await fs.writeFile(
+      preload,
+      `console.log(${JSON.stringify(JSON.stringify(metadataPayload('native')))}); process.exit(0);\n`
+    );
+    try {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      process.env.NODE_OPTIONS = `${nodeOptions ?? ''} --require ${JSON.stringify(preload.replaceAll(path.sep, path.posix.sep))}`;
+      await expect(readCliMetadata('node')).resolves.toMatchObject({ server: { name: 'native' } });
+    } finally {
+      Object.defineProperty(process, 'platform', platform);
+      if (nodeOptions === undefined) delete process.env.NODE_OPTIONS;
+      else process.env.NODE_OPTIONS = nodeOptions;
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it('preserves sidecar parse errors instead of masking them with the embedded error', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-metadata-invalid-'));
     const artifact = path.join(tempDir, 'missing-artifact');

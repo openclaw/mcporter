@@ -2,6 +2,7 @@
 
 ## [0.14.3] - Unreleased
 
+- Inspect generated Node/Bun script metadata on Windows through the declared interpreter, keeping native binaries directly executable.
 - Renew expired daemon views once only after a broker-confirmed rejection before dispatch, retaining configuration authority and preventing replay after replacement or shutdown. Thanks @mbac (#410).
 - Preserve typed request IDs during replay, named arguments after failed proxy discovery, and JSON null result entries. Thanks @rudycelekli (#411, #413, #420).
 - Decode compressed HTTP response streams and preserve session-termination DELETE across 301/302 redirects, including empty-body and streaming cancellation coverage. Thanks @rudycelekli (#416, #419).

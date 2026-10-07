@@ -104,9 +104,13 @@ export async function readCliMetadata(artifactPath: string): Promise<CliArtifact
 }
 
 async function readMetadataFromCli(artifactPath: string): Promise<CliArtifactMetadata> {
+  // A missing header must not suppress native PATH lookup or Windows .exe resolution.
+  const interpreter =
+    process.platform === 'win32' ? await readGeneratedInterpreter(artifactPath).catch(() => undefined) : undefined;
   return await new Promise<CliArtifactMetadata>((resolve, reject) => {
-    const child = spawn(artifactPath, ['__mcporter_inspect'], {
+    const child = spawn(interpreter ?? artifactPath, [...(interpreter ? [artifactPath] : []), '__mcporter_inspect'], {
       stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
     });
     let stdout = '';
     let stderr = '';
@@ -144,6 +148,18 @@ async function readMetadataFromCli(artifactPath: string): Promise<CliArtifactMet
       }
     });
   });
+}
+
+async function readGeneratedInterpreter(artifactPath: string): Promise<string | undefined> {
+  const file = await fs.open(artifactPath, 'r');
+  try {
+    // Windows cannot execute shebang scripts; recognize only the headers we generate.
+    const header = Buffer.alloc(64);
+    const { bytesRead } = await file.read(header, 0, header.length, 0);
+    return /^#!\/usr\/bin\/env (node|bun)\r?\n/.exec(header.toString('utf8', 0, bytesRead))?.[1];
+  } finally {
+    await file.close();
+  }
 }
 
 function isErrno(error: unknown, code: string): error is NodeJS.ErrnoException {
