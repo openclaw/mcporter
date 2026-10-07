@@ -61,29 +61,30 @@ diff --git a/dist/index.cjs b/dist/index.cjs
  	};
  }
  var UnauthorizedError = class extends Error {
-@@ -5066,6 +5094,7 @@
- 		this._fetchWithInit = require_src.createFetchWithInit(opts?.fetch, opts?.requestInit);
+@@ -5083,6 +5111,7 @@
+ 		if (this._redirectPolicy === "follow") this._fetchWithInit = require_src.fetchLeavingRedirects(this._fetchWithInit);
  	}
  	_last401Response;
 +	_last401PresentedToken;
- 	async _commonHeaders() {
- 		const headers = new Headers(this._requestInit?.headers || void 0);
- 		let token;
-@@ -5093,6 +5122,7 @@
- 					});
+ 	_connectAuthRetried = false;
+ 	/** `baseFetch` with redirects handled as `redirectPolicy` says. */
+ 	_redirects(baseFetch) {
+@@ -5122,6 +5151,7 @@
+ 					redirect = this._unfollowedRedirect(url, response);
  					if (response.status === 401) {
  						this._last401Response = response;
 +						this._last401PresentedToken = presentedBearerToken(headers);
  						if (response.headers.has("www-authenticate")) {
  							const { resourceMetadataUrl, scope } = extractWWWAuthenticateParams(response);
  							this._resourceMetadataUrl = resourceMetadataUrl;
-@@ -5107,12 +5137,15 @@
+@@ -5136,13 +5166,16 @@
  				if (event.code === 401 && this._authProvider) {
- 					if (this._authProvider.onUnauthorized && this._last401Response) {
+ 					if (this._authProvider.onUnauthorized && this._last401Response && !this._connectAuthRetried) {
  						const response = this._last401Response;
 +						const presentedToken = this._last401PresentedToken;
  						this._last401Response = void 0;
 +						this._last401PresentedToken = void 0;
+ 						this._connectAuthRetried = true;
  						this._eventSource?.close();
  						this._authProvider.onUnauthorized({
  							response,
@@ -92,9 +93,9 @@ diff --git a/dist/index.cjs b/dist/index.cjs
 +							fetchFn: this._fetchWithInit,
 +							presentedToken
  						}).then(() => this._startOrAuth().then(resolve, reject), (error$2) => {
+ 							this._connectAuthRetried = false;
  							markAuthSeamEscape(error$2);
- 							this.onerror?.(error$2);
-@@ -5209,7 +5242,8 @@
+@@ -5249,7 +5282,8 @@
  							await this._authProvider.onUnauthorized({
  								response,
  								serverUrl: this._url,
@@ -104,7 +105,7 @@ diff --git a/dist/index.cjs b/dist/index.cjs
  							});
  						} catch (error) {
  							throw markAuthSeamEscape(error);
-@@ -5461,7 +5495,8 @@
+@@ -5513,7 +5547,8 @@
  							await this._authProvider.onUnauthorized({
  								response,
  								serverUrl: this._url,
@@ -114,7 +115,7 @@ diff --git a/dist/index.cjs b/dist/index.cjs
  							});
  						} catch (error) {
  							throw markAuthSeamEscape(error);
-@@ -5698,7 +5733,8 @@
+@@ -5751,7 +5786,8 @@
  							await this._authProvider.onUnauthorized({
  								response,
  								serverUrl: this._url,
@@ -141,7 +142,7 @@ diff --git a/dist/index.d.cts b/dist/index.d.cts
  /**
   * Minimal interface for authenticating MCP client transports with bearer tokens.
   *
-@@ -489,6 +496,11 @@
+@@ -490,6 +497,11 @@
     *   keyed by `ctx.issuer`.
     */
    saveTokens(tokens: StoredOAuthTokens, ctx?: OAuthClientInformationContext): void | Promise<void>;
@@ -153,14 +154,14 @@ diff --git a/dist/index.d.cts b/dist/index.d.cts
    /**
     * Invoked to redirect the user agent to the given URL to begin the authorization flow.
     */
-@@ -3231,6 +3243,7 @@
+@@ -3254,6 +3266,7 @@
    onmessage?: (message: JSONRPCMessage) => void;
    constructor(url: URL, opts?: SSEClientTransportOptions);
    private _last401Response?;
 +  private _last401PresentedToken?;
-   private _commonHeaders;
-   private _startOrAuth;
-   start(): Promise<void>;
+   private _connectAuthRetried;
+   /** `baseFetch` with redirects handled as `redirectPolicy` says. */
+   private _redirects;
 diff --git a/dist/index.d.mts b/dist/index.d.mts
 --- a/dist/index.d.mts
 +++ b/dist/index.d.mts
@@ -178,7 +179,7 @@ diff --git a/dist/index.d.mts b/dist/index.d.mts
  /**
   * Minimal interface for authenticating MCP client transports with bearer tokens.
   *
-@@ -489,6 +496,11 @@
+@@ -490,6 +497,11 @@
     *   keyed by `ctx.issuer`.
     */
    saveTokens(tokens: StoredOAuthTokens, ctx?: OAuthClientInformationContext): void | Promise<void>;
@@ -190,14 +191,14 @@ diff --git a/dist/index.d.mts b/dist/index.d.mts
    /**
     * Invoked to redirect the user agent to the given URL to begin the authorization flow.
     */
-@@ -3231,6 +3243,7 @@
+@@ -3254,6 +3266,7 @@
    onmessage?: (message: JSONRPCMessage) => void;
    constructor(url: URL, opts?: SSEClientTransportOptions);
    private _last401Response?;
 +  private _last401PresentedToken?;
-   private _commonHeaders;
-   private _startOrAuth;
-   start(): Promise<void>;
+   private _connectAuthRetried;
+   /** `baseFetch` with redirects handled as `redirectPolicy` says. */
+   private _redirects;
 diff --git a/dist/index.mjs b/dist/index.mjs
 --- a/dist/index.mjs
 +++ b/dist/index.mjs
@@ -261,29 +262,30 @@ diff --git a/dist/index.mjs b/dist/index.mjs
  	};
  }
  var UnauthorizedError = class extends Error {
-@@ -5063,6 +5091,7 @@
- 		this._fetchWithInit = createFetchWithInit(opts?.fetch, opts?.requestInit);
+@@ -5080,6 +5108,7 @@
+ 		if (this._redirectPolicy === "follow") this._fetchWithInit = fetchLeavingRedirects(this._fetchWithInit);
  	}
  	_last401Response;
 +	_last401PresentedToken;
- 	async _commonHeaders() {
- 		const headers = new Headers(this._requestInit?.headers || void 0);
- 		let token;
-@@ -5090,6 +5119,7 @@
- 					});
+ 	_connectAuthRetried = false;
+ 	/** `baseFetch` with redirects handled as `redirectPolicy` says. */
+ 	_redirects(baseFetch) {
+@@ -5119,6 +5148,7 @@
+ 					redirect = this._unfollowedRedirect(url, response);
  					if (response.status === 401) {
  						this._last401Response = response;
 +						this._last401PresentedToken = presentedBearerToken(headers);
  						if (response.headers.has("www-authenticate")) {
  							const { resourceMetadataUrl, scope } = extractWWWAuthenticateParams(response);
  							this._resourceMetadataUrl = resourceMetadataUrl;
-@@ -5104,12 +5134,15 @@
+@@ -5133,13 +5163,16 @@
  				if (event.code === 401 && this._authProvider) {
- 					if (this._authProvider.onUnauthorized && this._last401Response) {
+ 					if (this._authProvider.onUnauthorized && this._last401Response && !this._connectAuthRetried) {
  						const response = this._last401Response;
 +						const presentedToken = this._last401PresentedToken;
  						this._last401Response = void 0;
 +						this._last401PresentedToken = void 0;
+ 						this._connectAuthRetried = true;
  						this._eventSource?.close();
  						this._authProvider.onUnauthorized({
  							response,
@@ -292,9 +294,9 @@ diff --git a/dist/index.mjs b/dist/index.mjs
 +							fetchFn: this._fetchWithInit,
 +							presentedToken
  						}).then(() => this._startOrAuth().then(resolve, reject), (error$2) => {
+ 							this._connectAuthRetried = false;
  							markAuthSeamEscape(error$2);
- 							this.onerror?.(error$2);
-@@ -5206,7 +5239,8 @@
+@@ -5246,7 +5279,8 @@
  							await this._authProvider.onUnauthorized({
  								response,
  								serverUrl: this._url,
@@ -304,7 +306,7 @@ diff --git a/dist/index.mjs b/dist/index.mjs
  							});
  						} catch (error) {
  							throw markAuthSeamEscape(error);
-@@ -5458,7 +5492,8 @@
+@@ -5510,7 +5544,8 @@
  							await this._authProvider.onUnauthorized({
  								response,
  								serverUrl: this._url,
@@ -314,7 +316,7 @@ diff --git a/dist/index.mjs b/dist/index.mjs
  							});
  						} catch (error) {
  							throw markAuthSeamEscape(error);
-@@ -5695,7 +5730,8 @@
+@@ -5748,7 +5783,8 @@
  							await this._authProvider.onUnauthorized({
  								response,
  								serverUrl: this._url,
@@ -324,3 +326,27 @@ diff --git a/dist/index.mjs b/dist/index.mjs
  							});
  						} catch (error) {
  							throw markAuthSeamEscape(error);
+diff --git a/dist/src-DpAS0jfg.cjs b/dist/src-DpAS0jfg.cjs
+--- a/dist/src-DpAS0jfg.cjs
++++ b/dist/src-DpAS0jfg.cjs
+@@ -6855,7 +6855,7 @@
+ 			const target = redirectTarget(current, response);
+ 			if (!target || followed === MAX_REDIRECTS) return response;
+ 			const from = new URL(current);
+-			const keepsMethod = method === "GET" || response.status === 307 || response.status === 308;
++			const keepsMethod = method === "GET" || method === "HEAD" || response.status === 307 || response.status === 308 || ((response.status === 301 || response.status === 302) && method !== "POST");
+ 			const keepsUserinfo = !(target.username || target.password) || target.username === from.username && target.password === from.password;
+ 			if (!keepsMethod || !keepsUserinfo || !isWithinOrigin(from, target)) return response;
+ 			await response.text?.().catch(() => {});
+diff --git a/dist/src-WCy6ifGf.mjs b/dist/src-WCy6ifGf.mjs
+--- a/dist/src-WCy6ifGf.mjs
++++ b/dist/src-WCy6ifGf.mjs
+@@ -6854,7 +6854,7 @@
+ 			const target = redirectTarget(current, response);
+ 			if (!target || followed === MAX_REDIRECTS) return response;
+ 			const from = new URL(current);
+-			const keepsMethod = method === "GET" || response.status === 307 || response.status === 308;
++			const keepsMethod = method === "GET" || method === "HEAD" || response.status === 307 || response.status === 308 || ((response.status === 301 || response.status === 302) && method !== "POST");
+ 			const keepsUserinfo = !(target.username || target.password) || target.username === from.username && target.password === from.password;
+ 			if (!keepsMethod || !keepsUserinfo || !isWithinOrigin(from, target)) return response;
+ 			await response.text?.().catch(() => {});

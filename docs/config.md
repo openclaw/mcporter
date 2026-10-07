@@ -182,6 +182,8 @@ The HTTP/1.1 path honors cancellation both while preparing a request body and wh
 
 It decodes gzip, deflate, and Brotli response streams, including layered encodings, while preserving response headers. HTTP 301/302 redirects preserve non-POST methods such as session-termination DELETE; 303 redirects use GET except for HEAD.
 
+Transport and SDK-managed OAuth requests use the SDK's same-origin redirect policy. Redirects that change the request method or leave the allowed origin fail with endpoint guidance. Same-origin 301/302 session-termination redirects preserve DELETE and remain supported.
+
 ## JSON Schema for IDE Support
 
 mcporter provides a JSON Schema for config file validation and autocompletion. Add the `$schema` property to your config file:
