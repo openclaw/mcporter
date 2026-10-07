@@ -77,7 +77,9 @@ Key details:
 - Bare string values supplied via long flags wrap into one-item arrays when the tool schema declares that field as an array.
 - Numeric-looking `key=value` arguments are restored to their original string spelling when the tool schema declares that parameter as a string, which keeps timestamp-like IDs such as Slack `thread_ts=1234567890.123456` intact.
 - `--raw-strings` disables numeric coercion for flag-style and positional values so IDs/codes stay literal strings (`code=12345` stays `"12345"`).
+- Numeric coercion accepts finite JSON numbers; `Infinity` and `-Infinity` remain literal strings.
 - `--no-coerce` disables all coercion for flag-style and positional values (`true`, `null`, and JSON-like values remain strings).
 - Long tool flags are checked against the selected tool schema before dispatch; undeclared flags fail with guidance to use `key=value` or `--args`. Insert `--` before literal positional values that start with `--`.
+- Empty strings after the separator retain their positions: `mcporter call fixture.echo -- ""` sends an empty string.
 - `--save-images <dir>` keeps stdout formatting untouched while writing image content blocks to disk when a tool response includes `type: "image"` entries.
 - `tool=value`/`tool:value` and `server=value` still act as aliases for `--tool` / `--server` when you need to override the selector.

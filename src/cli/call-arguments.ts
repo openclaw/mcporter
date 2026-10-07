@@ -109,7 +109,7 @@ function scanCallTokens(args: string[], result: CallArgsParseResult, state: Flag
       continue;
     }
     if (token === '--') {
-      literalPositional.push(...args.slice(index + 1).filter(Boolean));
+      literalPositional.push(...args.slice(index + 1));
       break;
     }
     const flagHandler = FLAG_HANDLERS.get(token);

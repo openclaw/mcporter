@@ -14,6 +14,12 @@ describe('parseCallArguments', () => {
     expect(parsed.args.format).toBe('json');
   });
 
+  it.each(['Infinity', '-Infinity'])('keeps non-JSON numeric token %s as literal data', (value) => {
+    expect(parseCallArguments(['owned.echo', `value=${value}`]).args).toEqual({ value });
+    expect(parseCallArguments(['owned.echo', '--value', value]).args).toEqual({ value });
+    expect(parseCallArguments(['owned', 'echo', value]).positionalArgs).toEqual([value]);
+  });
+
   it.each(['--server', '--mcp'] as const)('captures %s as server override', (flag) => {
     const parsed = parseCallArguments([flag, 'linear', 'list_documents']);
     expect(parsed.server).toBe('linear');

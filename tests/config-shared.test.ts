@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { findServerNameWithFuzzyMatch, resolveServerDefinition } from '../src/cli/config/shared.js';
+import { CliUsageError } from '../src/cli/errors.js';
 import type { ServerDefinition } from '../src/config-schema.js';
 
 function buildServers(): ServerDefinition[] {
@@ -24,7 +25,9 @@ describe('config shared helpers', () => {
   });
 
   it('throws when no close match exists', () => {
-    expect(() => resolveServerDefinition('unknown', buildServers(), null)).toThrow(/Unknown server/);
+    expect(() => resolveServerDefinition('unknown', buildServers(), null)).toThrow(
+      new CliUsageError("Unknown server 'unknown'.")
+    );
   });
 
   it('returns matched name when helper finds direct match', () => {

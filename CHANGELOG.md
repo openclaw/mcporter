@@ -2,6 +2,9 @@
 
 ## [0.14.3] - Unreleased
 
+- Preserve empty positional arguments after `--` and keep `Infinity`/`-Infinity` as strings instead of sending JSON null. Thanks @rudycelekli (#412, #421).
+- Print unknown-server errors from `config get` and `config logout` with one `[mcporter]` prefix. Thanks @KrasimirKralev (#409).
+
 ## [0.14.2] - 2026-09-30
 
 **Highlights:** npm installs retain OAuth refresh protection, Windows daemon startup tolerates transient process-query failures, and long help flags remain readable.

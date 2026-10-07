@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { handleConfigCli } from '../src/cli/config-command.js';
+import { CliUsageError } from '../src/cli/errors.js';
 import type { LoadConfigOptions } from '../src/config.js';
 import { MCPORTER_VERSION } from '../src/runtime.js';
 
@@ -351,10 +352,18 @@ describe('mcporter config CLI', () => {
     const logs: string[] = [];
     const spy = vi.spyOn(console, 'log').mockImplementation(captureLog(logs));
     await expect(handleConfigCli(buildOptions({ configPath }), ['get', 'shadowverse'])).rejects.toThrow(
-      "[mcporter] Unknown server 'shadowverse'."
+      new CliUsageError("Unknown server 'shadowverse'.")
     );
     spy.mockRestore();
     expect(logs.join('\n')).toContain('Did you mean shadcn');
+  });
+
+  it('rejects logout for an unknown server without a duplicated log prefix', async () => {
+    await handleConfigCli(buildOptions({ configPath }), ['add', 'shadcn', 'https://shadcn.io/api/mcp']);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await expect(handleConfigCli(buildOptions({ configPath }), ['logout', 'nosuch'])).rejects.toThrow(
+      new CliUsageError("Unknown server 'nosuch'.")
+    );
   });
 });
 
