@@ -79,7 +79,15 @@ export function renderClientModule(input: EmitClientTemplateInput): string {
     const memberName = toMemberName(entry.toolName);
     const access = toMemberAccess(entry.toolName);
     lines.push(`    async ${memberName}(params) {`);
-    lines.push(`      return tools${access}(params === undefined ? {} : params);`);
+    if (entry.toolName === 'call' || entry.toolName === 'listTools') {
+      lines.push(
+        `      const toolProxy = createServerProxy(runtime, ${JSON.stringify(serverName)}, () => ${JSON.stringify(entry.toolName)});`
+      );
+      lines.push('      const invoke = Reflect.get(toolProxy, Symbol()) as (params: unknown) => Promise<CallResult>;');
+      lines.push('      return invoke(params === undefined ? {} : params);');
+    } else {
+      lines.push(`      return tools${access}(params === undefined ? {} : params);`);
+    }
     lines.push('    },');
     lines.push('');
   });
@@ -191,7 +199,7 @@ function toObjectParams(entry: ToolDocEntry): string {
 const SAFE_IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
 function toMemberName(name: string): string {
-  return SAFE_IDENTIFIER.test(name) ? name : JSON.stringify(name);
+  return SAFE_IDENTIFIER.test(name) && name !== 'new' ? name : JSON.stringify(name);
 }
 
 function toMemberAccess(name: string): string {

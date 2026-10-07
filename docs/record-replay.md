@@ -51,6 +51,8 @@ Each line is one JSON-RPC envelope with an added `_meta` object:
 
 Replay is strict. For each server, mcporter expects requests to arrive in the same order with the same JSON-RPC method and deeply equal `params`. If the next request differs, replay fails with an error that names the incoming request and the next recorded request it expected.
 
+Numeric and string request IDs remain distinct (`1` and `"1"` identify different requests). Responses retain their original request ownership before replay rewrites IDs for the active caller.
+
 This makes recordings useful as reproducible bug fixtures: a replay either follows the captured MCP exchange exactly or fails at the first point where the workflow diverges.
 
 Recordings made against modern servers include the initial `server/discover` probe. Replay matches that probe by method because its negotiation metadata can vary between client versions. Older recordings whose first request is `initialize` are automatically replayed in legacy negotiation mode.

@@ -110,7 +110,7 @@ function readRecordedMessages(recordPath: string): RecordedMessage[] {
 }
 
 function buildReplayQueue(messages: RecordedMessage[], server: string): ExpectedSend[] {
-  const pendingRequests = new Map<string, ExpectedSend>();
+  const pendingRequests = new Map<string | number, ExpectedSend>();
   const expected: ExpectedSend[] = [];
   let bufferedNotifications: JSONRPCMessage[] = [];
   let lastResponse: ExpectedSend | undefined;
@@ -135,7 +135,7 @@ function buildReplayQueue(messages: RecordedMessage[], server: string): Expected
       };
       expected.push(expectedSend);
       if (request.id !== undefined) {
-        pendingRequests.set(String(request.id), expectedSend);
+        pendingRequests.set(request.id, expectedSend);
       }
       continue;
     }
@@ -148,9 +148,9 @@ function buildReplayQueue(messages: RecordedMessage[], server: string): Expected
       if (responseId === undefined) {
         continue;
       }
-      const pending = pendingRequests.get(String(responseId));
+      const pending = pendingRequests.get(responseId);
       if (pending) {
-        pendingRequests.delete(String(responseId));
+        pendingRequests.delete(responseId);
         pending.notificationsBeforeResponse = bufferedNotifications;
         bufferedNotifications = [];
         pending.response = clean;

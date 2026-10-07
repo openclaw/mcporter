@@ -60,6 +60,14 @@ export class BrokerError extends Error {
   }
 }
 
+// This distinct type is created only by the view admission check. Downstream
+// errors with the same code or properties must never authorize an operation replay.
+export class ExpiredViewError extends BrokerError {
+  constructor() {
+    super('view_expired', 'Config view expired; register before a new operation.');
+  }
+}
+
 export class DaemonBroker {
   readonly generation = randomUUID();
   private readonly views = new Map<string, View>();
@@ -97,7 +105,7 @@ export class DaemonBroker {
         'Daemon generation changed; register before a new operation. The request was not replayed.'
       );
     const view = this.views.get(request.view ?? '');
-    if (!view) throw new BrokerError('view_expired', 'Config view expired; register before a new operation.');
+    if (!view) throw new ExpiredViewError();
     view.lastUsed = Date.now();
     return view;
   }

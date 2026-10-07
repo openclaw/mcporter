@@ -14,6 +14,7 @@ export interface GeneratedOption {
   required: boolean;
   type: 'string' | 'number' | 'boolean' | 'array' | 'object' | 'unknown';
   arrayItemType?: 'string' | 'number' | 'boolean' | 'object' | 'unknown';
+  strictBooleanArray?: boolean;
   placeholder: string;
   exampleValue?: string;
   enumValues?: string[];
@@ -120,6 +121,7 @@ export function extractOptions(tool: ServerToolInfo): GeneratedOption[] {
       required: requiredList.includes(property),
       type,
       arrayItemType,
+      strictBooleanArray: arrayItemType === 'boolean' && hasOnlyBooleanArrayItems(descriptor),
       placeholder,
       exampleValue,
       enumValues,
@@ -372,6 +374,12 @@ export function inferType(descriptor: unknown): GeneratedOption['type'] {
 // raw value: these container checks have to agree with the type the option is generated with.
 function isArraySchema(record: Record<string, unknown>): boolean {
   return inferType(record) === 'array';
+}
+
+function hasOnlyBooleanArrayItems(descriptor: unknown): boolean {
+  const items = (descriptor as { items?: { type?: unknown } }).items;
+  const type = items?.type;
+  return type === 'boolean' || (Array.isArray(type) && type.length > 0 && type.every((entry) => entry === 'boolean'));
 }
 
 export function inferArrayItemType(descriptor: unknown): GeneratedOption['arrayItemType'] {

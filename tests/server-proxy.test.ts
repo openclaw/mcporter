@@ -415,9 +415,9 @@ describe('createServerProxy', () => {
     const result = await fn({ foo: 'bar' });
 
     expect(runtime.callTool).toHaveBeenCalledWith('foo', 'some-tool', {
-      foo: 'bar',
+      args: { foo: 'bar' },
     });
-    expect(result.raw).toEqual({ foo: 'bar' });
+    expect(result.raw).toEqual({ args: { foo: 'bar' } });
   });
 
   it('maps primitive positional arguments onto required schema fields', async () => {

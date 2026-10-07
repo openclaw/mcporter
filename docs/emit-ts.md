@@ -35,6 +35,10 @@ mcporter emit-ts <server> --out linear-client.ts \
 Outputs overwrite existing files automatically so you can regenerate artifacts
 whenever the server schema changes.
 
+Server names beginning with digits receive a `Server` prefix in generated type
+and factory names (`1password` becomes `Server1passwordTools`). The server name
+sent to the runtime is unchanged.
+
 ## Examples
 
 ### 1. Types-only header
@@ -101,6 +105,18 @@ in example 1, which match the positional form `createServerProxy()` accepts.
 
 If you pass an existing runtime (`{ runtime }`), the factory reuses it; the
 returned object’s `close()` becomes a no-op.
+
+### Reserved tool names
+
+Client generation skips tools named exactly `close` or `then` and prints a
+warning. `close()` remains runtime cleanup; omitting `then` lets the asynchronous
+factory resolve normally. All other methods and their declarations regenerate
+as usual, including tools named `call`, `listTools`, or `new`.
+
+Types-only mode includes every tool. To invoke either skipped tool, use
+`runtime.callTool('my-server', 'close', { args: {} })` (or `'then'`). Direct calls
+require schema-valid arguments, do not apply proxy defaults, and return the raw
+MCP result. Close owned runtime connections with `runtime.close()` afterward.
 
 ### Regenerating clients from 0.13.13 or earlier
 

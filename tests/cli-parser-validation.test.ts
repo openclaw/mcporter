@@ -38,7 +38,7 @@ describe('emit-ts argument validation', () => {
       outPath: path.resolve('generated/client.ts'),
       typesOutPath: path.resolve('generated/schema.d.ts'),
     });
-    expect(emitInternals.buildInterfaceName('123 !!!')).toBe('123Tools');
+    expect(emitInternals.buildInterfaceName('123 !!!')).toBe('Server123Tools');
     expect(emitInternals.buildInterfaceName('!!!')).toBe('ServerTools');
     // These helpers join with the platform separator, so build the fixture and the
     // expectation the same way instead of hardcoding POSIX paths.

@@ -35,6 +35,10 @@ Use `createServerProxy(runtime, name)` inside scripts when you want ergonomic ca
 2. Automatically merges default values.
 3. Returns a `CallResult` helper so you can render `.text()`, `.markdown()`, or `.json()` without manual parsing.
 
+If tool discovery fails, unambiguous named argument objects still reach the tool. Use an explicit `{ args: { ... }, timeoutMs: 1000 }` envelope when argument names overlap with runtime options.
+
+The `.json()` helper retains JSON `null` entries alongside other parsed content and gives an explicit structured JSON null precedence over fallback text.
+
 When you need raw access (custom transports, streaming), use the bare `Client` from `@modelcontextprotocol/client` or inspect `runtime.connect(name)` for lower-level control. Headless callers that must rely on cached tokens without launching OAuth can pass `disableOAuth: true` to `connect`, `callTool`, `listTools`, resource helpers, and `callOnce`; this suppresses interactive OAuth while keeping eligible connections pooled.
 
 ## Debug + Support Docs

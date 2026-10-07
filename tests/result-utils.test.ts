@@ -201,6 +201,35 @@ describe('createCallResult json extraction', () => {
     ]);
   });
 
+  it('retains JSON null alongside other parsed payloads', () => {
+    expect(
+      createCallResult({
+        content: [
+          { type: 'text', text: 'null' },
+          { type: 'text', text: '{"id":1}' },
+          { type: 'text', text: 'false' },
+        ],
+      }).json()
+    ).toEqual([null, { id: 1 }, false]);
+    expect(
+      createCallResult({
+        content: [
+          { type: 'json', json: null },
+          { type: 'json', json: { id: 1 } },
+        ],
+      }).json()
+    ).toEqual([null, { id: 1 }]);
+  });
+
+  it('keeps an explicit structured JSON null ahead of parsed fallback text', () => {
+    expect(
+      createCallResult({
+        structuredContent: { json: null },
+        content: [{ type: 'text', text: '{"fallback":true}' }],
+      }).json()
+    ).toBeNull();
+  });
+
   it('returns all items when content has mixed json and text-parseable-as-json entries', () => {
     const response = {
       content: [

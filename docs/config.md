@@ -180,6 +180,8 @@ The Sunsama endpoint is auto-detected and uses the all-request compatibility pat
 
 The HTTP/1.1 path honors cancellation both while preparing a request body and while receiving a response. A request cancelled before its connection starts is not sent; cancelling an active SSE response closes its connection.
 
+It decodes gzip, deflate, and Brotli response streams, including layered encodings, while preserving response headers. HTTP 301/302 redirects preserve non-POST methods such as session-termination DELETE; 303 redirects use GET except for HEAD.
+
 ## JSON Schema for IDE Support
 
 mcporter provides a JSON Schema for config file validation and autocompletion. Add the `$schema` property to your config file:

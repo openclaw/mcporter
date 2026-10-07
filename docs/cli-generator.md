@@ -17,6 +17,8 @@ read_when:
 - Generated CLI embeds the resolved server definition and always targets that snapshot (no external `--config` or `--server` overrides at runtime).
 - Schema property names become long flags: `QueryText` becomes `--query-text`, repeated separators collapse, and names made only of separators use `--option`. Collisions receive numeric suffixes in schema order, skipping both existing flags and Commander storage keys. Use the generated help to find the assigned spelling; calls retain the original JSON property names.
 - A schema flag such as `--no-cache` takes an explicit value and is not a negated Commander option. Nullable arrays keep their item types and enum choices.
+- Boolean flags and comma-separated boolean arrays accept `true` or `false`; misspellings fail before calling the tool. JSON arrays preserve values permitted by nullable or mixed item schemas.
+- Required parameters with schema defaults may be omitted, including defaults of `false`, `0`, and `""`; the proxy supplies them. Parameters without defaults still require explicit values.
 - Tool names beginning with digits or containing dots remain callable in generated CLIs and typed clients; generated property access preserves their existing metadata names.
 - Embedded schemas and proxy calls preserve literal JSON keys. Required arguments must be supplied as own properties; inherited JavaScript properties do not count. Schema caches retain exact tool names even when their loose aliases collide.
 
@@ -47,6 +49,7 @@ npx mcporter generate-cli --command "npx -y chrome-devtools-mcp@latest"
 - `--minify` shrinks the bundled output via the selected bundler (output defaults to `<server>.js`).
 - `--compile [path]` implies bundling and invokes `bun build --compile` to create the native executable (Bun only). When you omit the path, the compiled binary inherits the server name.
 - Use `--server '{...}'` when you need advanced configuration (headers, env vars, stdio commands, OAuth metadata).
+- Passing a config file selects its first server, accepts JSONC and the usual URL aliases, and resolves stdio working directories relative to that file.
 - Omit `--name` to let mcporter infer it from the command URL (for example, `https://mcp.context7.com/mcp` becomes `context7`).
 - When targeting an existing config entry, you can skip `--server` and pass the name as a positional argument:
   `npx mcporter generate-cli linear --bundle dist/linear.js`.
@@ -63,6 +66,7 @@ npx mcporter generate-cli --command "npx -y chrome-devtools-mcp@latest"
 - `mcporter inspect-cli <artifact>` shells out to that embedded command and prints a human summary (pass `--json` for raw output). The summary includes a ready-to-run `generate-cli` command you can reuse directly.
 - `mcporter generate-cli --from <artifact>` replays the stored invocation against the latest mcporter build. `--server`, `--runtime`, `--timeout`, `--minify/--no-minify`, `--bundle`, `--compile`, `--output`, and `--dry-run` let you override specific pieces of the stored metadata when necessary.
 - Because the metadata lives inside the artifact, any template, bundle, or compiled binary can be refreshed after a generator upgrade without juggling sidecar files.
+- Metadata retains explicit lifecycle and daemon logging settings, including an `ephemeral` override for a normally persistent server.
 
 ## Policy boundary for generated CLIs
 

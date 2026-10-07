@@ -65,8 +65,17 @@ export async function handleEmitTs(runtime: Runtime, args: string[]): Promise<vo
   }
 
   const typesOutPath = options.typesOutPath ?? deriveTypesOutPath(options.outPath);
-  const typesSource = renderTypesModule({ interfaceName, docs: docEntries, metadata, signatureStyle: 'object' });
-  const clientSource = renderClientModule({ interfaceName, docs: docEntries, metadata });
+  const reservedTools = docEntries.filter(({ toolName }) => toolName === 'close' || toolName === 'then');
+  const clientDocs = docEntries.filter((entry) => !reservedTools.includes(entry));
+  if (reservedTools.length > 0) {
+    console.warn(
+      `Skipping client methods ${reservedTools.map(({ toolName }) => JSON.stringify(toolName)).join(', ')}: ` +
+        'these names conflict with client cleanup or Promise resolution. ' +
+        'Use runtime.callTool() for these tools; --mode types includes every tool.'
+    );
+  }
+  const typesSource = renderTypesModule({ interfaceName, docs: clientDocs, metadata, signatureStyle: 'object' });
+  const clientSource = renderClientModule({ interfaceName, docs: clientDocs, metadata });
   await writeFile(typesOutPath, typesSource);
   await writeFile(options.outPath, clientSource);
   if (options.format === 'json') {
@@ -237,7 +246,8 @@ function buildInterfaceName(serverName: string): string {
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join('');
   const base = cleaned.length > 0 ? cleaned : 'Server';
-  return `${base}Tools`;
+  const identifier = /^[0-9]/.test(base) ? `Server${base}` : base;
+  return `${identifier}Tools`;
 }
 
 function deriveTypesOutPath(tsPath: string): string {

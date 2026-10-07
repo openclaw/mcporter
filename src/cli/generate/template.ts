@@ -232,12 +232,15 @@ function defineOption(flags: string, description: string, parser?: (value: strin
 \treturn option;
 }
 
-function parseArrayOption(value: string, itemType: 'string' | 'number' | 'boolean' | 'json') {
+function parseArrayOption(value: string, itemType: 'string' | 'number' | 'boolean' | 'json', strictBooleanArray = false) {
 \tconst trimmed = value.trim();
 \tif (trimmed.startsWith('[')) {
 \t\tconst parsed = JSON.parse(trimmed);
 \t\tif (!Array.isArray(parsed)) {
 \t\t\tthrow new Error('Expected a JSON array.');
+\t\t}
+\t\tif (strictBooleanArray && !parsed.every((entry) => typeof entry === 'boolean')) {
+\t\t\tthrow new Error('Expected a boolean array.');
 \t\t}
 \t\treturn parsed;
 \t}
@@ -253,9 +256,17 @@ function parseArrayOption(value: string, itemType: 'string' | 'number' | 'boolea
 \t\treturn values.map((entry) => parseFiniteNumber(entry));
 \t}
 \tif (itemType === 'boolean') {
-\t\treturn values.map((entry) => entry !== 'false');
+\t\treturn values.map((entry) => parseBoolean(entry));
 \t}
 \treturn values;
+}
+
+function parseBoolean(value: string): boolean {
+\tconst trimmed = value.trim();
+\tif (trimmed !== 'true' && trimmed !== 'false') {
+\t\tthrow new Error('Expected a boolean (true or false).');
+\t}
+\treturn trimmed === 'true';
 }
 
 function parseFiniteNumber(value: string): number {
@@ -467,7 +478,7 @@ export function renderToolCommand(
     })
     .join('\n\t\t');
   const requiredChecks = tool.options
-    .filter((option) => option.required)
+    .filter((option) => option.required && option.defaultValue === undefined)
     .map((option) => ({ option, camelCaseProp: toCliOptionKey(option.cliName) }));
   const requiredValidation =
     requiredChecks.length > 0
@@ -567,7 +578,7 @@ function optionParser(option: GeneratedOption): string | undefined {
     case 'number':
       return '(value) => parseFiniteNumber(value)';
     case 'boolean':
-      return "(value) => value !== 'false'";
+      return '(value) => parseBoolean(value)';
     case 'object':
       return '(value) => JSON.parse(value)';
     case 'array':
@@ -576,7 +587,7 @@ function optionParser(option: GeneratedOption): string | undefined {
         case 'number':
           return "(value) => parseArrayOption(value, 'number')";
         case 'boolean':
-          return "(value) => parseArrayOption(value, 'boolean')";
+          return `(value) => parseArrayOption(value, 'boolean', ${option.strictBooleanArray === true})`;
         case 'object':
           return "(value) => parseArrayOption(value, 'json')";
         default:
