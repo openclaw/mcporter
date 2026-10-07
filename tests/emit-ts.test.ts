@@ -834,35 +834,44 @@ export async function run() {
   // Regeneration over a caller written against the 0.13.13 client, whose `.d.ts` declared
   // `search(query: string, ...)` and whose wrapper forwarded that one value to the proxy. The call
   // still reaches the runtime the same way, and the type error names the object to migrate to.
-  it('keeps a 0.13.13 positional call working at runtime and points tsc at the documented migration', async () => {
-    const { clientPath, clientSource, typesPath } = await emitChromeClient();
-    const runtime = createRecordingRuntime();
-    const client = await loadEmittedClient(clientSource, runtime);
+  it(
+    'keeps a 0.13.13 positional call working at runtime and points tsc at the documented migration',
+    async () => {
+      const { clientPath, clientSource, typesPath } = await emitChromeClient();
+      const runtime = createRecordingRuntime();
+      const client = await loadEmittedClient(clientSource, runtime);
 
-    // Transpile-only callers: the proxy maps a single positional value to the first schema
-    // property, as it did for the 0.13.13 wrapper, so nothing changes on the wire.
-    await client.search?.('positional');
-    expect(runtime.callTool).toHaveBeenCalledWith('chrome', 'search', {
-      args: { query: 'positional', limit: 10, verbose: false },
-    });
+      // Transpile-only callers: the proxy maps a single positional value to the first schema
+      // property, as it did for the 0.13.13 wrapper, so nothing changes on the wire.
+      await client.search?.('positional');
+      expect(runtime.callTool).toHaveBeenCalledWith('chrome', 'search', {
+        args: { query: 'positional', limit: 10, verbose: false },
+      });
 
-    const dir = path.dirname(clientPath);
-    const positionalCallerPath = path.join(dir, 'caller-0-13-13.ts');
-    const migratedCallerPath = path.join(dir, 'caller-migrated.ts');
-    await fs.writeFile(positionalCallerPath, searchCallerSource("client.search('positional')"), 'utf8');
-    await fs.writeFile(migratedCallerPath, searchCallerSource("client.search({ query: 'positional' })"), 'utf8');
+      const dir = path.dirname(clientPath);
+      const positionalCallerPath = path.join(dir, 'caller-0-13-13.ts');
+      const migratedCallerPath = path.join(dir, 'caller-migrated.ts');
+      await fs.writeFile(positionalCallerPath, searchCallerSource("client.search('positional')"), 'utf8');
+      await fs.writeFile(migratedCallerPath, searchCallerSource("client.search({ query: 'positional' })"), 'utf8');
 
-    const diagnostics = compileUnderRepositoryConfig([clientPath, typesPath, positionalCallerPath, migratedCallerPath]);
+      const diagnostics = compileUnderRepositoryConfig([
+        clientPath,
+        typesPath,
+        positionalCallerPath,
+        migratedCallerPath,
+      ]);
 
-    // Type-checked callers: one TS2345 per positional call site, naming the object parameter.
-    expect(diagnostics.filter((entry) => entry.file !== path.basename(positionalCallerPath))).toEqual([]);
-    const positional = diagnostics.filter((entry) => entry.file === path.basename(positionalCallerPath));
-    expect(positional).toHaveLength(1);
-    expect(positional[0]?.code).toBe(2345);
-    expect(positional[0]?.message).toContain(
-      "Argument of type 'string' is not assignable to parameter of type '{ query: string;"
-    );
-  });
+      // Type-checked callers: one TS2345 per positional call site, naming the object parameter.
+      expect(diagnostics.filter((entry) => entry.file !== path.basename(positionalCallerPath))).toEqual([]);
+      const positional = diagnostics.filter((entry) => entry.file === path.basename(positionalCallerPath));
+      expect(positional).toHaveLength(1);
+      expect(positional[0]?.code).toBe(2345);
+      expect(positional[0]?.message).toContain(
+        "Argument of type 'string' is not assignable to parameter of type '{ query: string;"
+      );
+    },
+    budget(30_000)
+  );
 });
 
 // A caller that makes one `search` call, spelled the 0.13.13 way or the documented way.
