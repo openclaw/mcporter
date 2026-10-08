@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import type { ServerDefinition } from '../config-schema.js';
+import { childEnvWithoutVaultSecrets } from '../oauth-vault-encryption.js';
 import type { OAuthAuthorizationRequest, OAuthSessionOptions } from '../oauth.js';
 import { suppressBrowserLaunchFromEnv } from '../oauth-browser-suppression.js';
 import { analyzeConnectionError } from '../error-classifier.js';
@@ -145,7 +146,9 @@ async function runStdioAuth(definition: ServerDefinition, options: { noBrowser?:
   if (definition.oauthCommand) {
     authArgs.push(...definition.oauthCommand.args);
   }
-  const env = options.noBrowser ? { ...process.env, MCPORTER_OAUTH_NO_BROWSER: '1' } : process.env;
+  const env = childEnvWithoutVaultSecrets(
+    options.noBrowser ? { ...process.env, MCPORTER_OAUTH_NO_BROWSER: '1' } : process.env
+  );
   return new Promise((resolve, reject) => {
     const child = spawn(definition.command.kind === 'stdio' ? definition.command.command : '', authArgs, {
       stdio: 'inherit',

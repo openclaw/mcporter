@@ -72,6 +72,56 @@ describe('resolveServerDefinition HTTP selectors', () => {
     }
   });
 
+  it('carries a config-file oauthVaultEncryption policy into generated definitions', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-generate-definition-'));
+    const configPath = path.join(tempDir, 'mcporter.json');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        oauthVaultEncryption: 'required',
+        mcpServers: { sealed: { command: 'https://sealed.example.com/mcp', auth: 'oauth' } },
+      })
+    );
+    const stdioConfigPath = path.join(tempDir, 'stdio.json');
+    await fs.writeFile(
+      stdioConfigPath,
+      JSON.stringify({
+        oauthVaultEncryption: 'required',
+        mcpServers: { local: { command: 'node', args: ['server.js'] } },
+      })
+    );
+    try {
+      const { definition } = await resolveServerDefinition(configPath);
+      expect(definition.oauthVaultEncryption).toBe('required');
+      // Regeneration passes the serialized definition back inline; the policy must survive that round trip.
+      const { definition: again } = await resolveServerDefinition(JSON.stringify(serializeDefinition(definition)));
+      expect(again.oauthVaultEncryption).toBe('required');
+      // Ordinary entries take the shared config normalization path; the policy applies there too.
+      const { definition: local } = await resolveServerDefinition(stdioConfigPath);
+      expect(local.command.kind).toBe('stdio');
+      expect(local.oauthVaultEncryption).toBe('required');
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects an invalid oauthVaultEncryption instead of silently weakening policy', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-generate-definition-'));
+    const configPath = path.join(tempDir, 'mcporter.json');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({ oauthVaultEncryption: 'sometimes', mcpServers: { s: { command: 'https://s.example.com/mcp' } } })
+    );
+    try {
+      await expect(resolveServerDefinition(configPath)).rejects.toThrow('oauthVaultEncryption');
+      expect(() => normalizeDefinition({ name: 'bad', command: 'node', oauth_vault_encryption: 'sometimes' })).toThrow(
+        'oauthVaultEncryption'
+      );
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it('preserves a snake-case protocol version pin in inline generated definitions', async () => {
     const inline = JSON.stringify({
       name: 'modern-inline',
@@ -82,6 +132,17 @@ describe('resolveServerDefinition HTTP selectors', () => {
     const { definition } = await resolveServerDefinition(inline);
     expect(definition.protocolVersion).toBe('2026-07-28');
     expect(serializeDefinition(definition).protocolVersion).toBe('2026-07-28');
+  });
+
+  it('accepts the snake-case oauthVaultEncryption alias in inline generated definitions', async () => {
+    const { definition } = await resolveServerDefinition(
+      JSON.stringify({
+        name: 'sealed-inline',
+        command: 'https://sealed.example.com/mcp',
+        oauth_vault_encryption: 'required',
+      })
+    );
+    expect(definition.oauthVaultEncryption).toBe('required');
   });
 });
 

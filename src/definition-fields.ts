@@ -13,6 +13,7 @@ const SHARED_DEFINITION_FIELDS = [
   'oauthClientMetadataUrl',
   'oauthScope',
   'oauthRequestedScope',
+  'oauthVaultEncryption',
   'refresh',
   'httpFetch',
   'allowedTools',

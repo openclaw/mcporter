@@ -209,6 +209,9 @@ export const RawEntrySchema = z
   })
   .describe('MCP server definition supporting both HTTP/SSE and stdio transports');
 
+export const VaultEncryptionPolicySchema = z.enum(['optional', 'required']);
+export type VaultEncryptionPolicy = z.infer<typeof VaultEncryptionPolicySchema>;
+
 export const RawConfigSchema = z
   .object({
     mcpServers: z.record(z.string(), RawEntrySchema).describe('Map of server names to their configurations'),
@@ -224,6 +227,9 @@ export const RawConfigSchema = z
       .positive()
       .optional()
       .describe('Idle timeout in milliseconds before shutting down an inactive daemon'),
+    oauthVaultEncryption: VaultEncryptionPolicySchema.optional().describe(
+      'Policy for the shared OAuth vault: "required" refuses every vault operation unless MCPORTER_VAULT_PASSWORD is set. MCPORTER_VAULT_ENCRYPTION overrides this key.'
+    ),
     imports: z
       .array(ImportKindSchema)
       .optional()
@@ -287,6 +293,8 @@ export interface ServerDefinition {
   readonly env?: Record<string, string>;
   readonly auth?: string;
   readonly tokenCacheDir?: string;
+  /** Vault encryption policy from the top-level config key; the env var overrides it. */
+  readonly oauthVaultEncryption?: VaultEncryptionPolicy;
   readonly clientName?: string;
   readonly protocolVersion?: ProtocolVersion;
   readonly chromeDevtoolsRelay?: ChromeDevtoolsRelayPolicy;

@@ -28,7 +28,7 @@ npm install mcporter
 
 ## 3. OAuth Tokens
 
-- Tokens are saved in the shared vault under `~/.mcporter/credentials.json` by default, or `$XDG_DATA_HOME/mcporter/credentials.json` when `XDG_DATA_HOME` is set.
+- Tokens are saved in the shared vault under `~/.mcporter/credentials.json` by default, or `$XDG_DATA_HOME/mcporter/credentials.json` when `XDG_DATA_HOME` is set, with secret values encrypted when `MCPORTER_VAULT_PASSWORD` is set ([Vault Encryption](config.md#vault-encryption)).
 - To force a fresh login for one server, run `mcporter auth <server> --reset`. This clears its recognized credentials without deleting unrelated files or other servers' vault entries.
 - Custom `token_cache_dir` entries in `mcporter.json` continue to work as explicit overrides.
 

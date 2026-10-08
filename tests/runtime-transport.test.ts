@@ -507,6 +507,40 @@ describe('createClientContext (HTTP)', () => {
     });
   });
 
+  it('does not forward the vault variables to stdio servers, but keeps the rest of the environment', async () => {
+    vi.stubEnv('MCPORTER_VAULT_PASSWORD', 'ambient-vault-password-0123456789');
+    vi.stubEnv('MCPORTER_VAULT_ENCRYPTION', 'optional');
+    vi.stubEnv('UNRELATED_AMBIENT_VAR', 'still-inherited');
+    const definition: ServerDefinition = {
+      name: 'stdio-vault-env',
+      command: { kind: 'stdio', command: 'node', args: ['server.js'], cwd: '/tmp' },
+      env: { STATIC_ENV: '1' },
+    };
+    vi.spyOn(Client.prototype, 'connect').mockImplementationOnce(async (transport) => {
+      const params = (transport as { _serverParams?: { env?: Record<string, string> } })._serverParams;
+      expect(params?.env).toEqual(
+        expect.objectContaining({ STATIC_ENV: '1', UNRELATED_AMBIENT_VAR: 'still-inherited' })
+      );
+      expect(params?.env).not.toHaveProperty('MCPORTER_VAULT_PASSWORD');
+      expect(params?.env).not.toHaveProperty('MCPORTER_VAULT_ENCRYPTION');
+    });
+    await createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 });
+  });
+
+  it('keeps a vault password the server definition sets explicitly', async () => {
+    vi.stubEnv('MCPORTER_VAULT_PASSWORD', 'ambient-vault-password-0123456789');
+    const definition: ServerDefinition = {
+      name: 'stdio-vault-env-explicit',
+      command: { kind: 'stdio', command: 'node', args: ['server.js'], cwd: '/tmp' },
+      env: { MCPORTER_VAULT_PASSWORD: 'explicit-vault-password-0123456789' },
+    };
+    vi.spyOn(Client.prototype, 'connect').mockImplementationOnce(async (transport) => {
+      const params = (transport as { _serverParams?: { env?: Record<string, string> } })._serverParams;
+      expect(params?.env?.MCPORTER_VAULT_PASSWORD).toBe('explicit-vault-password-0123456789');
+    });
+    await createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 });
+  });
+
   it('fails refreshable bearer stdio configs that do not name the token env var', async () => {
     const definition: ServerDefinition = {
       name: 'stdio-refresh',

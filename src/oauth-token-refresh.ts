@@ -14,6 +14,7 @@ import {
   resourceUrlFromServerUrl,
 } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from './config.js';
+import { VaultEncryptionError } from './oauth-vault-encryption.js';
 import { isFileLockTimeoutError } from './fs-json.js';
 import type { Logger } from './logging.js';
 import { buildStaticClientInformation, resolveOAuthClientSecret } from './oauth-client-info.js';
@@ -376,6 +377,11 @@ async function refreshCachedOAuthTokenUnderLock(
     logger?.debug?.(`Refreshed cached OAuth access token for '${definition.name}' (non-interactive).`);
     return refreshed.access_token;
   } catch (error) {
+    if (error instanceof VaultEncryptionError) {
+      // A refused vault write after a successful refresh would otherwise return
+      // the stale token and lose the refresh token the server just rotated.
+      throw error;
+    }
     logger?.debug?.(
       `Failed to refresh cached OAuth token for '${definition.name}' non-interactively: ${
         error instanceof Error ? error.message : String(error)
@@ -519,6 +525,9 @@ async function refreshBearerTokenUnderLock(
     logger?.debug?.(`Refreshed bearer access token for '${definition.name}' (non-interactive).`);
     return refreshed.access_token;
   } catch (error) {
+    if (error instanceof VaultEncryptionError) {
+      throw error;
+    }
     logger?.debug?.(
       `Failed to refresh bearer token for '${definition.name}' non-interactively: ${
         error instanceof Error ? error.message : String(error)

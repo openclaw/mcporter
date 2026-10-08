@@ -11,7 +11,12 @@ import {
   type StdioCommand,
 } from '../../config.js';
 import { normalizeServerEntry } from '../../config-normalize.js';
-import { RawEntrySchema, type ServerSource } from '../../config-schema.js';
+import {
+  RawEntrySchema,
+  type ServerSource,
+  type VaultEncryptionPolicy,
+  VaultEncryptionPolicySchema,
+} from '../../config-schema.js';
 import { parseJsonBuffer } from '../../config/imports/shared.js';
 import { resolveLifecycle } from '../../lifecycle.js';
 import type { Runtime, ServerToolInfo } from '../../runtime.js';
@@ -67,6 +72,7 @@ export async function resolveServerDefinition(
     const buffer = await fs.readFile(possiblePath, 'utf8');
     const parsed = parseJsonBuffer(buffer) as {
       mcpServers?: Record<string, unknown>;
+      oauthVaultEncryption?: unknown;
     };
     if (!parsed.mcpServers || typeof parsed.mcpServers !== 'object') {
       throw new Error(`Config file ${possiblePath} does not contain mcpServers.`);
@@ -81,17 +87,23 @@ export async function resolveServerDefinition(
     }
     const [name, value] = first;
     const raw = value as Record<string, unknown>;
+    // The file's top-level policy applies to every server, as loadServerDefinitions does.
+    const policy = getVaultEncryptionPolicy(parsed.oauthVaultEncryption);
+    const withPolicy = (definition: ServerDefinition): ServerDefinition =>
+      policy === undefined ? definition : { ...definition, oauthVaultEncryption: policy };
     // Preserve the existing normalized-command and command-as-URL file forms.
     // Ordinary mcporter config entries use the same parsing/normalization as discovery.
     if (
       (typeof raw.command === 'object' && !Array.isArray(raw.command)) ||
       (typeof raw.command === 'string' && /^https?:\/\//i.test(raw.command))
     ) {
-      return { definition: normalizeDefinition({ name, ...raw }), name };
+      return { definition: withPolicy(normalizeDefinition({ name, ...raw })), name };
     }
     const source: ServerSource = { kind: 'local', path: possiblePath };
     return {
-      definition: normalizeServerEntry(name, RawEntrySchema.parse(value), path.dirname(possiblePath), source, [source]),
+      definition: withPolicy(
+        normalizeServerEntry(name, RawEntrySchema.parse(value), path.dirname(possiblePath), source, [source])
+      ),
       name,
     };
   } catch (error) {
@@ -218,6 +230,7 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
   const oauthClientMetadataUrl = stringFromAliases(record, 'oauthClientMetadataUrl', 'oauth_client_metadata_url');
   const oauthScope = stringFromAliases(record, 'oauthScope', 'oauth_scope');
   const oauthRequestedScope = stringFromAliases(record, 'oauthRequestedScope', 'oauth_requested_scope');
+  const oauthVaultEncryption = getVaultEncryptionPolicy(record.oauthVaultEncryption ?? record.oauth_vault_encryption);
   const refresh = getRefresh(record.refresh);
   const httpFetch = normalizeHttpFetch(stringFromAliases(record, 'httpFetch', 'http_fetch'));
   const headers = toStringRecord((def as Record<string, unknown>).headers);
@@ -249,6 +262,7 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
     oauthCommand,
     refresh,
     httpFetch,
+    ...(oauthVaultEncryption === undefined ? {} : { oauthVaultEncryption }),
     lifecycle: resolveLifecycle(name, rawLifecycle, command),
     logging,
     ...(allowedTools !== undefined ? { allowedTools } : {}),
@@ -435,6 +449,15 @@ function getProtocolVersion(value: unknown): ServerDefinition['protocolVersion']
 
 function getChromeDevtoolsRelayPolicy(value: unknown): ServerDefinition['chromeDevtoolsRelay'] | undefined {
   return value === 'off' || value === 'prefer' || value === 'require' ? value : undefined;
+}
+
+// A generated CLI embeds its definition, so the policy must survive here or
+// a `required` configuration silently becomes `optional` in the artifact.
+function getVaultEncryptionPolicy(value: unknown): VaultEncryptionPolicy | undefined {
+  if (value === undefined) return undefined;
+  const parsed = VaultEncryptionPolicySchema.safeParse(value);
+  if (!parsed.success) throw new Error("oauthVaultEncryption must be 'optional' or 'required'.");
+  return parsed.data;
 }
 
 function stringFromAliases(record: Record<string, unknown>, ...keys: string[]): string | undefined {

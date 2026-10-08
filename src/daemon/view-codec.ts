@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { RawEntrySchema, type ServerDefinition } from '../config-schema.js';
+import { RawEntrySchema, type ServerDefinition, VaultEncryptionPolicySchema } from '../config-schema.js';
 import type { ResolvedServerDefinition } from './connection-identity.js';
 
 const command = z.discriminatedUnion('kind', [
@@ -19,6 +19,8 @@ const definition = z
   .object({
     ...RawEntrySchema.shape,
     name: z.string().min(1).max(256),
+    // Top-level config policy carried on each definition (not a RawEntry field).
+    oauthVaultEncryption: VaultEncryptionPolicySchema.optional(),
     configuredEnv: z.record(z.string(), z.string()).optional(),
     launchCommand: z.string().min(1).optional(),
     command,

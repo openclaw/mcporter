@@ -33,6 +33,7 @@ export interface SerializedServerDefinition {
   readonly oauthClientMetadataUrl?: string;
   readonly oauthScope?: string;
   readonly oauthRequestedScope?: string;
+  readonly oauthVaultEncryption?: ServerDefinition['oauthVaultEncryption'];
   readonly refresh?: ServerDefinition['refresh'];
   readonly httpFetch?: ServerDefinition['httpFetch'];
   readonly lifecycle?: ServerDefinition['lifecycle'];

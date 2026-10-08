@@ -201,7 +201,9 @@ describe('mcporter config CLI', () => {
     expect(logs[2]).toMatch(/^Project config:/);
     expect(logs[3]).toMatch(/^System config:/);
     expect(logs[4]).toBe('');
-    expect(logs[5]).toBe('Config looks good.');
+    expect(logs[5]).toMatch(/^OAuth vault: /);
+    expect(logs[6]).toMatch(/^Vault encryption: policy optional, MCPORTER_VAULT_PASSWORD unset$/);
+    expect(logs[7]).toBe('Config looks good.');
   });
 
   it('prints config locations before doctor issues', async () => {
@@ -216,8 +218,10 @@ describe('mcporter config CLI', () => {
     expect(logs[1]).toBe(`Selected config: ${configPath}`);
     expect(logs[2]).toMatch(/^Project config:/);
     expect(logs[3]).toMatch(/^System config:/);
-    expect(logs[5]).toBe('Config issues detected:');
-    expect(logs[6]).toMatch(/non-absolute working directory/);
+    expect(logs[5]).toMatch(/^OAuth vault: /);
+    expect(logs[6]).toMatch(/^Vault encryption: /);
+    expect(logs[7]).toBe('Config issues detected:');
+    expect(logs[8]).toMatch(/non-absolute working directory/);
   });
 
   it('prints inline help for subcommands via --help', async () => {

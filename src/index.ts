@@ -35,6 +35,7 @@ export type {
   OAuthSession,
   OAuthSessionOptions,
 } from './oauth.js';
+export { VaultEncryptionError, type VaultEncryptionErrorCode } from './oauth-vault-encryption.js';
 export { callOnce, createRuntime } from './runtime.js';
 export type {
   ElicitationContext,

@@ -1,6 +1,7 @@
 import type { ServerDefinition } from '../config.js';
 import type { Logger } from '../logging.js';
 import { readCachedAccessToken } from '../oauth-persistence.js';
+import { VaultEncryptionError } from '../oauth-vault-encryption.js';
 
 function hasAuthorizationHeader(headers: Record<string, string> | undefined): boolean {
   return Boolean(headers && Object.keys(headers).some((key) => key.toLowerCase() === 'authorization'));
@@ -69,7 +70,9 @@ export async function applyCachedAuthIfAvailable(
       },
     };
   } catch (error) {
-    if (definition.auth === 'refreshable_bearer') {
+    // Vault refusals are configuration errors the operator must see; swallowing
+    // them would start an interactive auth flow a headless caller cannot finish.
+    if (definition.auth === 'refreshable_bearer' || error instanceof VaultEncryptionError) {
       throw error;
     }
     logger.debug?.(

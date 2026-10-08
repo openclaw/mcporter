@@ -44,15 +44,16 @@ The first command prints the server's TypeScript-style tool signatures. The seco
 
 ## Core workflows
 
-| Goal                                      | Command or API                       | Details                                    |
-| ----------------------------------------- | ------------------------------------ | ------------------------------------------ |
-| Discover servers and tools                | `mcporter list`                      | [CLI reference](docs/cli-reference.md)     |
-| Call tools and read resources             | `mcporter call`, `mcporter resource` | [Call syntax](docs/call-syntax.md)         |
-| Connect to a one-off URL or stdio command | `--http-url`, `--stdio`              | [Ad-hoc servers](docs/adhoc.md)            |
-| Complete or seed OAuth                    | `mcporter auth`, `mcporter vault`    | [Configuration](docs/config.md)            |
-| Generate a focused CLI                    | `mcporter generate-cli`              | [CLI generator](docs/cli-generator.md)     |
-| Generate TypeScript types or clients      | `mcporter emit-ts`                   | [Typed clients](docs/emit-ts.md)           |
-| Capture a reproducible MCP session        | `mcporter record`, `mcporter replay` | [Record and replay](docs/record-replay.md) |
+| Goal                                      | Command or API                       | Details                                             |
+| ----------------------------------------- | ------------------------------------ | --------------------------------------------------- |
+| Discover servers and tools                | `mcporter list`                      | [CLI reference](docs/cli-reference.md)              |
+| Call tools and read resources             | `mcporter call`, `mcporter resource` | [Call syntax](docs/call-syntax.md)                  |
+| Connect to a one-off URL or stdio command | `--http-url`, `--stdio`              | [Ad-hoc servers](docs/adhoc.md)                     |
+| Complete or seed OAuth                    | `mcporter auth`, `mcporter vault`    | [Configuration](docs/config.md)                     |
+| Encrypt the OAuth vault at rest           | `MCPORTER_VAULT_PASSWORD`            | [Vault Encryption](docs/config.md#vault-encryption) |
+| Generate a focused CLI                    | `mcporter generate-cli`              | [CLI generator](docs/cli-generator.md)              |
+| Generate TypeScript types or clients      | `mcporter emit-ts`                   | [Typed clients](docs/emit-ts.md)                    |
+| Capture a reproducible MCP session        | `mcporter record`, `mcporter replay` | [Record and replay](docs/record-replay.md)          |
 
 Human-readable output goes to stdout by default. Use JSON output when another program or agent needs a stable result, and consult `mcporter <command> --help` for the flags supported by that command.
 

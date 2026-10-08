@@ -332,12 +332,14 @@ describeGenerateCli('generateCli', () => {
       description: 'Test integration server',
       command: derivedUrl.toString(),
       tokenCacheDir: path.join(tmpDir, 'schema-cache'),
+      oauthVaultEncryption: 'required',
     });
     await new Promise<void>((resolve, reject) => {
       exec.execFile(
         'node',
         ['dist/cli.js', 'generate-cli', '--server', inlineServerDefinition, '--output', altOutput],
-        execOptions(),
+        // Tool discovery goes through the vault, and `required` refuses it without a password.
+        { ...execOptions(), env: { ...execOptions().env, MCPORTER_VAULT_PASSWORD: 'generate-cli-test-password-0123' } },
         (error) => {
           if (error) {
             reject(error);
@@ -350,8 +352,12 @@ describeGenerateCli('generateCli', () => {
     const altContent = await fs.readFile(altOutput, 'utf8');
     expect(altContent).toContain('const embeddedServer =');
     expect(altContent).toContain('const embeddedDescription = "Test integration server"');
+    // The vault encryption policy must reach the artifact, or a `required`
+    // configuration silently becomes `optional` in the generated CLI.
+    expect(altContent).toContain('"oauthVaultEncryption": "required"');
 
     const altMetadata = await readCliMetadata(altOutput);
+    expect(altMetadata.server.definition.oauthVaultEncryption).toBe('required');
     expect(altMetadata.artifact.kind).toBe('template');
     expect(altMetadata.invocation.outputPath).toBe(altOutput);
     expect(['node', 'bun']).toContain(altMetadata.invocation.runtime);

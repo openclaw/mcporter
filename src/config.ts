@@ -14,6 +14,7 @@ import {
   RawEntrySchema,
   type ServerDefinition,
   type ServerSource,
+  type VaultEncryptionPolicy,
 } from './config-schema.js';
 import { expandHome } from './env.js';
 import { writeTextFileAtomic } from './fs-json.js';
@@ -36,6 +37,7 @@ export type {
   ServerLoggingOptions,
   ServerSource,
   StdioCommand,
+  VaultEncryptionPolicy,
 } from './config-schema.js';
 
 async function buildServerDefinitions(layers: ConfigLayer[], rootDir: string): Promise<ServerDefinition[]> {
@@ -103,6 +105,10 @@ async function buildServerDefinitions(layers: ConfigLayer[], rootDir: string): P
     }
   }
 
+  const vaultPolicy = resolveVaultEncryptionPolicy(layers);
+  if (vaultPolicy !== undefined) {
+    for (const server of servers) Object.assign(server, { oauthVaultEncryption: vaultPolicy });
+  }
   return servers;
 }
 
@@ -121,9 +127,18 @@ function buildDaemonConfig(layers: ConfigLayer[]): DaemonConfig {
   return { idleTimeoutMs };
 }
 
+// Last layer that sets the key wins, like daemonIdleTimeoutMs. The value was
+// validated by RawConfigSchema when the layer was read.
+function resolveVaultEncryptionPolicy(layers: ConfigLayer[]): VaultEncryptionPolicy | undefined {
+  let policy: VaultEncryptionPolicy | undefined;
+  for (const layer of layers) policy = layer.config.oauthVaultEncryption ?? policy;
+  return policy;
+}
+
 export interface LoadedConfigSnapshot {
   readonly servers: ServerDefinition[];
   readonly daemon: DaemonConfig;
+  readonly vaultEncryption: VaultEncryptionPolicy | undefined;
 }
 
 export async function loadConfigSnapshot(options: LoadConfigOptions = {}): Promise<LoadedConfigSnapshot> {
@@ -132,6 +147,7 @@ export async function loadConfigSnapshot(options: LoadConfigOptions = {}): Promi
   return {
     servers: await buildServerDefinitions(layers, rootDir),
     daemon: buildDaemonConfig(layers),
+    vaultEncryption: resolveVaultEncryptionPolicy(layers),
   };
 }
 

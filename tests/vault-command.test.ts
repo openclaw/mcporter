@@ -4,7 +4,9 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerDefinition } from '../src/config.js';
 import { handleVault } from '../src/cli/vault-command.js';
-import { loadVaultEntry } from '../src/oauth-vault.js';
+import { readJsonFile } from '../src/fs-json.js';
+import { getOAuthVaultPath, loadVaultEntry, vaultKeyForDefinition } from '../src/oauth-vault.js';
+import { isVaultSecretJwe, openVaultSecret, vaultSecretKid } from '../src/oauth-vault-encryption.js';
 
 const definition: ServerDefinition = {
   name: 'calendar',
@@ -33,6 +35,31 @@ describe('vault command', () => {
   afterEach(() => {
     process.env = { ...originalEnv };
     vi.restoreAllMocks();
+  });
+
+  it('seeds sealed values when MCPORTER_VAULT_PASSWORD is set', async () => {
+    const password = 'vault-command-password-0123456789';
+    process.env.MCPORTER_VAULT_PASSWORD = password;
+    const payloadPath = path.join(tempDir, 'tokens.json');
+    await fs.writeFile(
+      payloadPath,
+      JSON.stringify({ tokens: { access_token: 'access-enc', refresh_token: 'refresh-enc', token_type: 'Bearer' } }),
+      'utf8'
+    );
+    await handleVault(runtimeFor(definition), ['set', 'calendar', '--tokens-file', payloadPath]);
+    const key = vaultKeyForDefinition(definition);
+    const stored = (await readJsonFile<{
+      entries: Record<string, { tokens: { access_token: string; token_type: string } }>;
+    }>(getOAuthVaultPath()))!;
+    const tokens = stored.entries[key]!.tokens;
+    expect(tokens.token_type).toBe('Bearer');
+    expect(isVaultSecretJwe(tokens.access_token)).toBe(true);
+    await expect(
+      openVaultSecret(tokens.access_token, vaultSecretKid(key, ['tokens', 'access_token']), password)
+    ).resolves.toBe('access-enc');
+    await expect(loadVaultEntry(definition)).resolves.toMatchObject({ tokens: { access_token: 'access-enc' } });
+    await handleVault(runtimeFor(definition), ['clear', 'calendar']);
+    await expect(loadVaultEntry(definition)).resolves.toBeUndefined();
   });
 
   it('keeps accepting string-only client info from a file', async () => {

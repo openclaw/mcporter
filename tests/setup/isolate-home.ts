@@ -41,3 +41,8 @@ process.env.TSX_DISABLE_CACHE = '1';
 afterAll(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+// Vault encryption reads these from the environment. An operator's shell must
+// never turn the suite's plaintext fixtures into sealed ones.
+delete process.env.MCPORTER_VAULT_PASSWORD;
+delete process.env.MCPORTER_VAULT_ENCRYPTION;

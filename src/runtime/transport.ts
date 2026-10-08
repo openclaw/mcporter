@@ -1,4 +1,5 @@
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
+import { childEnvWithoutVaultSecrets } from '../oauth-vault-encryption.js';
 import { withRuntimeEnvironment } from './environment.js';
 import { isExistingChromeDefinition } from '../daemon/connection-identity.js';
 import {
@@ -295,7 +296,13 @@ export async function createClientContext(
     return createReplayClientContext(definition, options.replayPath, clientInfo, options);
   }
   assertChromeBrokerAuthority(definition);
-  const env = isBrokerDefinition(definition) ? definition.env : resolveChromeDevtoolsRelayEnvironment(definition.env);
+  // A stdio server inherits the ambient environment, minus the vault password
+  // and policy: they protect every vault entry and no child has a use for
+  // them. The parent keeps them, so its own OAuth access is unaffected; a
+  // definition that sets them explicitly in `env` still wins.
+  const env = isBrokerDefinition(definition)
+    ? definition.env
+    : resolveChromeDevtoolsRelayEnvironment(definition.env, childEnvWithoutVaultSecrets(process.env));
   return withRuntimeEnvironment(env ?? {}, async () => {
     const activeDefinition = await applyCachedAuthIfAvailable(
       { ...definition, env: env as Record<string, string> },

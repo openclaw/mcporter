@@ -409,6 +409,11 @@
       "exclusiveMinimum": 0,
       "maximum": 9007199254740991
     },
+    "oauthVaultEncryption": {
+      "description": "Policy for the shared OAuth vault: \"required\" refuses every vault operation unless MCPORTER_VAULT_PASSWORD is set. MCPORTER_VAULT_ENCRYPTION overrides this key.",
+      "type": "string",
+      "enum": ["optional", "required"]
+    },
     "imports": {
       "description": "Editor configurations to import servers from. Omit to use defaults, or set to [] to disable imports",
       "type": "array",

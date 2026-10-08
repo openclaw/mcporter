@@ -16,3 +16,4 @@ printf '{"private":true}\n' >"$WORK/consumer/package.json"
     --registry=https://registry.npmjs.org/ "$WORK/mcporter-$version.tgz"
 )
 node "$ROOT/scripts/verify-packaged-oauth.mjs" "$WORK/consumer/node_modules/mcporter"
+node "$ROOT/scripts/verify-packaged-vault.mjs" "$WORK/consumer/node_modules/mcporter"
