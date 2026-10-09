@@ -8,7 +8,7 @@ read_when:
 
 [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp) provides `web_search` and `web_fetch` over Streamable HTTP without an API key. Anonymous access is intended for exploration and light use, with rate limits.
 
-The [example configuration](../examples/parallel-search/mcporter.json) registers a `parallel` server and disables editor imports. Passing it explicitly with `--config` keeps these commands separate from your project and user configuration.
+The [example configuration](https://github.com/openclaw/mcporter/blob/main/examples/parallel-search/mcporter.json) registers a `parallel` server and disables editor imports. Passing it explicitly with `--config` keeps these commands separate from your project and user configuration.
 
 ## Run from a checkout
 
