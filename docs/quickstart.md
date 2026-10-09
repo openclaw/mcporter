@@ -74,6 +74,7 @@ You get a `.d.ts` interface and a `createServerProxy()`-backed factory. Calls re
 
 ## What next
 
+- [Parallel web search](parallel-search.md) — search and fetch pages without an API key.
 - [Configuration](config.md) — `mcporter.json` schema, env interpolation, OAuth fields.
 - [Ad-hoc connections](adhoc.md) — point at any MCP endpoint without editing config.
 - [Agent skills](agent-skills.md) — wiring per-server skills into a coding agent.

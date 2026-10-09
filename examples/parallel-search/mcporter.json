@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "parallel": {
+      "description": "Parallel web search and page extraction without an API key.",
+      "baseUrl": "https://search.parallel.ai/mcp",
+      "headers": {
+        "User-Agent": "mcporter/parallel-search-example"
+      }
+    }
+  },
+  "imports": []
+}
