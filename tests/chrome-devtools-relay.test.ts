@@ -4,6 +4,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { resolveCommandArgument } from '../src/runtime/utils.js';
 import {
   BROWSER_RELAY_AUTH_CHALLENGE_PATH,
   BROWSER_RELAY_AUTH_COMPLETE_PATH,
@@ -753,6 +754,15 @@ describe('chrome-devtools OpenClaw relay routing', () => {
     } finally {
       await fs.rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it.each([
+    ['OPENCLAW_PROFILE', 'work-${TEAM}', { TEAM: 'docs' }, 'work-docs'],
+    ['OPENCLAW_STATE_DIR', '/tmp/${TEAM}/state', { TEAM: 'docs' }, '/tmp/docs/state'],
+    ['OPENCLAW_PROFILE', 'work-${TEAM:-default}', {}, 'work-default'],
+  ])('resolves embedded placeholders for %s like the transport', (key, raw, env, expected) => {
+    expect(resolveCommandArgument(raw, env)).toBe(expected);
+    expect(resolveChromeDevtoolsRelayEnvironment({ [key]: raw }, env)[key]).toBe(expected);
   });
 
   it('uses the runtime environment merge contract without chaining definition overrides', async () => {
