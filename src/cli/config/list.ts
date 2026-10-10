@@ -75,7 +75,15 @@ function extractListFlags(args: string[]): ListFlags {
 function filterMatches(filter: string, server: ServerDefinition): boolean {
   if (filter.startsWith('source:')) {
     const origin = server.source?.kind ?? 'local';
-    return `source:${origin}` === filter;
+    const importKind = server.source?.importKind;
+    return `source:${origin}` === filter || (importKind !== undefined && `source:${importKind}` === filter);
+  }
+  if (filter.includes('*') || filter.includes('?')) {
+    const pattern = filter
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replaceAll('*', '.*')
+      .replaceAll('?', '.');
+    return new RegExp(pattern).test(server.name);
   }
   return server.name.includes(filter);
 }
