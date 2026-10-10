@@ -307,6 +307,9 @@ export function pickExampleLiteral(option: GeneratedOption): string | undefined 
   if (option.type === 'number' || option.type === 'boolean' || option.type === 'object') {
     return option.exampleValue;
   }
+  if (option.type === 'string') {
+    return JSON.stringify(option.exampleValue);
+  }
   try {
     const parsed = JSON.parse(option.exampleValue);
     if (typeof parsed === 'number' || typeof parsed === 'boolean') {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseCallArguments } from '../src/cli/call-arguments.js';
 import type { GeneratedOption } from '../src/cli/generate/tools.js';
 import { extractOptions } from '../src/cli/generate/tools.js';
 import { buildToolDoc, selectDisplayOptions } from '../src/cli/list-detail-helpers.js';
@@ -168,6 +169,21 @@ describe('formatFunctionSignature', () => {
 });
 
 describe('formatCallExpressionExample', () => {
+  it.each(['123', 'true', 'false'])('keeps string default %s typed as a string in runnable examples', (value) => {
+    const options = extractOptions({
+      name: 'search',
+      inputSchema: {
+        type: 'object',
+        properties: { query: { type: 'string', default: value } },
+        required: ['query'],
+      },
+    });
+    const example = formatCallExpressionExample('docs', 'search', options);
+    expect(example).toBeDefined();
+    const expression = example?.slice('mcporter call '.length) ?? '';
+    expect(parseCallArguments([expression]).args).toEqual({ query: value });
+  });
+
   it('uses example literals when provided and falls back for ids', () => {
     const example = formatCallExpressionExample('linear', 'create_issue', [
       baseOption({ property: 'title', required: true, exampleValue: 'Bug' }),
