@@ -77,7 +77,7 @@ export async function handleServeCli(args: string[], options: ServeCliOptions): 
     const address = server.address();
     const location =
       typeof address === 'object' && address
-        ? `http://${address.address === '::' ? 'localhost' : address.address}:${address.port}/mcp`
+        ? `http://${address.address === '::' ? 'localhost' : address.address.includes(':') ? `[${address.address}]` : address.address}:${address.port}/mcp`
         : 'listening';
     console.error(`MCPorter serve HTTP bridge ${location}`);
     return;
