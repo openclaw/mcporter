@@ -251,6 +251,36 @@ describe('emit-ts templates', () => {
     expect(parseDiagnosticsOf(types)).toEqual([]);
   });
 
+  it.each([
+    ['*/', '* /'],
+    ['date-\r\ntime', 'Date   Time'],
+    ['date-\u2028time', 'Date  Time'],
+    ['date-\u2029time', 'Date  Time'],
+  ])('keeps schema format %j inside generated comments', (format, hint) => {
+    const tool = {
+      name: 'note',
+      description: 'Note a time',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          when: { type: 'string', format },
+        },
+        required: ['when'],
+      },
+    };
+    const docs = emitTsTestInternals.buildDocEntries('integration', [buildToolMetadata(tool)], true);
+    const input = { interfaceName: 'IntegrationTools', docs, metadata: testMetadata };
+    const sources = [
+      renderClientModule(input),
+      renderTypesModule({ ...input, signatureStyle: 'object' }),
+      renderTypesModule({ ...input, signatureStyle: 'positional' }),
+    ];
+    for (const source of sources) {
+      expect(source).toContain(`when: string /* ${hint} */`);
+      expect(parseDiagnosticsOf(source)).toEqual([]);
+    }
+  });
+
   it('renders client module that wraps proxy calls', () => {
     const docs = emitTsTestInternals.buildDocEntries('integration', [buildToolMetadata(listCommentsTool)], true);
     const source = renderClientModule({ interfaceName: 'IntegrationTools', docs, metadata: testMetadata });

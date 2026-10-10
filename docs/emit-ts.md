@@ -35,6 +35,9 @@ mcporter emit-ts <server> --out linear-client.ts \
 Outputs overwrite existing files automatically so you can regenerate artifacts
 whenever the server schema changes.
 
+Schema format hints are escaped inside generated comments, so comment closers
+and line separators in server metadata cannot break the emitted TypeScript.
+
 Server names beginning with digits receive a `Server` prefix in generated type
 and factory names (`1password` becomes `Server1passwordTools`). The server name
 sent to the runtime is unchanged.

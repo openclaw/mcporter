@@ -316,7 +316,8 @@ function formatTypeAnnotation(option: GeneratedOption, colorize: boolean): strin
     if (hasHintInDescription) {
       return base;
     }
-    return `${base} ${tint(`/* ${option.formatHint} */`)}`;
+    const hint = option.formatHint.replace(/[\r\n\u2028\u2029]/g, ' ').replaceAll('*/', '* /');
+    return `${base} ${tint(`/* ${hint} */`)}`;
   }
   return base;
 }

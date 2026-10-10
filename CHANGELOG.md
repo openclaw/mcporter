@@ -2,6 +2,7 @@
 
 ## [0.14.3] - Unreleased
 
+- Keep schema format hints inside generated TypeScript comments, escaping comment closers and line separators in clients and declarations. Thanks @SebTardif (#426).
 - Refresh MCP client/server to 2.3.0, legacy SDK fixtures to 1.32.0, Rolldown, Vite, Vitest and Node types; retain OAuth token correlation, method-preserving same-origin redirects, Node 24 support and the 48-hour dependency cooldown.
 - Inspect generated Node/Bun script metadata on Windows through the declared interpreter, keeping native binaries directly executable.
 - Renew expired daemon views once only after a broker-confirmed rejection before dispatch, retaining configuration authority and preventing replay after replacement or shutdown. Thanks @mbac (#410).
