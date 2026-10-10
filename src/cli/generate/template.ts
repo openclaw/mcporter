@@ -135,8 +135,8 @@ const artifactKind = determineArtifactKind();
 const program = new Command();
 program.name(embeddedName);
 program.description(embeddedDescription);
-program.option('-t, --timeout <ms>', 'Call timeout in milliseconds', (value) => parseInt(value, 10), ${timeoutMs});
-program.option('-o, --output <format>', 'Output format: text|markdown|json|raw', 'text');
+program.option('-t, --timeout <ms>', 'Call timeout in milliseconds', parseTimeoutArgument, ${timeoutMs});
+program.addOption(new Option('-o, --output <format>', 'Output format: text|markdown|json|raw').choices(['text', 'markdown', 'json', 'raw']).default('text'));
 const commandSignatures: Record<string, string> = ${signatureMapLiteral};
 program.configureHelp({
 \tcommandTerm(cmd) {
@@ -267,6 +267,14 @@ function parseBoolean(value: string): boolean {
 \t\tthrow new Error('Expected a boolean (true or false).');
 \t}
 \treturn trimmed === 'true';
+}
+
+function parseTimeoutArgument(value: string): number {
+\tconst parsed = Number(value);
+\tif (!/^[1-9][0-9]*$/.test(value) || !Number.isFinite(parsed)) {
+\t\tthrow new Error('Timeout must be a positive integer (milliseconds).');
+\t}
+\treturn parsed;
 }
 
 function parseFiniteNumber(value: string): number {
