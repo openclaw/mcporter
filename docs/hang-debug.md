@@ -23,7 +23,7 @@ List timeouts close pending discovery connections, including uncached setup. `ru
    child remains, mcporter will now unref and force-kill it, but the debug list
    tells you exactly what was keeping the event loop alive.
 4. **Capture the pane output** – run `tmux capture-pane -p -t <session> -S
--200` to save the diagnostic log for later review.
+   -200` to save the diagnostic log for later review.
 5. **Retry with `--timeout`** – if the tool itself hangs, use
    `--timeout <ms>` or `MCPORTER_CALL_TIMEOUT` to fail fast while still
    gathering diagnostics.
@@ -67,7 +67,7 @@ child process, which mcporter will now terminate during shutdown.
 - Killing residual children is best-effort; if you see repeated `kill-failed`
   messages, manually terminate the PID listed in the log.
 - Always keep tmux sessions tidy after debugging: `tmux kill-session -t
-<session>`.
+  <session>`.
 - The CLI now forces `process.exit(0)` after cleanup by default so Node never
   lingers on leaked handles. Export `MCPORTER_NO_FORCE_EXIT=1` if you’re
   debugging and need the process to stay alive.
