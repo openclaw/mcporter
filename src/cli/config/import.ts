@@ -85,13 +85,16 @@ function extractImportFlags(args: string[]): ImportFlags {
     const token = args[index];
     switch (token) {
       case '--path':
-        flags.path = args[index + 1];
+      case '--filter': {
+        const value = args[index + 1];
+        if (value === undefined || value.startsWith('--') || (token === '--path' && value === '')) {
+          throw new CliUsageError(`Flag '${token}' requires a value.`);
+        }
+        if (token === '--path') flags.path = value;
+        else flags.filter = value;
         args.splice(index, 2);
         continue;
-      case '--filter':
-        flags.filter = args[index + 1];
-        args.splice(index, 2);
-        continue;
+      }
       case '--copy':
         flags.copy = true;
         args.splice(index, 1);
