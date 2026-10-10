@@ -4,7 +4,7 @@
 
 - Keep schema format hints inside generated TypeScript comments, escaping comment closers and line separators in clients and declarations. Thanks @SebTardif (#426).
 - Refresh MCP client/server to 2.3.0, legacy SDK fixtures to 1.32.0, Rolldown, Vite, Vitest and Node types; retain OAuth token correlation, method-preserving same-origin redirects, Node 24 support and the 48-hour dependency cooldown.
-- Update MCP client/server to 2.3.1, legacy SDK fixtures to 1.32.1, Acorn, Rolldown, Vite, and lint/format tooling; retain the patched OAuth and redirect behavior, Node 24 support, and the 48-hour dependency cooldown.
+- Update MCP client/server to 2.3.1, legacy SDK fixtures to 1.32.1, Acorn, Rolldown, Vite, and lint/format tooling; fix the development source-map-js denial-of-service advisory while retaining the patched OAuth and redirect behavior, Node 24 support, and the 48-hour dependency cooldown.
 - Inspect generated Node/Bun script metadata on Windows through the declared interpreter, keeping native binaries directly executable.
 - Renew expired daemon views once only after a broker-confirmed rejection before dispatch, retaining configuration authority and preventing replay after replacement or shutdown. Thanks @mbac (#410).
 - Preserve typed request IDs during replay, named arguments after failed proxy discovery, and JSON null result entries. Thanks @rudycelekli (#411, #413, #420).
