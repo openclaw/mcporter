@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { resolveConfigPath } from '../src/config.js';
+import { loadRawConfig, resolveConfigPath } from '../src/config.js';
 
 function makeTempDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -42,6 +42,22 @@ describe('resolveConfigPath', () => {
     expect(resolved.path).toBe(explicitPath);
     expect(resolved.explicit).toBe(true);
   });
+
+  it.each(['~/custom.json', ' ~/custom.json '])(
+    'loads explicit home-relative path %j like config layers',
+    async (configPath) => {
+      const fakeHome = makeTempDir('mcporter-explicit-home-');
+      tempDirs.push(fakeHome);
+      homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(fakeHome);
+      const expectedPath = path.join(fakeHome, 'custom.json');
+      fs.writeFileSync(expectedPath, '{"mcpServers":{}}');
+
+      const loaded = await loadRawConfig({ configPath, rootDir: fakeHome });
+      expect(loaded.path).toBe(expectedPath);
+      expect(loaded.explicit).toBe(true);
+      expect(loaded.config.mcpServers).toEqual({});
+    }
+  );
 
   it('uses MCPORTER_CONFIG when set', () => {
     const tempRoot = makeTempDir('mcporter-config-env-');
