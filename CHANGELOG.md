@@ -12,6 +12,7 @@
 - Emit valid TypeScript names for digit-leading servers and tools named `call`, `listTools`, or `new`; skip only `close`/`then` client methods with a warning while keeping unrelated methods and types-only output available. Thanks @rudycelekli (#422).
 - Preserve empty positional arguments after `--` and keep `Infinity`/`-Infinity` as strings instead of sending JSON null. Thanks @rudycelekli (#412, #421).
 - Print unknown-server errors from `config get` and `config logout` with one `[mcporter]` prefix. Thanks @KrasimirKralev (#409).
+- Add a runnable, isolated Parallel Search MCP example for anonymous web search and page extraction. Thanks @georgeatparallel (#427).
 
 ## [0.14.2] - 2026-09-30
 
