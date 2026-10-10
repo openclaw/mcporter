@@ -22,6 +22,9 @@ export function extractEphemeralServerFlags(
   let index = 0;
   while (index < args.length) {
     const token = args[index];
+    if (token === '--') {
+      break;
+    }
     if (!token) {
       index += 1;
       continue;
