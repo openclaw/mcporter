@@ -12,7 +12,7 @@ read_when:
 
 - Generated CLIs use `commander` for argument parsing.
 - Background Bun and npm commands run without opening console windows on Windows.
-- Default timeout for tool calls is 30 seconds, overridable via `--timeout`.
+- Default timeout for tool calls is 30 seconds, overridable via `--timeout` with a positive integer in milliseconds. Generated CLIs reject invalid timeouts and accept only `text`, `markdown`, `json`, or `raw` for `--output`.
 - `--runtime node|bun` selects the generated runtime explicitly. When omitted, generation selects Bun if available, otherwise Node.js.
 - Generated CLI embeds the resolved server definition and always targets that snapshot (no external `--config` or `--server` overrides at runtime).
 - Schema property names become long flags: `QueryText` becomes `--query-text`, repeated separators collapse, and names made only of separators use `--option`. Collisions receive numeric suffixes in schema order, skipping both existing flags and Commander storage keys. Use the generated help to find the assigned spelling; calls retain the original JSON property names.

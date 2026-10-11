@@ -29,13 +29,13 @@ export function extractListFlags(args: string[]): {
   let exitCode = false;
   let statusOnly = false;
   let disableOAuth = false;
+  const ephemeral = extractEphemeralServerFlags(args);
   const format = consumeOutputFormat(args, {
     defaultFormat: 'text',
     allowed: ['text', 'json'],
     enableRawShortcut: false,
     jsonShortcutFlag: '--json',
   }) as ListOutputFormat;
-  const ephemeral = extractEphemeralServerFlags(args);
   let index = 0;
   while (index < args.length) {
     const token = args[index];

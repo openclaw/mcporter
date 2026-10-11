@@ -75,7 +75,32 @@ function extractListFlags(args: string[]): ListFlags {
 function filterMatches(filter: string, server: ServerDefinition): boolean {
   if (filter.startsWith('source:')) {
     const origin = server.source?.kind ?? 'local';
-    return `source:${origin}` === filter;
+    const importKind = server.source?.importKind;
+    return `source:${origin}` === filter || (importKind !== undefined && `source:${importKind}` === filter);
+  }
+  if (filter.includes('*') || filter.includes('?')) {
+    // Match substrings in bounded O(name.length * filter.length) time.
+    // Each row records matching pattern prefixes ending at the current name position.
+    let previous = Array.from({ length: filter.length + 1 }, () => false);
+    previous[0] = true;
+    for (let index = 1; index <= filter.length; index += 1) {
+      previous[index] = filter[index - 1] === '*' && previous[index - 1] === true;
+    }
+    if (previous[filter.length]) return true;
+    for (let offset = 0; offset < server.name.length; offset += 1) {
+      const current = Array.from({ length: filter.length + 1 }, () => false);
+      current[0] = true;
+      for (let index = 1; index <= filter.length; index += 1) {
+        const token = filter[index - 1];
+        current[index] =
+          token === '*'
+            ? current[index - 1] === true || previous[index] === true
+            : previous[index - 1] === true && (token === '?' || token === server.name[offset]);
+      }
+      if (current[filter.length]) return true;
+      previous = current;
+    }
+    return false;
   }
   return server.name.includes(filter);
 }

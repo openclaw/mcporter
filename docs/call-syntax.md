@@ -80,6 +80,6 @@ Key details:
 - Numeric coercion accepts finite JSON numbers; `Infinity` and `-Infinity` remain literal strings.
 - `--no-coerce` disables all coercion for flag-style and positional values (`true`, `null`, and JSON-like values remain strings).
 - Long tool flags are checked against the selected tool schema before dispatch; undeclared flags fail with guidance to use `key=value` or `--args`. Insert `--` before literal positional values that start with `--`.
-- Empty strings after the separator retain their positions: `mcporter call fixture.echo -- ""` sends an empty string.
+- Empty strings and option-like values after the separator retain their positions: `mcporter call fixture.echo -- "" --output` sends both literal values without changing output formatting or server options.
 - `--save-images <dir>` keeps stdout formatting untouched while writing image content blocks to disk when a tool response includes `type: "image"` entries.
 - `tool=value`/`tool:value` and `server=value` still act as aliases for `--tool` / `--server` when you need to override the selector.

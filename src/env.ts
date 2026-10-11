@@ -41,11 +41,7 @@ export function resolveEnvValue(raw: unknown, env: NodeJS.ProcessEnv = process.e
     return defaultValue;
   }
 
-  if (raw.startsWith('$')) {
-    return resolveEnvPlaceholders(raw, env);
-  }
-
-  return raw;
+  return resolveEnvPlaceholders(raw, env);
 }
 
 // resolveEnvPlaceholders replaces ${VAR} or $env:VAR references using the supplied environment.

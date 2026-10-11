@@ -36,7 +36,7 @@ export async function listConfigLayerPaths(
 
 export function resolveConfigPath(configPath: string | undefined, rootDir: string): ResolvedConfigPath {
   if (configPath) {
-    return { path: path.resolve(configPath), explicit: true };
+    return { path: path.resolve(expandHome(configPath.trim())), explicit: true };
   }
   const envConfig = process.env.MCPORTER_CONFIG;
   if (envConfig && envConfig.trim().length > 0) {

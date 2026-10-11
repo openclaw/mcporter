@@ -18,6 +18,9 @@ export function consumeOutputFormat(args: string[], options: ConsumeOutputOption
   let index = 0;
   while (index < args.length) {
     const token = args[index];
+    if (token === '--') {
+      break;
+    }
     if (token === '--output') {
       const value = args[index + 1];
       if (!value) {

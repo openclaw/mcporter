@@ -147,3 +147,25 @@ describe('CLI list flag parsing', () => {
     warnSpy.mockRestore();
   });
 });
+
+describe('list stdio operands and output options', () => {
+  it.each(['--', '--json', '--output'])('preserves stdio operand %s while consuming later output', async (operand) => {
+    const { extractListFlags } = await cliModulePromise;
+    const args = [
+      '--stdio',
+      'npm',
+      '--stdio-arg',
+      'exec',
+      '--stdio-arg',
+      operand,
+      '--stdio-arg',
+      'pkg',
+      '--output',
+      'json',
+    ];
+    const flags = extractListFlags(args);
+    expect(flags.format).toBe('json');
+    expect(flags.ephemeral?.stdioArgs).toEqual(['exec', operand, 'pkg']);
+    expect(args).toEqual([]);
+  });
+});

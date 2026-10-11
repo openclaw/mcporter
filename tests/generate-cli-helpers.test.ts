@@ -222,7 +222,7 @@ describe('generate helpers', () => {
         required: false,
         placeholder: '<value>',
       })
-    ).toBe('42');
+    ).toBe('"42"');
     expect(
       pickExampleLiteral({
         type: 'number',

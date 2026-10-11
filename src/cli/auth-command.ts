@@ -34,13 +34,13 @@ export async function handleAuth(runtime: Runtime, args: string[], options: Auth
   if (shouldReset) {
     args.splice(resetIndex, 1);
   }
+  const ephemeralSpec: EphemeralServerSpec | undefined = extractEphemeralServerFlags(args);
   const format = consumeOutputFormat(args, {
     defaultFormat: 'text',
     allowed: ['text', 'json'],
     enableRawShortcut: false,
     jsonShortcutFlag: '--json',
   }) as 'text' | 'json';
-  const ephemeralSpec: EphemeralServerSpec | undefined = extractEphemeralServerFlags(args);
   let target = args.shift();
   const nameHints: string[] = [];
   if (ephemeralSpec && target && !looksLikeHttpUrl(target)) {

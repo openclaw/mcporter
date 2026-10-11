@@ -35,7 +35,7 @@ mcporter keeps three configuration buckets in sync: repository-scoped JSON (`con
 
 mcporter now merges home and project config files by default so global servers stay available inside repos. The order depends on how you invoke the CLI:
 
-1. If you pass `--config <file>` (or set `--config` programmatically), only that file is used—no merging.
+1. If you pass `--config <file>` (or set `--config` programmatically), only that file is used—no merging. Quoted home-relative paths such as `--config '~/.mcporter/mcporter.json'` expand consistently for reads and writes.
 2. If `MCPORTER_CONFIG` is set, only that file is used—no merging.
 3. Otherwise, mcporter loads both of these layers (when present):
    - `$XDG_CONFIG_HOME/mcporter/mcporter.json[c]` when `XDG_CONFIG_HOME` is set, falling back to `~/.mcporter/mcporter.json[c]` when no XDG mcporter config exists
@@ -83,7 +83,7 @@ Use `--scope home|project` with `mcporter config add` to pick the write target e
 
 - Shows **local** entries by default. Pass `--source import` to list imported editor configs, or `--json` for machine output.
 - Always appends a summary of other config files (paths, counts, sample names) so you know where imported entries live.
-- `filter` accepts a name, glob fragment, or `source:cursor` selector.
+- `filter` accepts a name substring, a glob fragment (`*` matches any sequence; `?` matches one character), or a `source:cursor` selector used with `--source import`. Other characters, including dots, match literally.
 - Adds informational notes when we auto-correct names (same machinery as `mcporter list`).
 
 ### `mcporter config get <name>`
@@ -117,7 +117,7 @@ Use `--scope home|project` with `mcporter config add` to pick the write target e
   - `windsurf`: Codeium’s Windsurf config under `%APPDATA%/Codeium/windsurf/mcp_config.json` or `~/.codeium/windsurf/mcp_config.json`.
   - `opencode`: Honors `OPENCODE_CONFIG` when set, then `<root>/opencode.json(c)`, `OPENCODE_CONFIG_DIR/opencode.json(c)`, and finally `${XDG_CONFIG_HOME:-~/.config}/opencode/opencode.json(c)` (or `%APPDATA%/opencode/opencode.json(c)` on Windows). Both `.json` and `.jsonc` extensions are supported.
   - `vscode`: `Code/User/mcp.json` (stable + Insiders) inside the OS-appropriate config directory.
-- `--copy` writes selected entries into your local config; `--filter <glob>` narrows the import list; `--path <file>` lets you point at bespoke locations.
+- `--copy` writes selected entries into your local config; `--filter <substring>` narrows the import list; `--path <file>` lets you point at bespoke locations. Both valued flags reject missing or empty values before reading or copying entries.
 
 ### `mcporter config login <name|url>` / `logout`
 

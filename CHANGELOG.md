@@ -2,6 +2,8 @@
 
 ## [0.14.3] - Unreleased
 
+- Update Vite to 8.3.4 while retaining Node 24 support and the 48-hour dependency cooldown.
+- Preserve embedded environment placeholders, literal CLI arguments and string-typed call examples; normalize explicit home-relative config paths, print valid IPv6 bridge URLs, validate generated CLI options and import flag values, and honor documented config-list glob/source filters with bounded matching. Thanks @rudycelekli (#429–#436).
 - Keep schema format hints inside generated TypeScript comments, escaping comment closers and line separators in clients and declarations. Thanks @SebTardif (#426).
 - Refresh MCP client/server to 2.3.0, legacy SDK fixtures to 1.32.0, Rolldown, Vite, Vitest and Node types; retain OAuth token correlation, method-preserving same-origin redirects, Node 24 support and the 48-hour dependency cooldown.
 - Update MCP client/server to 2.3.1, legacy SDK fixtures to 1.32.1, Acorn, Rolldown, Vite, and lint/format tooling; fix the development source-map-js denial-of-service advisory while retaining the patched OAuth and redirect behavior, Node 24 support, and the 48-hour dependency cooldown.

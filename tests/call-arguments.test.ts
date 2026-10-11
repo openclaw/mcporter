@@ -163,6 +163,21 @@ describe('parseCallArguments', () => {
     expect(parsed.positionalArgs).toEqual(['--source', 'import', '--raw=true']);
   });
 
+  it.each([
+    ['--raw'],
+    ['--output', 'json'],
+    ['--output', 'invalid'],
+    ['--output'],
+    ['--cwd', '/tmp'],
+    ['--stdio-arg', '--verbose'],
+    ['--env', 'MODE=debug'],
+  ])('preserves literal output flags after --: %j', (...literal) => {
+    const parsed = parseCallArguments(['server.tool', '--output', 'text', '--', ...literal]);
+    expect(parsed.output).toBe('text');
+    expect(parsed.positionalArgs).toEqual(literal);
+    expect(parsed.ephemeral).toBeUndefined();
+  });
+
   it('throws when flags conflict with call expression content', () => {
     expect(() => parseCallArguments(['--server', 'linear', 'cursor.list_documents(limit:1)'])).toThrow(
       /Conflicting server names/

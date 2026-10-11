@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import http from 'node:http';
 
 const closeMock = vi.fn();
 const createRuntimeMock = vi.fn();
@@ -123,6 +124,31 @@ describe('serve command runtime wiring', () => {
       })
     );
     expect(httpServer.once).toHaveBeenCalledWith('close', expect.any(Function));
+  });
+
+  it.each(['127.0.0.1', '::1'])('prints a usable endpoint for an HTTP listener on %s', async (host) => {
+    const listener = http.createServer((_request, response) => {
+      response.end('connected');
+    });
+    await new Promise<void>((resolve, reject) => {
+      listener.once('error', reject);
+      listener.listen(0, host, resolve);
+    });
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      serveHttpMock.mockResolvedValue(listener);
+      await handleServeCli(['--http', '0', '--host', host], {
+        configPath: '/tmp/config.json',
+        configExplicit: true,
+      });
+      const message = String(stderr.mock.calls[0]?.[0]);
+      const url = new URL(message.replace('MCPorter serve HTTP bridge ', ''));
+      expect(url.pathname).toBe('/mcp');
+      expect(await (await fetch(url)).text()).toBe('connected');
+    } finally {
+      stderr.mockRestore();
+      await new Promise<void>((resolve, reject) => listener.close((error) => (error ? reject(error) : resolve())));
+    }
   });
 
   it('closes the runtime when HTTP startup fails', async () => {
