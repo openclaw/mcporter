@@ -1,5 +1,7 @@
 # mcporter Changelog
 
+## [0.14.4] - Unreleased
+
 ## [0.14.3] - 2026-10-11
 
 **Highlights:** CLI calls and generated clients preserve arguments and configuration, HTTP streams and daemon recovery are more reliable, and dependency and generated-code security fixes are included.
@@ -18,6 +20,8 @@
 - Add a runnable, isolated Parallel Search MCP example for anonymous web search and page extraction. Thanks @georgeatparallel (#427).
 - Refresh MCP client/server to 2.3.0, legacy SDK fixtures to 1.32.0, Rolldown, Vite, Vitest and Node types; retain OAuth token correlation, method-preserving same-origin redirects, Node 24 support and the 48-hour dependency cooldown.
 - Update Vite to 8.3.4 while retaining Node 24 support and the 48-hour dependency cooldown.
+
+**Verification:** [npm](https://www.npmjs.com/package/mcporter/v/0.14.3), [registry tarball](https://registry.npmjs.org/mcporter/-/mcporter-0.14.3.tgz), [native assets](https://github.com/openclaw/mcporter/actions/runs/38172695771), and [browser Gatekeeper proof](https://github.com/openclaw/mcporter/actions/runs/38172773379). npm integrity: `sha512-4VLoJDj1CXi7qfo+dtvEr/83lEVjhuToz9JC3zLpGPfpta2Al8/jbLVRFLJETutIq5Ord6VnU14cYv1Zx5b0+A==`.
 
 ## [0.14.2] - 2026-09-30
 
