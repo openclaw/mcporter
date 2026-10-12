@@ -1,23 +1,29 @@
 # mcporter Changelog
 
-## [0.14.3] - Unreleased
+## [0.14.4] - Unreleased
 
 - Add an opt-in Sem stdio MCP example for local repository navigation with an explicit checkout path.
 
-- Update Vite to 8.3.4 while retaining Node 24 support and the 48-hour dependency cooldown.
+## [0.14.3] - 2026-10-11
+
+**Highlights:** CLI calls and generated clients preserve arguments and configuration, HTTP streams and daemon recovery are more reliable, and dependency and generated-code security fixes are included.
+
 - Preserve embedded environment placeholders, literal CLI arguments and string-typed call examples; normalize explicit home-relative config paths, print valid IPv6 bridge URLs, validate generated CLI options and import flag values, and honor documented config-list glob/source filters with bounded matching. Thanks @rudycelekli (#429–#436).
-- Keep schema format hints inside generated TypeScript comments, escaping comment closers and line separators in clients and declarations. Thanks @SebTardif (#426).
-- Refresh MCP client/server to 2.3.0, legacy SDK fixtures to 1.32.0, Rolldown, Vite, Vitest and Node types; retain OAuth token correlation, method-preserving same-origin redirects, Node 24 support and the 48-hour dependency cooldown.
 - Update MCP client/server to 2.3.1, legacy SDK fixtures to 1.32.1, Acorn, Rolldown, Vite, and lint/format tooling; fix the development source-map-js denial-of-service advisory while retaining the patched OAuth and redirect behavior, Node 24 support, and the 48-hour dependency cooldown.
-- Inspect generated Node/Bun script metadata on Windows through the declared interpreter, keeping native binaries directly executable.
+- Keep schema format hints inside generated TypeScript comments, escaping comment closers and line separators in clients and declarations. Thanks @SebTardif (#426).
 - Renew expired daemon views once only after a broker-confirmed rejection before dispatch, retaining configuration authority and preventing replay after replacement or shutdown. Thanks @mbac (#410).
 - Preserve typed request IDs during replay, named arguments after failed proxy discovery, and JSON null result entries. Thanks @rudycelekli (#411, #413, #420).
 - Decode compressed HTTP response streams and preserve session-termination DELETE across 301/302 redirects, including empty-body and streaming cancellation coverage. Thanks @rudycelekli (#416, #419).
 - Preserve JSONC config selection, config-relative working directories, and explicit lifecycle/logging policies in generated CLI artifacts; validate boolean flags and honor required schema defaults. Thanks @rudycelekli (#414, #415, #417, #418).
 - Emit valid TypeScript names for digit-leading servers and tools named `call`, `listTools`, or `new`; skip only `close`/`then` client methods with a warning while keeping unrelated methods and types-only output available. Thanks @rudycelekli (#422).
 - Preserve empty positional arguments after `--` and keep `Infinity`/`-Infinity` as strings instead of sending JSON null. Thanks @rudycelekli (#412, #421).
+- Inspect generated Node/Bun script metadata on Windows through the declared interpreter, keeping native binaries directly executable.
 - Print unknown-server errors from `config get` and `config logout` with one `[mcporter]` prefix. Thanks @KrasimirKralev (#409).
 - Add a runnable, isolated Parallel Search MCP example for anonymous web search and page extraction. Thanks @georgeatparallel (#427).
+- Refresh MCP client/server to 2.3.0, legacy SDK fixtures to 1.32.0, Rolldown, Vite, Vitest and Node types; retain OAuth token correlation, method-preserving same-origin redirects, Node 24 support and the 48-hour dependency cooldown.
+- Update Vite to 8.3.4 while retaining Node 24 support and the 48-hour dependency cooldown.
+
+**Verification:** [npm](https://www.npmjs.com/package/mcporter/v/0.14.3), [registry tarball](https://registry.npmjs.org/mcporter/-/mcporter-0.14.3.tgz), [native assets](https://github.com/openclaw/mcporter/actions/runs/38172695771), and [browser Gatekeeper proof](https://github.com/openclaw/mcporter/actions/runs/38172773379). npm integrity: `sha512-4VLoJDj1CXi7qfo+dtvEr/83lEVjhuToz9JC3zLpGPfpta2Al8/jbLVRFLJETutIq5Ord6VnU14cYv1Zx5b0+A==`.
 
 ## [0.14.2] - 2026-09-30
 

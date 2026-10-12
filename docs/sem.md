@@ -8,7 +8,7 @@ read_when:
 
 [Sem](https://github.com/Ataraxy-Labs/sem) exposes structural code search over stdio MCP. This optional example requires no Sem account or API key and makes no model calls.
 
-The [example configuration](../examples/sem/mcporter.json) pins the server version and disables editor imports. It requires an explicit repository path so the server does not accidentally index the configuration directory.
+The [example configuration](https://github.com/openclaw/mcporter/blob/main/examples/sem/mcporter.json) pins the server version and disables editor imports. It requires an explicit repository path so the server does not accidentally index the configuration directory. The path is also used as the server's working directory; an unset `SEM_REPO` fails configuration loading before the server starts. The shell guard below also rejects an empty value.
 
 ## Run from a checkout
 
@@ -18,6 +18,7 @@ Use Node 24 or 26 and the pnpm version declared in `package.json`. From the MCPo
 pnpm install --frozen-lockfile
 pnpm build
 export SEM_REPO=/absolute/path/to/trusted/git/repository
+: "${SEM_REPO:?Set SEM_REPO to an absolute path to a trusted Git repository}"
 node dist/cli.js --config examples/sem/mcporter.json list sem --schema
 ```
 
