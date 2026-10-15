@@ -580,7 +580,18 @@ function isExplicitNonCallCommand(command: string): boolean {
   );
 }
 
+function hasEphemeralServerFlag(args: readonly string[]): boolean {
+  const end = args.indexOf('--');
+  return (end === -1 ? args : args.slice(0, end)).some((token) => {
+    const flag = token.split('=', 1)[0];
+    return flag === '--http-url' || flag === '--sse' || flag === '--stdio';
+  });
+}
+
 function resolveExplicitCallServer(args: readonly string[]): string | undefined {
+  if (hasEphemeralServerFlag(args)) {
+    return undefined;
+  }
   let serverFlag: string | undefined;
   for (let index = 0; index < args.length; index += 1) {
     const token = args[index];
@@ -588,9 +599,6 @@ function resolveExplicitCallServer(args: readonly string[]): string | undefined 
       continue;
     }
     if (isHelpToken(token)) {
-      return undefined;
-    }
-    if (token === '--http-url' || token === '--stdio') {
       return undefined;
     }
     if (token === '--server') {

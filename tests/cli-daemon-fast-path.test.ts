@@ -145,6 +145,38 @@ describe('daemon call fast path', () => {
     expect(mocks.daemonCallTool).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['--http-url=https://mcp.example.com/mcp'],
+    ['--sse', 'https://mcp.example.com/sse'],
+    ['--stdio=bun run ./server.ts'],
+  ])('leaves ad-hoc %s calls on the runtime path', async (...flags) => {
+    mocks.createRuntime.mockRejectedValue(new Error('runtime path used'));
+    const { runCli } = await import('../src/cli.js');
+
+    await expect(runCli(['call', ...flags, 'chrome-devtools.list_pages', '--output', 'json'])).rejects.toThrow(
+      'runtime path used'
+    );
+
+    expect(mocks.createRuntime).toHaveBeenCalled();
+    expect(mocks.daemonCallTool).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['--http-url=https://mcp.example.com/mcp'],
+    ['--sse', 'https://mcp.example.com/sse'],
+    ['--stdio', 'bun run ./server.ts'],
+  ])('leaves ad-hoc %s calls after the selector on the runtime path', async (...flags) => {
+    mocks.createRuntime.mockRejectedValue(new Error('runtime path used'));
+    const { runCli } = await import('../src/cli.js');
+
+    await expect(runCli(['call', 'chrome-devtools.list_pages', ...flags, '--output', 'json'])).rejects.toThrow(
+      'runtime path used'
+    );
+
+    expect(mocks.createRuntime).toHaveBeenCalled();
+    expect(mocks.daemonCallTool).not.toHaveBeenCalled();
+  });
+
   it.each(['MCPORTER_RECORD', 'MCPORTER_REPLAY'] as const)(
     'bypasses the daemon fast path while %s is active',
     async (modeEnv) => {

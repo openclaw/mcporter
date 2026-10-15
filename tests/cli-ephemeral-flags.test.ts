@@ -71,4 +71,49 @@ describe('extractEphemeralServerFlags', () => {
     expect(spec).toEqual({ httpUrl: 'https://mcp.example.com/sse' });
     expect(args).toEqual([]);
   });
+
+  it('accepts --flag=value for value-taking flags', () => {
+    const args = [
+      '--http-url=https://mcp.example.com/mcp?a=b',
+      '--header=X-Tenant=biz=unit',
+      '--env=TOKEN=abc',
+      '--name=demo',
+      'list',
+    ];
+    const spec = extractEphemeralServerFlags(args);
+    expect(spec).toEqual({
+      httpUrl: 'https://mcp.example.com/mcp?a=b',
+      headers: { 'X-Tenant': 'biz=unit' },
+      env: { TOKEN: 'abc' },
+      name: 'demo',
+    });
+    expect(args).toEqual(['list']);
+  });
+
+  it('accepts inline values for stdio flags and --sse', () => {
+    const args = ['--stdio=bun run ./server.ts', '--stdio-arg=--port=3000', 'call'];
+    expect(extractEphemeralServerFlags(args)).toEqual({
+      stdioCommand: 'bun run ./server.ts',
+      stdioArgs: ['--port=3000'],
+    });
+    expect(args).toEqual(['call']);
+    expect(extractEphemeralServerFlags(['--sse=https://mcp.example.com/sse'])).toEqual({
+      httpUrl: 'https://mcp.example.com/sse',
+    });
+  });
+
+  it('rejects empty inline values', () => {
+    expect(() => extractEphemeralServerFlags(['--cwd='])).toThrow("Flag '--cwd' requires a value.");
+  });
+
+  it('names the alias that is missing a value', () => {
+    expect(() => extractEphemeralServerFlags(['--sse'])).toThrow("Flag '--sse' requires a value.");
+    expect(() => extractEphemeralServerFlags(['--http-url'])).toThrow("Flag '--http-url' requires a value.");
+  });
+
+  it('leaves unrecognized --flag=value tokens alone', () => {
+    const args = ['--output=json', '--allow-http=true'];
+    expect(extractEphemeralServerFlags(args)).toBeUndefined();
+    expect(args).toEqual(['--output=json', '--allow-http=true']);
+  });
 });
