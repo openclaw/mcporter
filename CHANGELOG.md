@@ -2,6 +2,8 @@
 
 ## [0.14.4] - Unreleased
 
+- Keep `mcporter serve` listing tools from healthy servers when another served server fails to list (for example, one that still needs OAuth); the failure is logged to stderr, and `tools/list` still errors when every served server fails.
+
 ## [0.14.3] - 2026-10-11
 
 **Highlights:** CLI calls and generated clients preserve arguments and configuration, HTTP streams and daemon recovery are more reliable, and dependency and generated-code security fixes are included.

@@ -433,6 +433,61 @@ describe('mcporter serve bridge', () => {
     }
   });
 
+  it('lists tools from healthy servers when another served server fails to list', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const runtime = {
+      listTools: vi.fn().mockImplementation(async (server: string) => {
+        if (server === 'alpha') {
+          throw new Error("Authorization required for 'alpha' but browser launch is suppressed");
+        }
+        return [{ name: 'ping', description: `${server} ping`, inputSchema: { type: 'object' } }];
+      }),
+      callTool: vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'pong' }] }),
+    };
+    const bridge = createBridgeServer({ runtime, definitions, servers: ['alpha', 'alpha-long'] });
+    const client = new Client({ name: 'test-client', version: '1.0.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    try {
+      await Promise.all([bridge.connect(serverTransport), client.connect(clientTransport)]);
+
+      const tools = await client.listTools();
+      expect(tools.tools.map((tool) => tool.name)).toEqual(['alpha-long__ping']);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("skipping tools from 'alpha'"));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('browser launch is suppressed'));
+
+      await expect(client.callTool({ name: 'alpha-long__ping', arguments: {} })).resolves.toEqual({
+        content: [{ type: 'text', text: 'pong' }],
+      });
+    } finally {
+      warn.mockRestore();
+      await client.close();
+      await bridge.close();
+    }
+  });
+
+  it('fails tools/list when every served server fails to list', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const runtime = {
+      listTools: vi.fn().mockImplementation(async (server: string) => {
+        throw new Error(`Authorization required for '${server}'`);
+      }),
+      callTool: vi.fn(),
+    };
+    const bridge = createBridgeServer({ runtime, definitions, servers: ['alpha', 'alpha-long'] });
+    const client = new Client({ name: 'test-client', version: '1.0.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    try {
+      await Promise.all([bridge.connect(serverTransport), client.connect(clientTransport)]);
+
+      await expect(client.listTools()).rejects.toThrow("Authorization required for 'alpha'");
+      expect(runtime.listTools).toHaveBeenCalledTimes(2);
+    } finally {
+      warn.mockRestore();
+      await client.close();
+      await bridge.close();
+    }
+  });
+
   it('exposes a single server unprefixed in bare mode', async () => {
     const runtime = {
       listTools: vi

@@ -177,8 +177,19 @@ export function createBridgeServer(options: ServeOptions): McpServer {
 
   server.server.setRequestHandler('tools/list', async () => {
     const tools: Tool[] = [];
+    const failures: unknown[] = [];
     for (const served of servedServers) {
-      const listed = await listRuntimeTools(served.name);
+      let listed: RuntimeToolDefinition[];
+      try {
+        listed = await listRuntimeTools(served.name);
+      } catch (error) {
+        // One unavailable server (e.g. it still needs OAuth) must not hide the
+        // tools of every other server on the bridge. Rethrow below only when
+        // nothing could be listed, so a single-server bridge still surfaces it.
+        failures.push(error);
+        console.warn(`[mcporter] serve: skipping tools from '${served.name}': ${describeError(error)}`);
+        continue;
+      }
 
       for (const tool of listed) {
         const name = bare ? tool.name : encodeToolName(served.name, tool.name);
@@ -192,6 +203,9 @@ export function createBridgeServer(options: ServeOptions): McpServer {
           outputSchema,
         });
       }
+    }
+    if (failures.length === servedServers.length) {
+      throw failures[0];
     }
     return { tools } satisfies ListToolsResult;
   });
@@ -361,4 +375,8 @@ function isObjectSchema(schema: unknown): schema is Tool['inputSchema'] {
 
 function isSchemaRecord(schema: unknown): schema is Record<string, unknown> {
   return !!schema && typeof schema === 'object' && !Array.isArray(schema);
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
