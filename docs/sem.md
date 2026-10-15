@@ -22,7 +22,7 @@ export SEM_REPO=/absolute/path/to/trusted/git/repository
 node dist/cli.js --config examples/sem/mcporter.json list sem --schema
 ```
 
-The first invocation downloads the npm package and its native binary. Use a supported macOS or Linux machine (x64 or ARM64). The environment flags disable Sem cloud sync and telemetry; they do not prevent npm downloads or sandbox the process.
+The first invocation downloads the npm package and its native binary. Use a supported macOS or Linux machine (x64 or ARM64). The environment flags force local graph queries, disable Sem cloud sync and telemetry, and start a standalone MCP process instead of reusing a repository daemon that may have cloud access enabled. They do not prevent npm downloads or sandbox the process.
 
 Search for a symbol, then request its context explicitly. Replace `parse_config` with a symbol in your repository:
 

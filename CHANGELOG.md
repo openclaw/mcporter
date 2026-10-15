@@ -2,7 +2,8 @@
 
 ## [0.14.4] - Unreleased
 
-- Add an opt-in Sem stdio MCP example for local repository navigation with an explicit checkout path.
+- Add an opt-in Sem stdio MCP example for local repository navigation with an explicit checkout path. Thanks @rs545837 (#440).
+- Keep `mcporter serve` listing tools from healthy servers when another served server fails to list (for example, one that still needs OAuth); the failure is logged to stderr, and `tools/list` still errors when every served server fails. Thanks @vitalijssilins (#447).
 
 ## [0.14.3] - 2026-10-11
 

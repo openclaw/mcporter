@@ -7,6 +7,8 @@
       "cwd": "${SEM_REPO}",
       "env": {
         "SEM_REPO": "${SEM_REPO}",
+        "SEM_LOCAL": "1",
+        "SEM_MCP_NO_SHARED": "1",
         "SEM_NO_NETWORK": "1",
         "SEM_NO_TELEMETRY": "1"
       }
