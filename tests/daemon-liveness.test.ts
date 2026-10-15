@@ -1,4 +1,4 @@
-import { expect, describe, it } from 'vitest';
+import { expect, describe, it, vi } from 'vitest';
 import {
   DaemonFrameDecoder,
   encodeDaemonFrame,
@@ -6,6 +6,19 @@ import {
   resolveProgressTiming,
 } from '../src/daemon/protocol.js';
 import { singletonFixture } from './helpers/singleton.js';
+
+// Keep progress assertions independent of WMI latency; real ownership is covered by the CLI integration suite.
+vi.mock('../src/daemon/process-retirement.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/daemon/process-retirement.js')>();
+  return process.platform === 'win32'
+    ? {
+        ...actual,
+        ownedProcessTree: vi.fn().mockResolvedValue([]),
+        awaitRetirement: vi.fn().mockResolvedValue(undefined),
+      }
+    : actual;
+});
+
 describe('daemon frame protocol', () => {
   it('maps raw progress requests to fixed protocol-owned cadences', () => {
     expect([1, 49, 50, 99, 100, 249, 250, Number.MAX_SAFE_INTEGER].map(resolveProgressInterval)).toEqual([

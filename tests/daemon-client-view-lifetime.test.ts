@@ -2,6 +2,18 @@ import { expect, it, vi } from 'vitest';
 import * as rpc from '../src/daemon/socket-rpc.js';
 import { singletonFixture, fixtureResult } from './helpers/singleton.js';
 
+// View bookkeeping uses real MCP transports; Windows ownership checks have separate integration coverage.
+vi.mock('../src/daemon/process-retirement.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/daemon/process-retirement.js')>();
+  return process.platform === 'win32'
+    ? {
+        ...actual,
+        ownedProcessTree: vi.fn().mockResolvedValue([]),
+        awaitRetirement: vi.fn().mockResolvedValue(undefined),
+      }
+    : actual;
+});
+
 function gate() {
   const { promise, resolve } = Promise.withResolvers<void>();
   return { promise, open: () => resolve() };

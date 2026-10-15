@@ -9,6 +9,18 @@ import { createRuntime } from '../src/runtime.js';
 import { createGeneratedKeepAliveRuntime } from '../src/generated-daemon-runtime.js';
 import { generateCli } from '../src/generate-cli.js';
 
+// Discovery keeps real MCP children; Windows ownership checks have separate CLI integration coverage.
+vi.mock('../src/daemon/process-retirement.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/daemon/process-retirement.js')>();
+  return process.platform === 'win32'
+    ? {
+        ...actual,
+        ownedProcessTree: vi.fn().mockResolvedValue([]),
+        awaitRetirement: vi.fn().mockResolvedValue(undefined),
+      }
+    : actual;
+});
+
 it('uses one exclusive generic child for listing, automatic descriptions, generation, help and repeated discovery', async () => {
   const f = await singletonFixture({ exclusive: true });
   try {

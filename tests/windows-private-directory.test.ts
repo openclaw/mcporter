@@ -65,5 +65,5 @@ $directory.SetAccessControl($acl)
       await fs.rm(root, { recursive: true, force: true });
     }
   },
-  30_000
+  60_000
 );
