@@ -80,6 +80,12 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
 - `tools/list` queries the daemon for each selected server and publishes tools
   as `server__tool`; `tools/call` strips the prefix and routes the call through
   the daemon.
+- A selected server that fails to list (for example, one that still needs
+  OAuth while `MCPORTER_OAUTH_NO_BROWSER=1` is set) contributes no tools and is
+  reported on stderr as `[mcporter] serve: skipping tools from '<server>': …`;
+  the other servers' tools are still published. `tools/list` returns an error
+  only when every selected server fails, so a single-server bridge still
+  surfaces the real error.
 - In HTTP mode, `/mcp` keeps the aggregate namespaced bridge, while
   `/mcp/<server>` exposes one selected keep-alive server with its original,
   unprefixed tool names.
