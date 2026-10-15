@@ -76,6 +76,7 @@ You get a `.d.ts` interface and a `createServerProxy()`-backed factory. Calls re
 
 - [Parallel web search](parallel-search.md) — search and fetch pages without an API key.
 - [Local code navigation](sem.md) — inspect a Git repository with Sem over stdio MCP.
+- [FXMacroData macro data](fxmacrodata.md) — USD indicators and release calendars without an API key.
 - [Configuration](config.md) — `mcporter.json` schema, env interpolation, OAuth fields.
 - [Ad-hoc connections](adhoc.md) — point at any MCP endpoint without editing config.
 - [Agent skills](agent-skills.md) — wiring per-server skills into a coding agent.

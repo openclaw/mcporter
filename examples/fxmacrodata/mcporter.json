@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "fxmacrodata": {
+      "description": "FXMacroData macroeconomic indicators and release calendars; USD data without an API key.",
+      "baseUrl": "https://mcp.fxmacrodata.com/mcp",
+      "headers": {
+        "User-Agent": "mcporter/fxmacrodata-example"
+      }
+    }
+  },
+  "imports": []
+}
