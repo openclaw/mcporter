@@ -2,7 +2,11 @@
 
 ## [0.14.4] - Unreleased
 
-- Keep `mcporter serve` listing tools from healthy servers when another served server fails to list (for example, one that still needs OAuth); the failure is logged to stderr, and `tools/list` still errors when every served server fails.
+- Refresh Zod, Express fixtures, Vitest, Node/Bun types, and lint/format tooling while preserving Node 24 support, the 48-hour dependency cooldown, the OAuth client patch, and security overrides.
+- Accept `--flag=value` for ad-hoc server options, preserve embedded equals signs, keep ad-hoc calls on the runtime path, and document the supported `--stdio-arg` flag. Thanks @notlakshitha (#443, #444).
+- Add an isolated, runnable FXMacroData MCP example for keyless USD indicators and release calendars. Thanks @roberttidball (#445).
+- Add an opt-in Sem stdio MCP example for local repository navigation with an explicit checkout path. Thanks @rs545837 (#440).
+- Keep `mcporter serve` listing tools from healthy servers when another served server fails to list (for example, one that still needs OAuth); the failure is logged to stderr, and `tools/list` still errors when every served server fails. Thanks @vitalijssilins (#447).
 
 ## [0.14.3] - 2026-10-11
 

@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "sem": {
+      "description": "Structural navigation for a local Git repository",
+      "command": "npx",
+      "args": ["-y", "@ataraxy-labs/sem@0.27.0", "mcp"],
+      "cwd": "${SEM_REPO}",
+      "env": {
+        "SEM_REPO": "${SEM_REPO}",
+        "SEM_LOCAL": "1",
+        "SEM_MCP_NO_SHARED": "1",
+        "SEM_NO_NETWORK": "1",
+        "SEM_NO_TELEMETRY": "1"
+      }
+    }
+  },
+  "imports": []
+}
