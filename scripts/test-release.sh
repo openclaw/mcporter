@@ -459,6 +459,21 @@ end
 publish = safe_load_yaml(ENV.fetch('PUBLISH_WORKFLOW'))
 publish_jobs = publish.fetch('jobs')
 release_job = publish_jobs.fetch('release')
+dispatch_inputs = publish.fetch('on', publish[true]).fetch('workflow_dispatch').fetch('inputs')
+contract_assert(dispatch_inputs.fetch('dry_run').slice('type', 'default') == { 'type' => 'boolean', 'default' => true }, 'manual release must default to a typed dry run')
+contract_assert(release_job['if'] == "${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run) }}", 'publication must exclude dry runs')
+%w[dry-run-source dry-run-native].each do |name|
+  job = publish_jobs.fetch(name)
+  contract_assert(job['if'] == "${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}", "#{name} must only run for dry-run dispatches")
+  contract_assert(job['permissions'] == { 'contents' => 'read' }, "#{name} must have read-only permissions")
+  contract_assert(!job.to_s.match?(/secrets\.|id-token|npm publish|gh release|git tag|workflow run/), "#{name} must not reach publication or signing credentials")
+  checkout = job.fetch('steps').find { |step| step.fetch('uses', '').start_with?('actions/checkout@') }
+  contract_assert(checkout.dig('with', 'ref') == '${{ github.sha }}' && checkout.dig('with', 'persist-credentials') == false, "#{name} must freeze dispatch source without persisted credentials")
+end
+contract_assert(publish_jobs.fetch('dry-run-native')['needs'] == 'dry-run-source', 'native rehearsal must follow source validation')
+%w[verify-npm dispatch-homebrew].each do |name|
+  contract_assert(publish_jobs.fetch(name)['needs'] == 'release', "#{name} must remain downstream of real publication")
+end
 proof_step = named_step(release_job, 'Verify protected native proof and published assets')
 contract_assert(proof_step, 'release proof step is missing')
 contract_assert(release_job.dig('permissions', 'actions') == 'read', 'release proof lacks actions: read')

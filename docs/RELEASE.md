@@ -27,6 +27,18 @@ v0.12.3's standalone arm64 binary is not a continuity baseline: it was ad-hoc `a
 
 ## 1. Credential-free preparation
 
+The **Release** workflow defaults manual dispatches to `dry_run=true`. Run it from current `main`, optionally supplying `tag=v<package.json version>` (leave it blank to use the current version):
+
+```bash
+gh workflow run release.yml --ref main -f dry_run=true -f tag=v0.14.3
+```
+
+The rehearsal validates the dispatch source and package metadata, runs `pnpm check` and `pnpm test`, builds and installs the packed npm archive into an isolated consumer, and checks CLI, library, and OAuth behavior. Native jobs build and archive current source for arm64 and baseline x86_64, verify the Bun binaries' ad-hoc signatures and architecture, and smoke-test the extracted binaries on matching macOS runners. Rehearsal archives are retained as Actions artifacts for seven days. Existing version tags do not redirect the build to older source, and an already-published package version is allowed.
+
+Both native jobs also run the release contract suite, which uses fixtures for Developer ID signing, notarization, provenance, and negative verification cases. A dry run has read-only repository permissions and no signing, notarization, npm, or Homebrew credentials. It creates no tags or GitHub Releases, publishes no npm packages, and dispatches no Homebrew updates. It does **not** replace the real local Developer ID/notarization gate or protected draft verification below.
+
+The shared `openclaw/release-workflows` npm archetype is not used here: mcporter publishes the exact npm archive already bound to both native verifier manifests and the locally signed macOS assets. Moving npm packing/publication to an independent archetype would break that shared artifact proof. The existing real-release chain remains authoritative.
+
 1. Update `package.json` and `CHANGELOG.md`; contributor work must keep its changelog thanks and commit `Co-authored-by` trailer.
 2. Run:
 
@@ -84,7 +96,7 @@ Do not publish GitHub, npm, or Homebrew before both native jobs succeed.
 4. With those proofs complete, the workflow confirms that GitHub OIDC is available and uses npm trusted publishing plus provenance to publish the exact verified `mcporter-<version>.tgz` from the GitHub Release. A sibling verification job gives npm up to five minutes to expose the version, integrity, and `latest` metadata, using capped exponential backoff for metadata that is still absent. A visible wrong version, integrity, or `latest` value is not retried: it fails immediately as an immutable-publication mismatch. No Developer ID, notarization, or npm token enters Actions.
 5. **Release** dispatches **Update Homebrew Tap** from a separate job that depends on successful publication, not on the sibling npm propagation check. This prevents ordinary registry latency from suppressing Homebrew recovery while preserving a red release run for a genuine verification failure. The Homebrew workflow repeats the same patient npm check after revalidating the exact native proof SHA/title/workflow, both architecture manifests, and every published GitHub byte; only matching SHA-512 integrity and `latest` metadata can reach the tap dispatch. Same-repository proof reads and the protected workflow dispatch use the built-in `github.token` with narrow Actions permissions. `HOMEBREW_TAP_TOKEN` is exposed only when dispatching and polling the cross-repository `steipete/homebrew-tap` update.
 
-A manual **Release** dispatch is a recovery fallback, not a way around the native gate. Dispatch it from the current default branch with `tag=v<version>`; it accepts only an existing published, non-prerelease GitHub Release and repeats the same tag, `main`, native-proof, source-gate, npm, and Homebrew checks. Because npm versions are immutable, do not rerun **Release** after npm accepted the version. If the separate Homebrew job or **Update Homebrew Tap** fails, rerun **Update Homebrew Tap** directly with the same tag and recorded native verifier run ID.
+A manual **Release** dispatch with `dry_run=false` is a recovery fallback, not a way around the native gate. Dispatch it from the current default branch with `tag=v<version>` and explicitly disable `dry_run`; it accepts only an existing published, non-prerelease GitHub Release and repeats the same tag, `main`, native-proof, source-gate, npm, and Homebrew checks. Because npm versions are immutable, do not rerun **Release** after npm accepted the version. If the separate Homebrew job or **Update Homebrew Tap** fails, rerun **Update Homebrew Tap** directly with the same tag and recorded native verifier run ID.
 
 Verify registry metadata after automation completes:
 
