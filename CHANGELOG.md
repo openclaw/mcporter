@@ -2,6 +2,8 @@
 
 ## [0.15.1] - Unreleased
 
+- Update Rolldown to 1.2.14 for generated CLI bundling, preserving Node 24 support and the 48-hour dependency cooldown.
+
 ## [0.15.0] - 2026-10-16
 
 **Highlights:** Keep healthy MCP servers available when another server fails, accept inline ad-hoc flags, add runnable MCP examples, and rehearse releases without publishing.
