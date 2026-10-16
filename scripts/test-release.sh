@@ -471,6 +471,11 @@ contract_assert(release_job['if'] == "${{ github.event_name == 'release' || (git
   contract_assert(checkout.dig('with', 'ref') == '${{ github.sha }}' && checkout.dig('with', 'persist-credentials') == false, "#{name} must freeze dispatch source without persisted credentials")
 end
 contract_assert(publish_jobs.fetch('dry-run-native')['needs'] == 'dry-run-source', 'native rehearsal must follow source validation')
+native_smoke = named_step(publish_jobs.fetch('dry-run-native'), 'Build, pack and smoke-test native binary').fetch('run')
+adhoc_signing = 'codesign --force --sign - --identifier org.openclaw.mcporter.dry-run "$binary"'
+strict_verification = 'codesign --verify --strict --verbose=2 "$binary"'
+contract_assert(native_smoke.include?(adhoc_signing), 'native rehearsal must explicitly ad-hoc sign its own bytes')
+contract_assert(native_smoke.index(adhoc_signing) < native_smoke.index(strict_verification), 'native rehearsal must sign before strict verification')
 %w[verify-npm dispatch-homebrew].each do |name|
   contract_assert(publish_jobs.fetch(name)['needs'] == 'release', "#{name} must remain downstream of real publication")
 end

@@ -3,6 +3,7 @@
 ## [0.14.4] - Unreleased
 
 - Default manual Release runs to a no-publish rehearsal of current main: validate, build, pack and smoke-test npm and both macOS architectures, including credential-free signing contract checks.
+- Explicitly ad-hoc sign native rehearsal binaries before verification so Bun's Intel baseline output cannot retain an invalid upstream signature.
 - Refresh Zod, Express fixtures, Vitest, Node/Bun types, and lint/format tooling while preserving Node 24 support, the 48-hour dependency cooldown, the OAuth client patch, and security overrides.
 - Accept `--flag=value` for ad-hoc server options, preserve embedded equals signs, keep ad-hoc calls on the runtime path, and document the supported `--stdio-arg` flag. Thanks @notlakshitha (#443, #444).
 - Add an isolated, runnable FXMacroData MCP example for keyless USD indicators and release calendars. Thanks @roberttidball (#445).

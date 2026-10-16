@@ -113,6 +113,9 @@ jobs:
           binary="$RUNNER_TEMP/native/mcporter"
           pnpm build:bun --target "$BUILD_TARGET" --output "$binary"
           [[ "$(lipo -archs "$binary")" == "$BUILD_ARCH" ]]
+          # Bun's x64 baseline output can retain an invalid upstream signature.
+          # Seal rehearsal bytes explicitly without accessing a signing key.
+          codesign --force --sign - --identifier org.openclaw.mcporter.dry-run "$binary"
           codesign --verify --strict --verbose=2 "$binary"
           archive="$RUNNER_TEMP/mcporter-dry-run-$BUILD_ARCH.tar.gz"
           tar -czf "$archive" -C "$RUNNER_TEMP/native" mcporter
