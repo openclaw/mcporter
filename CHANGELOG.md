@@ -1,5 +1,7 @@
 # mcporter Changelog
 
+## [0.15.1] - Unreleased
+
 ## [0.15.0] - 2026-10-16
 
 **Highlights:** Keep healthy MCP servers available when another server fails, accept inline ad-hoc flags, add runnable MCP examples, and rehearse releases without publishing.
@@ -11,6 +13,8 @@
 - Default manual Release runs to a no-publish rehearsal of current main: validate, build, pack and smoke-test npm and both macOS architectures, including credential-free signing contract checks.
 - Explicitly ad-hoc sign native rehearsal binaries before verification so Bun's Intel baseline output cannot retain an invalid upstream signature.
 - Refresh Zod, Express fixtures, Vitest, Node/Bun types, and lint/format tooling while preserving Node 24 support, the 48-hour dependency cooldown, the OAuth client patch, and security overrides.
+
+**Verification:** [npm](https://www.npmjs.com/package/mcporter/v/0.15.0), [registry tarball](https://registry.npmjs.org/mcporter/-/mcporter-0.15.0.tgz), [release CI](https://github.com/openclaw/mcporter/actions/runs/38852447046), [native assets](https://github.com/openclaw/mcporter/actions/runs/38851923036), and [browser Gatekeeper proof](https://github.com/openclaw/mcporter/actions/runs/38852027638). npm integrity: `sha512-ts6g/7uhOFzUlKrLyt9yoCAgWyR3ns4kdDA8NkSHzlapc5EzjCNseJkWHplmptQf5zmiSeFr/kSM02LOY7E65w==`.
 
 ## [0.14.3] - 2026-10-11
 
