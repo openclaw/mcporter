@@ -26,6 +26,9 @@ for script in \
   "$ROOT/scripts/codesign-native.sh" \
   "$ROOT/scripts/package-release.sh" \
   "$ROOT/scripts/release.sh" \
+  "$ROOT/scripts/check-macos-minimum.sh" \
+  "$ROOT/scripts/ensure-rosetta.sh" \
+  "$ROOT/scripts/smoke-native.sh" \
   "$ROOT/scripts/verify-release.sh"; do
   bash -n "$script"
 done
@@ -278,6 +281,15 @@ case "${!#}" in
 esac
 MOCK
 
+cat >"$MOCK_BIN/otool" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+echo 'cmd LC_BUILD_VERSION'
+if [[ "${MOCK_MINOS:-13.0}" != missing ]]; then
+  printf 'minos %s\n' "${MOCK_MINOS:-13.0}"
+fi
+MOCK
+
 cat >"$MOCK_BIN/arch" <<'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -287,6 +299,10 @@ MOCK
 
 chmod 755 "$MOCK_BIN"/*
 export PATH="$MOCK_BIN:$PATH"
+
+"$ROOT/scripts/check-macos-minimum.sh" "$WORK/minimum-fixture"
+assert_fails env MOCK_MINOS=27.0 "$ROOT/scripts/check-macos-minimum.sh" "$WORK/minimum-fixture"
+assert_fails env MOCK_MINOS=missing "$ROOT/scripts/check-macos-minimum.sh" "$WORK/minimum-fixture"
 
 # Immutable npm metadata mismatches are hard failures, not propagation retries.
 mock_integrity=sha512-protected-release
@@ -471,7 +487,9 @@ contract_assert(release_job['if'] == "${{ github.event_name == 'release' || (git
   contract_assert(checkout.dig('with', 'ref') == '${{ github.sha }}' && checkout.dig('with', 'persist-credentials') == false, "#{name} must freeze dispatch source without persisted credentials")
 end
 contract_assert(publish_jobs.fetch('dry-run-native')['needs'] == 'dry-run-source', 'native rehearsal must follow source validation')
-native_smoke = named_step(publish_jobs.fetch('dry-run-native'), 'Build, pack and smoke-test native binary').fetch('run')
+native_step = named_step(publish_jobs.fetch('dry-run-native'), 'Build, pack and smoke-test native binary').fetch('run')
+contract_assert(native_step.include?('./scripts/smoke-native.sh'), 'native rehearsal must use the shared smoke check')
+native_smoke = File.read(File.expand_path('../../scripts/smoke-native.sh', File.dirname(ENV.fetch('PUBLISH_WORKFLOW'))))
 adhoc_signing = 'codesign --force --sign - --identifier org.openclaw.mcporter.dry-run "$binary"'
 strict_verification = 'codesign --verify --strict --verbose=2 "$binary"'
 contract_assert(native_smoke.include?(adhoc_signing), 'native rehearsal must explicitly ad-hoc sign its own bytes')

@@ -113,7 +113,8 @@ for index in "${!architectures[@]}"; do
   archive_name="mcporter_${release_version}_darwin_${release_arch}.tar.gz"
   mkdir -p "$build_dir"
 
-  run_build bun scripts/build-bun.ts --target "$target" --output "$binary"
+  MACOSX_DEPLOYMENT_TARGET=13.0 run_build bun scripts/build-bun.ts --target "$target" --output "$binary"
+  "$ROOT/scripts/check-macos-minimum.sh" "$binary"
   MCPORTER_OFFICIAL_RELEASE=1 "$ROOT/scripts/codesign-native.sh" "$binary"
   tar -czf "$PAYLOAD/$archive_name" -C "$build_dir" mcporter
 done

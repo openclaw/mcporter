@@ -1,5 +1,6 @@
 self-hosted-runner:
   labels:
+    - xcode-27
     - crabbox
     - openclaw
     - mcporter

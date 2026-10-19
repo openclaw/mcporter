@@ -23,7 +23,7 @@ jobs:
       matrix:
         include:
           - { os: ubuntu-latest, node: 24, label: ubuntu-latest }
-          - { os: macos-15, node: 24, label: macos-15 }
+          - { os: xcode-27, node: 24, label: xcode-27 }
           - { os: windows-latest, node: 24, label: windows-latest }
           - { os: ubuntu-latest, node: 26, label: 'ubuntu-latest, Node 26' }
     runs-on: ${{ matrix.os }}
@@ -51,17 +51,28 @@ jobs:
       - run: pnpm install --frozen-lockfile --engine-strict
       - run: pnpm --version
       - run: pnpm check
-        if: matrix.os != 'macos-15'
+        if: runner.os != 'macOS'
 
       # Type-aware oxlint (tsgolint) crashes on macOS runners; ubuntu and windows
       # still run the full `pnpm check`, so the rule set stays enforced.
       - name: Check without type-aware oxlint
-        if: matrix.os == 'macos-15'
+        if: runner.os == 'macOS'
         run: pnpm format:check && pnpm typecheck
 
       - name: Verify release contracts without credentials
-        if: matrix.os == 'macos-15'
+        if: runner.os == 'macOS'
         run: ./scripts/test-release.sh
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: runner.os == 'macOS'
+        with:
+          bun-version: 1.4.3
+
+      - name: Smoke-test both native release targets
+        if: runner.os == 'macOS'
+        run: |
+          ./scripts/smoke-native.sh bun-darwin-arm64 arm64 "$RUNNER_TEMP"
+          ./scripts/smoke-native.sh bun-darwin-x64-baseline x86_64 "$RUNNER_TEMP"
 
       - name: Verify generated schema is committed
         if: matrix.os == 'ubuntu-latest' && matrix.node == 24

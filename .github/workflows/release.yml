@@ -74,8 +74,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { runner: macos-26, arch: arm64, target: bun-darwin-arm64 }
-          - { runner: macos-26-intel, arch: x86_64, target: bun-darwin-x64-baseline }
+          - { runner: xcode-27, arch: arm64, target: bun-darwin-arm64 }
+          - { runner: xcode-27, arch: x86_64, target: bun-darwin-x64-baseline }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     permissions:
@@ -107,25 +107,7 @@ jobs:
         env:
           BUILD_TARGET: ${{ matrix.target }}
           BUILD_ARCH: ${{ matrix.arch }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/native" "$RUNNER_TEMP/smoke/home"
-          binary="$RUNNER_TEMP/native/mcporter"
-          pnpm build:bun --target "$BUILD_TARGET" --output "$binary"
-          [[ "$(lipo -archs "$binary")" == "$BUILD_ARCH" ]]
-          # Bun's x64 baseline output can retain an invalid upstream signature.
-          # Seal rehearsal bytes explicitly without accessing a signing key.
-          codesign --force --sign - --identifier org.openclaw.mcporter.dry-run "$binary"
-          codesign --verify --strict --verbose=2 "$binary"
-          archive="$RUNNER_TEMP/mcporter-dry-run-$BUILD_ARCH.tar.gz"
-          tar -czf "$archive" -C "$RUNNER_TEMP/native" mcporter
-          [[ "$(tar -tzf "$archive")" == mcporter ]]
-          tar -xzf "$archive" -C "$RUNNER_TEMP/smoke"
-          version=$(node -p 'require("./package.json").version')
-          cd "$RUNNER_TEMP/smoke"
-          export HOME="$PWD/home"
-          [[ "$(./mcporter --version)" == "$version" ]]
-          ./mcporter --help
+        run: ./scripts/smoke-native.sh "$BUILD_TARGET" "$BUILD_ARCH" "$RUNNER_TEMP"
 
       - name: Retain rehearsal archive
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

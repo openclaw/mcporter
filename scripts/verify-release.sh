@@ -278,6 +278,8 @@ verify_native_archive() {
     exit 1
   }
 
+  "$ROOT/scripts/check-macos-minimum.sh" "$binary"
+
   codesign --verify --strict -R="$REQUIREMENT" --verbose=2 "$binary"
   signature=$(codesign -dvvv "$binary" 2>&1)
   grep -Fx "Identifier=$IDENTIFIER" <<<"$signature" >/dev/null

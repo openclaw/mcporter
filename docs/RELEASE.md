@@ -33,7 +33,7 @@ The **Release** workflow defaults manual dispatches to `dry_run=true`. Run it fr
 gh workflow run release.yml --ref main -f dry_run=true -f tag=v0.14.3
 ```
 
-The rehearsal validates the dispatch source and package metadata, runs `pnpm check` and `pnpm test`, builds and installs the packed npm archive into an isolated consumer, and checks CLI, library, and OAuth behavior. Native jobs build and archive current source for arm64 and baseline x86_64, explicitly ad-hoc sign the Bun output (including Intel baseline binaries that can retain invalid upstream signatures), verify signatures and architecture, and smoke-test the extracted binaries on matching macOS runners. Rehearsal archives are retained as Actions artifacts for seven days. Existing version tags do not redirect the build to older source, and an already-published package version is allowed.
+The rehearsal validates the dispatch source and package metadata, runs `pnpm check` and `pnpm test`, builds and installs the packed npm archive into an isolated consumer, and checks CLI, library, and OAuth behavior. Native jobs use Apple Silicon `xcode-27` runners for both arm64 and baseline x86_64. They assert Rosetta support (installing it if missing), explicitly ad-hoc sign the Bun output, verify architecture and the macOS 13.0 deployment target, and smoke-test the extracted Intel binary with `arch -x86_64`. PR CI runs the same native smoke script for both targets. Rehearsal archives are retained as Actions artifacts for seven days. Existing version tags do not redirect the build to older source, and an already-published package version is allowed.
 
 Both native jobs also run the release contract suite, which uses fixtures for Developer ID signing, notarization, provenance, and negative verification cases. A dry run has read-only repository permissions and no signing, notarization, npm, or Homebrew credentials. It creates no tags or GitHub Releases, publishes no npm packages, and dispatches no Homebrew updates. It does **not** replace the real local Developer ID/notarization gate or protected draft verification below.
 
@@ -82,7 +82,7 @@ Checksums contain basenames only. The npm tarball must expose its declared execu
 
 1. Create a draft GitHub release for the already-pushed signed tag. Upload exactly the five local files above; keep the release unpublished.
 2. Dispatch **Verify Release Assets** from the current default branch with input `tag=v<version>`.
-3. Record the workflow run ID. Both the arm64 and x86_64 jobs must succeed.
+3. Record the workflow run ID. Both the arm64 and x86_64 jobs must succeed on `xcode-27`; the Intel verifier asserts Rosetta support before executing the candidate.
 
 The workflow checks out its protected current workflow commit with persisted credentials disabled, configures the repository-owned SSH allowed-signers file, requires exact tag/HEAD/clean-tree proof, finds exactly one draft through paginated REST release lookup, rejects extra or missing assets, and downloads each asset by its exact REST asset ID. Verification runs in the following step with GitHub tokens absent. Each successful native job preserves its architecture plus the release ID, asset IDs, sizes, and SHA-256 digests as a workflow proof artifact. Publication requires both arm64 and x86_64 artifacts and requires their complete verified asset sets to match, so a partial matrix rerun cannot silently replace one architecture's proof.
 

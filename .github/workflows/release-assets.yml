@@ -20,9 +20,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-26
+          - runner: xcode-27
             arch: arm64
-          - runner: macos-26-intel
+          - runner: xcode-27
             arch: x86_64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
@@ -137,6 +137,10 @@ jobs:
             }, null, 2)}\n`
           );
           NODE
+
+      - name: Ensure Rosetta works
+        if: matrix.arch == 'x86_64'
+        run: ./scripts/ensure-rosetta.sh
 
       - name: Verify without GitHub credentials
         shell: bash
