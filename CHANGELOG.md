@@ -1,14 +1,14 @@
 # mcporter Changelog
 
-## [0.15.1] - Unreleased
+## [0.16.0] - 2026-10-20
 
-- Update Vitest and V8 coverage to 5.0.5 and Hono to 4.13.13, fixing the fixture dependency's static-path middleware bypass advisory while preserving Node 24 support and the 48-hour dependency cooldown.
+**Highlights:** Encrypt OAuth secrets at rest, restore server instructions in listings, and patch a development dependency vulnerability.
 
-- Move macOS CI and release verification to Xcode 27, execute Intel binaries under asserted Rosetta, and enforce the existing macOS 13.0 binary target in packaging, verification, and native CI smoke tests.
-
-- Update Rolldown to 1.2.14 for generated CLI bundling, preserving Node 24 support and the 48-hour dependency cooldown.
 - Add opt-in OAuth secret encryption with `MCPORTER_VAULT_PASSWORD`, a required policy, persistent encryption markers, migration on write, and vault/token-cache diagnostics. Older binaries must use a separate state directory after opt-in; see the downgrade instructions. Thanks @alexminza (#425, #408).
 - Show server instructions in `mcporter list <server>` text and JSON output again without `--no-oauth`; the uncached discovery connection closed before the instructions were read. Thanks @KrasimirKralev (#456, #455).
+- Update Vitest and V8 coverage to 5.0.5 and Hono to 4.13.13, fixing the fixture dependency's static-path middleware bypass advisory while preserving Node 24 support and the 48-hour dependency cooldown.
+- Update Rolldown to 1.2.14 for generated CLI bundling, preserving Node 24 support and the 48-hour dependency cooldown.
+- Move macOS CI and release verification to Xcode 27, execute Intel binaries under asserted Rosetta, and enforce the existing macOS 13.0 binary target in packaging, verification, and native CI smoke tests.
 
 ## [0.15.0] - 2026-10-16
 
