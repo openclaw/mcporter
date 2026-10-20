@@ -2,6 +2,8 @@
 
 ## [0.15.1] - Unreleased
 
+- Update Vitest and V8 coverage to 5.0.5 and Hono to 4.13.13, fixing the fixture dependency's static-path middleware bypass advisory while preserving Node 24 support and the 48-hour dependency cooldown.
+
 - Move macOS CI and release verification to Xcode 27, execute Intel binaries under asserted Rosetta, and enforce the existing macOS 13.0 binary target in packaging, verification, and native CI smoke tests.
 
 - Update Rolldown to 1.2.14 for generated CLI bundling, preserving Node 24 support and the 48-hour dependency cooldown.
