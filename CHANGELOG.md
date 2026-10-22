@@ -2,6 +2,8 @@
 
 ## [0.16.1] - Unreleased
 
+- Reuse cached OAuth tokens that were issued without an expiry (for example Slack user tokens without token rotation) instead of re-running the browser authorization flow and requiring the client secret on every connection; a revoked token still triggers re-authorization through the 401 path.
+
 ## [0.16.0] - 2026-10-20
 
 **Highlights:** Encrypt OAuth secrets at rest, restore server instructions in listings, and patch a development dependency vulnerability.

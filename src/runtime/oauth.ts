@@ -123,7 +123,12 @@ function hasUsableCachedAccessToken(tokens: OAuthTokens | undefined): boolean {
   }
   const stored = tokens as OAuthTokens & { expires_at?: number; expiresAt?: number };
   const expiresAt = typeof stored.expires_at === 'number' ? stored.expires_at : stored.expiresAt;
-  return typeof expiresAt === 'number' && expiresAt > Math.floor(Date.now() / 1000) + PROACTIVE_TOKEN_SKEW_SECONDS;
+  if (typeof expiresAt === 'number') {
+    return expiresAt > Math.floor(Date.now() / 1000) + PROACTIVE_TOKEN_SKEW_SECONDS;
+  }
+  // Providers may issue tokens with no lifetime at all (e.g. Slack user tokens without rotation). They stay valid
+  // until revoked; a revoked token still surfaces as a 401 and re-enters the authorization loop.
+  return typeof tokens.expires_in !== 'number';
 }
 
 export async function connectWithAuth(
