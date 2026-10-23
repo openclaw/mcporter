@@ -2,13 +2,21 @@ import fs from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DaemonBroker } from '../src/daemon/broker.js';
 import { loadServerDefinitions } from '../src/config.js';
 import { effectiveDefinition } from '../src/daemon/connection-identity.js';
 import { NON_INTERACTIVE_ELICITATION_HINT } from '../src/runtime/elicitation.js';
 import { makeShortTempDir } from './fixtures/test-helpers.js';
 import { budget } from './helpers/timing.js';
+
+// Exercise the real MCP exchange without coupling elicitation to WMI availability.
+// Real process ownership and retirement are covered by process-retirement.integration.test.ts.
+vi.mock('../src/daemon/process-retirement.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/daemon/process-retirement.js')>()),
+  ownedProcessTree: vi.fn().mockResolvedValue([]),
+  awaitRetirement: vi.fn().mockResolvedValue(undefined),
+}));
 
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const MODERN_SERVER = path.join(REPO_ROOT, 'tests', 'servers', 'modern', 'server.ts');
@@ -55,8 +63,11 @@ describe('daemon elicitation', () => {
         expect(response.notices).toEqual([NON_INTERACTIVE_ELICITATION_HINT]);
         expect(JSON.stringify(response.result)).toContain('delete declined');
       } finally {
-        await broker.close();
-        await fs.rm(tempDir, { recursive: true, force: true });
+        try {
+          await broker.close();
+        } finally {
+          await fs.rm(tempDir, { recursive: true, force: true });
+        }
       }
     },
     budget(20_000)

@@ -2,6 +2,8 @@
 
 ## [0.16.1] - Unreleased
 
+- Refresh jose and lint/format tooling while preserving Node 24 support and the 48-hour dependency cooldown; isolate daemon elicitation coverage from Windows process-query failures while retaining real process-retirement integration tests.
+
 ## [0.16.0] - 2026-10-20
 
 **Highlights:** Encrypt OAuth secrets at rest, restore server instructions in listings, and patch a development dependency vulnerability.
