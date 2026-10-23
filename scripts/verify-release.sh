@@ -85,8 +85,9 @@ awk 'NF != 2 || $1 !~ /^[[:xdigit:]]{64}$/ || $2 ~ /\// { exit 1 }' "$checksums"
 }
 (cd "$OUT_DIR" && shasum -a 256 -c checksums.txt)
 
-node - "$OUT_DIR/provenance.json" "$VERSION" "$head_commit" "$checksums" <<'NODE'
+node - "$OUT_DIR/provenance.json" "$VERSION" "$head_commit" "$checksums" "$ROOT/scripts/build-bun.ts" <<'NODE'
 const fs = require('node:fs');
+const { assertSupportedBunVersion } = require(process.argv[6]);
 const provenance = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const tag = process.argv[3];
 const commit = process.argv[4];
@@ -148,6 +149,7 @@ if (
 ) {
   throw new Error('invalid release builder provenance');
 }
+assertSupportedBunVersion(provenance.builder.bun);
 for (const arch of ['arm64', 'x86_64']) {
   const name = `mcporter_${version}_darwin_${arch}.tar.gz`;
   const payload = payloads.get(name);

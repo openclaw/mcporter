@@ -92,7 +92,7 @@ cat >"$MOCK_BIN/bun" <<'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "${1:-}" == --version ]]; then
-  echo 1.3.14
+  echo "${MOCK_BUN_VERSION:-1.4.4}"
   exit 0
 fi
 output=
@@ -120,6 +120,7 @@ if [[ "${1:-}" == --version ]]; then
   echo 10.33.2
   exit 0
 fi
+printf 'pnpm %s\n' "$*" >>"$MOCK_LOG"
 if [[ "${1:-}" == clean ]]; then
   rm -rf "$MCPORTER_TEST_ROOT/dist"
   exit 0
@@ -374,6 +375,17 @@ assert_fails env \
   "$ROOT/scripts/package-release.sh" "$TAG"
 [[ ! -e "$rejected_out" ]] || fail 'rejected notarization published release output'
 
+# An affected compiler must stop before building, signing or publishing output.
+: >"$MOCK_LOG"
+old_bun_out="$WORK/old-bun-output"
+assert_fails env \
+  MOCK_BUN_VERSION=1.4.3 \
+  MCPORTER_RELEASE_OUT_DIR="$old_bun_out" \
+  MAC_RELEASE_CODESIGN_IDENTITY="$EXPECTED_IDENTITY" \
+  NOTARYTOOL_KEYCHAIN_PROFILE=mock-profile \
+  "$ROOT/scripts/package-release.sh" "$TAG"
+[[ ! -e "$old_bun_out" && ! -s "$MOCK_LOG" ]] || fail 'affected Bun produced or signed release output'
+
 # The happy path exercises the packager's default runner path, dual builds,
 # signing/notary calls, packaging, provenance, basename-only checksums, and the
 # token-free exact-inventory verifier.
@@ -396,6 +408,26 @@ expected_inventory=$(printf '%s\n' \
 actual_inventory=$(find "$release_out" -mindepth 1 -maxdepth 1 -exec basename {} \; | LC_ALL=C sort)
 [[ "$actual_inventory" == "$expected_inventory" ]] || fail 'release output inventory mismatch'
 awk 'NF != 2 || $2 ~ /\// { exit 1 }' "$release_out/checksums.txt" || fail 'checksum contains a path'
+
+# Self-consistent checksums cannot make an affected builder version acceptable.
+old_bun_assets="$WORK/old-bun-assets"
+cp -R "$release_out" "$old_bun_assets"
+node - "$old_bun_assets" <<'NODE'
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
+const directory = process.argv[2];
+const provenancePath = path.join(directory, 'provenance.json');
+const provenance = JSON.parse(fs.readFileSync(provenancePath, 'utf8'));
+provenance.builder.bun = '1.4.3';
+fs.writeFileSync(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
+const digest = crypto.createHash('sha256').update(fs.readFileSync(provenancePath)).digest('hex');
+const checksumPath = path.join(directory, 'checksums.txt');
+fs.writeFileSync(checksumPath, fs.readFileSync(checksumPath, 'utf8').replace(/^[0-9a-f]{64}  provenance\.json$/m, `${digest}  provenance.json`));
+NODE
+assert_fails env -u GH_TOKEN -u GITHUB_TOKEN \
+  MCPORTER_VERIFY_EXEC_ARCH=all \
+  "$ROOT/scripts/verify-release.sh" "$TAG" "$old_bun_assets"
 
 touch "$release_out/unexpected.txt"
 assert_fails env -u GH_TOKEN -u GITHUB_TOKEN \

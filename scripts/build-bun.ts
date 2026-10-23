@@ -76,9 +76,31 @@ export function createCompiledEntrypoint(projectRoot: string, version: string): 
   return [`process.env.MCPORTER_VERSION ??= ${embeddedVersion};`, `await import(${cliPath});`, ''].join('\n');
 }
 
+export function assertSupportedBunVersion(version: string): void {
+  const minimum: [number, number, number] = [1, 4, 4];
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (match) {
+    const major = Number(match[1]);
+    const minor = Number(match[2]);
+    const patch = Number(match[3]);
+    const [minimumMajor, minimumMinor, minimumPatch] = minimum;
+    if (
+      major > minimumMajor ||
+      (major === minimumMajor && minor > minimumMinor) ||
+      (major === minimumMajor && minor === minimumMinor && patch >= minimumPatch)
+    ) {
+      return;
+    }
+  }
+  throw new Error(
+    `Bun ${minimum.join('.')} or newer is required for native releases; found ${version}. Install a current stable Bun release and rebuild.`
+  );
+}
+
 // main orchestrates the Bun compile flow for the mcporter binary.
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
+  assertSupportedBunVersion(process.versions.bun ?? 'not running Bun');
   const projectRoot = path.join(fs.realpathSync(path.dirname(new URL(import.meta.url).pathname)), '..');
   const version = readPackageVersion(projectRoot);
   const distDir = path.join(projectRoot, 'dist-bun');
@@ -106,7 +128,7 @@ async function main(): Promise<void> {
   }
 
   console.log(`Building mcporter binary → ${outputPath}`);
-  const result = spawnSync('bun', buildArgs, { stdio: 'inherit' });
+  const result = spawnSync(process.execPath, buildArgs, { stdio: 'inherit' });
   try {
     if (result.status !== 0) {
       throw new Error(`bun build exited with status ${result.status ?? 'unknown'}`);

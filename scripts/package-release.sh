@@ -39,6 +39,11 @@ for tool in bun git node pnpm shasum tar; do
 done
 
 cd "$ROOT"
+bun_version=$(run_build bun --version)
+node - "$bun_version" "$ROOT/scripts/build-bun.ts" <<'NODE'
+const { assertSupportedBunVersion } = require(process.argv[3]);
+assertSupportedBunVersion(process.argv[2]);
+NODE
 release_version=${VERSION#v}
 package_version=$(node -p "require('./package.json').version")
 [[ "$package_version" == "$release_version" ]] || {
@@ -119,7 +124,6 @@ for index in "${!architectures[@]}"; do
   tar -czf "$PAYLOAD/$archive_name" -C "$build_dir" mcporter
 done
 
-bun_version=$(bun --version)
 node_version=$(node --version)
 pnpm_version=$(pnpm --version)
 host_version=$(sw_vers -productVersion)
