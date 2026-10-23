@@ -8,6 +8,8 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { assertSupportedBunVersion } from '../src/cli/generate/runtime.js';
+
 interface Options {
   readonly target?: string;
   readonly bytecode: boolean;
@@ -74,27 +76,6 @@ export function createCompiledEntrypoint(projectRoot: string, version: string): 
   const cliPath = JSON.stringify(path.join(projectRoot, 'src', 'cli.ts'));
   const embeddedVersion = JSON.stringify(version);
   return [`process.env.MCPORTER_VERSION ??= ${embeddedVersion};`, `await import(${cliPath});`, ''].join('\n');
-}
-
-export function assertSupportedBunVersion(version: string): void {
-  const minimum: [number, number, number] = [1, 4, 4];
-  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
-  if (match) {
-    const major = Number(match[1]);
-    const minor = Number(match[2]);
-    const patch = Number(match[3]);
-    const [minimumMajor, minimumMinor, minimumPatch] = minimum;
-    if (
-      major > minimumMajor ||
-      (major === minimumMajor && minor > minimumMinor) ||
-      (major === minimumMajor && minor === minimumMinor && patch >= minimumPatch)
-    ) {
-      return;
-    }
-  }
-  throw new Error(
-    `Bun ${minimum.join('.')} or newer is required for native releases; found ${version}. Install a current stable Bun release and rebuild.`
-  );
 }
 
 // main orchestrates the Bun compile flow for the mcporter binary.

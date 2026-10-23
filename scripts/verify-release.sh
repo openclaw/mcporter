@@ -85,7 +85,7 @@ awk 'NF != 2 || $1 !~ /^[[:xdigit:]]{64}$/ || $2 ~ /\// { exit 1 }' "$checksums"
 }
 (cd "$OUT_DIR" && shasum -a 256 -c checksums.txt)
 
-node - "$OUT_DIR/provenance.json" "$VERSION" "$head_commit" "$checksums" "$ROOT/scripts/build-bun.ts" <<'NODE'
+node - "$OUT_DIR/provenance.json" "$VERSION" "$head_commit" "$checksums" "$ROOT/src/cli/generate/runtime.ts" <<'NODE'
 const fs = require('node:fs');
 const { assertSupportedBunVersion } = require(process.argv[6]);
 const provenance = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));

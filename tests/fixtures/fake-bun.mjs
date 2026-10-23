@@ -2,6 +2,7 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const args = process.argv.slice(2);
 const logPath = process.env.FAKE_BUN_LOG;
@@ -10,7 +11,14 @@ if (logPath) {
 }
 
 if (args[0] === '--version') {
-  console.log('1.2.3-fake');
+  console.log(process.env.FAKE_BUN_VERSION ?? '1.4.4');
+  process.exit(0);
+}
+
+if (args.includes('--print')) {
+  console.log(
+    JSON.stringify({ version: process.env.FAKE_BUN_VERSION ?? '1.4.4', executable: fileURLToPath(import.meta.url) })
+  );
   process.exit(0);
 }
 

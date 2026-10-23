@@ -612,6 +612,39 @@ await new Promise((resolve) => { transport.onclose = resolve; });
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }, 20000);
 
+  it('does not run project preloads while detecting Bun', async () => {
+    if (!(await ensureBunSupport('Bun availability preload isolation'))) {
+      return;
+    }
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-bun-preload-'));
+    const outputPath = path.join(tempDir, 'generated.ts');
+    const markerPath = path.join(tempDir, 'preload-ran');
+    try {
+      await fs.writeFile(path.join(tempDir, 'bunfig.toml'), 'preload = ["./preload.mjs"]\n');
+      await fs.writeFile(
+        path.join(tempDir, 'preload.mjs'),
+        `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(markerPath)}, 'unexpected preload');\n`
+      );
+      await new Promise<void>((resolve, reject) => {
+        execFile(
+          process.execPath,
+          [CLI_ENTRY, 'generate-cli', '--command', baseUrl.toString(), '--output', outputPath],
+          { cwd: tempDir, env: { ...process.env, MCPORTER_NO_FORCE_EXIT: '1' } },
+          (error) => (error ? reject(error) : resolve())
+        );
+      });
+      expect(await fs.readFile(outputPath, 'utf8')).toMatch(/^#!\/usr\/bin\/env bun/);
+      expect(
+        await fs.access(markerPath).then(
+          () => true,
+          () => false
+        )
+      ).toBe(false);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  }, 20000);
+
   it('runs "node dist/cli.js generate-cli --compile" when bun is available', async () => {
     if (!(await ensureRunnableBunCompile('compile integration test'))) {
       return;

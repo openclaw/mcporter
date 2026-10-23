@@ -129,9 +129,9 @@ async function bundleWithBun({
   runtimeKind: 'node' | 'bun';
   minify: boolean;
 }): Promise<string> {
+  const bunBin = await verifyBunAvailable();
   const absTarget = path.resolve(targetPath);
   await fs.mkdir(path.dirname(absTarget), { recursive: true });
-  const bunBin = await verifyBunAvailable();
   const tmpRoot = path.join(packageRoot, 'tmp');
   await fs.mkdir(tmpRoot, { recursive: true });
   const stagingDir = await fs.mkdtemp(path.join(tmpRoot, 'bundle-'));

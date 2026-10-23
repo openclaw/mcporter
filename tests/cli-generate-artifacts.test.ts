@@ -81,6 +81,25 @@ describe.skipIf(process.platform === 'win32')('Bun artifact generation', () => {
     await fsPromises.chmod(FAKE_BUN_PATH, 0o755);
   });
 
+  it('rejects an affected compiler before creating a native artifact', async () => {
+    const tempDir = await fsPromises.mkdtemp(TMP_PREFIX);
+    const logPath = path.join(tempDir, 'bun.log');
+    const outputPath = path.join(tempDir, 'compiled');
+    vi.stubEnv('BUN_BIN', FAKE_BUN_PATH);
+    vi.stubEnv('FAKE_BUN_VERSION', '1.4.3');
+    vi.stubEnv('FAKE_BUN_LOG', logPath);
+    try {
+      const bundlePath = path.join(tempDir, 'bundle.js');
+      await fsPromises.writeFile(bundlePath, 'console.log("owned fixture");\n');
+      await expect(compileBundleWithBun(bundlePath, outputPath)).rejects.toThrow('Bun 1.4.4 or newer is required');
+      expect(fs.existsSync(outputPath)).toBe(false);
+      const invocations = await readInvocationLog(logPath);
+      expect(invocations.some((entry) => entry.args[0] === 'build')).toBe(false);
+    } finally {
+      await fsPromises.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it.each([
     { runtimeKind: 'node' as const, minify: false },
     { runtimeKind: 'bun' as const, minify: true },
@@ -106,7 +125,6 @@ describe.skipIf(process.platform === 'win32')('Bun artifact generation', () => {
       expect(await fsPromises.readFile(result, 'utf8')).toContain('fake bun bundle');
       expect((await fsPromises.stat(result)).mode & 0o111).not.toBe(0);
       const invocations = await readInvocationLog(logPath);
-      expect(invocations[0]?.args).toEqual(['--version']);
       const build = invocations.find((invocation) => invocation.args[0] === 'build');
       expect(build?.args).toEqual([
         'build',

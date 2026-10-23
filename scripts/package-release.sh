@@ -40,7 +40,7 @@ done
 
 cd "$ROOT"
 bun_version=$(run_build bun --version)
-node - "$bun_version" "$ROOT/scripts/build-bun.ts" <<'NODE'
+node - "$bun_version" "$ROOT/src/cli/generate/runtime.ts" <<'NODE'
 const { assertSupportedBunVersion } = require(process.argv[3]);
 assertSupportedBunVersion(process.argv[2]);
 NODE
