@@ -131,6 +131,19 @@ describe.each(fixtureKinds)('%s fixture through the real CLI', (fixture) => {
     );
 
     it(
+      'preserves equals signs in colon-style tool arguments',
+      async () => {
+        await withConfig({ fixture: configFor(fixture, transport) }, async (configPath, env) => {
+          const text = 'https://example.com/?a=b&c=d';
+          const echo = await runCli(['call', 'fixture.echo', `text:${text}`, '--output', 'json'], configPath, env);
+          expect(echo.exitCode, echo.stderr).toBe(0);
+          expect(echo.stdout).toContain(text);
+        });
+      },
+      budget(20_000)
+    );
+
+    it(
       'reports tool failures and completes progress work',
       async () => {
         await withConfig({ fixture: configFor(fixture, transport) }, async (configPath, env) => {

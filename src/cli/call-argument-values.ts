@@ -8,7 +8,9 @@ export interface ParsedKeyValueToken {
 
 export function parseKeyValueToken(token: string, nextToken: string | undefined): ParsedKeyValueToken | undefined {
   const eqIndex = token.indexOf('=');
-  if (eqIndex !== -1) {
+  const colonIndex = token.indexOf(':');
+  // The first separator owns the value; := is an alias for =.
+  if (eqIndex !== -1 && (colonIndex === -1 || eqIndex <= colonIndex + 1)) {
     const keyEnd = eqIndex > 0 && token[eqIndex - 1] === ':' ? eqIndex - 1 : eqIndex;
     const key = token.slice(0, keyEnd);
     const rawValue = token.slice(eqIndex + 1);
@@ -18,7 +20,6 @@ export function parseKeyValueToken(token: string, nextToken: string | undefined)
     return { key, rawValue, consumed: 1 };
   }
 
-  const colonIndex = token.indexOf(':');
   if (colonIndex !== -1) {
     const key = token.slice(0, colonIndex);
     const remainder = token.slice(colonIndex + 1);

@@ -14,6 +14,21 @@ describe('parseCallArguments', () => {
     expect(parsed.args.format).toBe('json');
   });
 
+  it.each<[string, unknown]>([
+    ['https://example.com/?a=b&c=d', 'https://example.com/?a=b&c=d'],
+    ['printf a=b', 'printf a=b'],
+    ['left:=right', 'left:=right'],
+    ['left=middle:right=', 'left=middle:right='],
+    ['{"filter":"a=b","nested":{"query":"c:=d"}}', { filter: 'a=b', nested: { query: 'c:=d' } }],
+    ['["a=b",{"query":"c:=d"}]', ['a=b', { query: 'c:=d' }]],
+  ])('preserves equals signs in colon-style argument values: %s', (raw, expected) => {
+    for (const tokens of [[`value:${raw}`], ['value:', raw], [`value=${raw}`], [`value:=${raw}`]]) {
+      const parsed = parseCallArguments(['server.tool', ...tokens]);
+      expect(parsed.args).toEqual({ value: expected });
+      expect(parsed.positionalArgs).toBeUndefined();
+    }
+  });
+
   it.each(['Infinity', '-Infinity'])('keeps non-JSON numeric token %s as literal data', (value) => {
     expect(parseCallArguments(['owned.echo', `value=${value}`]).args).toEqual({ value });
     expect(parseCallArguments(['owned.echo', '--value', value]).args).toEqual({ value });
