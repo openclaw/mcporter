@@ -3,6 +3,7 @@
 ## [0.16.1] - Unreleased
 
 - Require Bun 1.4.4 or newer for native MCPorter and generated CLI builds, rejecting affected compiler and release provenance versions; qualify Windows and both macOS architectures before release. Thanks @joshavant (#464).
+- Patch URI parsing and IPv6 denial-of-service advisories in development fixtures while preserving the 48-hour dependency cooldown.
 - Refresh jose and lint/format tooling while preserving Node 24 support and the 48-hour dependency cooldown; isolate daemon elicitation coverage from Windows process-query failures while retaining real process-retirement integration tests.
 
 ## [0.16.0] - 2026-10-20
