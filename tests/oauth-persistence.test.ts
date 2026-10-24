@@ -943,6 +943,93 @@ describe('oauth persistence', () => {
     await expect(readJsonFile(path.join(cacheDir, 'client.json'))).resolves.toBeUndefined();
   });
 
+  it('binds legacy refresh credentials to the persisted discovery issuer', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-refresh-discovery-binding-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+
+    const cacheDir = path.join(tmp, 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'legacy-refresh-secret',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+      })
+    );
+    await fs.writeFile(path.join(cacheDir, 'client.json'), JSON.stringify({ client_id: 'legacy-client' }));
+    await fs.writeFile(
+      path.join(cacheDir, 'discovery.json'),
+      JSON.stringify({
+        authorizationServerUrl: 'https://issuer-a.example',
+        resourceMetadataUrl: 'https://example.com/custom-resource-metadata',
+      })
+    );
+    authMocks.discoverOAuthServerInfo.mockResolvedValue({
+      authorizationServerUrl: 'https://issuer-b.example',
+      authorizationServerMetadata: { token_endpoint: 'https://issuer-b.example/token' },
+    });
+
+    await expect(readCachedAccessToken(mkDef('legacy-discovery-bound-service', cacheDir))).rejects.toThrow(
+      /expected https:\/\/issuer-a\.example.*received https:\/\/issuer-b\.example/i
+    );
+
+    expect(authMocks.refreshAuthorization).not.toHaveBeenCalled();
+    await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toMatchObject({
+      refresh_token: 'legacy-refresh-secret',
+    });
+    await expect(readJsonFile(path.join(cacheDir, 'client.json'))).resolves.toMatchObject({
+      client_id: 'legacy-client',
+    });
+  });
+
+  it('rejects divergent discovery state before using it and retains stamped credentials', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-refresh-discovery-divergence-'));
+    tempRoots.push(tmp);
+    homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(tmp);
+    hasSpy = true;
+
+    const cacheDir = path.join(tmp, 'cache');
+    await fs.mkdir(cacheDir, { recursive: true });
+    await fs.writeFile(
+      path.join(cacheDir, 'tokens.json'),
+      JSON.stringify({
+        access_token: 'expired-token',
+        token_type: 'Bearer',
+        refresh_token: 'stamped-refresh-secret',
+        expires_at: Math.floor(Date.now() / 1000) - 30,
+        issuer: 'https://issuer-a.example',
+      })
+    );
+    await fs.writeFile(
+      path.join(cacheDir, 'client.json'),
+      JSON.stringify({ client_id: 'stamped-client', issuer: 'https://issuer-a.example' })
+    );
+    await fs.writeFile(
+      path.join(cacheDir, 'discovery.json'),
+      JSON.stringify({
+        authorizationServerUrl: 'https://issuer-b.example',
+        resourceMetadataUrl: 'https://example.com/stale-resource-metadata',
+      })
+    );
+
+    await expect(readCachedAccessToken(mkDef('divergent-discovery-service', cacheDir))).rejects.toThrow(
+      /persisted OAuth discovery issuer.*does not match its cached credentials/i
+    );
+
+    expect(authMocks.discoverOAuthServerInfo).not.toHaveBeenCalled();
+    expect(authMocks.refreshAuthorization).not.toHaveBeenCalled();
+    await expect(readJsonFile(path.join(cacheDir, 'tokens.json'))).resolves.toMatchObject({
+      refresh_token: 'stamped-refresh-secret',
+    });
+    await expect(readJsonFile(path.join(cacheDir, 'client.json'))).resolves.toMatchObject({
+      client_id: 'stamped-client',
+    });
+  });
+
   it('stamps refreshed OAuth tokens with the discovered issuer', async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-oauth-refresh-issuer-stamp-'));
     tempRoots.push(tmp);

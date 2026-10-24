@@ -1,4 +1,5 @@
 import { scryptSync } from 'node:crypto';
+import fs from 'node:fs/promises';
 import { buildOAuthPersistence, readCachedAccessToken } from '../../dist/oauth-persistence.js';
 import { withRefreshLock } from '../../dist/oauth-refresh-lock.js';
 import { createOAuthSession } from '../../dist/oauth.js';
@@ -18,6 +19,9 @@ const markerKeyBytes = Buffer.from(markerKey, 'hex');
 
 const serverName = process.env.MCPORTER_TEST_OAUTH_SERVER_NAME ?? 'oauth-refresh-process';
 const seedRefreshToken = process.env.MCPORTER_TEST_OAUTH_SEED_REFRESH ?? 'fresh-process-refresh-token';
+const seedIssuer = process.env.MCPORTER_TEST_OAUTH_ISSUER;
+const discoveryIssuer = process.env.MCPORTER_TEST_OAUTH_DISCOVERY_ISSUER ?? seedIssuer;
+const resourceMetadataUrl = process.env.MCPORTER_TEST_OAUTH_RESOURCE_METADATA_URL;
 
 const definition = {
   name: serverName,
@@ -43,20 +47,73 @@ async function snapshot() {
   return await (await buildOAuthPersistence(definition, logger)).readSnapshot();
 }
 
-if (action === 'seed') {
+if (action === 'seed-legacy-directory') {
+  await fs.mkdir(tokenCacheDir, { recursive: true });
+  await Promise.all([
+    fs.writeFile(
+      `${tokenCacheDir}/client.json`,
+      JSON.stringify({
+        client_id: 'fresh-process-client',
+        redirect_uris: ['http://127.0.0.1:41000/callback'],
+        token_endpoint_auth_method: 'none',
+      })
+    ),
+    fs.writeFile(
+      `${tokenCacheDir}/tokens.json`,
+      JSON.stringify({
+        access_token: 'expired-process-token',
+        token_type: 'Bearer',
+        refresh_token: seedRefreshToken,
+        expires_at: 1,
+      })
+    ),
+    fs.writeFile(
+      `${tokenCacheDir}/discovery.json`,
+      JSON.stringify({
+        ...(resourceMetadataUrl ? { resourceMetadataUrl } : {}),
+        ...(discoveryIssuer ? { authorizationServerUrl: discoveryIssuer } : {}),
+      })
+    ),
+    fs.writeFile(`${tokenCacheDir}/server_url.txt`, endpoint),
+  ]);
+  emit({ seeded: true, format: 'legacy-directory', refreshMarker: marker(seedRefreshToken) });
+} else if (action === 'seed') {
   const persistence = await buildOAuthPersistence(definition, logger);
   await persistence.saveClientInfo({
     client_id: 'fresh-process-client',
     redirect_uris: ['http://127.0.0.1:41000/callback'],
     token_endpoint_auth_method: 'none',
+    ...(seedIssuer ? { issuer: seedIssuer } : {}),
   });
   await persistence.saveTokens({
     access_token: 'expired-process-token',
     token_type: 'Bearer',
     refresh_token: seedRefreshToken,
     expires_at: 1,
+    ...(seedIssuer ? { issuer: seedIssuer } : {}),
   });
+  if (resourceMetadataUrl || discoveryIssuer) {
+    await persistence.saveDiscoveryState({
+      ...(resourceMetadataUrl ? { resourceMetadataUrl } : {}),
+      ...(discoveryIssuer ? { authorizationServerUrl: discoveryIssuer } : {}),
+    });
+  }
   emit({ seeded: true, refreshMarker: marker(seedRefreshToken) });
+} else if (action === 'snapshot') {
+  const stored = await snapshot();
+  emit({
+    accessMarker: marker(stored.tokens?.access_token),
+    clientId: stored.clientInfo?.client_id ?? null,
+    clientIssuer: stored.clientInfo?.issuer ?? null,
+    discoveryIssuer: stored.discoveryState?.authorizationServerUrl ?? null,
+    expiresAt: stored.tokens?.expires_at ?? stored.tokens?.expiresAt ?? null,
+    redirectUris: stored.clientInfo?.redirect_uris ?? null,
+    refreshMarker: marker(stored.tokens?.refresh_token),
+    resourceMetadataUrl: stored.discoveryState?.resourceMetadataUrl ?? null,
+    tokenEndpointAuthMethod: stored.clientInfo?.token_endpoint_auth_method ?? null,
+    tokenType: stored.tokens?.token_type ?? null,
+    tokenIssuer: stored.tokens?.issuer ?? null,
+  });
 } else if (action === 'seed-post-401') {
   const persistence = await buildOAuthPersistence(definition, logger);
   await persistence.saveClientInfo({

@@ -222,16 +222,20 @@ async function assertRefreshIssuerBinding(
   persistence: OAuthPersistence,
   tokens: StoredOAuthTokens,
   clientInformation: StoredOAuthClientInformation,
-  receivedIssuer: string
+  receivedIssuer: string,
+  persistedDiscoveryIssuer?: string
 ): Promise<void> {
-  const expectedIssuer = normalizedIssuer(tokens.issuer) ?? normalizedIssuer(clientInformation.issuer);
+  const credentialIssuer = normalizedIssuer(tokens.issuer) ?? normalizedIssuer(clientInformation.issuer);
+  const expectedIssuer = credentialIssuer ?? normalizedIssuer(persistedDiscoveryIssuer);
   if (!expectedIssuer || expectedIssuer === normalizedIssuer(receivedIssuer)) {
     return;
   }
-  await Promise.all([persistence.clear('tokens'), persistence.clear('client')]);
+  if (credentialIssuer) {
+    await Promise.all([persistence.clear('tokens'), persistence.clear('client')]);
+  }
   throw new OAuthIssuerMismatchError(
     `OAuth issuer changed for '${definition.name}': expected ${expectedIssuer}, received ${receivedIssuer}. ` +
-      `Discarded cached credentials; run 'mcporter auth ${definition.name}' to reauthorize.`
+      `${credentialIssuer ? 'Discarded' : 'Retained'} cached credentials; run 'mcporter auth ${definition.name}' to reauthorize.`
   );
 }
 
@@ -357,13 +361,30 @@ async function refreshCachedOAuthTokenUnderLock(
     if (definition.command.kind !== 'http') {
       return tokens.access_token;
     }
-    const serverInfo = await discoverOAuthServerInfo(definition.command.url, { fetchFn: boundedRefreshFetch });
+    const discoveryState = await persistence.readDiscoveryState();
+    const credentialIssuer =
+      normalizedIssuer((tokens as StoredOAuthTokens).issuer) ?? normalizedIssuer(clientInformation.issuer);
+    const persistedDiscoveryIssuer = normalizedIssuer(discoveryState?.authorizationServerUrl);
+    if (credentialIssuer && persistedDiscoveryIssuer && credentialIssuer !== persistedDiscoveryIssuer) {
+      throw new OAuthIssuerMismatchError(
+        `Persisted OAuth discovery issuer for '${definition.name}' does not match its cached credentials. ` +
+          `Retained cached credentials; run 'mcporter auth ${definition.name}' to reauthorize.`
+      );
+    }
+    const resourceMetadataUrl = discoveryState?.resourceMetadataUrl
+      ? new URL(discoveryState.resourceMetadataUrl)
+      : undefined;
+    const serverInfo = await discoverOAuthServerInfo(definition.command.url, {
+      fetchFn: boundedRefreshFetch,
+      ...(resourceMetadataUrl ? { resourceMetadataUrl } : {}),
+    });
     await assertRefreshIssuerBinding(
       definition,
       persistence,
       tokens as StoredOAuthTokens,
       clientInformation,
-      serverInfo.authorizationServerUrl
+      serverInfo.authorizationServerUrl,
+      persistedDiscoveryIssuer
     );
     const resource = resourceForRefresh(definition.command.url, serverInfo.resourceMetadata);
     const refreshed = await refreshAuthorization(serverInfo.authorizationServerUrl, {

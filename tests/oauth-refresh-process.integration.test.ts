@@ -7,6 +7,9 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import express from 'express';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 // The child processes exercise the built artifact; this parent only needs the
 // same lock-path derivation, so it imports source rather than requiring dist to
@@ -28,6 +31,20 @@ const MARKER_KEY = randomBytes(32);
 interface Generation {
   family: string;
   spent: boolean;
+}
+
+interface ProofSnapshot {
+  accessMarker: string | null;
+  clientId: string | null;
+  clientIssuer: string | null;
+  discoveryIssuer: string | null;
+  expiresAt: number | null;
+  redirectUris: string[] | null;
+  refreshMarker: string | null;
+  resourceMetadataUrl: string | null;
+  tokenEndpointAuthMethod: string | null;
+  tokenIssuer: string | null;
+  tokenType: string | null;
 }
 
 function marker(value: string): string {
@@ -216,6 +233,235 @@ describe('OAuth refresh across fresh built-artifact processes', () => {
       expect(tokenRequests[0]?.get('client_id')).toBe('fresh-process-client');
     },
     budget(20_000)
+  );
+
+  it(
+    'reuses header-advertised protected resource metadata during silent refresh',
+    async () => {
+      const resourceRequests: string[] = [];
+      const resourceServer = createServer((request, response) => {
+        const origin = `http://127.0.0.1:${(resourceServer.address() as AddressInfo).port}`;
+        const url = new URL(request.url ?? '/', origin);
+        resourceRequests.push(url.pathname);
+        if (url.pathname === '/v2/server/mcp/.well-known/oauth-protected-resource') {
+          return sendJson(response, {
+            resource: `${origin}/v2/server/mcp`,
+            authorization_servers: [authOrigin],
+          });
+        }
+        response.statusCode = 404;
+        response.end('not found');
+      });
+      await new Promise<void>((resolve, reject) => {
+        resourceServer.once('error', reject);
+        resourceServer.listen(0, '127.0.0.1', resolve);
+      });
+
+      try {
+        const resourceOrigin = `http://127.0.0.1:${(resourceServer.address() as AddressInfo).port}`;
+        const resourceEndpoint = `${resourceOrigin}/v2/server/mcp`;
+        const metadataUrl = `${resourceEndpoint}/.well-known/oauth-protected-resource`;
+        const seed = 'header-only-seed';
+        registerSeed(seed, 'header-only');
+        const env = await freshEnv('header-only-discovery', seed);
+        env.MCPORTER_TEST_OAUTH_ENDPOINT = resourceEndpoint;
+        env.MCPORTER_TEST_OAUTH_ISSUER = authOrigin;
+        env.MCPORTER_TEST_OAUTH_RESOURCE_METADATA_URL = metadataUrl;
+
+        await runFixture('seed', env);
+        const result = JSON.parse(await runFixture('refresh-cached', env)) as {
+          accessMarker: string;
+          persistedAccessMarker: string;
+          persistedRefreshMarker: string;
+        };
+
+        expect(result.accessMarker).toBe(marker('access-header-only-1'));
+        expect(result.persistedAccessMarker).toBe(marker('access-header-only-1'));
+        expect(result.persistedRefreshMarker).toBe(marker('rotated-header-only-1'));
+        expect(resourceRequests).toEqual([metadataUrl.slice(resourceOrigin.length)]);
+        expect(tokenRequests).toHaveLength(1);
+        expect(tokenRequests[0]?.get('refresh_token')).toBe(seed);
+      } finally {
+        await new Promise<void>((resolve) => resourceServer.close(() => resolve()));
+      }
+    },
+    budget(20_000)
+  );
+
+  it(
+    'enforces persisted issuer binding at the shipped CLI HTTP boundary',
+    async () => {
+      let advertisedAuthorizationOrigin = authOrigin;
+      let resourceMetadataRequests = 0;
+      let authenticatedMcpRequests = 0;
+      let substitutedTokenPosts = 0;
+
+      const substitutedAuthorizationServer = createServer(async (request, response) => {
+        const origin = `http://127.0.0.1:${(substitutedAuthorizationServer.address() as AddressInfo).port}`;
+        const url = new URL(request.url ?? '/', origin);
+        if (
+          url.pathname.includes('.well-known/oauth-authorization-server') ||
+          url.pathname.includes('openid-configuration')
+        ) {
+          return sendJson(response, {
+            issuer: origin,
+            authorization_endpoint: `${origin}/authorize`,
+            token_endpoint: `${origin}/token`,
+            registration_endpoint: `${origin}/register`,
+            response_types_supported: ['code'],
+            grant_types_supported: ['authorization_code', 'refresh_token'],
+            token_endpoint_auth_methods_supported: ['none'],
+            code_challenge_methods_supported: ['S256'],
+          });
+        }
+        if (url.pathname === '/token' && request.method === 'POST') {
+          substitutedTokenPosts += 1;
+          await readBody(request);
+          return sendError(response, 'invalid_grant');
+        }
+        response.statusCode = 404;
+        response.end('not found');
+      });
+      const app = express();
+      app.use(express.json());
+      const mcpServer = new McpServer({ name: 'oauth-cli-proof', version: '1.0.0' });
+      mcpServer.registerTool(
+        'proof',
+        { description: 'Return a deterministic proof response', inputSchema: {} },
+        async () => ({ content: [{ type: 'text', text: 'ok' }] })
+      );
+
+      let resourceOrigin = '';
+      let resourceEndpoint = '';
+      let resourceMetadataUrl = '';
+      app.get('/v2/server/mcp/.well-known/oauth-protected-resource', (_request, response) => {
+        resourceMetadataRequests += 1;
+        response.json({ resource: resourceEndpoint, authorization_servers: [advertisedAuthorizationOrigin] });
+      });
+      app.post('/v2/server/mcp', async (request, response) => {
+        if (request.headers.authorization !== 'Bearer access-cli-proof-1') {
+          response.status(401);
+          response.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}"`);
+          response.end('unauthorized');
+          return;
+        }
+        authenticatedMcpRequests += 1;
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: undefined,
+          enableJsonResponse: true,
+        });
+        response.on('close', () => {
+          transport.close().catch(() => {});
+        });
+        await mcpServer.connect(transport);
+        await transport.handleRequest(request, response, request.body);
+      });
+
+      const resourceServer = createServer(app);
+      const listeningServers: Server[] = [];
+
+      try {
+        await listen(substitutedAuthorizationServer);
+        listeningServers.push(substitutedAuthorizationServer);
+        await listen(resourceServer);
+        listeningServers.push(resourceServer);
+        resourceOrigin = `http://127.0.0.1:${(resourceServer.address() as AddressInfo).port}`;
+        resourceEndpoint = `${resourceOrigin}/v2/server/mcp`;
+        resourceMetadataUrl = `${resourceEndpoint}/.well-known/oauth-protected-resource`;
+        const substitutedOrigin = `http://127.0.0.1:${(substitutedAuthorizationServer.address() as AddressInfo).port}`;
+
+        const successSeed = 'cli-proof-seed';
+        registerSeed(successSeed, 'cli-proof');
+        const successEnv = await freshEnv('cli-proof-success', successSeed);
+        successEnv.MCPORTER_TEST_OAUTH_ENDPOINT = resourceEndpoint;
+        successEnv.MCPORTER_TEST_OAUTH_RESOURCE_METADATA_URL = resourceMetadataUrl;
+        successEnv.MCPORTER_TEST_OAUTH_DISCOVERY_ISSUER = authOrigin;
+        await runFixture('seed-legacy-directory', successEnv);
+        const successConfig = await writeCliConfig(successEnv, resourceEndpoint);
+
+        const success = await runCli(['list', 'cli-proof', '--json'], successConfig, successEnv);
+        expect(success.exitCode).toBe(0);
+        expect(JSON.parse(success.stdout)).toMatchObject({ name: 'cli-proof', status: 'ok' });
+        expect(resourceMetadataRequests).toBe(1);
+        expect(tokenRequests).toHaveLength(1);
+        expect(tokenRequests[0]?.get('refresh_token')).toBe(successSeed);
+        expect(authenticatedMcpRequests).toBeGreaterThan(0);
+        const upgraded = JSON.parse(await runFixture('snapshot', successEnv)) as ProofSnapshot;
+        expect(upgraded.accessMarker).toBe(marker('access-cli-proof-1'));
+        expect(upgraded.refreshMarker).toBe(marker('rotated-cli-proof-1'));
+        expect(upgraded.clientIssuer).toBeNull();
+        expect(upgraded.tokenIssuer).toBe(authOrigin);
+        expect(upgraded.discoveryIssuer).toBe(authOrigin);
+        expect(upgraded.resourceMetadataUrl).toBe(resourceMetadataUrl);
+
+        advertisedAuthorizationOrigin = substitutedOrigin;
+        const legacySeed = 'legacy-bound-seed';
+        registerSeed(legacySeed, 'legacy-bound');
+        const legacyEnv = await freshEnv('cli-proof-legacy-bound', legacySeed);
+        legacyEnv.MCPORTER_TEST_OAUTH_ENDPOINT = resourceEndpoint;
+        legacyEnv.MCPORTER_TEST_OAUTH_RESOURCE_METADATA_URL = resourceMetadataUrl;
+        legacyEnv.MCPORTER_TEST_OAUTH_DISCOVERY_ISSUER = authOrigin;
+        await runFixture('seed-legacy-directory', legacyEnv);
+        const legacyConfig = await writeCliConfig(legacyEnv, resourceEndpoint);
+        const legacyBefore = JSON.parse(await runFixture('snapshot', legacyEnv)) as ProofSnapshot;
+
+        const legacyRejected = await runCli(['list', 'cli-proof', '--json'], legacyConfig, legacyEnv);
+        expect(legacyRejected.exitCode).not.toBe(0);
+        expect(JSON.parse(legacyRejected.stdout)).toMatchObject({
+          status: 'auth',
+          issue: { kind: 'auth', statusCode: 401 },
+          error: 'auth required',
+        });
+        expect(resourceMetadataRequests).toBe(2);
+        expect(tokenRequests).toHaveLength(1);
+        expect(substitutedTokenPosts).toBe(0);
+        const legacyRetained = JSON.parse(await runFixture('snapshot', legacyEnv)) as ProofSnapshot;
+        expect(legacyRetained).toEqual(legacyBefore);
+
+        const divergentSeed = 'divergent-bound-seed';
+        registerSeed(divergentSeed, 'divergent-bound');
+        const divergentEnv = await freshEnv('cli-proof-divergent', divergentSeed);
+        divergentEnv.MCPORTER_TEST_OAUTH_ENDPOINT = resourceEndpoint;
+        divergentEnv.MCPORTER_TEST_OAUTH_ISSUER = authOrigin;
+        divergentEnv.MCPORTER_TEST_OAUTH_RESOURCE_METADATA_URL = resourceMetadataUrl;
+        divergentEnv.MCPORTER_TEST_OAUTH_DISCOVERY_ISSUER = substitutedOrigin;
+        await runFixture('seed', divergentEnv);
+        const divergentConfig = await writeCliConfig(divergentEnv, resourceEndpoint);
+        const metadataRequestsBeforeDivergence = resourceMetadataRequests;
+        const divergentBefore = JSON.parse(await runFixture('snapshot', divergentEnv)) as ProofSnapshot;
+
+        const divergentRejected = await runCli(['list', 'cli-proof', '--json'], divergentConfig, divergentEnv);
+        expect(divergentRejected.exitCode).not.toBe(0);
+        expect(JSON.parse(divergentRejected.stdout)).toMatchObject({
+          status: 'auth',
+          issue: { kind: 'auth', statusCode: 401 },
+          error: 'auth required',
+        });
+        expect(resourceMetadataRequests).toBe(metadataRequestsBeforeDivergence);
+        expect(tokenRequests).toHaveLength(1);
+        expect(substitutedTokenPosts).toBe(0);
+        const divergentRetained = JSON.parse(await runFixture('snapshot', divergentEnv)) as ProofSnapshot;
+        expect(divergentRetained).toEqual(divergentBefore);
+
+        if (process.env.MCPORTER_PROOF_TRACE === '1') {
+          process.stdout.write(
+            `${JSON.stringify({
+              scenario: 'shipped-cli-oauth-refresh',
+              legacyStateRefresh: 'ok',
+              resourceMetadataRequests,
+              authorizationServerTokenPosts: tokenRequests.length,
+              authenticatedMcpRequests,
+              substitutedIssuerTokenPosts: substitutedTokenPosts,
+              legacyCredentialsRetained: true,
+              divergentCredentialsRetained: true,
+            })}\n`
+          );
+        }
+      } finally {
+        await Promise.all(listeningServers.map(closeServer));
+      }
+    },
+    budget(30_000)
   );
 
   for (const variant of [
@@ -526,6 +772,53 @@ function runFixture(action: string, env: NodeJS.ProcessEnv): Promise<string> {
       }
     );
   });
+}
+
+async function writeCliConfig(env: NodeJS.ProcessEnv, serverUrl: string): Promise<string> {
+  const configPath = path.join(path.dirname(env.MCPORTER_TEST_OAUTH_CACHE_DIR ?? ''), 'mcporter.json');
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      imports: [],
+      mcpServers: {
+        'cli-proof': {
+          baseUrl: serverUrl,
+          auth: 'oauth',
+          tokenCacheDir: env.MCPORTER_TEST_OAUTH_CACHE_DIR,
+        },
+      },
+    })
+  );
+  return configPath;
+}
+
+function runCli(
+  args: string[],
+  configPath: string,
+  env: NodeJS.ProcessEnv
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    execFile(
+      process.execPath,
+      [CLI_ENTRY, '--config', configPath, ...args],
+      { env: { ...env, MCPORTER_NO_FORCE_EXIT: '1' }, timeout: budget(20_000), maxBuffer: 1024 * 1024 },
+      (error, stdout, stderr) => {
+        const code = error && typeof error.code === 'number' ? error.code : error ? 1 : 0;
+        resolve({ exitCode: code, stdout: stdout.trim(), stderr: stderr.trim() });
+      }
+    );
+  });
+}
+
+function listen(server: Server): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+}
+
+function closeServer(server: Server): Promise<void> {
+  return new Promise((resolve) => server.close(() => resolve()));
 }
 
 function startLockHolder(env: NodeJS.ProcessEnv): Promise<ChildProcess> {
