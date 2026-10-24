@@ -44,14 +44,12 @@ jobs:
 
       - name: Validate dispatch source and version
         env:
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           RELEASE_TAG: ${{ inputs.tag }}
           WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: |
           set -euo pipefail
-          expected_ref="refs/heads/$DEFAULT_BRANCH"
-          [[ "$GITHUB_REF" == "$expected_ref" ]]
-          [[ "$GITHUB_WORKFLOW_REF" == "$GITHUB_REPOSITORY/.github/workflows/release.yml@$expected_ref" ]]
+          [[ "$GITHUB_REF" == refs/heads/* ]]
+          [[ "$GITHUB_WORKFLOW_REF" == "$GITHUB_REPOSITORY/.github/workflows/release.yml@$GITHUB_REF" ]]
           [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" && "$GITHUB_SHA" == "$WORKFLOW_SHA" ]]
           node scripts/validate-release-metadata.mjs
           version=$(node -p 'require("./package.json").version')
@@ -114,6 +112,37 @@ jobs:
         with:
           name: mcporter-dry-run-${{ matrix.arch }}
           path: ${{ runner.temp }}/mcporter-dry-run-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  dry-run-windows:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+    needs: dry-run-source
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - run: pnpm install --frozen-lockfile
+      - name: Build and smoke-test Windows executable
+        shell: pwsh
+        run: ./scripts/smoke-native-windows.ps1
+      - name: Retain Windows rehearsal archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mcporter-dry-run-windows-x64
+          path: ${{ runner.temp }}/mcporter-dry-run-windows-x64.zip
           if-no-files-found: error
           retention-days: 7
 

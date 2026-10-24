@@ -30,10 +30,19 @@ tar -xzf "$archive" -C "$smoke"
 version=$(node -p 'require("./package.json").version')
 cd "$smoke"
 export HOME="$smoke/home"
+printf '{"mcpServers":{}}\n' >"$smoke/empty.json"
 if [[ "$build_arch" == x86_64 ]]; then
+  runtime=$(BUN_BE_BUN=1 /usr/bin/arch -x86_64 ./mcporter --print 'process.versions.bun')
+  [[ "$runtime" == "$(bun --version)" ]]
+  echo "Embedded Bun ($build_arch): $runtime"
   [[ "$(/usr/bin/arch -x86_64 ./mcporter --version)" == "$version" ]]
   /usr/bin/arch -x86_64 ./mcporter --help
+  /usr/bin/arch -x86_64 ./mcporter --config "$smoke/empty.json" list --json
 else
+  runtime=$(BUN_BE_BUN=1 ./mcporter --print 'process.versions.bun')
+  [[ "$runtime" == "$(bun --version)" ]]
+  echo "Embedded Bun ($build_arch): $runtime"
   [[ "$(./mcporter --version)" == "$version" ]]
   ./mcporter --help
+  ./mcporter --config "$smoke/empty.json" list --json
 fi

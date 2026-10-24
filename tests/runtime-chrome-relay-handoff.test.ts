@@ -110,39 +110,29 @@ describe('runtime Chrome relay handoff lifecycle', () => {
     }
   });
 
-  it('fails closed for both shared prefer and require when protected handoff setup fails', async () => {
-    const fixture = await createRelayFixture();
-    authorizeBrokerDefinition(fixture.definition);
-    const blocker = path.join(fixture.directory, 'not-a-directory');
-    await fs.writeFile(blocker, 'block');
-    vi.spyOn(os, 'tmpdir').mockReturnValue(blocker);
-    let preferredArgs: readonly string[] = [];
-    const connectSpy = vi.spyOn(Client.prototype, 'connect').mockImplementationOnce(async (transport) => {
-      preferredArgs =
-        (
-          transport as unknown as {
-            _serverParams: { args?: readonly string[]; env?: Record<string, string> };
-          }
-        )._serverParams.args ?? [];
-    });
+  it.each(['prefer', 'require'] as const)(
+    'fails closed for shared %s when protected handoff setup fails',
+    async (policy) => {
+      const fixture = await createRelayFixture();
+      authorizeBrokerDefinition(fixture.definition);
+      const blocker = path.join(fixture.directory, 'not-a-directory');
+      await fs.writeFile(blocker, 'block');
+      vi.spyOn(os, 'tmpdir').mockReturnValue(blocker);
+      const connectSpy = vi.spyOn(Client.prototype, 'connect');
 
-    try {
-      await expect(createClientContext(fixture.definition, logger, clientInfo)).rejects.toMatchObject({
-        name: 'ChromeDevtoolsRelayRequiredError',
-        decision: expect.objectContaining({ route: 'unavailable', reason: 'handoff-error' }),
-      });
-      expect(preferredArgs).toEqual([]);
-      const requiredDefinition: ServerDefinition = { ...fixture.definition, chromeDevtoolsRelay: 'require' };
-      await expect(createClientContext(requiredDefinition, logger, clientInfo)).rejects.toMatchObject({
-        name: 'ChromeDevtoolsRelayRequiredError',
-        decision: expect.objectContaining({ route: 'unavailable', reason: 'handoff-error', policy: 'require' }),
-      });
-      expect(connectSpy).not.toHaveBeenCalled();
-    } finally {
-      await fixture.close();
-      await fs.rm(fixture.directory, { recursive: true, force: true });
+      try {
+        const definition: ServerDefinition = { ...fixture.definition, chromeDevtoolsRelay: policy };
+        await expect(createClientContext(definition, logger, clientInfo)).rejects.toMatchObject({
+          name: 'ChromeDevtoolsRelayRequiredError',
+          decision: expect.objectContaining({ route: 'unavailable', reason: 'handoff-error', policy: 'require' }),
+        });
+        expect(connectSpy).not.toHaveBeenCalled();
+      } finally {
+        await fixture.close();
+        await fs.rm(fixture.directory, { recursive: true, force: true });
+      }
     }
-  });
+  );
 });
 
 interface SpawnShape {

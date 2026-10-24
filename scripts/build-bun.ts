@@ -7,6 +7,7 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { assertSupportedBunVersion } from '../src/cli/generate/runtime.js';
 
@@ -82,7 +83,7 @@ export function createCompiledEntrypoint(projectRoot: string, version: string): 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   assertSupportedBunVersion(process.versions.bun ?? 'not running Bun');
-  const projectRoot = path.join(fs.realpathSync(path.dirname(new URL(import.meta.url).pathname)), '..');
+  const projectRoot = path.join(fs.realpathSync(path.dirname(fileURLToPath(import.meta.url))), '..');
   const version = readPackageVersion(projectRoot);
   const distDir = path.join(projectRoot, 'dist-bun');
   if (!fs.existsSync(distDir)) {

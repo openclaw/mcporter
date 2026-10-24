@@ -27,7 +27,7 @@ v0.12.3's standalone arm64 binary is not a continuity baseline: it was ad-hoc `a
 
 ## 1. Credential-free preparation
 
-The **Release** workflow defaults manual dispatches to `dry_run=true`. Run it from current `main`, optionally supplying `tag=v<package.json version>` (leave it blank to use the current version):
+The **Release** workflow defaults manual dispatches to `dry_run=true`. Rehearse a same-repository PR branch before merging, then run it again from current `main`, optionally supplying `tag=v<package.json version>` (leave it blank to use the current version):
 
 ```bash
 gh workflow run release.yml --ref main -f dry_run=true -f tag=v0.14.3
@@ -35,7 +35,7 @@ gh workflow run release.yml --ref main -f dry_run=true -f tag=v0.14.3
 
 The rehearsal validates the dispatch source and package metadata, runs `pnpm check` and `pnpm test`, builds and installs the packed npm archive into an isolated consumer, and checks CLI, library, and OAuth behavior. Native jobs use Apple Silicon `xcode-27` runners for both arm64 and baseline x86_64. They assert Rosetta support (installing it if missing), explicitly ad-hoc sign the Bun output, verify architecture and the macOS 13.0 deployment target, and smoke-test the extracted Intel binary with `arch -x86_64`. PR CI runs the same native smoke script for both targets. Rehearsal archives are retained as Actions artifacts for seven days. Existing version tags do not redirect the build to older source, and an already-published package version is allowed.
 
-Both native jobs also run the release contract suite, which uses fixtures for Developer ID signing, notarization, provenance, and negative verification cases. A dry run has read-only repository permissions and no signing, notarization, npm, or Homebrew credentials. It creates no tags or GitHub Releases, publishes no npm packages, and dispatches no Homebrew updates. It does **not** replace the real local Developer ID/notarization gate or protected draft verification below.
+Both macOS jobs also run the release contract suite, which uses fixtures for Developer ID signing, notarization, provenance, and negative verification cases. A Windows job builds and retains the baseline x64 executable. All three native lanes inspect the embedded Bun runtime, execute the extracted binary, and list an empty synthetic MCP configuration. A dry run has read-only repository permissions and no signing, notarization, npm, or Homebrew credentials. It creates no tags or GitHub Releases, publishes no npm packages, and dispatches no Homebrew updates. It does **not** replace the real local Developer ID/notarization gate or protected draft verification below. Windows rehearsal archives are qualification artifacts, not an additional official release channel.
 
 The shared `openclaw/release-workflows` npm archetype is not used here: mcporter publishes the exact npm archive already bound to both native verifier manifests and the locally signed macOS assets. Moving npm packing/publication to an independent archetype would break that shared artifact proof. The existing real-release chain remains authoritative.
 
