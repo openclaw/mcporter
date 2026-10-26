@@ -8,7 +8,7 @@
 
 **Highlights:** Patch native-build and dependency security vulnerabilities with Bun 1.4.4 and body-parser fixes, and restore silent OAuth refresh for header-only deployments.
 
-- Reclaim the least recently used daemon transport with no active call when the 256-transport limit is reached, instead of failing every new connection identity with `transport_limit` once enough distinct caller environments have come and gone; transports with calls in flight, unknown outcomes or failed retirements are never reclaimed. Thanks @vitalijssilins.
+- Reclaim the least recently used daemon transport with no active call when the 256-transport limit is reached, instead of failing every new connection identity with `transport_limit` once enough distinct caller environments have come and gone; transports with calls in flight, unknown outcomes or failed retirements are never reclaimed. Thanks @vitalijssilins (#469, #468).
 - Require Bun 1.4.4 or newer for native MCPorter and generated CLI builds, rejecting affected compiler and release provenance versions; qualify Windows and both macOS architectures before release. Thanks @joshavant (#464).
 - Refresh MCP client/server to 2.4.0 and development tooling, retaining OAuth request correlation, redirect protections, Node 24 support, and the 48-hour dependency cooldown; patch the body-parser fixture vulnerability.
 - Patch URI parsing and IPv6 denial-of-service advisories in development fixtures while preserving the 48-hour dependency cooldown.
