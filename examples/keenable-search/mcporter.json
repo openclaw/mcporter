@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "keenable": {
+      "description": "Keenable web search and page fetching without an API key.",
+      "baseUrl": "https://api.keenable.ai/mcp",
+      "headers": {
+        "X-Keenable-Title": "mcporter"
+      }
+    }
+  },
+  "imports": []
+}
