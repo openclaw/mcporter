@@ -4,7 +4,7 @@ minimumReleaseAge: 2880
 onlyBuiltDependencies:
   - esbuild
 overrides:
-  body-parser: 2.3.0
+  body-parser: 2.4.0
   brace-expansion: 5.0.12
   esbuild: 0.28.2
   fast-uri: 4.2.3
@@ -13,6 +13,6 @@ overrides:
   nanoid: 6.0.1
   qs: 6.16.0
   source-map-js: 1.2.2
-  vite: 8.3.4
+  vite: 8.3.5
 patchedDependencies:
-  '@modelcontextprotocol/client@2.3.1': patches/@modelcontextprotocol__client@2.3.1.patch
+  '@modelcontextprotocol/client@2.4.0': patches/@modelcontextprotocol__client@2.4.0.patch
