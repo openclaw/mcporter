@@ -130,7 +130,10 @@ describe('daemon broker transport capacity', () => {
       }
       await vi.waitFor(() => expect(runtimes.every((runtime) => runtime.call.mock.calls.length === 2)).toBe(true));
 
-      await expect((await session(broker, 256))()).rejects.toMatchObject({ code: 'transport_limit' });
+      await expect((await session(broker, 256))()).rejects.toMatchObject({
+        code: 'transport_limit',
+        message: expect.stringContaining('Retry after active calls finish'),
+      });
       expect(closedIndexes()).toEqual([]);
     } finally {
       hold.resolve();

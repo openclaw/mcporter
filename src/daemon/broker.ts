@@ -178,7 +178,11 @@ export class DaemonBroker {
         // Another caller may have created this identity or freed a slot while we waited.
         entry = this.entries.get(key);
         if (!reclaimed && !entry && this.entries.size >= MAX_TRANSPORTS)
-          throw new BrokerError('transport_limit', 'Transport capacity reached; no transport can be safely reclaimed.');
+          throw new BrokerError(
+            'transport_limit',
+            'Transport capacity reached; no transport can be safely reclaimed. Retry after active calls finish; ' +
+              'if it persists, drain transports with daemon stop.'
+          );
       }
       if (!entry) {
         const pooled = { ...definition, allowedTools: undefined, blockedTools: undefined };
