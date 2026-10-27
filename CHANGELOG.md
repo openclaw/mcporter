@@ -2,6 +2,8 @@
 
 ## [0.16.2] - Unreleased
 
+- Reclaim the least recently used daemon transport with no active call when the 256-transport limit is reached, instead of failing every new connection identity with `transport_limit` once enough distinct caller environments have come and gone; transports with calls in flight, unknown outcomes or failed retirements are never reclaimed. Thanks @vitalijssilins (#469, #468).
+
 - Let `--tool` and `tool=` override the tool of a configured `server.tool` selector instead of silently calling the selector's tool, matching the ad-hoc HTTP path and the tool-calling docs. Thanks @KrasimirKralev (#474).
 
 ## [0.16.1] - 2026-10-26

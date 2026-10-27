@@ -51,6 +51,9 @@ interface Entry {
   uncertain?: boolean;
 }
 const notices = new AsyncLocalStorage<Set<string>>();
+const MAX_TRANSPORTS = 256;
+/** Idle-retired, or left `pending` with no connection by a failed connect: nothing live to retire. */
+const unconnected = (entry: Entry) => entry.state === 'idle' || (entry.state === 'pending' && !entry.connection);
 export class BrokerError extends Error {
   constructor(
     readonly code: string,
@@ -168,12 +171,20 @@ export class DaemonBroker {
             };
       const key = `${identity}:${relay}:${JSON.stringify(policy)}:${JSON.stringify(view.clientInfo)}`;
       let entry = this.entries.get(key);
-      if (!entry) {
-        if (this.entries.size >= 256)
+      // Each caller environment gets its own transport, so callers that have gone away leave theirs
+      // behind; at capacity, retire an unused one rather than refusing every new caller.
+      while (!entry && this.entries.size >= MAX_TRANSPORTS) {
+        const reclaimed = await this.reclaimTransport(key);
+        // Another caller may have created this identity or freed a slot while we waited.
+        entry = this.entries.get(key);
+        if (!reclaimed && !entry && this.entries.size >= MAX_TRANSPORTS)
           throw new BrokerError(
             'transport_limit',
-            'Transport capacity reached; drain unused transports with daemon stop.'
+            'Transport capacity reached; no transport can be safely reclaimed. Retry after active calls finish; ' +
+              'if it persists, drain transports with daemon stop.'
           );
+      }
+      if (!entry) {
         const pooled = { ...definition, allowedTools: undefined, blockedTools: undefined };
         authorizeBrokerDefinition(pooled, chrome ? () => this.owner.resolveIdentity(definition) : undefined);
         entry = {
@@ -392,6 +403,55 @@ export class DaemonBroker {
         (entry) => !entry.active && !entry.uncertain && entry.state !== 'retirement-failed'
       )
     );
+  }
+  /** Retires the least recently used transport without callers; idle (already retired) ones go first. */
+  private async reclaimTransport(wanted: string): Promise<boolean> {
+    // Stop as soon as the caller can proceed: its identity exists or a slot is free.
+    const admitted = () => this.entries.has(wanted) || this.entries.size < MAX_TRANSPORTS;
+    const reclaimable = (key: string, entry: Entry) =>
+      this.entries.get(key) === entry &&
+      !this.draining &&
+      !entry.active &&
+      !entry.chrome &&
+      !entry.uncertain &&
+      (entry.state === 'idle' || entry.state === 'connected' || entry.state === 'disconnected' || unconnected(entry));
+    // Entries with nothing live go first, then the least recently used.
+    const scan = () =>
+      [...this.entries]
+        .filter(([key, entry]) => reclaimable(key, entry))
+        .toSorted(([, a], [, b]) => Number(unconnected(b)) - Number(unconnected(a)) || a.lastUsed - b.lastUsed);
+    // A second scan picks up transports whose calls finished while concurrent reclaimers won ours.
+    for (let pass = 0; pass < 2; pass++) {
+      if (admitted()) return true;
+      const candidates = scan();
+      if (candidates.length === 0) break;
+      for (const [key, entry] of candidates) {
+        if (admitted()) return true;
+        if (!reclaimable(key, entry)) continue;
+        // Same serialized path as idle retirement; eligibility is rechecked once the entry's earlier
+        // work has settled, so a rejoining caller, an unknown outcome or a failed retirement keeps it.
+        const reclaimed = entry.serial.then(async () => {
+          if (admitted() || !reclaimable(key, entry)) return false;
+          clearTimeout(entry.idleTimer);
+          if (entry.state !== 'idle') {
+            entry.state = 'disconnected';
+            try {
+              await this.retire(entry);
+            } catch {
+              entry.state = 'retirement-failed';
+              return false;
+            }
+            entry.state = 'idle';
+          }
+          if (entry.active || this.entries.get(key) !== entry) return false;
+          this.entries.delete(key);
+          return true;
+        });
+        entry.serial = reclaimed.catch(() => {});
+        if (await reclaimed) return true;
+      }
+    }
+    return admitted();
   }
   private async retire(entry: Entry): Promise<void> {
     await withRuntimeEnvironment(entry.definition.env ?? {}, async () => {
