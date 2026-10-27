@@ -27,6 +27,8 @@ mcporter daemon migrate
 
 Explicit starts and automatic launches report process creation failures immediately with the executable and OS error. After a successful spawn, clients wait up to 45 seconds for authenticated daemon readiness; a timeout includes `mcporter daemon start --foreground --log` guidance for diagnosing startup.
 
+An orderly daemon socket EOF is a transport disconnect. `daemon stop` tolerates it when shutdown closes the connection before a reply. Other requests still report the disconnect without replaying the operation, and authentication or malformed-protocol errors remain failures.
+
 Start the daemon with `--log-servers name,other-name` to log activity only for those caller-visible server aliases, even when multiple aliases share one retained connection. The filter applies to stdout and the log file. Plain `--log` logs activity for every alias; host-level shutdown diagnostics remain visible in either mode.
 
 Status describes the global host. JSON includes `pid`, `protocolVersion`, `generation`, `views`, and `servers`. Each connection has a non-secret `connectionId`, `connectionGeneration`, `connected`, `activeCalls`, and `lastUsedAt`. `browserOwner`, when present, identifies its connection and state. Opaque connection identifiers deliberately do not reveal environment values, credentials, child arguments, or URLs. The socket is mode 0600 in an owner-only mode 0700 directory. Windows uses a user/namespace-specific named pipe and a protected, verified current-user-only directory ACL. Both platforms authenticate the host and client with fresh, connection-bound HMAC challenges before transmitting resolved configuration. An impostor listener cannot obtain the configuration. No key is sent over the socket or pipe.

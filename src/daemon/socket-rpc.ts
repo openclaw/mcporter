@@ -28,6 +28,13 @@ export async function daemonKey(): Promise<Buffer> {
   });
 }
 
+class DaemonConnectionEndedError extends Error {
+  readonly code = 'ECONNRESET';
+  constructor() {
+    super('Daemon connection ended.');
+  }
+}
+
 export class SocketFrames {
   private buffer = '';
   private queue: unknown[] = [];
@@ -66,7 +73,7 @@ export class SocketFrames {
       }
     });
     socket.on('error', (error) => this.fail(error));
-    socket.on('end', () => this.fail(new Error('Daemon connection ended.')));
+    socket.on('end', () => this.fail(new DaemonConnectionEndedError()));
   }
   private fail(error: Error): void {
     this.failure ??= error;
@@ -129,8 +136,10 @@ export async function requestDaemon<T>(
       Object.assign(new Error('Daemon request timed out; outcome unknown, not replayed.'), { code: 'ETIMEDOUT' })
     )
   );
+  let authenticated = false;
   try {
     await authenticateClient(frames, key);
+    authenticated = true;
     frames.write(request);
     for (;;) {
       const response = (await frames.read()) as DaemonResponse<T> & { type?: string };
@@ -139,6 +148,10 @@ export async function requestDaemon<T>(
       if (typeof response.ok !== 'boolean') throw new Error('Invalid daemon response.');
       return response;
     }
+  } catch (error) {
+    if (!authenticated && error instanceof DaemonConnectionEndedError)
+      throw new Error('Daemon authentication ended before completion.', { cause: error });
+    throw error;
   } finally {
     key.fill(0);
     socket.destroy();

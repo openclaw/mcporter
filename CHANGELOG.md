@@ -2,6 +2,8 @@
 
 ## [0.16.2] - Unreleased
 
+- Classify orderly daemon socket EOF as a transport disconnect so `daemon stop` tolerates shutdown before a reply, while preserving authentication/protocol errors and never replaying tool calls.
+
 - Update es-toolkit to 1.53.0 while preserving Node 24 support and the 48-hour dependency cooldown.
 
 - Add a runnable, isolated deed.page MCP example for publishing static HTML, with private owner-token storage and tested failure handling. Thanks @f-o-x11 (#472).
