@@ -1,12 +1,14 @@
 # mcporter Changelog
 
-## [0.16.1] - Unreleased
+## [0.16.1] - 2026-10-26
 
+**Highlights:** Patch native-build and dependency security vulnerabilities with Bun 1.4.4 and body-parser fixes, and restore silent OAuth refresh for header-only deployments.
+
+- Require Bun 1.4.4 or newer for native MCPorter and generated CLI builds, rejecting affected compiler and release provenance versions; qualify Windows and both macOS architectures before release. Thanks @joshavant (#464).
 - Refresh MCP client/server to 2.4.0 and development tooling, retaining OAuth request correlation, redirect protections, Node 24 support, and the 48-hour dependency cooldown; patch the body-parser fixture vulnerability.
+- Patch URI parsing and IPv6 denial-of-service advisories in development fixtures while preserving the 48-hour dependency cooldown.
 - Reuse saved protected-resource metadata during silent OAuth refresh, preserving header-only deployments and rejecting divergent saved issuers before sending credentials. Thanks @goutamadwant and @nannan00 (#463, #462).
 - Preserve equals signs inside colon-style CLI argument values, including URLs, commands, and JSON, while retaining the `:=` alias. Thanks @Oscar-Williams (#465).
-- Require Bun 1.4.4 or newer for native MCPorter and generated CLI builds, rejecting affected compiler and release provenance versions; qualify Windows and both macOS architectures before release. Thanks @joshavant (#464).
-- Patch URI parsing and IPv6 denial-of-service advisories in development fixtures while preserving the 48-hour dependency cooldown.
 - Refresh jose and lint/format tooling while preserving Node 24 support and the 48-hour dependency cooldown; isolate daemon elicitation coverage from Windows process-query failures while retaining real process-retirement integration tests.
 - Add a runnable, isolated Keenable MCP example for keyless web search and page fetching. Thanks @ilya-bogin-keenable.
 
