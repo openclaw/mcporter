@@ -76,7 +76,7 @@
     "@modelcontextprotocol/server": "^2.4.0",
     "acorn": "^8.19.0",
     "commander": "^15.0.0",
-    "es-toolkit": "^1.52.0",
+    "es-toolkit": "^1.53.0",
     "jose": "^6.2.13",
     "jsonc-parser": "^3.3.1",
     "ora": "^9.4.1",
