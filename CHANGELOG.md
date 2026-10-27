@@ -2,6 +2,8 @@
 
 ## [0.16.2] - Unreleased
 
+- Patch the development fixture's qs stringify denial-of-service vulnerability (GHSA-6pq8-jhm2-2vcw) with qs 6.16.1, preserving the 48-hour dependency cooldown.
+
 - Classify orderly daemon socket EOF as a transport disconnect so `daemon stop` tolerates shutdown before a reply, while preserving authentication/protocol errors and never replaying tool calls.
 
 - Update es-toolkit to 1.53.0 while preserving Node 24 support and the 48-hour dependency cooldown.
