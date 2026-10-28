@@ -112,6 +112,24 @@ describe('loadServerDefinitions when config is optional', () => {
     }
   });
 
+  it('loads explicit config files that start with a UTF-8 BOM', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-config-bom-explicit-'));
+    const explicitPath = path.join(tempDir, 'mcporter.json');
+    await fs.writeFile(
+      explicitPath,
+      '\uFEFF{ "mcpServers": { "demo-http": { "url": "https://example.com/mcp" } } }\r\n',
+      'utf8'
+    );
+
+    try {
+      const servers = await loadServerDefinitions({ configPath: explicitPath });
+      expect(servers).toHaveLength(1);
+      expect(servers[0]?.name).toBe('demo-http');
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
   it('loads explicit .jsonc config files with comments/trailing commas', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-config-jsonc-explicit-'));
     const explicitPath = path.join(tempDir, 'mcporter.jsonc');

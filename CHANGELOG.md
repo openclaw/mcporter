@@ -12,6 +12,8 @@
 
 - Let `--tool` and `tool=` override the tool of a configured `server.tool` selector instead of silently calling the selector's tool, matching the ad-hoc HTTP path and the tool-calling docs. Thanks @KrasimirKralev (#474).
 
+- Accept UTF-8 BOM-prefixed JSON/JSONC configs, such as files saved by Windows PowerShell 5.1, in `mcporter.json` and editor imports instead of failing with `InvalidSymbol` at offset 0. Thanks @jaeminbird.
+
 ## [0.16.1] - 2026-10-26
 
 **Highlights:** Patch native-build and dependency security vulnerabilities with Bun 1.4.4 and body-parser fixes, and restore silent OAuth refresh for header-only deployments.
