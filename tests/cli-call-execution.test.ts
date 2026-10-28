@@ -239,6 +239,36 @@ describe('CLI call execution behavior', () => {
     logSpy.mockRestore();
   });
 
+  it.each([
+    [['demo.echo', '--value', 'none', '--args', '{"value":42}'], { value: 42 }],
+    [['demo.echo', '--value', '5', '--args', '{"value":42}'], { value: 42 }],
+    [['demo.echo', '--args', '{"value":42}', '--value', 'none'], { value: 'none' }],
+    [['demo.echo', '--tags', 'x', '--args', '{"tags":"y"}'], { tags: 'y' }],
+    [['--value', 'none', 'demo.echo(value: 42)'], { value: 42 }],
+  ])('keeps explicitly typed values over earlier raw text: %j', async (argv, expected) => {
+    const { handleCall } = await cliModulePromise;
+    const { runtime, callTool } = createRuntimeStub({
+      demo: [
+        {
+          name: 'echo',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              value: { type: ['string', 'number'] },
+              tags: { type: 'array', items: { type: 'string' } },
+            },
+          },
+        },
+      ],
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleCall(runtime, argv);
+
+    expect(callTool).toHaveBeenCalledWith('demo', 'echo', expect.objectContaining({ args: expected }));
+    logSpy.mockRestore();
+  });
+
   it('wraps bare long-flag strings when the schema declares an array', async () => {
     const { handleCall } = await cliModulePromise;
     const { runtime, callTool, listTools } = createRuntimeStub({
