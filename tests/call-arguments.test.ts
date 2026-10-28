@@ -81,7 +81,11 @@ describe('parseCallArguments', () => {
       saveToDrafts: true,
       limit: 5,
     });
-    expect(parsed.schemaStringCoercionCandidates).toEqual({ limit: '5' });
+    expect(parsed.schemaStringCoercionCandidates).toEqual({
+      to: '["miguel@example.com"]',
+      saveToDrafts: 'true',
+      limit: '5',
+    });
     expect(parsed.genericLongFlagArguments).toEqual([
       { key: 'to', token: '--to' },
       { key: 'subject', token: '--subject' },

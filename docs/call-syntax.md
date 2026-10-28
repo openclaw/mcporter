@@ -76,7 +76,7 @@ Key details:
 - `--args -`, `--params -`, and `--json -` read a JSON object from stdin.
 - Named flag-style values can read exact UTF-8 text from a file with `key=@path` or `--key @path`. Paths resolve from the current working directory, file contents remain strings without coercion, and `key=@@literal` produces the literal value `@literal`. Function-call strings such as `body: "@literal"` remain literal.
 - Bare string values supplied via long flags wrap into one-item arrays when the tool schema declares that field as an array.
-- Numeric-looking `key=value` arguments are restored to their original string spelling when the tool schema declares that parameter as a string, which keeps timestamp-like IDs such as Slack `thread_ts=1234567890.123456` intact.
+- Numeric-looking `key=value` arguments are restored to their original string spelling when the tool schema declares that parameter as a string, which keeps timestamp-like IDs such as Slack `thread_ts=1234567890.123456` intact. Boolean, `null`/`none`, and JSON-looking values are restored the same way when the schema allows a string but not the coerced type, so `mode=none` reaches a string enum as `"none"`.
 - `--raw-strings` disables numeric coercion for flag-style and positional values so IDs/codes stay literal strings (`code=12345` stays `"12345"`).
 - Numeric coercion accepts finite JSON numbers; `Infinity` and `-Infinity` remain literal strings.
 - `--no-coerce` disables all coercion for flag-style and positional values (`true`, `null`, and JSON-like values remain strings).

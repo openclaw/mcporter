@@ -153,6 +153,7 @@ function applyLeadingCallExpression(positional: string[], result: CallArgsParseR
     );
   }
   result.tool = callExpression.tool;
+  clearCoercionCandidates(result, Object.keys(callExpression.args));
   Object.assign(result.args, callExpression.args);
   if (callExpression.positionalArgs && callExpression.positionalArgs.length > 0) {
     result.positionalArgs = [...(result.positionalArgs ?? []), ...callExpression.positionalArgs];
@@ -224,7 +225,7 @@ function applyTrailingArguments(positional: string[], result: CallArgsParseResul
       result.server = value as string;
       continue;
     }
-    if (state.coercionMode === 'default' && typeof value === 'number') {
+    if (typeof value !== 'string') {
       result.schemaStringCoercionCandidates ??= Object.create(null) as Record<string, string>;
       result.schemaStringCoercionCandidates[parsed.key] = schemaValue;
     }
@@ -329,8 +330,17 @@ function consumeJsonArgsFlag(context: FlagHandlerContext, flagName: string, miss
   if (decoded === null || typeof decoded !== 'object' || Array.isArray(decoded)) {
     throw new Error(`Unable to parse ${flagName}: ${flagName} must be a JSON object.`);
   }
+  clearCoercionCandidates(context.result, Object.keys(decoded));
   Object.assign(context.result.args, decoded);
   return context.index + 2;
+}
+
+// Explicitly typed values (JSON flags, call expressions) replace earlier raw text, so drop its schema-repair hints.
+function clearCoercionCandidates(result: CallArgsParseResult, keys: string[]): void {
+  for (const key of keys) {
+    delete result.schemaStringCoercionCandidates?.[key];
+    delete result.schemaArrayCoercionCandidates?.[key];
+  }
 }
 
 function handleNamedArgumentFlag(context: FlagHandlerContext): number {
@@ -348,7 +358,7 @@ function handleNamedArgumentFlag(context: FlagHandlerContext): number {
       ? consumeFlagValue(context.args, context.index, token, `Flag '${token}' requires a value.`)
       : body.slice(eqIndex + 1);
   const { value, schemaValue } = resolveNamedArgumentValue(rawValue, context.state.coercionMode);
-  if (context.state.coercionMode === 'default' && typeof value === 'number') {
+  if (typeof value !== 'string') {
     context.result.schemaStringCoercionCandidates ??= Object.create(null) as Record<string, string>;
     context.result.schemaStringCoercionCandidates[key] = schemaValue;
   } else if (context.state.coercionMode === 'default' && typeof value === 'string') {

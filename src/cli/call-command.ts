@@ -404,10 +404,17 @@ async function enforceSchemaAwareArgumentTypes(
 
   let corrected: Record<string, unknown> | undefined;
   for (const [key, rawValue] of Object.entries(stringCandidates ?? {})) {
-    if (typeof args[key] !== 'number') {
+    const value = args[key];
+    if (typeof value === 'string') {
       continue;
     }
-    if (!schemaAllowsString(schemaProperties[key])) {
+    const descriptor = schemaProperties[key];
+    if (!schemaAllowsType(descriptor, 'string')) {
+      continue;
+    }
+    // Numbers always restore to their spelling; other coerced values stay when the schema allows them.
+    const coercedType = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+    if (coercedType !== 'number' && schemaAllowsType(descriptor, coercedType)) {
       continue;
     }
     corrected ??= { ...args };
@@ -418,7 +425,7 @@ async function enforceSchemaAwareArgumentTypes(
       continue;
     }
     const descriptor = schemaProperties[key];
-    if (!schemaAllowsArray(descriptor) || schemaAllowsString(descriptor)) {
+    if (!schemaAllowsType(descriptor, 'array') || schemaAllowsType(descriptor, 'string')) {
       continue;
     }
     corrected ??= { ...args };
@@ -438,42 +445,21 @@ function readSchemaProperties(schema: unknown): Record<string, unknown> | undefi
   return properties as Record<string, unknown>;
 }
 
-function schemaAllowsString(descriptor: unknown): boolean {
+function schemaAllowsType(descriptor: unknown, expected: string): boolean {
   if (!descriptor || typeof descriptor !== 'object') {
     return false;
   }
   const record = descriptor as Record<string, unknown>;
   const type = record.type;
-  if (type === 'string') {
+  if (type === expected) {
     return true;
   }
-  if (Array.isArray(type) && type.includes('string')) {
-    return true;
-  }
-  for (const key of ['anyOf', 'oneOf', 'allOf'] as const) {
-    const variants = record[key];
-    if (Array.isArray(variants) && variants.some(schemaAllowsString)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function schemaAllowsArray(descriptor: unknown): boolean {
-  if (!descriptor || typeof descriptor !== 'object') {
-    return false;
-  }
-  const record = descriptor as Record<string, unknown>;
-  const type = record.type;
-  if (type === 'array') {
-    return true;
-  }
-  if (Array.isArray(type) && type.includes('array')) {
+  if (Array.isArray(type) && type.includes(expected)) {
     return true;
   }
   for (const key of ['anyOf', 'oneOf', 'allOf'] as const) {
     const variants = record[key];
-    if (Array.isArray(variants) && variants.some(schemaAllowsArray)) {
+    if (Array.isArray(variants) && variants.some((variant) => schemaAllowsType(variant, expected))) {
       return true;
     }
   }
