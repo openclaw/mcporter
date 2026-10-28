@@ -183,6 +183,62 @@ describe('CLI call execution behavior', () => {
     logSpy.mockRestore();
   });
 
+  it('restores boolean, null, and JSON-looking args to schema-declared strings', async () => {
+    const { handleCall } = await cliModulePromise;
+    const { runtime, callTool } = createRuntimeStub({
+      demo: [
+        {
+          name: 'echo',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              mode: { type: 'string', enum: ['none', 'auto'] },
+              text: { type: 'string' },
+              payload: { type: 'string' },
+              items: { type: 'string' },
+              enabled: { type: 'boolean' },
+              latest: { type: ['string', 'null'] },
+              filter: { anyOf: [{ type: 'string' }, { type: 'object' }] },
+              limit: { type: 'number' },
+            },
+          },
+        },
+      ],
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleCall(runtime, [
+      'demo.echo',
+      'mode=none',
+      '--text',
+      'true',
+      'payload={"a":1}',
+      'items=[1,2]',
+      'enabled=true',
+      'latest=null',
+      'filter={"a":1}',
+      'limit=1',
+    ]);
+
+    expect(callTool).toHaveBeenCalledWith(
+      'demo',
+      'echo',
+      expect.objectContaining({
+        args: {
+          mode: 'none',
+          text: 'true',
+          payload: '{"a":1}',
+          items: '[1,2]',
+          enabled: true,
+          latest: null,
+          filter: { a: 1 },
+          limit: 1,
+        },
+      })
+    );
+    logSpy.mockRestore();
+  });
+
   it('wraps bare long-flag strings when the schema declares an array', async () => {
     const { handleCall } = await cliModulePromise;
     const { runtime, callTool, listTools } = createRuntimeStub({

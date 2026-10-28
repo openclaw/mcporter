@@ -4,6 +4,8 @@
 
 - Reuse the existing pinned Bun runtime for macOS CI formatting while retaining native typechecks and Node-only local commands.
 
+- Keep boolean, `null`/`none`, and JSON-looking `key=value` and long-flag arguments as their original strings when the tool schema allows a string but not the coerced type, so `mode=none` reaches a `["none", "auto"]` enum instead of failing with `-32602`. Thanks @jaeminbird.
+
 - Patch the development fixture's qs stringify denial-of-service vulnerability (GHSA-6pq8-jhm2-2vcw) with qs 6.16.1, preserving the 48-hour dependency cooldown.
 
 - Classify orderly daemon socket EOF as a transport disconnect so `daemon stop` tolerates shutdown before a reply, while preserving authentication/protocol errors and never replaying tool calls.

@@ -224,7 +224,7 @@ function applyTrailingArguments(positional: string[], result: CallArgsParseResul
       result.server = value as string;
       continue;
     }
-    if (state.coercionMode === 'default' && typeof value === 'number') {
+    if (typeof value !== 'string') {
       result.schemaStringCoercionCandidates ??= Object.create(null) as Record<string, string>;
       result.schemaStringCoercionCandidates[parsed.key] = schemaValue;
     }
@@ -348,7 +348,7 @@ function handleNamedArgumentFlag(context: FlagHandlerContext): number {
       ? consumeFlagValue(context.args, context.index, token, `Flag '${token}' requires a value.`)
       : body.slice(eqIndex + 1);
   const { value, schemaValue } = resolveNamedArgumentValue(rawValue, context.state.coercionMode);
-  if (context.state.coercionMode === 'default' && typeof value === 'number') {
+  if (typeof value !== 'string') {
     context.result.schemaStringCoercionCandidates ??= Object.create(null) as Record<string, string>;
     context.result.schemaStringCoercionCandidates[key] = schemaValue;
   } else if (context.state.coercionMode === 'default' && typeof value === 'string') {
