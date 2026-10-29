@@ -113,7 +113,10 @@ export async function generateCli(
       resolveBundleTarget({
         bundle: options.bundle,
         compile: options.compile,
-        outputPath: templateSourcePath,
+        // Without --output the template sits in a temp dir; a bare --bundle still belongs in the cwd.
+        outputPath: options.outputPath
+          ? templateSourcePath
+          : path.resolve(`${sanitizePathSegment(name) || 'server'}.ts`),
       })
     );
     if (options.compile) {

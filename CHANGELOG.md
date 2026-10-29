@@ -12,6 +12,8 @@
 
 - Let `--tool` and `tool=` override the tool of a configured `server.tool` selector instead of silently calling the selector's tool, matching the ad-hoc HTTP path and the tool-calling docs. Thanks @KrasimirKralev (#474).
 
+- Make a bare `generate-cli --bundle` write `<name>.js` next to the template (the working directory unless `--output` is set), as `--bundle [path]` and the generator docs promise, instead of failing with an error about `--compile`. `--bundle` with `--compile` still needs an explicit path. Thanks @KrasimirKralev.
+
 ## [0.16.1] - 2026-10-26
 
 **Highlights:** Patch native-build and dependency security vulnerabilities with Bun 1.4.4 and body-parser fixes, and restore silent OAuth refresh for header-only deployments.

@@ -47,6 +47,7 @@ npx mcporter generate-cli --command "npx -y chrome-devtools-mcp@latest"
 ```
 
 - `--minify` shrinks the bundled output via the selected bundler (output defaults to `<server>.js`).
+- `--bundle` without a path writes `<server>.js` next to the template: in the working directory, or beside `--output` when you set it. Combined with `--compile`, `--bundle` needs an explicit path.
 - `--compile [path]` implies bundling and invokes `bun build --compile` to create the native executable (Bun only). When you omit the path, the compiled binary inherits the server name.
 - Use `--server '{...}'` when you need advanced configuration (headers, env vars, stdio commands, OAuth metadata).
 - Passing a config file selects its first server, accepts JSONC and the usual URL aliases, and resolves stdio working directories relative to that file.
