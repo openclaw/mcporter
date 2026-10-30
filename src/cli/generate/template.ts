@@ -182,6 +182,9 @@ ${renderEmbeddedHelpSource()}
 function printResult(result: unknown, format: string) {
 \tconst wrapped = createCallResult(result);
 \tconst rawPayload = unwrapRawPayload(wrapped.raw);
+\tif (rawPayload && typeof rawPayload === 'object' && 'isError' in rawPayload && rawPayload.isError === true) {
+\t\tprocess.exitCode = 1;
+\t}
 \tswitch (format) {
 \t\tcase 'json': {
 \t\t\tconst json = wrapped.json();
