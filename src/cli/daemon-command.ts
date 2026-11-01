@@ -7,6 +7,7 @@ import { launchDaemonDetached } from '../daemon/launch.js';
 import { getDaemonLogPath, secureDaemonDirectory } from '../daemon/paths.js';
 import { waitForDaemonReady } from '../daemon/startup-readiness.js';
 import { expandHome } from '../env.js';
+import { CliUsageError } from './errors.js';
 
 export interface DaemonCliOptions {
   readonly configPath: string;
@@ -39,7 +40,7 @@ export async function handleDaemonCli(args: string[], options: DaemonCliOptions)
   if (subcommand === 'migrate') {
     if (args.includes('--stop-legacy')) {
       if (!args.includes('--confirmed-drained'))
-        throw new Error('Drain all legacy clients first, then pass --confirmed-drained.');
+        throw new CliUsageError('Drain all legacy clients first, then pass --confirmed-drained.');
       await stopVerifiedLegacyDaemons();
       console.log('Daemon directory permissions verified; legacy daemons and observed owned children have retired.');
     } else console.log(JSON.stringify((await legacyDaemons()).map(({ pid, verified }) => ({ pid, verified }))));
@@ -64,7 +65,7 @@ export async function handleDaemonCli(args: string[], options: DaemonCliOptions)
     return;
   }
 
-  throw new Error(`Unknown daemon subcommand '${subcommand}'.`);
+  throw new CliUsageError(`Unknown daemon subcommand '${subcommand}'.`);
 }
 
 function printDaemonHelp(): void {
@@ -204,7 +205,7 @@ function consumeValueFlag(args: string[], flag: string): string | undefined {
     return undefined;
   }
   if (index + 1 >= args.length) {
-    throw new Error(`Flag '${flag}' requires a value.`);
+    throw new CliUsageError(`Flag '${flag}' requires a value.`);
   }
   const value = args[index + 1];
   args.splice(index, 2);

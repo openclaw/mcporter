@@ -2,6 +2,7 @@ import type { ServerDefinition } from '../config.js';
 import { resolveChromeDevtoolsAutoConnectCommand } from '../chrome-devtools-command.js';
 import { resolveCommandArgument, resolveCommandArguments } from '../runtime/utils.js';
 import { resolveChromeDevtoolsRelayEnvironment } from '../chrome-devtools-relay.js';
+import { CliUsageError } from './errors.js';
 const DEFAULT_LIST_TIMEOUT_MS = 30_000;
 const DEFAULT_CALL_TIMEOUT_MS = 60_000;
 // Five discoveries and a probe can each take 30s, plus 45s daemon readiness
@@ -87,11 +88,11 @@ export function consumeTimeoutFlag(
   const missingValueMessage = options?.missingValueMessage ?? `Flag '${flagName}' requires a value.`;
   const value = args[index + 1];
   if (!value) {
-    throw new Error(missingValueMessage);
+    throw new CliUsageError(missingValueMessage);
   }
   const parsed = parsePositiveInteger(value);
   if (parsed === undefined) {
-    throw new Error(`${flagName} must be a positive integer (milliseconds).`);
+    throw new CliUsageError(`${flagName} must be a positive integer (milliseconds).`);
   }
   args.splice(index, 2);
   return parsed;

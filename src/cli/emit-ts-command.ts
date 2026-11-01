@@ -11,6 +11,7 @@ import { buildToolDoc } from './list-detail-helpers.js';
 import { consumeOutputFormat } from './output-format.js';
 import { findServerByHttpUrl } from './server-lookup.js';
 import { loadToolMetadata } from './tool-cache.js';
+import { CliUsageError } from './errors.js';
 
 interface EmitTsFlags {
   server?: string;
@@ -137,7 +138,7 @@ function parseEmitTsArgs(args: string[]): ParsedEmitTsOptions {
     if (token === '--out') {
       const value = args[index + 1];
       if (!value) {
-        throw new Error("Flag '--out' requires a path.");
+        throw new CliUsageError("Flag '--out' requires a path.");
       }
       flags.outPath = value;
       args.splice(index, 2);
@@ -146,7 +147,7 @@ function parseEmitTsArgs(args: string[]): ParsedEmitTsOptions {
     if (token === '--types-out') {
       const value = args[index + 1];
       if (!value) {
-        throw new Error("Flag '--types-out' requires a path.");
+        throw new CliUsageError("Flag '--types-out' requires a path.");
       }
       flags.typesOutPath = value;
       args.splice(index, 2);
@@ -155,31 +156,31 @@ function parseEmitTsArgs(args: string[]): ParsedEmitTsOptions {
     if (token === '--mode') {
       const value = args[index + 1];
       if (value !== 'types' && value !== 'client') {
-        throw new Error("--mode must be 'types' or 'client'.");
+        throw new CliUsageError("--mode must be 'types' or 'client'.");
       }
       flags.mode = value;
       args.splice(index, 2);
       continue;
     }
     if (token.startsWith('--')) {
-      throw new Error(`Unknown flag '${token}' for emit-ts.`);
+      throw new CliUsageError(`Unknown flag '${token}' for emit-ts.`);
     }
     index += 1;
   }
 
   const server = args.shift();
   if (!server) {
-    throw new Error('Usage: mcporter emit-ts <server> --out <file> [--mode types|client]');
+    throw new CliUsageError('Usage: mcporter emit-ts <server> --out <file> [--mode types|client]');
   }
   const outPath = flags.outPath;
   if (!outPath) {
-    throw new Error("Flag '--out' is required for emit-ts.");
+    throw new CliUsageError("Flag '--out' is required for emit-ts.");
   }
   if (flags.mode === 'client' && !outPath.endsWith('.ts')) {
-    throw new Error('--out should point to a .ts file when --mode client is used.');
+    throw new CliUsageError('--out should point to a .ts file when --mode client is used.');
   }
   if (flags.mode === 'types' && !outPath.endsWith('.ts') && !outPath.endsWith('.d.ts')) {
-    throw new Error('--out should be a .ts or .d.ts file for --mode types.');
+    throw new CliUsageError('--out should be a .ts or .d.ts file for --mode types.');
   }
   return {
     server,

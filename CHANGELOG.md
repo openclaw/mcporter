@@ -12,6 +12,8 @@
 
 - Let `--tool` and `tool=` override the tool of a configured `server.tool` selector instead of silently calling the selector's tool, matching the ad-hoc HTTP path and the tool-calling docs. Thanks @KrasimirKralev (#474).
 
+- Report `emit-ts` argument errors, unknown `daemon` subcommands and flag values, and invalid or missing `--timeout` values (`call`, `list`) as one-line usage errors instead of repeating the message with a stack trace. Thanks @KrasimirKralev.
+
 ## [0.16.1] - 2026-10-26
 
 **Highlights:** Patch native-build and dependency security vulnerabilities with Bun 1.4.4 and body-parser fixes, and restore silent OAuth refresh for header-only deployments.
