@@ -305,6 +305,7 @@ function parseCommandString(value: string): string[] {
   let inSingleQuote = false;
   let inDoubleQuote = false;
   let escapeNext = false;
+  let hasQuotedSegment = false;
 
   for (const char of value.trim()) {
     if (escapeNext) {
@@ -319,19 +320,22 @@ function parseCommandString(value: string): string[] {
     }
 
     if (char === "'" && !inDoubleQuote) {
+      hasQuotedSegment = true;
       inSingleQuote = !inSingleQuote;
       continue;
     }
 
     if (char === '"' && !inSingleQuote) {
+      hasQuotedSegment = true;
       inDoubleQuote = !inDoubleQuote;
       continue;
     }
 
     if (char === ' ' && !inSingleQuote && !inDoubleQuote) {
-      if (current.length > 0) {
+      if (current.length > 0 || hasQuotedSegment) {
         result.push(current);
         current = '';
+        hasQuotedSegment = false;
       }
       continue;
     }
@@ -343,7 +347,7 @@ function parseCommandString(value: string): string[] {
     current += '\\';
   }
 
-  if (current.length > 0) {
+  if (current.length > 0 || hasQuotedSegment) {
     result.push(current);
   }
 
