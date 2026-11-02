@@ -55,18 +55,18 @@ jobs:
 
       # Type-aware oxlint (tsgolint) crashes on macOS runners; ubuntu and windows
       # still run the full `pnpm check`, so the rule set stays enforced.
-      - name: Check without type-aware oxlint
-        if: runner.os == 'macOS'
-        run: pnpm format:check && pnpm typecheck
-
-      - name: Verify release contracts without credentials
-        if: runner.os == 'macOS'
-        run: ./scripts/test-release.sh
-
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         if: runner.os == 'macOS'
         with:
           bun-version: 1.4.4
+
+      - name: Check without type-aware oxlint
+        if: runner.os == 'macOS'
+        run: bun fmt --no-script --check . && pnpm typecheck
+
+      - name: Verify release contracts without credentials
+        if: runner.os == 'macOS'
+        run: ./scripts/test-release.sh
 
       - name: Smoke-test both native release targets
         if: runner.os == 'macOS'
