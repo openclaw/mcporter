@@ -26,7 +26,7 @@ interface DaemonLoggingOptions {
 
 export async function handleDaemonCli(args: string[], options: DaemonCliOptions): Promise<void> {
   const subcommand = args.shift();
-  if (!subcommand || isHelpToken(subcommand) || args.some(isHelpToken)) {
+  if (!subcommand || isHelpToken(subcommand) || hasDaemonHelp(args, subcommand)) {
     printDaemonHelp();
     return;
   }
@@ -199,17 +199,40 @@ function consumeFlag(args: string[], flag: string): boolean {
   return true;
 }
 
-function consumeValueFlag(args: string[], flag: string): string | undefined {
+function consumeValueFlag(args: string[], flag: string, requireValue = true): string | undefined {
   const index = args.indexOf(flag);
   if (index === -1) {
     return undefined;
   }
   if (index + 1 >= args.length) {
+    if (!requireValue) {
+      return undefined;
+    }
     throw new Error(`Flag '${flag}' requires a value.`);
   }
   const value = args[index + 1];
   args.splice(index, 2);
   return value;
+}
+
+function consumeDaemonLoggingFlags(
+  args: string[],
+  requireValues = true
+): { logFlag: boolean; logFileValue: string | undefined; logServersValue: string | undefined } {
+  const logFlag = consumeFlag(args, '--log');
+  const logFileValue = consumeValueFlag(args, '--log-file', requireValues);
+  const logServersValue = consumeValueFlag(args, '--log-servers', requireValues);
+  return { logFlag, logFileValue, logServersValue };
+}
+
+function hasDaemonHelp(args: string[], subcommand: string): boolean {
+  if (subcommand !== 'start' && subcommand !== 'restart') {
+    return args.some(isHelpToken);
+  }
+  const remaining = [...args];
+  consumeFlag(remaining, '--foreground');
+  consumeDaemonLoggingFlags(remaining, false);
+  return remaining.some(isHelpToken);
 }
 
 async function waitFor<T>(probe: () => Promise<T | null>, timeoutMs: number, intervalMs: number): Promise<T | null> {
@@ -231,9 +254,7 @@ function delay(ms: number): Promise<void> {
 }
 
 async function resolveDaemonLoggingOptions(args: string[], configKey: string): Promise<DaemonLoggingOptions> {
-  const logFlag = consumeFlag(args, '--log');
-  const logFileValue = consumeValueFlag(args, '--log-file');
-  const logServersValue = consumeValueFlag(args, '--log-servers');
+  const { logFlag, logFileValue, logServersValue } = consumeDaemonLoggingFlags(args);
   const envLogEnabled = process.env.MCPORTER_DAEMON_LOG === '1';
   const envLogPath = process.env.MCPORTER_DAEMON_LOG_PATH;
   const envLogServers = process.env.MCPORTER_DAEMON_LOG_SERVERS;

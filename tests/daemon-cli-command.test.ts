@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const stopMock = vi.fn();
@@ -103,6 +104,9 @@ describe('daemon CLI restart', () => {
     ),
     [['-h']],
     [['restart', '--log-file', './daemon.log', '--help']],
+    [['restart', '--log-file', 'help', '--help']],
+    [['start', '--log-servers', '--help', '-h']],
+    [['start', '--help', '--log-file']],
     [['migrate', '--stop-legacy', '--confirmed-drained', '--help']],
   ])('prints help without client or lifecycle effects for %j', async (args) => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -121,6 +125,30 @@ describe('daemon CLI restart', () => {
     } finally {
       log.mockRestore();
     }
+  });
+
+  it.each(
+    ['start', 'restart'].flatMap((command) =>
+      ['--log-file', '--log-servers'].flatMap((flag) =>
+        ['help', '-h', '--help'].map((value) => ({ command, flag, value }))
+      )
+    )
+  )('$command treats $flag $value as a logging value', async ({ command, flag, value }) => {
+    statusMock.mockResolvedValue(null);
+
+    await handleDaemonCli([command, '--foreground', flag, value], {
+      configPath: '/tmp/config.json',
+      configExplicit: true,
+    });
+
+    expect(runDaemonHostMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        logPath: flag === '--log-file' ? path.resolve(value) : '/tmp/mock-daemon.log',
+        logServers: new Set(flag === '--log-servers' ? [value] : []),
+        logAllServers: flag === '--log-file',
+      })
+    );
+    expect(stopMock).toHaveBeenCalledTimes(command === 'restart' ? 1 : 0);
   });
 
   it('stops the daemon and launches a fresh instance while honoring log flags', async () => {
