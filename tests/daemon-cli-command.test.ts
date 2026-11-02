@@ -9,10 +9,18 @@ const createRuntimeMock = vi.fn();
 const isKeepAliveServerMock = vi.fn(() => true);
 const DaemonClientMock = vi.fn();
 const waitForDaemonReadyMock = vi.fn();
+const secureDaemonDirectoryMock = vi.fn();
+const legacyDaemonsMock = vi.fn();
+const stopVerifiedLegacyDaemonsMock = vi.fn();
 
 vi.mock('node:fs/promises', () => ({
   default: { mkdir: mkdirMock },
   mkdir: mkdirMock,
+}));
+
+vi.mock('../src/daemon/migration.js', () => ({
+  legacyDaemons: legacyDaemonsMock,
+  stopVerifiedLegacyDaemons: stopVerifiedLegacyDaemonsMock,
 }));
 
 vi.mock('../src/daemon/client.js', () => ({
@@ -34,7 +42,7 @@ vi.mock('../src/daemon/host.js', () => ({
 
 vi.mock('../src/daemon/paths.js', () => ({
   getDaemonLogPath: vi.fn(() => '/tmp/mock-daemon.log'),
-  secureDaemonDirectory: vi.fn().mockResolvedValue(undefined),
+  secureDaemonDirectory: secureDaemonDirectoryMock,
 }));
 
 vi.mock('../src/daemon/startup-readiness.js', () => ({
@@ -66,6 +74,9 @@ describe('daemon CLI restart', () => {
     isKeepAliveServerMock.mockReset();
     DaemonClientMock.mockReset();
     waitForDaemonReadyMock.mockReset();
+    secureDaemonDirectoryMock.mockReset().mockResolvedValue(undefined);
+    legacyDaemonsMock.mockReset().mockResolvedValue([]);
+    stopVerifiedLegacyDaemonsMock.mockReset().mockResolvedValue(undefined);
     waitForDaemonReadyMock.mockImplementation(async (probe: (timeoutMs: number) => Promise<unknown>) => {
       return (await probe(100)) ?? (await probe(100));
     });
@@ -84,6 +95,32 @@ describe('daemon CLI restart', () => {
     });
     isKeepAliveServerMock.mockReturnValue(true);
     mkdirMock.mockResolvedValue(undefined);
+  });
+
+  it.each([
+    ...['start', 'status', 'stop', 'restart', 'migrate'].flatMap((command) =>
+      ['--help', '-h', 'help'].map((help) => [[command, help]])
+    ),
+    [['-h']],
+    [['restart', '--log-file', './daemon.log', '--help']],
+    [['migrate', '--stop-legacy', '--confirmed-drained', '--help']],
+  ])('prints help without client or lifecycle effects for %j', async (args) => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await handleDaemonCli(args, { configPath: '/tmp/config.json', configExplicit: true });
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('Usage: mcporter daemon'));
+      expect(DaemonClientMock).not.toHaveBeenCalled();
+      expect(stopMock).not.toHaveBeenCalled();
+      expect(statusMock).not.toHaveBeenCalled();
+      expect(mkdirMock).not.toHaveBeenCalled();
+      expect(secureDaemonDirectoryMock).not.toHaveBeenCalled();
+      expect(launchDaemonDetachedMock).not.toHaveBeenCalled();
+      expect(runDaemonHostMock).not.toHaveBeenCalled();
+      expect(legacyDaemonsMock).not.toHaveBeenCalled();
+      expect(stopVerifiedLegacyDaemonsMock).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it('stops the daemon and launches a fresh instance while honoring log flags', async () => {

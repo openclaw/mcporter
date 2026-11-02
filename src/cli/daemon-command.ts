@@ -7,6 +7,7 @@ import { launchDaemonDetached } from '../daemon/launch.js';
 import { getDaemonLogPath, secureDaemonDirectory } from '../daemon/paths.js';
 import { waitForDaemonReady } from '../daemon/startup-readiness.js';
 import { expandHome } from '../env.js';
+import { isHelpToken } from './help-output.js';
 
 export interface DaemonCliOptions {
   readonly configPath: string;
@@ -25,7 +26,7 @@ interface DaemonLoggingOptions {
 
 export async function handleDaemonCli(args: string[], options: DaemonCliOptions): Promise<void> {
   const subcommand = args.shift();
-  if (!subcommand || subcommand === 'help' || subcommand === '--help') {
+  if (!subcommand || isHelpToken(subcommand) || args.some(isHelpToken)) {
     printDaemonHelp();
     return;
   }
