@@ -49,6 +49,11 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
     expect(help.stdout).toContain('--raw-3');
     expect(help.stdout).toContain('--raw-2');
     expect(help.stdout).toContain('--raw <json>');
+    await expect(
+      execFileAsync(process.execPath, [bundle, 'echo', '--query', 'uppercase', '--query-4', 'lowercase'], {
+        timeout: 10_000,
+      })
+    ).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining('Missing required option: --raw-3') });
     const { stdout } = await execFileAsync(
       process.execPath,
       [
