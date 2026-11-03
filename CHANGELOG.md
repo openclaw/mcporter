@@ -2,6 +2,8 @@
 
 ## [0.16.2] - Unreleased
 
+- Run CodeQL weekly and on pull requests or manual dispatch, retaining Actions and JavaScript analysis without duplicate scans on every main push.
+
 - Reuse the existing pinned Bun runtime for macOS CI formatting while retaining native typechecks and Node-only local commands.
 
 - Patch the development fixture's qs stringify denial-of-service vulnerability (GHSA-6pq8-jhm2-2vcw) with qs 6.16.1, preserving the 48-hour dependency cooldown.
