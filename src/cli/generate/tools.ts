@@ -42,9 +42,9 @@ function resolveArrayItemType(value: unknown): GeneratedOption['arrayItemType'] 
   return undefined;
 }
 
-export function buildToolMetadata(tool: ServerToolInfo): ToolMetadata {
+export function buildToolMetadata(tool: ServerToolInfo, reservedOptionNames: readonly string[] = []): ToolMetadata {
   const methodName = toProxyMethodName(tool.name);
-  const properties = extractOptions(tool);
+  const properties = extractOptions(tool, reservedOptionNames);
   return {
     tool,
     methodName,
@@ -54,9 +54,13 @@ export function buildToolMetadata(tool: ServerToolInfo): ToolMetadata {
 
 export function buildToolMetadataList(
   tools: ServerToolInfo[],
-  options: { readonly sort?: boolean; readonly onCollision?: 'throw' | 'skip' } = {}
+  options: {
+    readonly sort?: boolean;
+    readonly onCollision?: 'throw' | 'skip';
+    readonly reservedOptionNames?: readonly string[];
+  } = {}
 ): ToolMetadata[] {
-  const result = tools.map((tool) => buildToolMetadata(tool));
+  const result = tools.map((tool) => buildToolMetadata(tool, options.reservedOptionNames));
   if (options.sort !== false) {
     result.sort((left, right) => left.tool.name.localeCompare(right.tool.name));
   }
@@ -91,7 +95,7 @@ export function buildEmbeddedSchemaMap(tools: ToolMetadata[]): Record<string, un
   );
 }
 
-export function extractOptions(tool: ServerToolInfo): GeneratedOption[] {
+export function extractOptions(tool: ServerToolInfo, reservedOptionNames: readonly string[] = []): GeneratedOption[] {
   const schema = tool.inputSchema;
   if (!schema || typeof schema !== 'object') {
     return [];
@@ -104,7 +108,10 @@ export function extractOptions(tool: ServerToolInfo): GeneratedOption[] {
   const properties = record.properties as Record<string, unknown>;
   const requiredList = Array.isArray(record.required) ? (record.required as string[]) : [];
   const entries = Object.entries(properties);
-  const cliNames = assignCliNames(entries.map(([property]) => property));
+  const cliNames = assignCliNames(
+    entries.map(([property]) => property),
+    reservedOptionNames
+  );
   return entries.map(([property, descriptor], index) => {
     const cliName = cliNames[index] as string;
     const type = inferType(descriptor);
@@ -134,10 +141,10 @@ export function extractOptions(tool: ServerToolInfo): GeneratedOption[] {
 const EMPTY_CLI_OPTION_STEM = 'option';
 
 // Reserve storage keys too: distinct flags such as --query-2 and --query2 both use query2.
-function assignCliNames(properties: string[]): string[] {
+function assignCliNames(properties: string[], reservedOptionNames: readonly string[]): string[] {
   const natural = properties.map((property) => toCliOption(property));
   const claimed = new Set(natural.map(toCliOptionKey));
-  const used = new Set<string>();
+  const used = new Set(reservedOptionNames.map(toCliOptionKey));
   return natural.map((base) => {
     let name = base;
     let suffix = 2;

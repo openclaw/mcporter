@@ -13,7 +13,10 @@ it('keeps colliding flags and Commander storage keys independent in a generated 
   const fixture = path.join(directory, 'server.mjs');
   const bundle = path.join(directory, 'cli.mjs');
   const properties = Object.fromEntries(
-    ['Query', 'query', 'query_2', 'query3', 'no_cache', 'nocache'].map((name) => [name, { type: 'string' }])
+    ['Query', 'query', 'query_2', 'query3', 'no_cache', 'nocache', 'raw', 'raw_2'].map((name) => [
+      name,
+      { type: 'string' },
+    ])
   );
   await fs.writeFile(
     fixture,
@@ -26,7 +29,7 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
   if (request.method === 'initialize') {
     result = { protocolVersion: request.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'collision', version: '1' } };
   } else if (request.method === 'tools/list') {
-    result = { tools: [{ name: 'echo', inputSchema: { type: 'object', properties: ${JSON.stringify(properties)}, required: ['Query', 'query'] } }] };
+    result = { tools: [{ name: 'echo', inputSchema: { type: 'object', properties: ${JSON.stringify(properties)}, required: ['Query', 'query', 'raw'] } }] };
   } else {
     result = { content: [{ type: 'text', text: JSON.stringify(request.params.arguments) }] };
   }
@@ -42,6 +45,10 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
       bundle,
       timeoutMs: 5_000,
     });
+    const help = await execFileAsync(process.execPath, [bundle, 'echo', '--help'], { timeout: 10_000 });
+    expect(help.stdout).toContain('--raw-3');
+    expect(help.stdout).toContain('--raw-2');
+    expect(help.stdout).toContain('--raw <json>');
     const { stdout } = await execFileAsync(
       process.execPath,
       [
@@ -59,6 +66,10 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
         'explicit',
         '--nocache',
         'plain',
+        '--raw-3',
+        'tool-value',
+        '--raw-2',
+        'natural-raw',
       ],
       { timeout: 10_000 }
     );
@@ -69,13 +80,20 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
       query3: 'natural',
       no_cache: 'explicit',
       nocache: 'plain',
+      raw: 'tool-value',
+      raw_2: 'natural-raw',
     });
     const absent = await execFileAsync(
       process.execPath,
-      [bundle, 'echo', '--query', 'uppercase', '--query-4', 'lowercase'],
+      [bundle, 'echo', '--query', 'uppercase', '--query-4', 'lowercase', '--raw-3', 'required-raw'],
       { timeout: 10_000 }
     );
-    expect(JSON.parse(absent.stdout)).toEqual({ Query: 'uppercase', query: 'lowercase' });
+    expect(JSON.parse(absent.stdout)).toEqual({ Query: 'uppercase', query: 'lowercase', raw: 'required-raw' });
+    const rawArgs = { Query: 'json-uppercase', query: 'json-lowercase', raw: 'json-raw', raw_2: 'json-natural' };
+    const raw = await execFileAsync(process.execPath, [bundle, 'echo', '--raw', JSON.stringify(rawArgs)], {
+      timeout: 10_000,
+    });
+    expect(JSON.parse(raw.stdout)).toEqual(rawArgs);
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }

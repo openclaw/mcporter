@@ -63,7 +63,7 @@ export async function generateCli(
       : { ...baseDefinition, description: derivedDescription };
   const embeddedDefinition = stripBuildSources(definition);
   const serializedDefinition = serializeDefinition(embeddedDefinition);
-  const toolMetadata: ToolMetadata[] = buildToolMetadataList(tools);
+  const toolMetadata: ToolMetadata[] = buildToolMetadataList(tools, { reservedOptionNames: ['raw'] });
   const generator = await readPackageMetadata();
   const baseInvocation = ensureInvocationDefaults(
     {
