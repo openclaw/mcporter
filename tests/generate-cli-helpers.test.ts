@@ -29,6 +29,29 @@ describe('generate helpers', () => {
     expect(buildEmbeddedSchemaMap(tools)).toStrictEqual({ ['__proto__']: schema });
   });
 
+  it('does not let a schema property take a flag the caller reserves', () => {
+    const tool: ServerToolInfo = {
+      name: 'get-page',
+      inputSchema: { type: 'object', properties: { raw: { type: 'boolean' }, raw_2: { type: 'string' } } },
+    };
+    const reserved = extractOptions(tool, ['raw']);
+    expect(reserved.map((option) => [option.property, option.cliName])).toEqual([
+      ['raw', 'raw-3'],
+      ['raw_2', 'raw-2'],
+    ]);
+    const [listed] = buildToolMetadataList([tool], { reservedOptionNames: ['raw'] });
+    expect(listed?.options.map((option) => option.cliName)).toEqual(['raw-3', 'raw-2']);
+  });
+
+  it('keeps natural flag names when nothing is reserved, as for list and call', () => {
+    const tool: ServerToolInfo = {
+      name: 'get-page',
+      inputSchema: { type: 'object', properties: { raw: { type: 'boolean' } } },
+    };
+    expect(extractOptions(tool).map((option) => option.cliName)).toEqual(['raw']);
+    expect(buildToolMetadataList([tool])[0]?.options[0]?.cliName).toBe('raw');
+  });
+
   const sampleTool: ServerToolInfo = {
     name: 'add-numbers',
     description: 'Add two numbers',

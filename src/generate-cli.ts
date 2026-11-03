@@ -63,7 +63,8 @@ export async function generateCli(
       : { ...baseDefinition, description: derivedDescription };
   const embeddedDefinition = stripBuildSources(definition);
   const serializedDefinition = serializeDefinition(embeddedDefinition);
-  const toolMetadata: ToolMetadata[] = buildToolMetadataList(tools);
+  // Every generated command registers its own --raw <json>, so schema properties may not take that flag.
+  const toolMetadata: ToolMetadata[] = buildToolMetadataList(tools, { reservedOptionNames: ['raw'] });
   const generator = await readPackageMetadata();
   const baseInvocation = ensureInvocationDefaults(
     {

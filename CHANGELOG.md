@@ -4,6 +4,8 @@
 
 - Run CodeQL weekly and on pull requests or manual dispatch, retaining Actions and JavaScript analysis without duplicate scans on every main push.
 
+- Reserve `--raw` when naming generated CLI options so a tool parameter called `raw` becomes `--raw-2` instead of crashing the generated CLI at startup.
+
 - Reuse the existing pinned Bun runtime for macOS CI formatting while retaining native typechecks and Node-only local commands.
 
 - Patch the development fixture's qs stringify denial-of-service vulnerability (GHSA-6pq8-jhm2-2vcw) with qs 6.16.1, preserving the 48-hour dependency cooldown.
