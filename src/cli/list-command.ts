@@ -10,6 +10,7 @@ import { chooseClosestIdentifier, renderIdentifierResolutionMessages } from './i
 import { formatExampleBlock } from './list-detail-helpers.js';
 import type { ListSummaryResult, StatusCategory } from './list-format.js';
 import { classifyListError, formatSourceSuffix, renderServerListRow } from './list-format.js';
+import { CliUsageError } from './errors.js';
 import { extractListFlags } from './list-flags.js';
 import type { ToolMetadata } from './generate/tools.js';
 import {
@@ -30,6 +31,14 @@ import { formatTransportSummary } from './transport-utils.js';
 export async function handleList(runtime: Runtime, args: string[]): Promise<void> {
   const flags = extractListFlags(args);
   let target = args.shift();
+  const unknownOption =
+    target?.startsWith('-') &&
+    !runtime.getDefinitions().some(({ name }) => name === target) &&
+    !resolveConfiguredToolSelector(runtime, target);
+  const unexpected = unknownOption ? target : args[0];
+  if (unexpected !== undefined) {
+    throw new CliUsageError(`Unexpected list argument '${unexpected}'.`);
+  }
   let requestedTool: string | undefined;
 
   if (target) {
