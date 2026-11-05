@@ -1,8 +1,12 @@
 # mcporter Changelog
 
-## [0.16.2] - Unreleased
+## [0.17.0] - 2026-11-05
+
+**Highlights:** At the 256-transport limit, reclaim the least recently used quiet daemon transport before its idle deadline while preserving active calls and Chrome owners; improve CLI argument handling and patch minimatch, qs, and Glob security vulnerabilities.
 
 - Reclaim the least recently used quiet daemon transport only at the 256-transport limit, even before its idle deadline; preserve active calls, Chrome owners, unknown outcomes, and failed retirements. Thanks @vitalijssilins (#469, #468).
+
+- Patch the development cleanup dependency's Glob cancellation-bypass vulnerability (GHSA-3g3m-2fjr-6pw4) with 14.0.2, preserving Node 24 support and the 48-hour dependency cooldown.
 
 - Patch the development cleanup dependency's minimatch pattern-amplification vulnerability (GHSA-g3hv-75wg-m249) with 11.0.1, preserving the 48-hour dependency cooldown.
 
