@@ -15,6 +15,18 @@ import { promisify } from 'node:util';
 import * as relayDiscovery from '../src/chrome-devtools-relay-discovery.js';
 import { budget } from './helpers/timing.js';
 
+// Keep real relay children; Windows ownership/retirement has dedicated integration coverage.
+vi.mock('../src/daemon/process-retirement.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/daemon/process-retirement.js')>();
+  return process.platform === 'win32'
+    ? {
+        ...actual,
+        ownedProcessTree: vi.fn().mockResolvedValue([]),
+        awaitRetirement: vi.fn().mockResolvedValue(undefined),
+      }
+    : actual;
+});
+
 // These end-to-end cases launch processes and bundle a CLI; Windows needs the shared spawn budget.
 vi.setConfig({ testTimeout: budget(10_000) });
 

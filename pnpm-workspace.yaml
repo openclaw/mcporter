@@ -8,6 +8,7 @@ overrides:
   brace-expansion: 5.0.12
   esbuild: 0.28.2
   fast-uri: 4.2.3
+  glob: 14.0.2
   hono: 4.13.13
   ip-address: 10.7.4
   minimatch: 11.0.1
