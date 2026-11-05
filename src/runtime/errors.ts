@@ -1,6 +1,6 @@
 import { ProtocolErrorCode as ErrorCode } from '@modelcontextprotocol/client';
 
-const NON_FATAL_MCP_ERROR_CODES = new Set([
+const NON_FATAL_MCP_ERROR_CODES = new Set<number>([
   ErrorCode.InvalidRequest,
   ErrorCode.MethodNotFound,
   ErrorCode.InvalidParams,
