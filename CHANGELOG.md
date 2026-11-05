@@ -1,5 +1,7 @@
 # mcporter Changelog
 
+## [0.17.1] - Unreleased
+
 ## [0.17.0] - 2026-11-05
 
 **Highlights:** At the 256-transport limit, reclaim the least recently used quiet daemon transport before its idle deadline while preserving active calls and Chrome owners; improve CLI argument handling and patch minimatch, qs, and Glob security vulnerabilities.
@@ -43,6 +45,8 @@
 - Add a runnable, isolated deed.page MCP example for publishing static HTML, with private owner-token storage and tested failure handling. Thanks @f-o-x11 (#472).
 
 - Let `--tool` and `tool=` override the tool of a configured `server.tool` selector instead of silently calling the selector's tool, matching the ad-hoc HTTP path and the tool-calling docs. Thanks @KrasimirKralev (#474).
+
+**Verification:** [npm](https://www.npmjs.com/package/mcporter/v/0.17.0), [registry tarball](https://registry.npmjs.org/mcporter/-/mcporter-0.17.0.tgz), [release CI](https://github.com/openclaw/mcporter/actions/runs/42093289374), [release rehearsal](https://github.com/openclaw/mcporter/actions/runs/42089251724), and [native assets](https://github.com/openclaw/mcporter/actions/runs/42092366945). npm integrity: `sha512-H0rzo7Zcbg7b/mkoqKAbeZkneUIE+ugeR7KrPUzThmi3jvTBOIMajVz0viv98ugiT5AJr3Z4zkkV0FJew66VlA==`.
 
 ## [0.16.1] - 2026-10-26
 
