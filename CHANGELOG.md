@@ -2,6 +2,8 @@
 
 ## [0.16.2] - Unreleased
 
+- Patch the development cleanup dependency's minimatch pattern-amplification vulnerability (GHSA-g3hv-75wg-m249) with 11.0.1, preserving the 48-hour dependency cooldown.
+
 - Refresh runtime helpers, Rolldown, Vitest/coverage, lint/format tooling, and type definitions while preserving Node 24 support, the 48-hour dependency cooldown, the patched MCP client, and security overrides.
 
 - Print daemon help before constructing clients or starting, stopping, or migrating daemons, while preserving help-shaped logging values. Thanks @HengYangDS (#483, #484).

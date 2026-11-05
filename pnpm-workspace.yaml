@@ -10,6 +10,7 @@ overrides:
   fast-uri: 4.2.3
   hono: 4.13.13
   ip-address: 10.7.4
+  minimatch: 11.0.1
   nanoid: 6.0.1
   qs: 6.16.1
   source-map-js: 1.2.2
