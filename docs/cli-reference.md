@@ -11,6 +11,8 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
 
 ## `mcporter list [server]`
 
+List accepts one target. Extra targets and unknown options fail with a usage error before discovery; exact configured server names beginning with hyphens remain valid.
+
 - Without arguments, lists every configured server (with live discovery + brief
   status).
 - With a server name, prints TypeScript-style signatures for each tool, doc

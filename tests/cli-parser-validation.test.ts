@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { __test as emitInternals } from '../src/cli/emit-ts-command.js';
+import { CliUsageError } from '../src/cli/errors.js';
 import { consumeOutputFormat } from '../src/cli/output-format.js';
 import { parseRecordArgs, parseReplayArgs } from '../src/cli/record-command.js';
 
@@ -16,6 +17,7 @@ describe('emit-ts argument validation', () => {
     [['linear', '--out', 'types.ts', '--mystery'], "Unknown flag '--mystery' for emit-ts"],
   ])('rejects invalid emit-ts arguments %#', (args, message) => {
     expect(() => emitInternals.parseEmitTsArgs([...(args as string[])])).toThrow(message as string);
+    expect(() => emitInternals.parseEmitTsArgs([...(args as string[])])).toThrow(CliUsageError);
   });
 
   it('parses explicit client and types paths and derives safe identifiers', () => {

@@ -3,7 +3,7 @@ import { parse as parseJsonWithComments, printParseErrorCode } from 'jsonc-parse
 
 export function parseJsonBuffer(buffer: string): unknown {
   const errors: ParseError[] = [];
-  const parsed = parseJsonWithComments(buffer, errors, { allowTrailingComma: true });
+  const parsed = parseJsonWithComments(buffer.replace(/^\uFEFF/, ''), errors, { allowTrailingComma: true });
   const first = errors[0];
   if (first) {
     const message = printParseErrorCode(first.error);

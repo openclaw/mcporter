@@ -31,6 +31,8 @@ mcporter keeps three configuration buckets in sync: repository-scoped JSON (`con
 3. Use `mcporter config add shadcn https://www.shadcn.io/api/mcp` to persist another server without editing JSON.
 4. Authenticate any OAuth-backed server with either `mcporter auth <name>` or `mcporter config login <name>`; tokens land in the shared vault (`~/.mcporter/credentials.json`, or `$XDG_DATA_HOME/mcporter/credentials.json` when set) unless you override `tokenCacheDir`.
 
+JSON and JSONC config files, including editor imports, accept a leading UTF-8 BOM (for example, files written by Windows PowerShell 5.1). Stdio command strings preserve empty quoted arguments such as `node server.mjs --label ""`; argv arrays remain the clearest way to express exact arguments.
+
 ## Config Resolution Order
 
 mcporter now merges home and project config files by default so global servers stay available inside repos. The order depends on how you invoke the CLI:

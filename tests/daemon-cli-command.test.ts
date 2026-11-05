@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { CliUsageError } from '../src/cli/errors.js';
 
 const stopMock = vi.fn();
 const statusMock = vi.fn();
@@ -191,6 +192,7 @@ describe('daemon CLI restart', () => {
       await expect(handleDaemonCli(['unknown'], { configPath: '/tmp/config.json' })).rejects.toThrow(
         "Unknown daemon subcommand 'unknown'"
       );
+      await expect(handleDaemonCli(['unknown'], { configPath: '/tmp/config.json' })).rejects.toThrow(CliUsageError);
       await handleDaemonCli(['stop'], { configPath: '/tmp/config.json' });
       expect(stopMock).toHaveBeenCalledOnce();
       expect(log).toHaveBeenCalledWith('Daemon stopped (if it was running).');
@@ -298,6 +300,15 @@ describe('daemon CLI restart', () => {
   it('rejects value flags without values', async () => {
     await expect(handleDaemonCli(['start', '--log-file'], { configPath: '/tmp/config.json' })).rejects.toThrow(
       "Flag '--log-file' requires a value"
+    );
+    await expect(handleDaemonCli(['start', '--log-file'], { configPath: '/tmp/config.json' })).rejects.toThrow(
+      CliUsageError
+    );
+  });
+
+  it('reports a legacy stop without the drain confirmation as a usage error', async () => {
+    await expect(handleDaemonCli(['migrate', '--stop-legacy'], { configPath: '/tmp/config.json' })).rejects.toThrow(
+      new CliUsageError('Drain all legacy clients first, then pass --confirmed-drained.')
     );
   });
 });

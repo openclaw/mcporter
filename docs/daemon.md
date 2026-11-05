@@ -25,6 +25,8 @@ mcporter daemon restart
 mcporter daemon migrate
 ```
 
+`daemon <command> --help`, `-h`, or `help` prints usage before any daemon lifecycle action. Logging flag values that happen to be help tokens remain values.
+
 Explicit starts and automatic launches report process creation failures immediately with the executable and OS error. After a successful spawn, clients wait up to 45 seconds for authenticated daemon readiness; a timeout includes `mcporter daemon start --foreground --log` guidance for diagnosing startup.
 
 An orderly daemon socket EOF is a transport disconnect. `daemon stop` tolerates it when shutdown closes the connection before a reply. Other requests still report the disconnect without replaying the operation, and authentication or malformed-protocol errors remain failures.
