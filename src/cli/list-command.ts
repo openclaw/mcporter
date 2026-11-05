@@ -58,7 +58,7 @@ export async function handleList(runtime: Runtime, args: string[]): Promise<void
 
   if (!target) {
     if (flags.brief) {
-      throw new Error('--brief requires a server target.');
+      throw new CliUsageError('--brief requires a server target.');
     }
     const previousStdioLogMode = setStdioLogMode('silent');
     try {
@@ -166,7 +166,7 @@ export async function handleList(runtime: Runtime, args: string[]): Promise<void
     }
   }
   if (flags.statusOnly && requestedTool) {
-    throw new Error('--status cannot be used with a tool selector.');
+    throw new CliUsageError('--status cannot be used with a tool selector.');
   }
 
   const resolved = resolveServerDefinition(runtime, target, { quiet: flags.quiet });

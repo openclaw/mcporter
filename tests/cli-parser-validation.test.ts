@@ -69,6 +69,7 @@ describe('shared output format parsing', () => {
     [[], { allowed: ['json'], defaultFormat: 'text' }, "Format 'text' is not supported"],
   ])('rejects invalid output formats %#', (args, options, message) => {
     expect(() => consumeOutputFormat([...(args as string[])], options as never)).toThrow(message as string);
+    expect(() => consumeOutputFormat([...(args as string[])], options as never)).toThrow(CliUsageError);
   });
 });
 
@@ -90,5 +91,6 @@ describe('record and replay argument validation', () => {
     [() => parseReplayArgs(['one', 'two']), "Unexpected replay argument 'two'"],
   ])('rejects invalid record/replay arguments %#', (run, message) => {
     expect(run).toThrow(message as string);
+    expect(run).toThrow(CliUsageError);
   });
 });

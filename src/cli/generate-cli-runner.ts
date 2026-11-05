@@ -6,6 +6,7 @@ import { performGenerateFromArtifact, performGenerateFromRequest } from './gener
 import { buildInlineServerDefinition } from './generate/server-utils.js';
 import { buildGenerateCliCommand, resolveGenerateRequestFromArtifact } from './generate/template-data.js';
 import { validateToolSelection } from './generate/tool-selection.js';
+import { CliUsageError } from './errors.js';
 
 // handleGenerateCli parses flags and generates the requested standalone CLI.
 export async function handleGenerateCli(args: string[], globalFlags: FlagMap): Promise<void> {
@@ -17,7 +18,7 @@ export async function handleGenerateCli(args: string[], globalFlags: FlagMap): P
     throw new Error('--from cannot be combined with --command/--description/--name.');
   }
   if (parsed.dryRun && !parsed.from) {
-    throw new Error('--dry-run currently requires --from <artifact>.');
+    throw new CliUsageError('--dry-run currently requires --from <artifact>.');
   }
 
   if (parsed.from) {

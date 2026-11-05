@@ -3,6 +3,7 @@ import { extractHttpServerTarget, looksLikeHttpUrl, splitHttpToolSelector } from
 import { extractGeneratorFlags } from './flag-parser.js';
 import { looksLikeInlineCommand, normalizeCommandInput as normalizeGeneratedCommandInput } from './name-utils.js';
 import type { CommandInput } from './types.js';
+import { CliUsageError } from '../errors.js';
 
 export interface GenerateFlags {
   server?: string;
@@ -109,7 +110,7 @@ export function parseGenerateFlags(args: string[]): GenerateFlags {
     if (token === '--bundler') {
       const value = expectValue(token, args[index + 1]);
       if (value !== 'rolldown' && value !== 'bun') {
-        throw new Error("--bundler must be 'rolldown' or 'bun'.");
+        throw new CliUsageError("--bundler must be 'rolldown' or 'bun'.");
       }
       bundler = value;
       args.splice(index, 2);
@@ -137,7 +138,7 @@ export function parseGenerateFlags(args: string[]): GenerateFlags {
       continue;
     }
     if (token.startsWith('--')) {
-      throw new Error(`Unknown flag '${token}' for generate-cli.`);
+      throw new CliUsageError(`Unknown flag '${token}' for generate-cli.`);
     }
     index += 1;
   }
