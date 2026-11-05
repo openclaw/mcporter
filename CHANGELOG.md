@@ -2,6 +2,8 @@
 
 ## [0.16.2] - Unreleased
 
+- Reclaim the least recently used quiet daemon transport only at the 256-transport limit, even before its idle deadline; preserve active calls, Chrome owners, unknown outcomes, and failed retirements. Thanks @vitalijssilins (#469, #468).
+
 - Patch the development cleanup dependency's minimatch pattern-amplification vulnerability (GHSA-g3hv-75wg-m249) with 11.0.1, preserving the 48-hour dependency cooldown.
 
 - Refresh runtime helpers, Rolldown, Vitest/coverage, lint/format tooling, and type definitions while preserving Node 24 support, the 48-hour dependency cooldown, the patched MCP client, and security overrides.
