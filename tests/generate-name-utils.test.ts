@@ -40,6 +40,12 @@ describe('generated CLI command naming', () => {
     expect(looksLikeInlineCommand('node "unterminated')).toBe(false);
     expect(normalizeCommandInput('/opt/bin/search-mcp')).toEqual({ command: '/opt/bin/search-mcp' });
     expect(() => parseInlineCommand('   ')).toThrow('--command requires a non-empty value');
+    expect(parseInlineCommand('node --label "" after')).toEqual({
+      command: 'node',
+      args: ['--label', '', 'after'],
+    });
+    expect(() => parseInlineCommand('"" node')).toThrow('--command requires a non-empty value');
+    expect(() => parseInlineCommand('""')).toThrow('--command requires a non-empty value');
   });
 
   it('ignores flags and assignments when choosing a positional name hint', () => {
