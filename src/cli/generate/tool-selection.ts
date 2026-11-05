@@ -10,7 +10,7 @@ export function validateToolSelection(
   context: ToolSelectionValidationContext
 ): void {
   if (includeTools && excludeTools) {
-    throw new Error(context.mutuallyExclusiveMessage);
+    throw new CliUsageError(context.mutuallyExclusiveMessage);
   }
   if (includeTools && includeTools.length === 0) {
     throw new CliUsageError('--include-tools requires at least one tool name.');

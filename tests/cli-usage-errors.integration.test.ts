@@ -34,6 +34,18 @@ describe('mcporter usage errors', () => {
     [['record'], 'Usage: mcporter record <session-name> [--server <name>] [-- <command-to-run>]'],
     [['generate-cli', '--bundler', 'x'], "--bundler must be 'rolldown' or 'bun'."],
     [['generate-cli', '--runtime', 'x'], "--runtime must be 'node' or 'bun'."],
+    [
+      ['generate-cli'],
+      'Provide --server with a definition or a command we can infer a name from (use --name to override).',
+    ],
+    [
+      ['generate-cli', '--from', 'cli.js', '--name', 'demo'],
+      '--from cannot be combined with --command/--description/--name.',
+    ],
+    [
+      ['generate-cli', '--include-tools', 'a', '--exclude-tools', 'b'],
+      '--include-tools and --exclude-tools cannot be used together.',
+    ],
     [['--config'], "Flag '--config' requires a value."],
   ])(
     'prints %j once without a stack trace',
