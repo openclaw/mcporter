@@ -2,6 +2,8 @@
 
 ## [0.17.1] - Unreleased
 
+- Keep quoted empty arguments in `--stdio` and `generate-cli --command`, and reject an empty executable instead of running the next token.
+
 ## [0.17.0] - 2026-11-05
 
 **Highlights:** At the 256-transport limit, reclaim the least recently used quiet daemon transport before its idle deadline while preserving active calls and Chrome owners; improve CLI argument handling and patch minimatch, qs, and Glob security vulnerabilities.
