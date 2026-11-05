@@ -63,7 +63,7 @@ export async function generateCli(
       : { ...baseDefinition, description: derivedDescription };
   const embeddedDefinition = stripBuildSources(definition);
   const serializedDefinition = serializeDefinition(embeddedDefinition);
-  const toolMetadata: ToolMetadata[] = buildToolMetadataList(tools);
+  const toolMetadata: ToolMetadata[] = buildToolMetadataList(tools, { reservedOptionNames: ['raw'] });
   const generator = await readPackageMetadata();
   const baseInvocation = ensureInvocationDefaults(
     {
@@ -113,7 +113,10 @@ export async function generateCli(
       resolveBundleTarget({
         bundle: options.bundle,
         compile: options.compile,
-        outputPath: templateSourcePath,
+        // Without --output the template sits in a temp dir; a bare --bundle still belongs in the cwd.
+        outputPath: options.outputPath
+          ? templateSourcePath
+          : path.resolve(`${sanitizePathSegment(name) || 'server'}.ts`),
       })
     );
     if (options.compile) {

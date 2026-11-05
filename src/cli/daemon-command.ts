@@ -7,6 +7,8 @@ import { launchDaemonDetached } from '../daemon/launch.js';
 import { getDaemonLogPath, secureDaemonDirectory } from '../daemon/paths.js';
 import { waitForDaemonReady } from '../daemon/startup-readiness.js';
 import { expandHome } from '../env.js';
+import { CliUsageError } from './errors.js';
+import { isHelpToken } from './help-output.js';
 
 export interface DaemonCliOptions {
   readonly configPath: string;
@@ -25,7 +27,7 @@ interface DaemonLoggingOptions {
 
 export async function handleDaemonCli(args: string[], options: DaemonCliOptions): Promise<void> {
   const subcommand = args.shift();
-  if (!subcommand || subcommand === 'help' || subcommand === '--help') {
+  if (!subcommand || isHelpToken(subcommand) || hasDaemonHelp(args, subcommand)) {
     printDaemonHelp();
     return;
   }
@@ -39,7 +41,7 @@ export async function handleDaemonCli(args: string[], options: DaemonCliOptions)
   if (subcommand === 'migrate') {
     if (args.includes('--stop-legacy')) {
       if (!args.includes('--confirmed-drained'))
-        throw new Error('Drain all legacy clients first, then pass --confirmed-drained.');
+        throw new CliUsageError('Drain all legacy clients first, then pass --confirmed-drained.');
       await stopVerifiedLegacyDaemons();
       console.log('Daemon directory permissions verified; legacy daemons and observed owned children have retired.');
     } else console.log(JSON.stringify((await legacyDaemons()).map(({ pid, verified }) => ({ pid, verified }))));
@@ -64,7 +66,7 @@ export async function handleDaemonCli(args: string[], options: DaemonCliOptions)
     return;
   }
 
-  throw new Error(`Unknown daemon subcommand '${subcommand}'.`);
+  throw new CliUsageError(`Unknown daemon subcommand '${subcommand}'.`);
 }
 
 function printDaemonHelp(): void {
@@ -198,17 +200,40 @@ function consumeFlag(args: string[], flag: string): boolean {
   return true;
 }
 
-function consumeValueFlag(args: string[], flag: string): string | undefined {
+function consumeValueFlag(args: string[], flag: string, requireValue = true): string | undefined {
   const index = args.indexOf(flag);
   if (index === -1) {
     return undefined;
   }
   if (index + 1 >= args.length) {
-    throw new Error(`Flag '${flag}' requires a value.`);
+    if (!requireValue) {
+      return undefined;
+    }
+    throw new CliUsageError(`Flag '${flag}' requires a value.`);
   }
   const value = args[index + 1];
   args.splice(index, 2);
   return value;
+}
+
+function consumeDaemonLoggingFlags(
+  args: string[],
+  requireValues = true
+): { logFlag: boolean; logFileValue: string | undefined; logServersValue: string | undefined } {
+  const logFlag = consumeFlag(args, '--log');
+  const logFileValue = consumeValueFlag(args, '--log-file', requireValues);
+  const logServersValue = consumeValueFlag(args, '--log-servers', requireValues);
+  return { logFlag, logFileValue, logServersValue };
+}
+
+function hasDaemonHelp(args: string[], subcommand: string): boolean {
+  if (subcommand !== 'start' && subcommand !== 'restart') {
+    return args.some(isHelpToken);
+  }
+  const remaining = [...args];
+  consumeFlag(remaining, '--foreground');
+  consumeDaemonLoggingFlags(remaining, false);
+  return remaining.some(isHelpToken);
 }
 
 async function waitFor<T>(probe: () => Promise<T | null>, timeoutMs: number, intervalMs: number): Promise<T | null> {
@@ -230,9 +255,7 @@ function delay(ms: number): Promise<void> {
 }
 
 async function resolveDaemonLoggingOptions(args: string[], configKey: string): Promise<DaemonLoggingOptions> {
-  const logFlag = consumeFlag(args, '--log');
-  const logFileValue = consumeValueFlag(args, '--log-file');
-  const logServersValue = consumeValueFlag(args, '--log-servers');
+  const { logFlag, logFileValue, logServersValue } = consumeDaemonLoggingFlags(args);
   const envLogEnabled = process.env.MCPORTER_DAEMON_LOG === '1';
   const envLogPath = process.env.MCPORTER_DAEMON_LOG_PATH;
   const envLogServers = process.env.MCPORTER_DAEMON_LOG_SERVERS;

@@ -28,7 +28,12 @@ function runCli(args: string[], configPath: string): Promise<{ stdout: string; s
       },
       (error, stdout, stderr) => {
         if (error) {
-          reject(new Error(`${error.message}\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`));
+          reject(
+            Object.assign(new Error(`${error.message}\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`), {
+              code: error.code,
+              stderr,
+            })
+          );
           return;
         }
         resolve({ stdout, stderr });
@@ -44,11 +49,16 @@ describe('mcporter HTTP selector CLI integration', () => {
   let configuredPath: string;
   let emptyPath: string;
   const observedToolNames: string[] = [];
+  let mcpRequests = 0;
 
   beforeAll(async () => {
     await ensureDistBuilt(CLI_ENTRY);
 
     const app = express();
+    app.use((_req, _res, next) => {
+      mcpRequests += 1;
+      next();
+    });
     app.use(express.json());
     const server = new McpServer({ name: 'http-selector-e2e', version: '1.0.0' });
     server.registerTool(
@@ -115,7 +125,11 @@ describe('mcporter HTTP selector CLI integration', () => {
     emptyPath = path.join(tempDir, 'empty.json');
     await fs.writeFile(
       configuredPath,
-      JSON.stringify({ imports: [], mcpServers: { xhs: { baseUrl: baseUrl.href } } }, null, 2),
+      JSON.stringify(
+        { imports: [], mcpServers: { xhs: { baseUrl: baseUrl.href }, '--literal': { baseUrl: baseUrl.href } } },
+        null,
+        2
+      ),
       'utf8'
     );
     await fs.writeFile(emptyPath, JSON.stringify({ imports: [], mcpServers: {} }, null, 2), 'utf8');
@@ -126,18 +140,31 @@ describe('mcporter HTTP selector CLI integration', () => {
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   });
 
-  it('lists a configured HTTP server by name with JSON schemas', async () => {
-    const result = await runCli(['list', 'xhs', '--schema', '--json'], configuredPath);
+  it.each(['xhs', '--literal'])('lists configured HTTP server %s with JSON schemas', async (name) => {
+    const result = await runCli(['list', name, '--schema', '--json'], configuredPath);
     expect(result.stderr).toBe('');
     expect(JSON.parse(result.stdout)).toMatchObject({
       mode: 'server',
-      name: 'xhs',
+      name,
       status: 'ok',
       tools: expect.arrayContaining([
         expect.objectContaining({ name: 'check_login_status' }),
         expect.objectContaining({ name: 'xhs.check_login_status' }),
       ]),
     });
+  });
+
+  it.each([
+    { args: ['xhs', '--no-oauht'], unexpected: '--no-oauht' },
+    { args: ['xhs', 'extra-server'], unexpected: 'extra-server' },
+    { args: ['--xhs'], unexpected: '--xhs' },
+  ])('rejects unexpected list argument $unexpected before contacting the server', async ({ args, unexpected }) => {
+    const previousRequests = mcpRequests;
+    await expect(runCli(['list', ...args, '--json'], configuredPath)).rejects.toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining(`Unexpected list argument '${unexpected}'.`),
+    });
+    expect(mcpRequests).toBe(previousRequests);
   });
 
   it(

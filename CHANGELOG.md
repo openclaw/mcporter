@@ -2,6 +2,24 @@
 
 ## [0.16.2] - Unreleased
 
+- Print daemon help before constructing clients or starting, stopping, or migrating daemons, while preserving help-shaped logging values. Thanks @HengYangDS (#483, #484).
+
+- Return exit code 1 from generated CLIs for MCP tool results with `isError: true`, preserving every output format. Thanks @goutamadwant (#480, #481).
+
+- Preserve boolean, null, and JSON-looking CLI values as strings when required by the tool schema, and discard stale coercion hints when explicit JSON or call expressions overwrite them. Thanks @jaeminbird (#477).
+
+- Accept UTF-8 BOM-prefixed JSON/JSONC configuration and editor imports. Thanks @jaeminbird (#478).
+
+- Write a bare `generate-cli --bundle` beside its template, with safe handling of ambiguous output paths. Thanks @KrasimirKralev (#479).
+
+- Report emit-ts, daemon, and timeout argument errors once without internal stack traces. Thanks @KrasimirKralev (#482).
+
+- Preserve empty quoted arguments in stdio command strings and reject empty executable names. Thanks @remote-controlled-man (#486).
+
+- Reserve the generated CLI's `--raw` JSON option when assigning schema flags, keeping conflicting tool properties independently callable. Thanks @remote-controlled-man (#487).
+
+- Reject extra list targets and unknown options before contacting a server, while preserving exact configured names beginning with hyphens. Thanks @remote-controlled-man (#492).
+
 - Run CodeQL weekly and on pull requests or manual dispatch, retaining Actions and JavaScript analysis without duplicate scans on every main push.
 
 - Reuse the existing pinned Bun runtime for macOS CI formatting while retaining native typechecks and Node-only local commands.

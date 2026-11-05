@@ -133,4 +133,49 @@ describe('command string parsing', () => {
     expect(server.command.command).toBe(executable);
     expect(server.command.args).toEqual([]);
   });
+
+  it.each([
+    { command: 'node --label "" after', args: ['--label', '', 'after'] },
+    { command: "node '' first", args: ['', 'first'] },
+    { command: 'node first ""', args: ['first', ''] },
+    { command: "node first ''", args: ['first', ''] },
+    { command: `node "" '' ""`, args: ['', '', ''] },
+    { command: 'node  ""   after  ', args: ['', 'after'] },
+    { command: `node pre""fix ''"value"`, args: ['prefix', 'value'] },
+    { command: `node ' ' ""`, args: [' ', ''] },
+  ])('preserves quoted arguments in $command', async ({ command, args }) => {
+    tmpDir = await fs.mkdtemp(TMP_PREFIX);
+    const configPath = path.join(tmpDir, 'mcporter.json');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        imports: [],
+        mcpServers: { echo: { command } },
+      })
+    );
+
+    const servers = await loadServerDefinitions({ configPath, rootDir: tmpDir });
+
+    expect(servers[0]?.command).toMatchObject({
+      kind: 'stdio',
+      command: 'node',
+      args,
+    });
+  });
+
+  it('rejects an empty quoted executable instead of promoting an argument', async () => {
+    tmpDir = await fs.mkdtemp(TMP_PREFIX);
+    const configPath = path.join(tmpDir, 'mcporter.json');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        imports: [],
+        mcpServers: { empty: { command: '"" node' } },
+      })
+    );
+
+    await expect(loadServerDefinitions({ configPath, rootDir: tmpDir })).rejects.toThrow(
+      "Server 'empty' is missing a baseUrl/url or command definition"
+    );
+  });
 });

@@ -166,6 +166,18 @@ describe('mcporter CLI integration', () => {
         content: [{ type: 'text', text: value ?? 'plain' }],
       })
     );
+    server.registerTool(
+      'always_error',
+      {
+        title: 'Always Error',
+        description: 'Returns a synthetic MCP tool error',
+        inputSchema: {},
+      },
+      async () => ({
+        content: [{ type: 'text', text: 'Synthetic tool failure.' }],
+        isError: true,
+      })
+    );
 
     app.post('/mcp', async (req, res) => {
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
@@ -248,6 +260,22 @@ describe('mcporter CLI integration', () => {
     });
     const plainJson = JSON.parse(plainOutput.stdout) as { content?: Array<{ text?: string }> };
     expect(plainJson.content?.[0]?.text).toBe('hello');
+
+    for (const format of ['text', 'markdown', 'json', 'raw']) {
+      const failedCall = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
+        execFile(
+          process.execPath,
+          [bundlePath, 'always-error', '--output', format],
+          { env: { ...process.env, MCPORTER_NO_FORCE_EXIT: '1' } },
+          (error, stdout, stderr) => {
+            resolve({ code: typeof error?.code === 'number' ? error.code : null, stdout, stderr });
+          }
+        );
+      });
+      expect(failedCall.code, format).toBe(1);
+      expect(failedCall.stdout, format).toContain('Synthetic tool failure.');
+      expect(failedCall.stderr, format).toBe('');
+    }
 
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   });
