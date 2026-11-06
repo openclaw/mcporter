@@ -4,6 +4,7 @@ import { buildGenerateCliCommand, shellQuote } from './generate/template-data.js
 import { formatSourceSuffix } from './list-format.js';
 import { consumeOutputFormat } from './output-format.js';
 import { formatPathForDisplay } from './path-utils.js';
+import { CliUsageError } from './errors.js';
 
 interface InspectFlags {
   artifactPath: string;
@@ -78,23 +79,23 @@ function parseInspectFlags(args: string[]): InspectFlags {
     if (token === '--format') {
       const value = expectValue(token, args[index + 1]);
       if (value !== 'json' && value !== 'text') {
-        throw new Error("--format must be 'json' or 'text'.");
+        throw new CliUsageError("--format must be 'json' or 'text'.");
       }
       format = value;
       args.splice(index, 2);
       continue;
     }
     if (token.startsWith('--')) {
-      throw new Error(`Unknown flag '${token}' for inspect-cli.`);
+      throw new CliUsageError(`Unknown flag '${token}' for inspect-cli.`);
     }
     index += 1;
   }
   const artifactPath = args.shift();
   if (!artifactPath) {
-    throw new Error('Usage: mcporter inspect-cli <artifact> [--json]');
+    throw new CliUsageError('Usage: mcporter inspect-cli <artifact> [--json]');
   }
   if (args.length > 0) {
-    throw new Error(`Unexpected inspect-cli argument '${args[0]}'.`);
+    throw new CliUsageError(`Unexpected inspect-cli argument '${args[0]}'.`);
   }
   return { artifactPath, format };
 }

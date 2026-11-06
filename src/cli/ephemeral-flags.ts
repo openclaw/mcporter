@@ -1,4 +1,5 @@
 import type { EphemeralServerSpec } from './adhoc-server.js';
+import { CliUsageError } from './errors.js';
 
 const VALUE_FLAGS = new Set([
   '--http-url',
@@ -52,7 +53,7 @@ export function extractEphemeralServerFlags(
     if (token === '--http-url' || token === '--sse') {
       const value = readValue();
       if (!value) {
-        throw new Error(`Flag '${token}' requires a value.`);
+        throw new CliUsageError(`Flag '${token}' requires a value.`);
       }
       ensureSpec().httpUrl = value;
       args.splice(index, width);
@@ -68,7 +69,7 @@ export function extractEphemeralServerFlags(
     if (token === '--stdio') {
       const value = readValue();
       if (!value) {
-        throw new Error("Flag '--stdio' requires a value.");
+        throw new CliUsageError("Flag '--stdio' requires a value.");
       }
       ensureSpec().stdioCommand = value;
       args.splice(index, width);
@@ -78,7 +79,7 @@ export function extractEphemeralServerFlags(
     if (token === '--stdio-arg') {
       const value = readValue();
       if (!value) {
-        throw new Error("Flag '--stdio-arg' requires a value.");
+        throw new CliUsageError("Flag '--stdio-arg' requires a value.");
       }
       const current = ensureSpec();
       current.stdioArgs = [...(current.stdioArgs ?? []), value];
@@ -109,7 +110,7 @@ export function extractEphemeralServerFlags(
     if (token === '--cwd') {
       const value = readValue();
       if (!value) {
-        throw new Error("Flag '--cwd' requires a value.");
+        throw new CliUsageError("Flag '--cwd' requires a value.");
       }
       ensureSpec().cwd = value;
       args.splice(index, width);
@@ -119,7 +120,7 @@ export function extractEphemeralServerFlags(
     if (token === '--name') {
       const value = readValue();
       if (!value) {
-        throw new Error("Flag '--name' requires a value.");
+        throw new CliUsageError("Flag '--name' requires a value.");
       }
       ensureSpec().name = value;
       args.splice(index, width);
@@ -129,7 +130,7 @@ export function extractEphemeralServerFlags(
     if (token === '--description') {
       const value = readValue();
       if (!value) {
-        throw new Error("Flag '--description' requires a value.");
+        throw new CliUsageError("Flag '--description' requires a value.");
       }
       ensureSpec().description = value;
       args.splice(index, width);
@@ -139,7 +140,7 @@ export function extractEphemeralServerFlags(
     if (allowPersist && token === '--persist') {
       const value = readValue();
       if (!value) {
-        throw new Error("Flag '--persist' requires a value.");
+        throw new CliUsageError("Flag '--persist' requires a value.");
       }
       ensureSpec().persistPath = value;
       args.splice(index, width);
@@ -154,11 +155,11 @@ export function extractEphemeralServerFlags(
 
 function parseKeyValue(value: string | undefined, target: Record<string, string>, flagName: string): void {
   if (!value?.includes('=')) {
-    throw new Error(`Flag '${flagName}' requires KEY=value.`);
+    throw new CliUsageError(`Flag '${flagName}' requires KEY=value.`);
   }
   const [key, ...rest] = value.split('=');
   if (!key) {
-    throw new Error(`Flag '${flagName}' requires KEY=value.`);
+    throw new CliUsageError(`Flag '${flagName}' requires KEY=value.`);
   }
   target[key] = rest.join('=');
 }

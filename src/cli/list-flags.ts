@@ -2,6 +2,7 @@ import type { EphemeralServerSpec } from './adhoc-server.js';
 import { extractEphemeralServerFlags } from './ephemeral-flags.js';
 import { consumeOutputFormat } from './output-format.js';
 import { consumeTimeoutFlag } from './timeouts.js';
+import { CliUsageError } from './errors.js';
 
 export type ListOutputFormat = 'text' | 'json';
 
@@ -110,7 +111,7 @@ export function extractListFlags(args: string[]): {
       conflicts.push('--all-parameters');
     }
     if (conflicts.length > 0) {
-      throw new Error(`--brief cannot be used with ${conflicts.join(', ')}`);
+      throw new CliUsageError(`--brief cannot be used with ${conflicts.join(', ')}`);
     }
   }
   if (statusOnly) {
@@ -125,7 +126,7 @@ export function extractListFlags(args: string[]): {
       conflicts.push('--all-parameters');
     }
     if (conflicts.length > 0) {
-      throw new Error(`--status cannot be used with ${conflicts.join(', ')}`);
+      throw new CliUsageError(`--status cannot be used with ${conflicts.join(', ')}`);
     }
   }
   return {

@@ -7,6 +7,7 @@ import { expandHome } from '../env.js';
 import { withFileLock, writeTextFileAtomic } from '../fs-json.js';
 import { canonicalKeepAliveName, resolveLifecycle } from '../lifecycle.js';
 import { toAsciiSlug } from './ascii-slug.js';
+import { CliUsageError } from './errors.js';
 
 export interface EphemeralServerSpec {
   name?: string;
@@ -31,19 +32,19 @@ const TEMP_SOURCE = { kind: 'local', path: '<adhoc>' } as const;
 
 export function resolveEphemeralServer(spec: EphemeralServerSpec): EphemeralServerResolution {
   if (!spec.httpUrl && !spec.stdioCommand) {
-    throw new Error('Ad-hoc servers require either --http-url or --stdio.');
+    throw new CliUsageError('Ad-hoc servers require either --http-url or --stdio.');
   }
   if (spec.httpUrl && spec.stdioCommand) {
-    throw new Error('Cannot combine --http-url and --stdio in the same ad-hoc server.');
+    throw new CliUsageError('Cannot combine --http-url and --stdio in the same ad-hoc server.');
   }
 
   if (spec.httpUrl) {
     const url = new URL(spec.httpUrl);
     if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-      throw new Error(`Unsupported protocol '${url.protocol}' for --http-url.`);
+      throw new CliUsageError(`Unsupported protocol '${url.protocol}' for --http-url.`);
     }
     if (url.protocol === 'http:' && !spec.allowInsecureHttp) {
-      throw new Error('HTTP endpoints require --allow-http to confirm insecure usage.');
+      throw new CliUsageError('HTTP endpoints require --allow-http to confirm insecure usage.');
     }
     const command: CommandSpec = {
       kind: 'http',
@@ -74,7 +75,7 @@ export function resolveEphemeralServer(spec: EphemeralServerSpec): EphemeralServ
   const stdioCommand = spec.stdioCommand as string;
   const parts = splitCommandLine(stdioCommand);
   if (parts.length === 0) {
-    throw new Error('--stdio requires a non-empty command.');
+    throw new CliUsageError('--stdio requires a non-empty command.');
   }
   const [commandBinary, ...commandRest] = parts as [string, ...string[]];
   const commandArgs = commandRest.concat(spec.stdioArgs ?? []);
@@ -203,7 +204,7 @@ function stripPackageVersion(token: string): string {
 function normalizeEphemeralName(value: string): string {
   const name = toAsciiSlug(value);
   if (!name) {
-    throw new Error('Ad-hoc server name must contain at least one letter or digit.');
+    throw new CliUsageError('Ad-hoc server name must contain at least one letter or digit.');
   }
   return name;
 }
@@ -245,7 +246,7 @@ export function splitCommandLine(input: string): string[] {
   }
 
   if (inSingle || inDouble) {
-    throw new Error('Unterminated quote in --stdio command.');
+    throw new CliUsageError('Unterminated quote in --stdio command.');
   }
   if (current !== '') {
     result.push(current);

@@ -1,3 +1,5 @@
+import { CliUsageError } from './errors.js';
+
 export type FlagMap = Partial<Record<string, string>>;
 
 // extractFlags snacks out targeted flags (and their values) from argv in place.
@@ -15,7 +17,7 @@ export function extractFlags(args: string[], keys: readonly string[]): FlagMap {
     }
     const value = args[index + 1];
     if (value === undefined) {
-      throw new Error(`Flag '${token}' requires a value.`);
+      throw new CliUsageError(`Flag '${token}' requires a value.`);
     }
     flags[token] = value;
     args.splice(index, 2);
@@ -26,7 +28,7 @@ export function extractFlags(args: string[], keys: readonly string[]): FlagMap {
 // expectValue asserts that a flag is followed by a value.
 export function expectValue(flag: string, value: string | undefined): string {
   if (value === undefined) {
-    throw new Error(`Flag '${flag}' requires a value.`);
+    throw new CliUsageError(`Flag '${flag}' requires a value.`);
   }
   return value;
 }

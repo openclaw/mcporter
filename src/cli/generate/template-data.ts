@@ -1,6 +1,7 @@
 import type { CliArtifactMetadata, SerializedServerDefinition } from '../../cli-metadata.js';
 import type { GenerateCliOptions } from '../../generate-cli.js';
 import { validateToolSelection } from './tool-selection.js';
+import { CliUsageError } from '../errors.js';
 
 export type InspectableInvocation = CliArtifactMetadata['invocation'] & {
   serverRef?: string;
@@ -77,7 +78,7 @@ export function resolveGenerateRequestFromArtifact(
   globalFlags: Record<string, string | undefined>
 ): GenerateCliOptions {
   if (!parsed.from) {
-    throw new Error('Missing --from artifact path.');
+    throw new CliUsageError('Missing --from artifact path.');
   }
   const invocation = { ...metadata.invocation };
   const serverRef =

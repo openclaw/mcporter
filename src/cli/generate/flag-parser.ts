@@ -1,4 +1,5 @@
 import { parsePositiveInteger } from '../timeouts.js';
+import { CliUsageError } from '../errors.js';
 
 export interface GeneratorCommonFlags {
   runtime?: 'node' | 'bun';
@@ -22,7 +23,7 @@ export function extractGeneratorFlags(args: string[], options: ExtractOptions = 
     if (token === '--runtime') {
       const value = args[index + 1];
       if (value !== 'node' && value !== 'bun') {
-        throw new Error("--runtime must be 'node' or 'bun'.");
+        throw new CliUsageError("--runtime must be 'node' or 'bun'.");
       }
       result.runtime = value;
       args.splice(index, 2);
@@ -31,11 +32,11 @@ export function extractGeneratorFlags(args: string[], options: ExtractOptions = 
     if (token === '--timeout') {
       const raw = args[index + 1];
       if (!raw) {
-        throw new Error("Flag '--timeout' requires a value.");
+        throw new CliUsageError("Flag '--timeout' requires a value.");
       }
       const parsed = parsePositiveInteger(raw);
       if (parsed === undefined) {
-        throw new Error('--timeout must be a positive integer.');
+        throw new CliUsageError('--timeout must be a positive integer.');
       }
       result.timeout = parsed;
       args.splice(index, 2);

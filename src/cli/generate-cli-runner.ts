@@ -6,6 +6,7 @@ import { performGenerateFromArtifact, performGenerateFromRequest } from './gener
 import { buildInlineServerDefinition } from './generate/server-utils.js';
 import { buildGenerateCliCommand, resolveGenerateRequestFromArtifact } from './generate/template-data.js';
 import { validateToolSelection } from './generate/tool-selection.js';
+import { CliUsageError } from './errors.js';
 
 // handleGenerateCli parses flags and generates the requested standalone CLI.
 export async function handleGenerateCli(args: string[], globalFlags: FlagMap): Promise<void> {
@@ -14,10 +15,10 @@ export async function handleGenerateCli(args: string[], globalFlags: FlagMap): P
     mutuallyExclusiveMessage: '--include-tools and --exclude-tools cannot be used together.',
   });
   if (parsed.from && (parsed.command || parsed.description || parsed.name)) {
-    throw new Error('--from cannot be combined with --command/--description/--name.');
+    throw new CliUsageError('--from cannot be combined with --command/--description/--name.');
   }
   if (parsed.dryRun && !parsed.from) {
-    throw new Error('--dry-run currently requires --from <artifact>.');
+    throw new CliUsageError('--dry-run currently requires --from <artifact>.');
   }
 
   if (parsed.from) {
@@ -56,7 +57,7 @@ export async function handleGenerateCli(args: string[], globalFlags: FlagMap): P
       ? JSON.stringify(buildInlineServerDefinition(inferredName, parsed.command, parsed.description))
       : undefined);
   if (!serverRef) {
-    throw new Error(
+    throw new CliUsageError(
       'Provide --server with a definition or a command we can infer a name from (use --name to override).'
     );
   }

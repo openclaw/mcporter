@@ -2,6 +2,8 @@
 
 ## [0.17.1] - Unreleased
 
+- Report resource, inspect-cli, auth, list, serve, record/replay, generate-cli, ad-hoc server, output-format and global flag argument errors once without internal stack traces. Thanks @KrasimirKralev.
+
 ## [0.17.0] - 2026-11-05
 
 **Highlights:** At the 256-transport limit, reclaim the least recently used quiet daemon transport before its idle deadline while preserving active calls and Chrome owners; improve CLI argument handling and patch minimatch, qs, and Glob security vulnerabilities.
