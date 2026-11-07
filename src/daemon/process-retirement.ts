@@ -218,11 +218,17 @@ export async function ownedProcessTree(pid: number): Promise<ProcessIdentity[]> 
   if (!root || !root.born || root.owner !== inventory.owner)
     throw new Error('Legacy daemon process ownership could not be verified.');
   const result = [root as ProcessIdentity];
-  for (let i = 0; i < result.length; i++)
+  const visited = new Set([pid]);
+  const frontier = [pid];
+  for (const parent of frontier)
     for (const p of inventory.processes)
-      if (p.parent === result[i]!.pid && !result.some((item) => item.pid === p.pid)) {
-        if (!p.born || p.owner !== inventory.owner) throw new Error('Legacy child ownership could not be verified.');
-        result.push(p as ProcessIdentity);
+      if (p.parent === parent && !visited.has(p.pid)) {
+        if (!p.born || !p.owner) throw new Error('Legacy child ownership could not be verified.');
+        visited.add(p.pid);
+        frontier.push(p.pid);
+        // setuid helpers such as macOS ps appear under another user; they are not ours to wait for,
+        // but anything they started under our user still is.
+        if (p.owner === inventory.owner) result.push(p as ProcessIdentity);
       }
   return result;
 }

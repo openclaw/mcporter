@@ -2,6 +2,9 @@
 
 ## [0.17.1] - Unreleased
 
+- Keep the daemon serving after a stop refused up front for active calls or a transport whose retirement is already unverified, instead of leaving it draining and rejecting every new request until it is replaced.
+- Exclude descendants with a verified foreign owner and start identity, such as the setuid `ps` on macOS, from a transport's owned process tree, while still tracking owned processes beneath them, so a server that shells out to them no longer fails with "Transport ownership could not be verified".
+
 ## [0.17.0] - 2026-11-05
 
 **Highlights:** At the 256-transport limit, reclaim the least recently used quiet daemon transport before its idle deadline while preserving active calls and Chrome owners; improve CLI argument handling and patch minimatch, qs, and Glob security vulnerabilities.

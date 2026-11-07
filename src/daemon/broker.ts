@@ -378,17 +378,20 @@ export class DaemonBroker {
     };
   }
   async close(): Promise<void> {
-    this.draining = true;
     if (this.activeRequests > 0)
       throw new BrokerError('active_calls', 'Active calls are still running; wait for completion before stopping.');
+    const unverified = () =>
+      new BrokerError(
+        'transport_retirement_failed',
+        'Retirement is unverified; inspect the previous transport before stopping this owner.'
+      );
+    if ([...this.entries.values()].some((entry) => entry.state === 'retirement-failed' && !entry.processes))
+      throw unverified();
+    this.draining = true;
     for (const entry of this.entries.values()) {
       clearTimeout(entry.idleTimer);
       await entry.serial;
-      if (entry.state === 'retirement-failed' && !entry.processes)
-        throw new BrokerError(
-          'transport_retirement_failed',
-          'Retirement is unverified; inspect the previous transport before stopping this owner.'
-        );
+      if (entry.state === 'retirement-failed' && !entry.processes) throw unverified();
       if (entry.state !== 'idle') await this.retire(entry);
     }
     this.entries.clear();
