@@ -120,6 +120,52 @@ describe('CLI call positional and schema validation', () => {
     );
   });
 
+  it.each(['key=value', 'long flag'])(
+    'preserves an object accepted by a referenced alternative via %s',
+    async (form) => {
+      const { runtime, callTool } = runtimeWith([
+        {
+          name: 'update',
+          inputSchema: {
+            type: 'object',
+            $defs: { Filter: { type: 'object', properties: { active: { type: 'boolean' } } } },
+            properties: {
+              filter: { anyOf: [{ type: 'string', enum: ['auto'] }, { $ref: '#/$defs/Filter' }] },
+            },
+          },
+        },
+      ]);
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      const argv = form === 'key=value' ? ['filter={"active":true}'] : ['--filter', '{"active":true}'];
+      await handleCall(runtime, ['linear.update', ...argv]);
+
+      expect(callTool).toHaveBeenCalledWith(
+        'linear',
+        'update',
+        expect.objectContaining({ args: { filter: { active: true } } })
+      );
+    }
+  );
+
+  it('does not wrap a string when a referenced alternative may accept it', async () => {
+    const { runtime, callTool } = runtimeWith([
+      {
+        name: 'update',
+        inputSchema: {
+          type: 'object',
+          $defs: { Label: { type: 'string' } },
+          properties: { labels: { anyOf: [{ type: 'array' }, { $ref: '#/$defs/Label' }] } },
+        },
+      },
+    ]);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleCall(runtime, ['linear.update', '--labels', 'bug']);
+
+    expect(callTool).toHaveBeenCalledWith('linear', 'update', expect.objectContaining({ args: { labels: 'bug' } }));
+  });
+
   it('rejects long tool flags when metadata cannot establish a declared option', async () => {
     const { runtime, callTool } = runtimeWith(() => Promise.reject(new Error('discovery failed')));
 

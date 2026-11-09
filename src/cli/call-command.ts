@@ -414,7 +414,7 @@ async function enforceSchemaAwareArgumentTypes(
     }
     // Numbers always restore to their spelling; other coerced values stay when the schema allows them.
     const coercedType = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
-    if (coercedType !== 'number' && schemaAllowsType(descriptor, coercedType)) {
+    if (coercedType !== 'number' && schemaAllowsType(descriptor, coercedType) !== false) {
       continue;
     }
     corrected ??= { ...args };
@@ -425,7 +425,7 @@ async function enforceSchemaAwareArgumentTypes(
       continue;
     }
     const descriptor = schemaProperties[key];
-    if (!schemaAllowsType(descriptor, 'array') || schemaAllowsType(descriptor, 'string')) {
+    if (!schemaAllowsType(descriptor, 'array') || schemaAllowsType(descriptor, 'string') !== false) {
       continue;
     }
     corrected ??= { ...args };
@@ -445,9 +445,9 @@ function readSchemaProperties(schema: unknown): Record<string, unknown> | undefi
   return properties as Record<string, unknown>;
 }
 
-function schemaAllowsType(descriptor: unknown, expected: string): boolean {
+function schemaAllowsType(descriptor: unknown, expected: string): boolean | undefined {
   if (!descriptor || typeof descriptor !== 'object') {
-    return false;
+    return undefined;
   }
   const record = descriptor as Record<string, unknown>;
   const type = record.type;
@@ -457,13 +457,21 @@ function schemaAllowsType(descriptor: unknown, expected: string): boolean {
   if (Array.isArray(type) && type.includes(expected)) {
     return true;
   }
+  let unknown = typeof record.$ref === 'string';
+  let hasComposition = false;
   for (const key of ['anyOf', 'oneOf', 'allOf'] as const) {
     const variants = record[key];
-    if (Array.isArray(variants) && variants.some((variant) => schemaAllowsType(variant, expected))) {
-      return true;
+    if (Array.isArray(variants)) {
+      hasComposition = true;
+      const allowed = new Set(variants.map((variant) => schemaAllowsType(variant, expected)));
+      if (allowed.has(true)) {
+        return true;
+      }
+      unknown ||= allowed.has(undefined);
     }
   }
-  return false;
+  // A reference or unconstrained branch is not evidence that the parsed type is invalid.
+  return unknown || (type === undefined && !hasComposition) ? undefined : false;
 }
 
 async function hydratePositionalArguments(
