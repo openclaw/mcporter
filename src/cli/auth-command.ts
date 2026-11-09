@@ -13,7 +13,11 @@ import { extractEphemeralServerFlags } from './ephemeral-flags.js';
 import { CliUsageError } from './errors.js';
 import { persistPreparedEphemeralServer, prepareEphemeralServerTarget } from './ephemeral-target.js';
 import { looksLikeHttpUrl } from './http-utils.js';
-import { chooseClosestIdentifier, renderIdentifierResolutionMessages } from './identifier-helpers.js';
+import {
+  chooseClosestIdentifier,
+  normalizeIdentifier,
+  renderIdentifierResolutionMessages,
+} from './identifier-helpers.js';
 import { buildConnectionIssueEnvelope } from './json-output.js';
 import { getActiveLogger, logInfo, logWarn } from './logger-context.js';
 import { consumeOutputFormat } from './output-format.js';
@@ -210,8 +214,16 @@ function resolveAuthDefinition(runtime: Runtime, name: string): { definition: Se
       runtime.getDefinitions().map((entry) => entry.name)
     );
     if (resolution) {
-      const messages = renderIdentifierResolutionMessages({ entity: 'server', attempted: name, resolution });
-      if (resolution.kind === 'auto' && messages.auto) {
+      // Names without ASCII letters or digits normalize to '' and would all match each other;
+      // auth may reset credentials, so those only get a hint.
+      const autoCorrect =
+        resolution.kind === 'auto' && normalizeIdentifier(name) !== '' && normalizeIdentifier(resolution.value) !== '';
+      const messages = renderIdentifierResolutionMessages({
+        entity: 'server',
+        attempted: name,
+        resolution: autoCorrect ? resolution : { kind: 'suggest', value: resolution.value },
+      });
+      if (autoCorrect && messages.auto) {
         console.error(dimText(messages.auto));
         return { definition: runtime.getDefinition(resolution.value), name: resolution.value };
       }

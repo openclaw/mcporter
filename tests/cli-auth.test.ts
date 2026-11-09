@@ -390,6 +390,7 @@ describe('auth server name heuristic', () => {
   it.each([
     { input: 'vrcl-prod', servers: ['vercel'], hint: '[mcporter] Did you mean vercel?' },
     { input: 'linear', servers: [], hint: undefined },
+    { input: '测试', servers: ['生产'], hint: '[mcporter] Did you mean 生产?' },
   ])('rejects $input as a usage error without starting OAuth', async ({ input, servers, hint }) => {
     const { handleAuth } = await cliModulePromise;
     const { CliUsageError } = await import('../src/cli/errors.js');
