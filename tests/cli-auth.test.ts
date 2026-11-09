@@ -365,3 +365,54 @@ describe('auth stdio operands and output options', () => {
     }
   });
 });
+
+describe('auth server name heuristic', () => {
+  it.each([
+    { input: 'vercek', resolved: 'vercel', stderr: '[mcporter] Auto-corrected server name to vercel (input: vercek).' },
+    { input: 'Vercel', resolved: 'vercel', stderr: '[mcporter] Auto-corrected server name to vercel (input: Vercel).' },
+  ])('auto-corrects $input to a configured server', async ({ input, resolved, stderr }) => {
+    const { handleAuth } = await cliModulePromise;
+    const { runtime, listTools } = createRuntimeDouble();
+    runtime.registerDefinition({
+      name: 'vercel',
+      command: { kind: 'http', url: new URL('https://mcp.vercel.com') },
+    } as ServerDefinition);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await handleAuth(runtime, [input]);
+      expect(listTools).toHaveBeenCalledWith(resolved, { autoAuthorize: true, timeoutMs: 300_000 });
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(stderr));
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it.each([
+    { input: 'vrcl-prod', servers: ['vercel'], hint: '[mcporter] Did you mean vercel?' },
+    { input: 'linear', servers: [], hint: undefined },
+  ])('rejects $input as a usage error without starting OAuth', async ({ input, servers, hint }) => {
+    const { handleAuth } = await cliModulePromise;
+    const { CliUsageError } = await import('../src/cli/errors.js');
+    const { runtime, listTools } = createRuntimeDouble();
+    for (const name of servers) {
+      runtime.registerDefinition({
+        name,
+        command: { kind: 'http', url: new URL('https://mcp.vercel.com') },
+      } as ServerDefinition);
+    }
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const failure = handleAuth(runtime, [input]);
+      await expect(failure).rejects.toBeInstanceOf(CliUsageError);
+      await expect(failure).rejects.toThrow(`Unknown MCP server '${input}'.`);
+      expect(listTools).not.toHaveBeenCalled();
+      if (hint) {
+        expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(hint));
+      } else {
+        expect(errorSpy).not.toHaveBeenCalledWith(expect.stringContaining('Did you mean'));
+      }
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+});

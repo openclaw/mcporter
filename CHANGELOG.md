@@ -2,6 +2,8 @@
 
 ## [0.17.1] - Unreleased
 
+- Auto-correct close server-name typos in `mcporter auth` the way `mcporter list` does, and report an unknown server with a "Did you mean" hint instead of an internal stack trace. Thanks @KrasimirKralev.
+
 ## [0.17.0] - 2026-11-05
 
 **Highlights:** At the 256-transport limit, reclaim the least recently used quiet daemon transport before its idle deadline while preserving active calls and Chrome owners; improve CLI argument handling and patch minimatch, qs, and Glob security vulnerabilities.

@@ -10,11 +10,14 @@ import { isOAuthFlowError, resolveOAuthTimeoutFromEnv } from '../runtime/oauth.j
 import { renderAdhocServerHelpLines } from './adhoc-help.js';
 import type { EphemeralServerSpec } from './adhoc-server.js';
 import { extractEphemeralServerFlags } from './ephemeral-flags.js';
+import { CliUsageError } from './errors.js';
 import { persistPreparedEphemeralServer, prepareEphemeralServerTarget } from './ephemeral-target.js';
 import { looksLikeHttpUrl } from './http-utils.js';
+import { chooseClosestIdentifier, renderIdentifierResolutionMessages } from './identifier-helpers.js';
 import { buildConnectionIssueEnvelope } from './json-output.js';
 import { getActiveLogger, logInfo, logWarn } from './logger-context.js';
 import { consumeOutputFormat } from './output-format.js';
+import { dimText, yellowText } from './terminal.js';
 
 type BrowserSuppression = 'default' | 'no-browser';
 
@@ -61,7 +64,9 @@ export async function handleAuth(runtime: Runtime, args: string[], options: Auth
     throw new Error('Usage: mcporter auth <server | url> [--http-url <url> | --stdio <command>]');
   }
 
-  const definition = runtime.getDefinition(target);
+  const resolved = resolveAuthDefinition(runtime, target);
+  target = resolved.name;
+  const definition = resolved.definition;
   if (shouldReset) {
     await clearOAuthCaches(definition);
     if (!noBrowser) {
@@ -190,6 +195,32 @@ function buildNoBrowserOAuthOptions(
       console.log(request.authorizationUrl);
     },
   };
+}
+
+// Same server-name heuristic as `mcporter list`; messages go to stderr so `--json` stdout stays parseable.
+function resolveAuthDefinition(runtime: Runtime, name: string): { definition: ServerDefinition; name: string } {
+  try {
+    return { definition: runtime.getDefinition(name), name };
+  } catch (error) {
+    if (!(error instanceof Error) || !/Unknown MCP server/i.test(error.message)) {
+      throw error;
+    }
+    const resolution = chooseClosestIdentifier(
+      name,
+      runtime.getDefinitions().map((entry) => entry.name)
+    );
+    if (resolution) {
+      const messages = renderIdentifierResolutionMessages({ entity: 'server', attempted: name, resolution });
+      if (resolution.kind === 'auto' && messages.auto) {
+        console.error(dimText(messages.auto));
+        return { definition: runtime.getDefinition(resolution.value), name: resolution.value };
+      }
+      if (messages.suggest) {
+        console.error(yellowText(messages.suggest));
+      }
+    }
+    throw new CliUsageError(error.message);
+  }
 }
 
 function consumeBrowserSuppression(args: string[], env: NodeJS.ProcessEnv): BrowserSuppression {
