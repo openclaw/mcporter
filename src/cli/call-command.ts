@@ -464,6 +464,9 @@ function schemaAllowsType(descriptor: unknown, expected: string): boolean | unde
     if (Array.isArray(variants)) {
       hasComposition = true;
       const allowed = new Set(variants.map((variant) => schemaAllowsType(variant, expected)));
+      if (key === 'allOf' && allowed.has(false)) {
+        return false;
+      }
       if (allowed.has(true)) {
         return true;
       }

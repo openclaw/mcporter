@@ -166,6 +166,23 @@ describe('CLI call positional and schema validation', () => {
     expect(callTool).toHaveBeenCalledWith('linear', 'update', expect.objectContaining({ args: { labels: 'bug' } }));
   });
 
+  it('wraps an array flag when allOf also contains a typeless refinement', async () => {
+    const { runtime, callTool } = runtimeWith([
+      {
+        name: 'update',
+        inputSchema: {
+          type: 'object',
+          properties: { labels: { allOf: [{ type: 'array' }, { maxItems: 2 }] } },
+        },
+      },
+    ]);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleCall(runtime, ['linear.update', '--labels', 'bug']);
+
+    expect(callTool).toHaveBeenCalledWith('linear', 'update', expect.objectContaining({ args: { labels: ['bug'] } }));
+  });
+
   it('rejects long tool flags when metadata cannot establish a declared option', async () => {
     const { runtime, callTool } = runtimeWith(() => Promise.reject(new Error('discovery failed')));
 
