@@ -446,6 +446,9 @@ function readSchemaProperties(schema: unknown): Record<string, unknown> | undefi
 }
 
 function schemaAllowsType(descriptor: unknown, expected: string): boolean | undefined {
+  if (descriptor === false) {
+    return false;
+  }
   if (!descriptor || typeof descriptor !== 'object') {
     return undefined;
   }
@@ -456,6 +459,9 @@ function schemaAllowsType(descriptor: unknown, expected: string): boolean | unde
   }
   if (Array.isArray(type) && type.includes(expected)) {
     return true;
+  }
+  if (typeof type === 'string' || Array.isArray(type)) {
+    return false;
   }
   let unknown = typeof record.$ref === 'string';
   let hasComposition = false;

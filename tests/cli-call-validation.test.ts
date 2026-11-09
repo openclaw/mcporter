@@ -183,6 +183,45 @@ describe('CLI call positional and schema validation', () => {
     expect(callTool).toHaveBeenCalledWith('linear', 'update', expect.objectContaining({ args: { labels: ['bug'] } }));
   });
 
+  it.each([
+    {
+      schema: { labels: { type: 'array', anyOf: [{ maxItems: 2 }] } },
+      argv: ['--labels', 'bug'],
+      args: { labels: ['bug'] },
+    },
+    {
+      schema: { mode: { type: 'string', anyOf: [{ maxLength: 8 }] } },
+      argv: ['mode=none'],
+      args: { mode: 'none' },
+    },
+  ])('honors explicit types beside typeless refinements: $argv', async ({ schema, argv, args }) => {
+    const { runtime, callTool } = runtimeWith([
+      { name: 'update', inputSchema: { type: 'object', properties: schema } },
+    ]);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleCall(runtime, ['linear.update', ...argv]);
+
+    expect(callTool).toHaveBeenCalledWith('linear', 'update', expect.objectContaining({ args }));
+  });
+
+  it('treats a false union branch as a definite type rejection', async () => {
+    const { runtime, callTool } = runtimeWith([
+      {
+        name: 'update',
+        inputSchema: {
+          type: 'object',
+          properties: { mode: { anyOf: [{ type: 'string' }, false] } },
+        },
+      },
+    ]);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleCall(runtime, ['linear.update', 'mode=none']);
+
+    expect(callTool).toHaveBeenCalledWith('linear', 'update', expect.objectContaining({ args: { mode: 'none' } }));
+  });
+
   it('rejects long tool flags when metadata cannot establish a declared option', async () => {
     const { runtime, callTool } = runtimeWith(() => Promise.reject(new Error('discovery failed')));
 
