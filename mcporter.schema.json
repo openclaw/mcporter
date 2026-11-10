@@ -163,6 +163,14 @@
             "description": "Custom OAuth redirect URL (snake_case)",
             "type": "string"
           },
+          "oauthCallbackListen": {
+            "description": "host:port the OAuth callback server listens on when it differs from the redirect URL (camelCase)",
+            "type": "string"
+          },
+          "oauth_callback_listen": {
+            "description": "host:port the OAuth callback server listens on when it differs from the redirect URL (snake_case)",
+            "type": "string"
+          },
           "oauthClientMetadataUrl": {
             "description": "OAuth Client ID Metadata Document URL (camelCase)",
             "type": "string"
