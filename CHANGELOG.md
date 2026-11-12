@@ -2,6 +2,8 @@
 
 ## [0.17.1] - Unreleased
 
+- Keep `createServerProxy()` results non-thenable, so awaiting a proxy or returning it from an `async` function no longer sends a `then` tool call and hangs. Thanks @JYunth.
+
 ## [0.17.0] - 2026-11-05
 
 **Highlights:** At the 256-transport limit, reclaim the least recently used quiet daemon transport before its idle deadline while preserving active calls and Chrome owners; improve CLI argument handling and patch minimatch, qs, and Glob security vulnerabilities.
