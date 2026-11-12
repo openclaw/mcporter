@@ -2,6 +2,8 @@
 
 ## [0.17.1] - Unreleased
 
+- Retire a daemon transport after any HTTP rejection so the next call reconnects, instead of reusing a server-expired session (HTTP 404 `Session expired`) or a rejected token (HTTP 401) until the daemon restarts; report the HTTP status in the daemon error. Thanks @zm2231.
+
 - Report remaining CLI argument errors once without internal stack traces, preserving messages, exit codes, and runtime diagnostics. Thanks @KrasimirKralev (#495).
 
 - Preserve quoted empty arguments in ad-hoc stdio commands and reject an empty executable in stdio and generated CLI commands. Thanks @SebTardif (#497).
