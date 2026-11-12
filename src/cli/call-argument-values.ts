@@ -40,12 +40,13 @@ export function parseKeyValueToken(token: string, nextToken: string | undefined)
 }
 
 export function coerceValue(value: string, coercionMode: CoercionMode = 'default'): unknown {
+  // Detect literals on the trimmed text, but return strings with their original whitespace.
   const trimmed = value.trim();
   if (trimmed === '') {
     return '';
   }
   if (coercionMode === 'none') {
-    return trimmed;
+    return value;
   }
   if (trimmed === 'true' || trimmed === 'false') {
     return trimmed === 'true';
@@ -60,10 +61,10 @@ export function coerceValue(value: string, coercionMode: CoercionMode = 'default
     try {
       return JSON.parse(trimmed);
     } catch {
-      return trimmed;
+      return value;
     }
   }
-  return trimmed;
+  return value;
 }
 
 export function shouldPromoteSelectorToCommand(selector: string): boolean {

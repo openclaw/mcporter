@@ -2,6 +2,8 @@
 
 ## [0.17.1] - Unreleased
 
+- Keep leading and trailing whitespace in string call arguments, including with `--no-coerce`, instead of trimming `text='  indented'` to `"indented"`. Thanks @JYunth.
+
 ## [0.17.0] - 2026-11-05
 
 **Highlights:** At the 256-transport limit, reclaim the least recently used quiet daemon transport before its idle deadline while preserving active calls and Chrome owners; improve CLI argument handling and patch minimatch, qs, and Glob security vulnerabilities.
