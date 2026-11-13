@@ -2,6 +2,8 @@
 
 ## [0.17.1] - Unreleased
 
+- Use a cached OAuth access token for non-interactive HTTP listing when every static Authorization value resolves empty, including `Bearer ${EXAMPLE_TOKEN:-}` with an unset variable, while usable static credentials stay preferred. (#505)
+
 ## [0.17.0] - 2026-11-05
 
 **Highlights:** At the 256-transport limit, reclaim the least recently used quiet daemon transport before its idle deadline while preserving active calls and Chrome owners; improve CLI argument handling and patch minimatch, qs, and Glob security vulnerabilities.
