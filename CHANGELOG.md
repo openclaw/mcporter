@@ -2,6 +2,8 @@
 
 ## [0.17.1] - Unreleased
 
+- Use cached OAuth credentials when a resolved static Authorization header is empty, preserving valid static credentials and required environment validation. Thanks @koinzhang (#506, #505).
+
 - Patch six Hono and Node adapter security advisories in development fixtures; refresh runtime helpers, bundling, and lint tooling while preserving Node 24 support, the 48-hour dependency cooldown, and existing security overrides.
 
 ## [0.17.0] - 2026-11-05
