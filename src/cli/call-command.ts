@@ -409,7 +409,7 @@ async function enforceSchemaAwareArgumentTypes(
       continue;
     }
     const descriptor = schemaProperties[key];
-    if (!schemaAllowsType(descriptor, 'string')) {
+    if (!schemaAllowsType(descriptor, 'string', rawValue)) {
       continue;
     }
     // Numbers always restore to their spelling; other coerced values stay when the schema allows them.
@@ -445,7 +445,7 @@ function readSchemaProperties(schema: unknown): Record<string, unknown> | undefi
   return properties as Record<string, unknown>;
 }
 
-function schemaAllowsType(descriptor: unknown, expected: string): boolean | undefined {
+function schemaAllowsType(descriptor: unknown, expected: string, rawString?: string): boolean | undefined {
   if (descriptor === false) {
     return false;
   }
@@ -453,34 +453,36 @@ function schemaAllowsType(descriptor: unknown, expected: string): boolean | unde
     return undefined;
   }
   const record = descriptor as Record<string, unknown>;
+  const constraints = new Set<boolean | undefined>();
   const type = record.type;
-  if (type === expected) {
-    return true;
-  }
-  if (Array.isArray(type) && type.includes(expected)) {
-    return true;
-  }
   if (typeof type === 'string' || Array.isArray(type)) {
-    return false;
+    constraints.add(type === expected || (Array.isArray(type) && type.includes(expected)));
   }
-  let unknown = typeof record.$ref === 'string';
-  let hasComposition = false;
+  const valueHasType = (value: unknown): boolean =>
+    (value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value) === expected &&
+    (expected !== 'string' || rawString === undefined || value === rawString);
+  if (Array.isArray(record.enum)) {
+    constraints.add(record.enum.some(valueHasType));
+  }
+  if (Object.hasOwn(record, 'const')) {
+    constraints.add(valueHasType(record.const));
+  }
   for (const key of ['anyOf', 'oneOf', 'allOf'] as const) {
     const variants = record[key];
     if (Array.isArray(variants)) {
-      hasComposition = true;
-      const allowed = new Set(variants.map((variant) => schemaAllowsType(variant, expected)));
+      const allowed = new Set(variants.map((variant) => schemaAllowsType(variant, expected, rawString)));
       if (key === 'allOf' && allowed.has(false)) {
-        return false;
+        constraints.add(false);
+      } else if (allowed.has(true)) {
+        constraints.add(true);
+      } else {
+        constraints.add(allowed.has(undefined) ? undefined : false);
       }
-      if (allowed.has(true)) {
-        return true;
-      }
-      unknown ||= allowed.has(undefined);
     }
   }
-  // A reference or unconstrained branch is not evidence that the parsed type is invalid.
-  return unknown || (type === undefined && !hasComposition) ? undefined : false;
+  // Sibling constraints are conjunctive; an unresolved reference cannot undo a known exclusion.
+  // Without any type evidence, preserve the parsed value rather than infer a rejection.
+  return constraints.has(false) ? false : constraints.has(true) ? true : undefined;
 }
 
 async function hydratePositionalArguments(
