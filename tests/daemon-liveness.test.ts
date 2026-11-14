@@ -59,6 +59,7 @@ it('keeps authenticated requests alive with bounded progress and refuses stop du
     for (let i = 0; i < 100 && !f.host.status().servers.some((s) => (s.activeCalls ?? 0) > 0); i++)
       await new Promise((r) => setTimeout(r, 5));
     await expect(c.stop()).rejects.toMatchObject({ code: 'active_calls' });
+    await expect(c.listTools({ server: 'fixture' })).resolves.toBeDefined();
     await flight;
     await c.stop();
   } finally {

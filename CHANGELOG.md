@@ -2,6 +2,8 @@
 
 ## [0.17.1] - Unreleased
 
+- Keep the daemon serving after an upfront stop refusal and track owned descendants beneath verified foreign-owned helpers. Thanks @zm2231 (#498).
+
 - Use portable per-column process inventory arguments on BSD systems so daemon transport ownership can be verified. Thanks @e4779 (#499).
 
 - Apply the documented server-name correction and suggestion rules to auth, keeping unknown names actionable and diagnostics off JSON stdout. Thanks @KrasimirKralev (#500).
