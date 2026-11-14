@@ -43,7 +43,7 @@ export function coerceValue(value: string, coercionMode: CoercionMode = 'default
   // Detect literals on the trimmed text, but return strings with their original whitespace.
   const trimmed = value.trim();
   if (trimmed === '') {
-    return '';
+    return value;
   }
   if (coercionMode === 'none') {
     return value;

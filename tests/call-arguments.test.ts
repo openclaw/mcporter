@@ -273,6 +273,14 @@ describe('parseCallArguments', () => {
     expect(parsed.args.meta).toEqual({ a: 1 });
   });
 
+  it.each([[], ['--no-coerce'], ['--raw-strings']])(
+    'preserves whitespace-only positional values with %j',
+    (...flags) => {
+      const parsed = parseCallArguments(['server.tool', ...flags, '--', ' \t\n ']);
+      expect(parsed.positionalArgs).toEqual([' \t\n ']);
+    }
+  );
+
   it('keeps every value as a string when --no-coerce alias is used', () => {
     const parsed = parseCallArguments([
       '--no-coerce',

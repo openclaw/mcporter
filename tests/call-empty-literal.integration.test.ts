@@ -16,7 +16,7 @@ const server = fileURLToPath(new URL('./servers/modern/server.ts', import.meta.u
 
 it('preserves empty literal positions and their order after --', () => {
   const parsed = parseCallArguments(['fixture.echo', '--', '', '--flag', '', ' ']);
-  expect(parsed.positionalArgs).toEqual(['', '--flag', '', '']);
+  expect(parsed.positionalArgs).toEqual(['', '--flag', '', ' ']);
 });
 
 it(
