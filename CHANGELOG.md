@@ -2,7 +2,19 @@
 
 ## [0.17.1] - Unreleased
 
-- Auto-correct close server-name typos in `mcporter auth` the way `mcporter list` does, and report an unknown server with a "Did you mean" hint instead of an internal stack trace. Thanks @KrasimirKralev.
+- Apply the documented server-name correction and suggestion rules to auth, keeping unknown names actionable and diagnostics off JSON stdout. Thanks @KrasimirKralev (#500).
+
+- Preserve parsed call arguments when referenced or unconstrained schema branches may accept their type, while respecting explicit type exclusions. Thanks @HengYangDS (#501).
+
+- Preserve leading and trailing whitespace in string call arguments, including when coercion is disabled. Thanks @JYunth (#504).
+
+- Wait for all OAuth cache operations to finish before reporting a failure, preventing delayed writes from racing cleanup or subsequent requests.
+
+- Keep server proxies non-thenable so awaiting them or returning them from async functions cannot dispatch an unintended then tool call. Thanks @JYunth (#503).
+
+- Use cached OAuth credentials when a resolved static Authorization header is empty, preserving valid static credentials and required environment validation. Thanks @koinzhang (#506, #505).
+
+- Patch six Hono and Node adapter security advisories in development fixtures; refresh runtime helpers, bundling, and lint tooling while preserving Node 24 support, the 48-hour dependency cooldown, and existing security overrides.
 
 ## [0.17.0] - 2026-11-05
 
