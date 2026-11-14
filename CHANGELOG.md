@@ -24,6 +24,8 @@
 
 - Patch six Hono and Node adapter security advisories in development fixtures; refresh runtime helpers, bundling, and lint tooling while preserving Node 24 support, the 48-hour dependency cooldown, and existing security overrides.
 
+- List `config doctor` and `daemon migrate` in the top-level `mcporter --help` command summaries, matching `mcporter config --help` and `mcporter daemon --help`. Thanks @KrasimirKralev.
+
 ## [0.17.0] - 2026-11-05
 
 **Highlights:** At the 256-transport limit, reclaim the least recently used quiet daemon transport before its idle deadline while preserving active calls and Chrome owners; improve CLI argument handling and patch minimatch, qs, and Glob security vulnerabilities.
