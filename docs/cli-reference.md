@@ -9,6 +9,8 @@ read_when:
 A quick reference for the primary `mcporter` subcommands. Each command inherits
 `--config <file>` and `--root <dir>` to override where servers are loaded from.
 
+Invalid command arguments exit with a concise usage diagnostic rather than an internal stack trace. Runtime failures retain their normal diagnostics.
+
 ## `mcporter list [server]`
 
 List accepts one target. Extra targets and unknown options fail with a usage error before discovery; exact configured server names beginning with hyphens remain valid.

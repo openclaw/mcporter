@@ -4,6 +4,7 @@ import { isKeepAliveServer } from '../lifecycle.js';
 import { createRuntime } from '../runtime.js';
 import { createNonInteractiveElicitationResponder } from '../runtime/elicitation.js';
 import { DEFAULT_SERVE_HTTP_HOST, selectServedServers, serveHttp, serveStdio } from '../serve.js';
+import { CliUsageError } from './errors.js';
 
 interface ServeCliOptions {
   readonly configPath: string;
@@ -130,7 +131,7 @@ export function parseServeArgs(args: string[]): ParsedServeArgs {
       mode = 'http';
       const value = args[index + 1];
       if (!value) {
-        throw new Error("Flag '--http' requires a port.");
+        throw new CliUsageError("Flag '--http' requires a port.");
       }
       port = parsePort(value);
       index += 1;
@@ -145,7 +146,7 @@ export function parseServeArgs(args: string[]): ParsedServeArgs {
     if (token === '--servers') {
       const value = args[index + 1];
       if (!value) {
-        throw new Error("Flag '--servers' requires a comma-separated list.");
+        throw new CliUsageError("Flag '--servers' requires a comma-separated list.");
       }
       servers = parseServerList(value);
       index += 1;
@@ -158,7 +159,7 @@ export function parseServeArgs(args: string[]): ParsedServeArgs {
     if (token === '--host') {
       const value = args[index + 1];
       if (!value) {
-        throw new Error("Flag '--host' requires a value.");
+        throw new CliUsageError("Flag '--host' requires a value.");
       }
       host = value;
       index += 1;
@@ -167,18 +168,18 @@ export function parseServeArgs(args: string[]): ParsedServeArgs {
     if (token.startsWith('--host=')) {
       host = token.slice('--host='.length);
       if (!host) {
-        throw new Error("Flag '--host' requires a value.");
+        throw new CliUsageError("Flag '--host' requires a value.");
       }
       continue;
     }
-    throw new Error(`Unknown serve flag '${token}'.`);
+    throw new CliUsageError(`Unknown serve flag '${token}'.`);
   }
 
   if (explicitStdio && explicitHttp) {
-    throw new Error("Flags '--stdio' and '--http' cannot be used together.");
+    throw new CliUsageError("Flags '--stdio' and '--http' cannot be used together.");
   }
   if (host && mode !== 'http') {
-    throw new Error("Flag '--host' can only be used with '--http'.");
+    throw new CliUsageError("Flag '--host' can only be used with '--http'.");
   }
 
   return { mode, port, host, servers };
@@ -186,11 +187,11 @@ export function parseServeArgs(args: string[]): ParsedServeArgs {
 
 function parsePort(value: string): number {
   if (value.trim().length === 0) {
-    throw new Error("Flag '--http' requires a port.");
+    throw new CliUsageError("Flag '--http' requires a port.");
   }
   const port = Number(value);
   if (!Number.isInteger(port) || port < 0 || port > 65_535) {
-    throw new Error(`Invalid HTTP port '${value}'.`);
+    throw new CliUsageError(`Invalid HTTP port '${value}'.`);
   }
   return port;
 }
@@ -201,7 +202,7 @@ function parseServerList(value: string): string[] {
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
   if (servers.length === 0) {
-    throw new Error("Flag '--servers' requires at least one server name.");
+    throw new CliUsageError("Flag '--servers' requires at least one server name.");
   }
   return servers;
 }

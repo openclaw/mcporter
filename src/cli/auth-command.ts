@@ -65,7 +65,7 @@ export async function handleAuth(runtime: Runtime, args: string[], options: Auth
   target = prepared.target;
 
   if (!target) {
-    throw new Error('Usage: mcporter auth <server | url> [--http-url <url> | --stdio <command>]');
+    throw new CliUsageError('Usage: mcporter auth <server | url> [--http-url <url> | --stdio <command>]');
   }
 
   const resolved = resolveAuthDefinition(runtime, target);
@@ -246,10 +246,10 @@ function consumeBrowserSuppression(args: string[], env: NodeJS.ProcessEnv): Brow
   if (browserIndex !== -1) {
     const value = args[browserIndex + 1];
     if (!value) {
-      throw new Error("Flag '--browser' requires a value.");
+      throw new CliUsageError("Flag '--browser' requires a value.");
     }
     if (value !== 'none') {
-      throw new Error("--browser must be 'none' when provided to mcporter auth.");
+      throw new CliUsageError("--browser must be 'none' when provided to mcporter auth.");
     }
     args.splice(browserIndex, 2);
     mode = 'no-browser';

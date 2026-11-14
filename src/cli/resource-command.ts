@@ -4,6 +4,7 @@ import type { Runtime } from '../runtime.js';
 import { buildConnectionIssueEnvelope, formatErrorMessage } from './json-output.js';
 import { consumeOutputFormat } from './output-format.js';
 import { printCallOutput } from './output-utils.js';
+import { CliUsageError } from './errors.js';
 
 export async function handleResource(runtime: Runtime, args: string[]): Promise<void> {
   const output = consumeOutputFormat(args, {
@@ -15,11 +16,11 @@ export async function handleResource(runtime: Runtime, args: string[]): Promise<
   const disableOAuth = consumeDisableOAuthFlag(args);
   const server = args.shift();
   if (!server) {
-    throw new Error('Missing server name. Usage: mcporter resource <server> [uri]');
+    throw new CliUsageError('Missing server name. Usage: mcporter resource <server> [uri]');
   }
   const uri = args.shift();
   if (args.length > 0) {
-    throw new Error(`Unexpected resource arguments: ${args.join(' ')}`);
+    throw new CliUsageError(`Unexpected resource arguments: ${args.join(' ')}`);
   }
 
   let result: unknown;

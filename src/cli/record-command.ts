@@ -5,6 +5,7 @@ import {
   runRecordReplayCommand,
   writeRecordReplayConfig,
 } from './record-replay-command.js';
+import { CliUsageError } from './errors.js';
 
 export interface ParsedRecordArgs {
   readonly sessionName: string;
@@ -62,7 +63,7 @@ function parseSessionCommandArgs(args: string[], commandName: 'record' | 'replay
     if (token === '--server') {
       const value = tokens[index + 1];
       if (!value) {
-        throw new Error("Flag '--server' requires a server name.");
+        throw new CliUsageError("Flag '--server' requires a server name.");
       }
       server = value;
       index += 1;
@@ -71,22 +72,22 @@ function parseSessionCommandArgs(args: string[], commandName: 'record' | 'replay
     if (token.startsWith('--server=')) {
       server = token.slice('--server='.length);
       if (!server) {
-        throw new Error("Flag '--server' requires a server name.");
+        throw new CliUsageError("Flag '--server' requires a server name.");
       }
       continue;
     }
     if (token.startsWith('-')) {
-      throw new Error(`Unknown ${commandName} flag '${token}'.`);
+      throw new CliUsageError(`Unknown ${commandName} flag '${token}'.`);
     }
     remaining.push(token);
   }
 
   const sessionName = remaining[0];
   if (!sessionName) {
-    throw new Error(`Usage: mcporter ${commandName} <session-name> [--server <name>] [-- <command-to-run>]`);
+    throw new CliUsageError(`Usage: mcporter ${commandName} <session-name> [--server <name>] [-- <command-to-run>]`);
   }
   if (remaining.length > 1) {
-    throw new Error(`Unexpected ${commandName} argument '${remaining[1]}'. Put commands after '--'.`);
+    throw new CliUsageError(`Unexpected ${commandName} argument '${remaining[1]}'. Put commands after '--'.`);
   }
   return { sessionName, server, command };
 }

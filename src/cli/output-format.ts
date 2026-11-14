@@ -1,4 +1,5 @@
 import type { OutputFormat } from './output-utils.js';
+import { CliUsageError } from './errors.js';
 
 interface ConsumeOutputOptions {
   defaultFormat?: OutputFormat;
@@ -24,13 +25,13 @@ export function consumeOutputFormat(args: string[], options: ConsumeOutputOption
     if (token === '--output') {
       const value = args[index + 1];
       if (!value) {
-        throw new Error("Flag '--output' requires a value.");
+        throw new CliUsageError("Flag '--output' requires a value.");
       }
       if (!isCliOutputFormat(value)) {
-        throw new Error('--output format must be one of: auto, text, markdown, json, raw.');
+        throw new CliUsageError('--output format must be one of: auto, text, markdown, json, raw.');
       }
       if (!isAllowed(value)) {
-        throw new Error(`--output format '${value}' is not supported for this command.`);
+        throw new CliUsageError(`--output format '${value}' is not supported for this command.`);
       }
       format = value;
       args.splice(index, 2);
@@ -38,7 +39,7 @@ export function consumeOutputFormat(args: string[], options: ConsumeOutputOption
     }
     if (enableRawShortcut && token === '--raw') {
       if (!isAllowed('raw')) {
-        throw new Error('--raw is not supported for this command.');
+        throw new CliUsageError('--raw is not supported for this command.');
       }
       format = 'raw';
       args.splice(index, 1);
@@ -46,7 +47,7 @@ export function consumeOutputFormat(args: string[], options: ConsumeOutputOption
     }
     if (options.jsonShortcutFlag && token === options.jsonShortcutFlag) {
       if (!isAllowed('json')) {
-        throw new Error(`${options.jsonShortcutFlag} is not supported for this command.`);
+        throw new CliUsageError(`${options.jsonShortcutFlag} is not supported for this command.`);
       }
       format = 'json';
       args.splice(index, 1);
@@ -56,7 +57,7 @@ export function consumeOutputFormat(args: string[], options: ConsumeOutputOption
   }
 
   if (!isAllowed(format)) {
-    throw new Error(`Format '${format}' is not supported for this command.`);
+    throw new CliUsageError(`Format '${format}' is not supported for this command.`);
   }
   return format;
 }

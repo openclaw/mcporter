@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CliUsageError } from '../src/cli/errors.js';
 import { expectValue, extractFlags } from '../src/cli/flag-utils.js';
 
 describe('cli flag utils', () => {
@@ -20,5 +21,7 @@ describe('cli flag utils', () => {
   it('throws when a required flag value is missing', () => {
     expect(() => extractFlags(['--config'], ['--config'])).toThrow(/requires a value/);
     expect(() => expectValue('--output', undefined)).toThrow(/requires a value/);
+    expect(() => extractFlags(['--config'], ['--config'])).toThrow(CliUsageError);
+    expect(() => expectValue('--output', undefined)).toThrow(CliUsageError);
   });
 });

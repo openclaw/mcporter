@@ -9,6 +9,7 @@ import { MCPORTER_VERSION } from '../../version.js';
 import { toAsciiSlug } from '../ascii-slug.js';
 import { markExecutable, safeCopyFile } from './fs-helpers.js';
 import { verifyBunAvailable } from './runtime.js';
+import { CliUsageError } from '../errors.js';
 
 const localRequire = createRequire(import.meta.url);
 const packageRoot = fileURLToPath(new URL('../../..', import.meta.url));
@@ -195,13 +196,13 @@ export function resolveBundleTarget({
   }
   if (bundle) {
     if (compile) {
-      throw new Error('--bundle requires an explicit output path when used with --compile.');
+      throw new CliUsageError('--bundle requires an explicit output path when used with --compile.');
     }
     // A bare --bundle writes `<name>.js` next to the template, as the docs and `--bundle [path]` promise.
     const ext = path.extname(outputPath);
     // Case-insensitive filesystems would alias `name.JS` and `name.js`.
     if (ext.toLowerCase() === '.js') {
-      throw new Error('--bundle requires an explicit output path when --output already ends in .js.');
+      throw new CliUsageError('--bundle requires an explicit output path when --output already ends in .js.');
     }
     // Append the suffix before joining so a `.` or `..` stem stays a file name, not a directory.
     return path.join(path.dirname(outputPath), `${path.basename(outputPath, ext)}.js`);
@@ -220,7 +221,7 @@ export function resolveBundleTarget({
     const baseName = path.basename(outputPath, path.extname(outputPath)) || 'bundle';
     return path.join(tmpDir, `${baseName}-${Date.now()}.bundle.js`);
   }
-  throw new Error('--compile requires an explicit bundle target.');
+  throw new CliUsageError('--compile requires an explicit bundle target.');
 }
 
 export function computeCompileTarget(

@@ -2,6 +2,7 @@ import { splitCommandLine } from '../adhoc-server.js';
 import { toAsciiSlug } from '../ascii-slug.js';
 import { normalizeHttpUrlCandidate } from '../http-utils.js';
 import type { CommandInput } from './types.js';
+import { CliUsageError } from '../errors.js';
 
 export function inferNameFromCommand(command: CommandInput): string | undefined {
   if (typeof command === 'string') {
@@ -97,7 +98,7 @@ export function looksLikeInlineCommand(value: string): boolean {
 export function parseInlineCommand(value: string): CommandInput {
   const parts = splitCommandLine(value.trim());
   if (parts.length === 0 || parts[0] === '') {
-    throw new Error('--command requires a non-empty value.');
+    throw new CliUsageError('--command requires a non-empty value.');
   }
   const [command, ...rest] = parts as [string, ...string[]];
   return { command, args: rest };

@@ -2,6 +2,8 @@
 
 ## [0.17.1] - Unreleased
 
+- Report remaining CLI argument errors once without internal stack traces, preserving messages, exit codes, and runtime diagnostics. Thanks @KrasimirKralev (#495).
+
 - Preserve quoted empty arguments in ad-hoc stdio commands and reject an empty executable in stdio and generated CLI commands. Thanks @SebTardif (#497).
 
 - Keep the daemon serving after an upfront stop refusal and track owned descendants beneath verified foreign-owned helpers. Thanks @zm2231 (#498).
