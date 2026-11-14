@@ -2,6 +2,8 @@
 
 ## [0.17.1] - Unreleased
 
+- Preserve quoted empty arguments in ad-hoc stdio commands and reject an empty executable in stdio and generated CLI commands. Thanks @SebTardif (#497).
+
 - Keep the daemon serving after an upfront stop refusal and track owned descendants beneath verified foreign-owned helpers. Thanks @zm2231 (#498).
 
 - Use portable per-column process inventory arguments on BSD systems so daemon transport ownership can be verified. Thanks @e4779 (#499).

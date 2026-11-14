@@ -96,7 +96,7 @@ export function looksLikeInlineCommand(value: string): boolean {
 
 export function parseInlineCommand(value: string): CommandInput {
   const parts = splitCommandLine(value.trim());
-  if (parts.length === 0) {
+  if (parts.length === 0 || parts[0] === '') {
     throw new Error('--command requires a non-empty value.');
   }
   const [command, ...rest] = parts as [string, ...string[]];

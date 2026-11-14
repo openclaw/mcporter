@@ -73,7 +73,7 @@ export function resolveEphemeralServer(spec: EphemeralServerSpec): EphemeralServ
 
   const stdioCommand = spec.stdioCommand as string;
   const parts = splitCommandLine(stdioCommand);
-  if (parts.length === 0) {
+  if (parts.length === 0 || parts[0] === '') {
     throw new Error('--stdio requires a non-empty command.');
   }
   const [commandBinary, ...commandRest] = parts as [string, ...string[]];
@@ -213,21 +213,26 @@ export function splitCommandLine(input: string): string[] {
   let current = '';
   let inSingle = false;
   let inDouble = false;
+  // A quoted empty token is a real argument. Dropping it promotes the next token.
+  let hasQuotedSegment = false;
 
   for (let i = 0; i < input.length; i += 1) {
     const char = input.charAt(i);
     if (char === "'" && !inDouble) {
+      hasQuotedSegment = true;
       inSingle = !inSingle;
       continue;
     }
     if (char === '"' && !inSingle) {
+      hasQuotedSegment = true;
       inDouble = !inDouble;
       continue;
     }
     if (!inSingle && !inDouble && /\s/.test(char)) {
-      if (current !== '') {
+      if (current !== '' || hasQuotedSegment) {
         result.push(current);
         current = '';
+        hasQuotedSegment = false;
       }
       continue;
     }
@@ -247,7 +252,7 @@ export function splitCommandLine(input: string): string[] {
   if (inSingle || inDouble) {
     throw new Error('Unterminated quote in --stdio command.');
   }
-  if (current !== '') {
+  if (current !== '' || hasQuotedSegment) {
     result.push(current);
   }
   return result;

@@ -23,4 +23,14 @@ describe('prepareEphemeralServerTarget', () => {
     }
     expect(resolution.definition.command.command).toBe('npx');
   });
+
+  it('does not promote a quoted empty token into an npx executable', async () => {
+    const runtime = createRuntimeStub();
+    const { target, resolution } = await prepareEphemeralServerTarget({
+      runtime,
+      target: '"" npx -y xcodebuildmcp',
+    });
+    expect(resolution).toBeUndefined();
+    expect(target).toBe('"" npx -y xcodebuildmcp');
+  });
 });

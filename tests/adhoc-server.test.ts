@@ -139,6 +139,38 @@ describe('resolveEphemeralServer', () => {
     expect(() => splitCommandLine(`node 'unterminated`)).toThrow('Unterminated quote');
   });
 
+  it('keeps quoted empty arguments and rejects an empty executable', () => {
+    expect(splitCommandLine('"" node')).toEqual(['', 'node']);
+    expect(splitCommandLine('""')).toEqual(['']);
+    expect(() => resolveEphemeralServer({ stdioCommand: '"" node' })).toThrow('--stdio requires a non-empty command.');
+    expect(() => resolveEphemeralServer({ stdioCommand: '""' })).toThrow('--stdio requires a non-empty command.');
+
+    expect(splitCommandLine('node --label "" after')).toEqual(['node', '--label', '', 'after']);
+    expect(splitCommandLine("node '' first")).toEqual(['node', '', 'first']);
+    expect(splitCommandLine('node first ""')).toEqual(['node', 'first', '']);
+    expect(splitCommandLine("node first ''")).toEqual(['node', 'first', '']);
+    expect(splitCommandLine(`node "" '' ""`)).toEqual(['node', '', '', '']);
+    expect(splitCommandLine('node  ""   after  ')).toEqual(['node', '', 'after']);
+    expect(splitCommandLine(`node pre""fix ''"value"`)).toEqual(['node', 'prefix', 'value']);
+    expect(splitCommandLine(`node ' ' ""`)).toEqual(['node', ' ', '']);
+    expect(splitCommandLine(String.raw`C:\Program Files\node.exe script.js`)).toEqual([
+      'C:Program',
+      'Filesnode.exe',
+      'script.js',
+    ]);
+
+    const kept = resolveEphemeralServer({ stdioCommand: 'node --label "" after' });
+    expect(kept.definition.command).toMatchObject({
+      kind: 'stdio',
+      command: 'node',
+      args: ['--label', '', 'after'],
+    });
+    expect(kept.persistedEntry).toMatchObject({
+      command: 'node',
+      args: ['--label', '', 'after'],
+    });
+  });
+
   it('normalizes long separator runs without changing slug semantics', () => {
     expect(resolveEphemeralServer({ name: `alpha${'-'.repeat(100_000)}beta`, stdioCommand: 'node' }).name).toBe(
       'alpha-beta'
