@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CONFIG_HELP_ORDER } from '../src/cli/config/help.js';
 
 process.env.MCPORTER_DISABLE_AUTORUN = '1';
 const cliModulePromise = import('../src/cli.js');
@@ -57,5 +58,21 @@ describe('mcporter help shortcuts (hidden)', () => {
 
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('/mcp/<server>'));
     expect(process.exitCode).toBe(0);
+  });
+
+  it('lists every config and daemon subcommand in the top-level help', async () => {
+    const { runCli } = await cliModulePromise;
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runCli(['--help']);
+    await runCli(['daemon', '--help']);
+
+    const topLevel = errorSpy.mock.calls.map((call) => String(call[0])).join('\n');
+    const configSummary = topLevel.match(/^ {2}config +.*\(([^)]*)\)$/m)?.[1]?.split(', ');
+    const daemonSummary = topLevel.match(/^ {2}daemon +.*\(([^)]*)\)$/m)?.[1]?.split(' | ');
+    const daemonUsage = String(logSpy.mock.calls[0]?.[0]).match(/^Usage: mcporter daemon <([^>]*)>/)?.[1];
+    expect(configSummary).toEqual(CONFIG_HELP_ORDER);
+    expect(daemonSummary).toEqual(daemonUsage?.split('|'));
   });
 });
