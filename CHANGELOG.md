@@ -2,6 +2,8 @@
 
 ## [0.17.1] - Unreleased
 
+- Preserve leading and trailing whitespace in string call arguments, including when coercion is disabled. Thanks @JYunth (#504).
+
 - Wait for all OAuth cache operations to finish before reporting a failure, preventing delayed writes from racing cleanup or subsequent requests.
 
 - Keep server proxies non-thenable so awaiting them or returning them from async functions cannot dispatch an unintended then tool call. Thanks @JYunth (#503).

@@ -379,9 +379,6 @@ function resolveNamedArgumentValue(
     const literal = rawValue.slice(1);
     return { value: literal, schemaValue: literal };
   }
-  if (rawValue.length > 0 && rawValue.trim() === '') {
-    return { value: rawValue, schemaValue: rawValue };
-  }
   if (!rawValue.startsWith('@')) {
     return { value: coerceValue(rawValue, coercionMode), schemaValue: rawValue };
   }
