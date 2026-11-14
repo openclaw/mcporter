@@ -230,7 +230,7 @@ describe('daemon broker transport capacity', () => {
     const broker = new DaemonBroker();
     const closing = deferred();
     try {
-      await fill(broker);
+      const calls = await fill(broker);
       runtimes[0]!.close.mockImplementationOnce(() => closing.promise);
 
       const first = (await session(broker, 256))();
@@ -246,6 +246,8 @@ describe('daemon broker transport capacity', () => {
       expect(broker.status().servers).toHaveLength(256);
       // Like a failed idle retirement, it stays visible and blocks a clean stop.
       await expect(broker.close()).rejects.toMatchObject({ code: 'transport_retirement_failed' });
+      expect(closedIndexes()).toEqual([0, 1, 2]);
+      await expect(calls[3]!()).resolves.toEqual({ content: [] });
     } finally {
       closing.resolve();
       await broker.close().catch(() => {});

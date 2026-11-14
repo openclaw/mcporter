@@ -35,6 +35,8 @@ Use `createServerProxy(runtime, name)` inside scripts when you want ergonomic ca
 2. Automatically merges default values.
 3. Returns a `CallResult` helper so you can render `.text()`, `.markdown()`, or `.json()` without manual parsing.
 
+The proxy is not thenable, so it can be awaited or returned from an `async` function. Call a tool named `then` with `proxy.call('then', { args: { ... } })`.
+
 If tool discovery fails, unambiguous named argument objects still reach the tool. Use an explicit `{ args: { ... }, timeoutMs: 1000 }` envelope when argument names overlap with runtime options.
 
 The `.json()` helper retains JSON `null` entries alongside other parsed content and gives an explicit structured JSON null precedence over fallback text.

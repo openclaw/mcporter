@@ -79,6 +79,27 @@ it('refuses an unverified descendant even when its root is owned', async () => {
   await expect(ownedProcessTree(root.pid)).rejects.toThrow(/child ownership could not be verified/);
 });
 
+it('leaves a verified foreign-owned descendant out of the owned tree', async () => {
+  const helper = { ...child, pid: child.pid + 1, parent: root.pid, owner: 'S-1-5-18' };
+  execute.mockResolvedValue({ stdout: envelope([root, helper, child]) });
+  const { ownedProcessTree } = await import('../src/daemon/process-retirement.js');
+  await expect(ownedProcessTree(root.pid)).resolves.toEqual([root, child]);
+});
+
+it('keeps an owned process that runs beneath a foreign-owned parent in the owned tree', async () => {
+  const helper = { ...child, owner: 'S-1-5-18' };
+  const grandchild = { ...root, pid: helper.pid + 1, parent: helper.pid };
+  execute.mockResolvedValue({ stdout: envelope([root, helper, grandchild]) });
+  const { ownedProcessTree } = await import('../src/daemon/process-retirement.js');
+  await expect(ownedProcessTree(root.pid)).resolves.toEqual([root, grandchild]);
+});
+
+it('refuses a foreign-owned descendant whose start identity is unknown', async () => {
+  execute.mockResolvedValue({ stdout: envelope([root, { ...child, owner: 'S-1-5-18', born: null }]) });
+  const { ownedProcessTree } = await import('../src/daemon/process-retirement.js');
+  await expect(ownedProcessTree(root.pid)).rejects.toThrow(/child ownership could not be verified/);
+});
+
 it('batches concurrent captures before querying, filters owners to the selected tree, and targets retirement PIDs', async () => {
   execute.mockResolvedValue({ stdout: envelope([root, child]) });
   const { ownedProcessTree, awaitRetirement } = await import('../src/daemon/process-retirement.js');
@@ -195,6 +216,20 @@ it.each(['', 'malformed'])('blocks retirement on invalid POSIX inventory %j', as
   execute.mockResolvedValue({ stdout });
   const { awaitRetirement } = await import('../src/daemon/process-retirement.js');
   await expect(awaitRetirement([root])).rejects.toThrow(/Invalid process observation/);
+});
+
+it('invokes ps with per-column -o headers so BSD ps does not collapse the inventory', async () => {
+  vi.spyOn(process, 'platform', 'get').mockReturnValue('freebsd');
+  execute.mockResolvedValue({ stdout: '101 50 123 Fri Nov  6 22:19:36 2026\n' });
+  const { processInventory } = await import('../src/daemon/process-retirement.js');
+  await expect(processInventory([101])).resolves.toMatchObject({
+    processes: [{ pid: 101, parent: 50, owner: '123', born: 'Fri Nov  6 22:19:36 2026' }],
+  });
+  expect(execute).toHaveBeenCalledWith(
+    'ps',
+    ['-axo', 'pid=', '-o', 'ppid=', '-o', 'uid=', '-o', 'lstart='],
+    expect.anything()
+  );
 });
 
 it('resolves the POSIX inventory command through PATH on hosts without /bin/ps', async () => {

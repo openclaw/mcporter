@@ -75,11 +75,12 @@ Key details:
 - By default, arguments keep the same validation pipeline as the function-call syntax—enums, numbers, and booleans are coerced automatically, and missing required fields raise errors.
 - `--args -`, `--params -`, and `--json -` read a JSON object from stdin.
 - Named flag-style values can read exact UTF-8 text from a file with `key=@path` or `--key @path`. Paths resolve from the current working directory, file contents remain strings without coercion, and `key=@@literal` produces the literal value `@literal`. Function-call strings such as `body: "@literal"` remain literal.
-- Bare string values supplied via long flags wrap into one-item arrays when the tool schema declares that field as an array.
+- Bare string values supplied via long flags wrap into one-item arrays when the tool schema declares that field as an array. Unresolved references and unconstrained schema branches preserve parsed values when their type cannot be ruled out; a possible string branch prevents automatic array wrapping.
 - Numeric-looking `key=value` arguments are restored to their original string spelling when the tool schema declares that parameter as a string, which keeps timestamp-like IDs such as Slack `thread_ts=1234567890.123456` intact. Boolean, `null`/`none`, and JSON-looking values are restored the same way when the schema allows a string but not the coerced type, so `mode=none` reaches a string enum as `"none"`.
 - `--raw-strings` disables numeric coercion for flag-style and positional values so IDs/codes stay literal strings (`code=12345` stays `"12345"`).
 - Numeric coercion accepts finite JSON numbers; `Infinity` and `-Infinity` remain literal strings.
 - `--no-coerce` disables all coercion for flag-style and positional values (`true`, `null`, and JSON-like values remain strings).
+- String values, including whitespace-only positional values, keep their leading and trailing whitespace (`text='  indented'` sends `"  indented"`). Literal detection ignores that whitespace, so `count=' 42 '` is still a number unless coercion is disabled.
 - Long tool flags are checked against the selected tool schema before dispatch; undeclared flags fail with guidance to use `key=value` or `--args`. Insert `--` before literal positional values that start with `--`.
 - Empty strings and option-like values after the separator retain their positions: `mcporter call fixture.echo -- "" --output` sends both literal values without changing output formatting or server options.
 - `--save-images <dir>` keeps stdout formatting untouched while writing image content blocks to disk when a tool response includes `type: "image"` entries.
