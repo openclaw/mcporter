@@ -2,7 +2,11 @@
 
 ## [0.17.1] - Unreleased
 
-- Keep `createServerProxy()` results non-thenable, so awaiting a proxy or returning it from an `async` function no longer sends a `then` tool call and hangs. Thanks @JYunth.
+- Keep server proxies non-thenable so awaiting them or returning them from async functions cannot dispatch an unintended then tool call. Thanks @JYunth (#503).
+
+- Use cached OAuth credentials when a resolved static Authorization header is empty, preserving valid static credentials and required environment validation. Thanks @koinzhang (#506, #505).
+
+- Patch six Hono and Node adapter security advisories in development fixtures; refresh runtime helpers, bundling, and lint tooling while preserving Node 24 support, the 48-hour dependency cooldown, and existing security overrides.
 
 ## [0.17.0] - 2026-11-05
 
