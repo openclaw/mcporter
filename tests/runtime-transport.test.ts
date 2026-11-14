@@ -470,6 +470,199 @@ describe('createClientContext (HTTP)', () => {
     expect(mocks.readCachedAccessToken).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['empty', ''],
+    ['whitespace', ' \t '],
+    ['scheme-only Bearer', 'Bearer'],
+    ['empty Bearer', 'Bearer '],
+    ['lowercase empty bearer', 'bearer   '],
+  ])(
+    'uses a cached OAuth token for non-interactive HTTP connects when Authorization is %s',
+    async (_label, authorization) => {
+      const definition = httpDefinitionWithHeaders({ Authorization: authorization, 'X-Trace': 'keep-me' });
+      mocks.readCachedAccessToken.mockResolvedValue('cached-token');
+
+      const headers = await captureHttpRequestHeaders(definition, { maxOAuthAttempts: 0, allowCachedAuth: true });
+
+      expect(headers).toEqual({ 'X-Trace': 'keep-me', Authorization: 'Bearer cached-token' });
+      expect(mocks.readCachedAccessToken).toHaveBeenCalledWith(expect.objectContaining(definition), logger);
+      expect(mocks.createOAuthSession).not.toHaveBeenCalled();
+    }
+  );
+
+  it('uses a cached OAuth token when Authorization is an unset Bearer placeholder', async () => {
+    vi.stubEnv('EXAMPLE_TOKEN', undefined);
+    const definition = httpDefinitionWithHeaders({
+      Authorization: 'Bearer ${EXAMPLE_TOKEN:-}',
+      'X-Trace': 'id-${TRACE_ID:-fallback}',
+    });
+    mocks.readCachedAccessToken.mockResolvedValue('cached-token');
+
+    const headers = await captureHttpRequestHeaders(definition, { maxOAuthAttempts: 0, allowCachedAuth: true });
+
+    expect(headers).toEqual({ 'X-Trace': 'id-fallback', Authorization: 'Bearer cached-token' });
+    expect(mocks.readCachedAccessToken).toHaveBeenCalledTimes(1);
+    expect(mocks.createOAuthSession).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['unset', undefined],
+    ['empty', ''],
+    ['whitespace', '   '],
+  ])(
+    'uses a cached OAuth token when Bearer ${EXAMPLE_TOKEN:-} resolves from an %s env value',
+    async (_label, envValue) => {
+      vi.stubEnv('EXAMPLE_TOKEN', envValue);
+      const definition = httpDefinitionWithHeaders({ Authorization: 'Bearer ${EXAMPLE_TOKEN:-}' });
+      mocks.readCachedAccessToken.mockResolvedValue('cached-token');
+
+      const headers = await captureHttpRequestHeaders(definition, { maxOAuthAttempts: 0, allowCachedAuth: true });
+
+      expect(headers).toEqual({ Authorization: 'Bearer cached-token' });
+      expect(mocks.readCachedAccessToken).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('prefers a resolved static Bearer credential over the cached OAuth token', async () => {
+    vi.stubEnv('EXAMPLE_TOKEN', 'static-secret');
+    const definition = httpDefinitionWithHeaders({ Authorization: 'Bearer ${EXAMPLE_TOKEN:-}', 'X-Trace': 'keep-me' });
+    mocks.readCachedAccessToken.mockResolvedValue('cached-token');
+
+    const headers = await captureHttpRequestHeaders(definition, { maxOAuthAttempts: 0, allowCachedAuth: true });
+
+    expect(headers).toEqual({ Authorization: 'Bearer static-secret', 'X-Trace': 'keep-me' });
+    expect(mocks.readCachedAccessToken).not.toHaveBeenCalled();
+    expect(mocks.createOAuthSession).not.toHaveBeenCalled();
+  });
+
+  it('prefers a server env Authorization credential over the cached OAuth token', async () => {
+    vi.stubEnv('EXAMPLE_TOKEN', undefined);
+    const definition = httpDefinitionWithHeaders(
+      { Authorization: 'Bearer ${EXAMPLE_TOKEN:-}' },
+      { env: { EXAMPLE_TOKEN: 'from-server-env' } }
+    );
+    mocks.readCachedAccessToken.mockResolvedValue('cached-token');
+
+    const headers = await captureHttpRequestHeaders(definition, { maxOAuthAttempts: 0, allowCachedAuth: true });
+
+    expect(headers).toEqual({ Authorization: 'Bearer from-server-env' });
+    expect(mocks.readCachedAccessToken).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['lowercase authorization', 'authorization', 'Bearer static-token'],
+    ['uppercase AUTHORIZATION', 'AUTHORIZATION', 'Bearer static-token'],
+    ['basic', 'Authorization', 'Basic static-basic-credential'],
+    ['lowercase bearer scheme', 'Authorization', 'bearer static-token'],
+  ])('prefers a usable static %s header over the cached OAuth token', async (_label, headerName, headerValue) => {
+    const definition = httpDefinitionWithHeaders({ [headerName]: headerValue, 'X-Trace': 'keep-me' });
+    mocks.readCachedAccessToken.mockResolvedValue('cached-token');
+
+    const headers = await captureHttpRequestHeaders(definition, { maxOAuthAttempts: 0, allowCachedAuth: true });
+
+    expect(headers).toEqual({ [headerName]: headerValue, 'X-Trace': 'keep-me' });
+    expect(mocks.readCachedAccessToken).not.toHaveBeenCalled();
+  });
+
+  it('prefers a usable Authorization credential when another casing is empty', async () => {
+    const definition = httpDefinitionWithHeaders({
+      authorization: 'Bearer static-token',
+      Authorization: 'Bearer ',
+    });
+    mocks.readCachedAccessToken.mockResolvedValue('cached-token');
+
+    const headers = await captureHttpRequestHeaders(definition, { maxOAuthAttempts: 0, allowCachedAuth: true });
+
+    expect(headers).toEqual({ authorization: 'Bearer static-token', Authorization: 'Bearer ' });
+    expect(mocks.readCachedAccessToken).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['lowercase authorization', 'authorization'],
+    ['uppercase AUTHORIZATION', 'AUTHORIZATION'],
+  ])('removes an unusable %s header before applying the cached OAuth token', async (_label, headerName) => {
+    const definition = httpDefinitionWithHeaders({ [headerName]: 'Bearer ', 'X-Trace': 'keep-me' });
+    mocks.readCachedAccessToken.mockResolvedValue('cached-token');
+
+    const headers = await captureHttpRequestHeaders(definition, { maxOAuthAttempts: 0, allowCachedAuth: true });
+
+    expect(headers).toEqual({ 'X-Trace': 'keep-me', Authorization: 'Bearer cached-token' });
+    expect(headers).not.toHaveProperty(headerName === 'Authorization' ? 'authorization' : headerName);
+  });
+
+  it('removes every unusable Authorization casing before applying the cached OAuth token', async () => {
+    const definition = httpDefinitionWithHeaders({
+      authorization: 'Bearer ',
+      Authorization: '   ',
+      'X-Trace': 'keep-me',
+    });
+    mocks.readCachedAccessToken.mockResolvedValue('cached-token');
+
+    const headers = await captureHttpRequestHeaders(definition, { maxOAuthAttempts: 0, allowCachedAuth: true });
+
+    expect(headers).toEqual({ 'X-Trace': 'keep-me', Authorization: 'Bearer cached-token' });
+  });
+
+  it('keeps an unusable Authorization header when cached auth is disabled', async () => {
+    const definition = httpDefinitionWithHeaders({ Authorization: 'Bearer ', 'X-Trace': 'keep-me' });
+    mocks.readCachedAccessToken.mockResolvedValue('cached-token');
+
+    const headers = await captureHttpRequestHeaders(definition, { maxOAuthAttempts: 0, allowCachedAuth: false });
+
+    expect(headers).toEqual({ Authorization: 'Bearer ', 'X-Trace': 'keep-me' });
+    expect(mocks.readCachedAccessToken).not.toHaveBeenCalled();
+    expect(mocks.createOAuthSession).not.toHaveBeenCalled();
+  });
+
+  it('keeps an unusable Authorization header when no cached OAuth token exists', async () => {
+    const definition = httpDefinitionWithHeaders({ Authorization: 'Bearer ', 'X-Trace': 'keep-me' });
+    mocks.readCachedAccessToken.mockResolvedValue(undefined);
+
+    const headers = await captureHttpRequestHeaders(definition, { maxOAuthAttempts: 0, allowCachedAuth: true });
+
+    expect(headers).toEqual({ Authorization: 'Bearer ', 'X-Trace': 'keep-me' });
+    expect(mocks.readCachedAccessToken).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not replace a required Authorization placeholder when its env var is unset', async () => {
+    vi.stubEnv('EXAMPLE_TOKEN', undefined);
+    const definition = httpDefinitionWithHeaders({ Authorization: 'Bearer ${EXAMPLE_TOKEN}' });
+    mocks.readCachedAccessToken.mockResolvedValue('cached-token');
+
+    await expect(
+      createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0, allowCachedAuth: true })
+    ).rejects.toThrow(/EXAMPLE_TOKEN/);
+    expect(mocks.readCachedAccessToken).not.toHaveBeenCalled();
+    expect(mocks.createOAuthSession).not.toHaveBeenCalled();
+  });
+
+  it('uses a cached bearer token for refreshable HTTP configs when Authorization is empty', async () => {
+    const definition: ServerDefinition = {
+      ...httpDefinitionWithHeaders({ Authorization: 'Bearer ', 'X-Trace': 'keep-me' }),
+      auth: 'refreshable_bearer',
+      refresh: { tokenEndpoint: 'https://auth.example.com/token' },
+    };
+    mocks.readCachedAccessToken.mockResolvedValue('cached-token');
+
+    const headers = await captureHttpRequestHeaders(definition, { maxOAuthAttempts: 0 });
+
+    expect(headers).toEqual({ 'X-Trace': 'keep-me', Authorization: 'Bearer cached-token' });
+    expect(mocks.readCachedAccessToken).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects refreshable bearer HTTP configs when Authorization is empty and no token is cached', async () => {
+    const definition: ServerDefinition = {
+      ...httpDefinitionWithHeaders({ Authorization: 'Bearer ' }),
+      auth: 'refreshable_bearer',
+      refresh: { tokenEndpoint: 'https://auth.example.com/token' },
+    };
+    mocks.readCachedAccessToken.mockResolvedValue(undefined);
+
+    await expect(createClientContext(definition, logger, clientInfo, { maxOAuthAttempts: 0 })).rejects.toThrow(
+      'no cached access token'
+    );
+  });
+
   it('fails refreshable bearer HTTP configs with no cached token', async () => {
     const definition: ServerDefinition = {
       ...stubHttpDefinition('https://example.com/secure'),
@@ -808,7 +1001,60 @@ describe('createClientContext (HTTP)', () => {
     expect(clientConnect).toHaveBeenCalledTimes(1);
     await context.transport.close();
   });
+
+  it('still drops a usable static Authorization header when OAuth is established', async () => {
+    const definition = httpDefinitionWithHeaders(
+      { Authorization: 'Bearer static-token', 'X-Trace': 'keep-me' },
+      { auth: 'oauth' }
+    );
+    mocks.readCachedAccessToken.mockResolvedValue('cached-token');
+
+    const headers = await captureHttpRequestHeaders(definition, { maxOAuthAttempts: 1, allowCachedAuth: true });
+
+    expect(headers).toEqual({ 'X-Trace': 'keep-me' });
+    expect(mocks.readCachedAccessToken).not.toHaveBeenCalled();
+    expect(mocks.createOAuthSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('still establishes OAuth for an empty Authorization header without sending it', async () => {
+    const definition = httpDefinitionWithHeaders({ Authorization: 'Bearer ', 'X-Trace': 'keep-me' }, { auth: 'oauth' });
+    mocks.readCachedAccessToken.mockResolvedValue('cached-token');
+
+    const headers = await captureHttpRequestHeaders(definition, { maxOAuthAttempts: 1, allowCachedAuth: true });
+
+    expect(headers).toEqual({ 'X-Trace': 'keep-me' });
+    expect(mocks.createOAuthSession).toHaveBeenCalledTimes(1);
+  });
 });
+
+function httpDefinitionWithHeaders(
+  headers: Record<string, string>,
+  extras: Partial<ServerDefinition> = {}
+): ServerDefinition {
+  return {
+    ...stubHttpDefinition('https://example.com/secure'),
+    ...extras,
+    command: {
+      kind: 'http',
+      url: new URL('https://example.com/secure'),
+      headers,
+    },
+  };
+}
+
+async function captureHttpRequestHeaders(
+  definition: ServerDefinition,
+  options: { maxOAuthAttempts?: number; allowCachedAuth?: boolean }
+): Promise<Record<string, string> | undefined> {
+  let headers: Record<string, string> | undefined;
+  vi.spyOn(Client.prototype, 'connect').mockImplementationOnce(async (transport) => {
+    expect(transport).toBeInstanceOf(StreamableHTTPClientTransport);
+    const requestInit = (transport as { _requestInit?: RequestInit })._requestInit;
+    headers = requestInit?.headers as Record<string, string> | undefined;
+  });
+  await createClientContext(definition, logger, clientInfo, options);
+  return headers;
+}
 
 function stdioDefinition(mode: 'legacy-exit' | 'modern'): ServerDefinition {
   return {

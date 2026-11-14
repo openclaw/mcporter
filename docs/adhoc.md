@@ -41,6 +41,8 @@ Notice that the second command repeats the URL. Ad-hoc definitions are ephemeral
 
 ## Naming & Identity
 
+`mcporter auth <name>` uses the same server-name corrections and suggestions as `list`. Diagnostics go to stderr, including with `--json`. Names with no ASCII letters or digits receive suggestions only; an exact configured name always takes precedence.
+
 - `--name` wins when provided.
 - Otherwise we derive a slug:
   - HTTP: `<host>` plus a sanitized path fragment (e.g. `mcp-linear-app-mcp`).

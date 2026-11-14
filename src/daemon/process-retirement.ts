@@ -198,10 +198,8 @@ export async function processInventory(pids: readonly number[], tree = false): P
       });
     });
   }
-  // Repeated -o flags with per-column '=' header suppression are the only form
-  // every POSIX ps accepts: FreeBSD and macOS treat '-o pid=,ppid=,...' as a
-  // single 'pid' column whose header is the literal remainder of the argument,
-  // which silently collapses the inventory to one column and breaks parsing.
+  // FreeBSD ps treats a comma list with '=' as one column's custom header.
+  // Request each column separately so ownership and start identity remain observable.
   const { stdout } = await exec('ps', ['-axo', 'pid=', '-o', 'ppid=', '-o', 'uid=', '-o', 'lstart='], {
     timeout: 5000,
     maxBuffer: 4 * 1024 * 1024,
