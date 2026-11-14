@@ -2,6 +2,8 @@
 
 ## [0.17.2] - Unreleased
 
+- List `config doctor` and `daemon migrate` in the top-level `mcporter --help` command summaries, matching `mcporter config --help` and `mcporter daemon --help`. Thanks @KrasimirKralev.
+
 ## [0.17.1] - 2026-11-15
 
 **Highlights:** Keep the daemon available after a refused stop, improve OAuth credential handling and CLI argument fidelity, and patch six development dependency security advisories.
