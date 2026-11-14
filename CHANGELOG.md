@@ -2,6 +2,8 @@
 
 ## [0.17.1] - Unreleased
 
+- Preserve parsed call arguments when referenced or unconstrained schema branches may accept their type, while respecting explicit type exclusions. Thanks @HengYangDS (#501).
+
 - Preserve leading and trailing whitespace in string call arguments, including when coercion is disabled. Thanks @JYunth (#504).
 
 - Wait for all OAuth cache operations to finish before reporting a failure, preventing delayed writes from racing cleanup or subsequent requests.
