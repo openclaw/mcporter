@@ -409,7 +409,7 @@ async function enforceSchemaAwareArgumentTypes(
       continue;
     }
     const descriptor = schemaProperties[key];
-    if (!schemaAllowsType(descriptor, 'string')) {
+    if (!schemaAllowsType(descriptor, 'string', rawValue)) {
       continue;
     }
     // Numbers always restore to their spelling; other coerced values stay when the schema allows them.
@@ -445,7 +445,7 @@ function readSchemaProperties(schema: unknown): Record<string, unknown> | undefi
   return properties as Record<string, unknown>;
 }
 
-function schemaAllowsType(descriptor: unknown, expected: string): boolean | undefined {
+function schemaAllowsType(descriptor: unknown, expected: string, rawString?: string): boolean | undefined {
   if (descriptor === false) {
     return false;
   }
@@ -459,7 +459,8 @@ function schemaAllowsType(descriptor: unknown, expected: string): boolean | unde
     constraints.add(type === expected || (Array.isArray(type) && type.includes(expected)));
   }
   const valueHasType = (value: unknown): boolean =>
-    (value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value) === expected;
+    (value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value) === expected &&
+    (expected !== 'string' || rawString === undefined || value === rawString);
   if (Array.isArray(record.enum)) {
     constraints.add(record.enum.some(valueHasType));
   }
@@ -469,7 +470,7 @@ function schemaAllowsType(descriptor: unknown, expected: string): boolean | unde
   for (const key of ['anyOf', 'oneOf', 'allOf'] as const) {
     const variants = record[key];
     if (Array.isArray(variants)) {
-      const allowed = new Set(variants.map((variant) => schemaAllowsType(variant, expected)));
+      const allowed = new Set(variants.map((variant) => schemaAllowsType(variant, expected, rawString)));
       if (key === 'allOf' && allowed.has(false)) {
         constraints.add(false);
       } else if (allowed.has(true)) {

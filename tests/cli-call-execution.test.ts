@@ -304,6 +304,27 @@ describe('CLI call execution behavior', () => {
   });
 
   it.each([
+    ['enum', { enum: [1, 'auto'] }, 1],
+    ['anyOf const', { anyOf: [{ const: 1 }, { const: 'auto' }] }, 1],
+    ['oneOf const', { oneOf: [{ const: 1 }, { const: 'auto' }] }, 1],
+    ['matching enum', { enum: [1, '1'] }, '1'],
+    ['matching const', { anyOf: [{ const: 1 }, { const: '1' }] }, '1'],
+    ['declared string type', { type: ['number', 'string'] }, '1'],
+  ])('restores numeric spelling only when the raw string is accepted by %s', async (_label, descriptor, expected) => {
+    const { handleCall } = await cliModulePromise;
+    const { runtime, callTool } = createRuntimeStub({
+      demo: [{ name: 'echo', inputSchema: { type: 'object', properties: { value: descriptor } } }],
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await handleCall(runtime, ['demo.echo', 'value=1']);
+      expect(callTool.mock.calls[0]?.[2]?.args).toEqual({ value: expected });
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it.each([
     ['enum', { enum: ['auto', null] }],
     ['const', { anyOf: [{ type: 'string' }, { const: null }] }],
     ['reference', { anyOf: [{ type: 'string' }, { $ref: '#/$defs/value' }] }],

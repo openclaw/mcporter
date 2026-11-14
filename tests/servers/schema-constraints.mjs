@@ -7,6 +7,8 @@ const inputSchema = {
     mode: { anyOf: [{ type: 'string' }, { enum: ['auto'] }] },
     choice: { anyOf: [{ type: 'string' }, { const: 'auto' }] },
     nullable: { anyOf: [{ type: 'string' }, { const: null }] },
+    numeric: { enum: [1, 'auto'] },
+    literal: { anyOf: [{ const: 1 }, { const: '1' }] },
   },
 };
 

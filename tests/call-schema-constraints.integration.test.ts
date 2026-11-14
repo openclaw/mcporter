@@ -34,6 +34,8 @@ it(
           'mode=none',
           'choice=null',
           'nullable=null',
+          'numeric=1',
+          'literal=1',
           '--output',
           'json',
         ],
@@ -44,6 +46,8 @@ it(
         mode: 'none',
         choice: 'null',
         nullable: null,
+        numeric: 1,
+        literal: '1',
       });
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
