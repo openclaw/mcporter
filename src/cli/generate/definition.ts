@@ -227,6 +227,7 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
     'oauth_token_endpoint_auth_method'
   );
   const oauthRedirectUrl = stringFromAliases(record, 'oauthRedirectUrl', 'oauth_redirect_url');
+  const oauthCallbackListen = stringFromAliases(record, 'oauthCallbackListen', 'oauth_callback_listen');
   const oauthClientMetadataUrl = stringFromAliases(record, 'oauthClientMetadataUrl', 'oauth_client_metadata_url');
   const oauthScope = stringFromAliases(record, 'oauthScope', 'oauth_scope');
   const oauthRequestedScope = stringFromAliases(record, 'oauthRequestedScope', 'oauth_requested_scope');
@@ -256,6 +257,7 @@ export function normalizeDefinition(def: DefinitionInput): ServerDefinition {
     oauthClientSecretEnv,
     oauthTokenEndpointAuthMethod,
     oauthRedirectUrl,
+    oauthCallbackListen,
     oauthClientMetadataUrl,
     oauthScope,
     oauthRequestedScope,
