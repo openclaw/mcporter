@@ -269,6 +269,76 @@ describe('CLI call execution behavior', () => {
     logSpy.mockRestore();
   });
 
+  it.each([
+    ['anyOf', { anyOf: [{ type: 'array' }], allOf: [{ maxItems: 2 }] }],
+    ['oneOf', { oneOf: [{ type: 'array' }], allOf: [{ maxItems: 2 }] }],
+  ])('wraps array-only %s values despite an unconstrained sibling', async (_label, descriptor) => {
+    const { handleCall } = await cliModulePromise;
+    const { runtime, callTool } = createRuntimeStub({
+      demo: [{ name: 'echo', inputSchema: { type: 'object', properties: { value: descriptor } } }],
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await handleCall(runtime, ['demo.echo', '--value', 'alpha']);
+      expect(callTool.mock.calls[0]?.[2]?.args).toEqual({ value: ['alpha'] });
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it.each([
+    ['enum', { anyOf: [{ type: 'string' }, { enum: ['auto'] }] }],
+    ['const', { anyOf: [{ type: 'string' }, { const: 'auto' }] }],
+  ])('restores null-looking strings when every %s union branch excludes null', async (_label, descriptor) => {
+    const { handleCall } = await cliModulePromise;
+    const { runtime, callTool } = createRuntimeStub({
+      demo: [{ name: 'echo', inputSchema: { type: 'object', properties: { value: descriptor } } }],
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await handleCall(runtime, ['demo.echo', 'value=null']);
+      expect(callTool.mock.calls[0]?.[2]?.args).toEqual({ value: 'null' });
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it.each([
+    ['enum', { enum: ['auto', null] }],
+    ['const', { anyOf: [{ type: 'string' }, { const: null }] }],
+    ['reference', { anyOf: [{ type: 'string' }, { $ref: '#/$defs/value' }] }],
+    ['unconstrained branch', { anyOf: [{ type: 'string' }, {}] }],
+  ])('preserves parsed null when allowed or unresolved by %s', async (_label, descriptor) => {
+    const { handleCall } = await cliModulePromise;
+    const { runtime, callTool } = createRuntimeStub({
+      demo: [{ name: 'echo', inputSchema: { type: 'object', properties: { value: descriptor } } }],
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await handleCall(runtime, ['demo.echo', 'value=null']);
+      expect(callTool.mock.calls[0]?.[2]?.args).toEqual({ value: null });
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it.each([
+    ['direct type', { type: 'string', allOf: [{ type: 'array' }] }],
+    ['union', { anyOf: [{ type: 'string' }], allOf: [{ type: 'array' }] }],
+  ])('does not restore strings when a conjunctive sibling rejects the %s', async (_label, descriptor) => {
+    const { handleCall } = await cliModulePromise;
+    const { runtime, callTool } = createRuntimeStub({
+      demo: [{ name: 'echo', inputSchema: { type: 'object', properties: { value: descriptor } } }],
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await handleCall(runtime, ['demo.echo', 'value=null']);
+      expect(callTool.mock.calls[0]?.[2]?.args).toEqual({ value: null });
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
   it('wraps bare long-flag strings when the schema declares an array', async () => {
     const { handleCall } = await cliModulePromise;
     const { runtime, callTool, listTools } = createRuntimeStub({
