@@ -35,11 +35,15 @@ Notice that the second command repeats the URL. Ad-hoc definitions are ephemeral
 
 ## Transport Detection
 
+Quoted empty arguments in `--stdio` command strings are preserved: `--stdio 'node server.mjs --label ""'` passes an empty label. The first token must be a nonempty executable. The same rules apply to `generate-cli --command` strings.
+
 - **HTTP(S)**: Providing a URL defaults to the streamable HTTP transport. `https://` works out of the box; `http://` requires `--allow-http` (or the hidden alias `--insecure`) to acknowledge cleartext traffic. The `--sse` flag is a hidden alias for `--http-url` to match older examples. Use repeatable `--header KEY=value` flags for private servers that require headers such as `Authorization`, `X-API-Key`, or tenant selectors.
 - **STDIO**: Supplying `--stdio` (a command string, optionally with repeatable `--stdio-arg <value>`) selects the stdio transport. Your current shell environment is inherited automatically; use `--env KEY=value` only when you need to inject/override specific variables (and `--cwd` to change directories).
 - **Conflict guard**: Passing both URL and stdio flags errors out so we don’t guess.
 
 ## Naming & Identity
+
+`mcporter auth <name>` uses the same server-name corrections and suggestions as `list`. Diagnostics go to stderr, including with `--json`. Names with no ASCII letters or digits receive suggestions only; an exact configured name always takes precedence.
 
 - `--name` wins when provided.
 - Otherwise we derive a slug:

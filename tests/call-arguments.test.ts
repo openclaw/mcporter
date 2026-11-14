@@ -156,6 +156,24 @@ describe('parseCallArguments', () => {
     expect(parsed.args.body).toBe('   ');
   });
 
+  it.each([[['text=  padded  ']], [['text:', '  padded  ']], [['--text', '  padded  ']], [['--text=  padded  ']]])(
+    'keeps surrounding whitespace in string values: %j',
+    (tokens) => {
+      const parsed = parseCallArguments(['server.tool', ...tokens]);
+      expect(parsed.args.text).toBe('  padded  ');
+    }
+  );
+
+  it('keeps surrounding whitespace with --no-coerce and after --', () => {
+    expect(parseCallArguments(['server.tool', '--no-coerce', 'text=\tindented\n']).args.text).toBe('\tindented\n');
+    expect(parseCallArguments(['server.tool', '--', '  padded  ']).positionalArgs).toEqual(['  padded  ']);
+  });
+
+  it('still coerces padded literals by their trimmed text', () => {
+    const parsed = parseCallArguments(['server.tool', 'count= 42 ', 'flag= true ', 'items= [1, 2] ']);
+    expect(parsed.args).toEqual({ count: 42, flag: true, items: [1, 2] });
+  });
+
   it('uses @@ to preserve a literal leading @ without reading a file', () => {
     const parsed = parseCallArguments(['server.tool', 'body=@@literal']);
     expect(parsed.args.body).toBe('@literal');
@@ -254,6 +272,14 @@ describe('parseCallArguments', () => {
     expect(parsed.args.value).toBeNull();
     expect(parsed.args.meta).toEqual({ a: 1 });
   });
+
+  it.each([[], ['--no-coerce'], ['--raw-strings']])(
+    'preserves whitespace-only positional values with %j',
+    (...flags) => {
+      const parsed = parseCallArguments(['server.tool', ...flags, '--', ' \t\n ']);
+      expect(parsed.positionalArgs).toEqual([' \t\n ']);
+    }
+  );
 
   it('keeps every value as a string when --no-coerce alias is used', () => {
     const parsed = parseCallArguments([

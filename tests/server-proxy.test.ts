@@ -139,6 +139,20 @@ describe('createServerProxy', () => {
     expect(runtime.listTools).toHaveBeenCalledWith('direct', { includeSchema: true });
   });
 
+  it('stays non-thenable so async code can await or return the proxy', async () => {
+    const runtime = createMockRuntime();
+    const proxy = createServerProxy(runtime as unknown as Runtime, 'mock', { cacheSchemas: false });
+    const makeProxy = async () => proxy;
+
+    expect((proxy as unknown as Record<string, unknown>).then).toBeUndefined();
+    await expect(makeProxy()).resolves.toBe(proxy);
+    expect(runtime.callTool).not.toHaveBeenCalled();
+
+    // A server tool named `then` stays reachable through proxy.call().
+    await proxy.call('then', { args: {} });
+    expect(runtime.callTool).toHaveBeenCalledWith('mock', 'then', { args: {} });
+  });
+
   it('supports both custom mapper signatures and rejects symbol tool names', async () => {
     const runtime = createMockRuntime();
     const legacy = createServerProxy(
