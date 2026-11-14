@@ -2,6 +2,8 @@
 
 ## [0.17.1] - Unreleased
 
+- Wait for all OAuth cache operations to finish before reporting a failure, preventing delayed writes from racing cleanup or subsequent requests.
+
 - Keep server proxies non-thenable so awaiting them or returning them from async functions cannot dispatch an unintended then tool call. Thanks @JYunth (#503).
 
 - Use cached OAuth credentials when a resolved static Authorization header is empty, preserving valid static credentials and required environment validation. Thanks @koinzhang (#506, #505).
