@@ -198,7 +198,9 @@ export async function processInventory(pids: readonly number[], tree = false): P
       });
     });
   }
-  const { stdout } = await exec('ps', ['-axo', 'pid=,ppid=,uid=,lstart='], {
+  // FreeBSD ps treats a comma list with '=' as one column's custom header.
+  // Request each column separately so ownership and start identity remain observable.
+  const { stdout } = await exec('ps', ['-axo', 'pid=', '-o', 'ppid=', '-o', 'uid=', '-o', 'lstart='], {
     timeout: 5000,
     maxBuffer: 4 * 1024 * 1024,
   });

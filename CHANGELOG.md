@@ -2,6 +2,8 @@
 
 ## [0.17.1] - Unreleased
 
+- Use portable per-column process inventory arguments on BSD systems so daemon transport ownership can be verified. Thanks @e4779 (#499).
+
 - Apply the documented server-name correction and suggestion rules to auth, keeping unknown names actionable and diagnostics off JSON stdout. Thanks @KrasimirKralev (#500).
 
 - Preserve parsed call arguments when referenced or unconstrained schema branches may accept their type, while respecting explicit type exclusions. Thanks @HengYangDS (#501).
