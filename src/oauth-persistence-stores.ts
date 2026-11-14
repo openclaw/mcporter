@@ -695,8 +695,17 @@ export class CompositePersistence implements OAuthPersistence {
     return this.stores.map((store) => store.describe()).join(' + ');
   }
 
+  private async settleAll<T>(operations: Promise<T>[]): Promise<T[]> {
+    // A rejection must not leave another store modifying files after the caller resumes.
+    const results = await Promise.allSettled(operations);
+    return results.map((result) => {
+      if (result.status === 'rejected') throw result.reason;
+      return result.value;
+    });
+  }
+
   async readSnapshot(): Promise<OAuthPersistenceSnapshot> {
-    const snapshots = await Promise.all(this.stores.map((store) => store.readSnapshot()));
+    const snapshots = await this.settleAll(this.stores.map((store) => store.readSnapshot()));
     const tokens = this.firstSnapshotValue(snapshots, 'tokens');
     const clientInfo = this.firstSnapshotValue(snapshots, 'clientInfo');
     this.recoveryTokenSnapshots.clear();
@@ -738,7 +747,7 @@ export class CompositePersistence implements OAuthPersistence {
   }
 
   async readTokensPerStore(): Promise<OAuthTokens[]> {
-    const perStore = await Promise.all(this.stores.map((store) => store.readTokens()));
+    const perStore = await this.settleAll(this.stores.map((store) => store.readTokens()));
     return perStore.filter((tokens): tokens is OAuthTokens => tokens !== undefined);
   }
 
@@ -746,14 +755,14 @@ export class CompositePersistence implements OAuthPersistence {
     // Compute the absolute expiry once so every backing store records the same
     // generation value even at a wall-clock second boundary.
     const stored = prepareStoredTokens(tokens);
-    await Promise.all(this.stores.map((store) => store.saveTokens(stored)));
+    await this.settleAll(this.stores.map((store) => store.saveTokens(stored)));
   }
 
   async clearRejectedCredentials(
     expectedTokens?: OAuthTokens,
     expectedClientInfo?: OAuthClientInformationMixed
   ): Promise<void> {
-    await Promise.all(
+    await this.settleAll(
       this.stores.map((store) => {
         const storedTokenSnapshot = expectedTokens ? this.recoveryTokenSnapshots.get(store) : undefined;
         const tokenSnapshot =
@@ -817,7 +826,7 @@ export class CompositePersistence implements OAuthPersistence {
 
   async saveClientInfo(info: OAuthClientInformationMixed): Promise<void> {
     const stored = withOAuthClientGeneration(info);
-    await Promise.all(this.stores.map((store) => store.saveClientInfo(stored)));
+    await this.settleAll(this.stores.map((store) => store.saveClientInfo(stored)));
   }
 
   async readCodeVerifier(): Promise<string | undefined> {
@@ -831,7 +840,7 @@ export class CompositePersistence implements OAuthPersistence {
   }
 
   async saveCodeVerifier(value: string): Promise<void> {
-    await Promise.all(this.stores.map((store) => store.saveCodeVerifier(value)));
+    await this.settleAll(this.stores.map((store) => store.saveCodeVerifier(value)));
   }
 
   async readState(): Promise<string | undefined> {
@@ -845,7 +854,7 @@ export class CompositePersistence implements OAuthPersistence {
   }
 
   async saveState(value: string): Promise<void> {
-    await Promise.all(this.stores.map((store) => store.saveState(value)));
+    await this.settleAll(this.stores.map((store) => store.saveState(value)));
   }
 
   async readDiscoveryState(): Promise<OAuthDiscoveryState | undefined> {
@@ -853,7 +862,7 @@ export class CompositePersistence implements OAuthPersistence {
   }
 
   async saveDiscoveryState(value: OAuthDiscoveryState): Promise<void> {
-    await Promise.all(this.stores.map((store) => store.saveDiscoveryState(value)));
+    await this.settleAll(this.stores.map((store) => store.saveDiscoveryState(value)));
   }
 
   async readAuthorizationServerUrl(): Promise<string | undefined> {
@@ -861,7 +870,7 @@ export class CompositePersistence implements OAuthPersistence {
   }
 
   async saveAuthorizationServerUrl(value: string): Promise<void> {
-    await Promise.all(this.stores.map((store) => store.saveAuthorizationServerUrl(value)));
+    await this.settleAll(this.stores.map((store) => store.saveAuthorizationServerUrl(value)));
   }
 
   async readResourceUrl(): Promise<string | undefined> {
@@ -869,7 +878,7 @@ export class CompositePersistence implements OAuthPersistence {
   }
 
   async saveResourceUrl(value: string): Promise<void> {
-    await Promise.all(this.stores.map((store) => store.saveResourceUrl(value)));
+    await this.settleAll(this.stores.map((store) => store.saveResourceUrl(value)));
   }
 
   private async readFirst<T>(read: (store: OAuthPersistence) => Promise<T | undefined>): Promise<T | undefined> {
@@ -881,7 +890,7 @@ export class CompositePersistence implements OAuthPersistence {
   }
 
   async clear(scope: OAuthClearScope): Promise<void> {
-    await Promise.all(this.stores.map((store) => store.clear(scope)));
+    await this.settleAll(this.stores.map((store) => store.clear(scope)));
   }
 }
 

@@ -374,6 +374,10 @@ export function createServerProxy(
       if (Object.hasOwn(target, property)) {
         return Reflect.get(target, property, receiver);
       }
+      // Stay non-thenable: `await proxy` or returning it from an async function must not call a tool named `then`.
+      if (property === 'then') {
+        return undefined;
+      }
       const propertyKey = property;
       const canonicalKey = typeof propertyKey === 'string' ? canonicalizeToolName(propertyKey) : null;
       let resolvedToolName =

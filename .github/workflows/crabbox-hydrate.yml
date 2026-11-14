@@ -51,6 +51,22 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
+      # Local Crabbox hydration supports run steps, not third-party setup actions.
+      - name: Install pinned Bun
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -s)-$(uname -m)" in
+            Linux-x86_64) target=bun-linux-x64 ;;
+            Linux-aarch64) target=bun-linux-aarch64 ;;
+            *) echo "Unsupported Crabbox Bun platform" >&2; exit 1 ;;
+          esac
+          destination="$RUNNER_TEMP/mcporter-bun"
+          mkdir -p "$destination"
+          curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/$target.zip" -o "$destination/bun.zip"
+          unzip -qo "$destination/bun.zip" -d "$destination"
+          echo "$destination/$target" >> "$GITHUB_PATH"
+
       - name: Prepare pnpm workspace
         shell: bash
         run: |

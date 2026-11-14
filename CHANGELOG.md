@@ -2,8 +2,23 @@
 
 ## [0.17.1] - Unreleased
 
-- Keep the daemon serving after a stop refused up front for active calls or a transport whose retirement is already unverified, instead of leaving it draining and rejecting every new request until it is replaced.
-- Exclude descendants with a verified foreign owner and start identity, such as the setuid `ps` on macOS, from a transport's owned process tree, while still tracking owned processes beneath them, so a server that shells out to them no longer fails with "Transport ownership could not be verified".
+- Keep the daemon serving after an upfront stop refusal and track owned descendants beneath verified foreign-owned helpers. Thanks @zm2231 (#498).
+
+- Use portable per-column process inventory arguments on BSD systems so daemon transport ownership can be verified. Thanks @e4779 (#499).
+
+- Apply the documented server-name correction and suggestion rules to auth, keeping unknown names actionable and diagnostics off JSON stdout. Thanks @KrasimirKralev (#500).
+
+- Preserve parsed call arguments when referenced or unconstrained schema branches may accept their type, while respecting explicit type exclusions. Thanks @HengYangDS (#501).
+
+- Preserve leading and trailing whitespace in string call arguments, including when coercion is disabled. Thanks @JYunth (#504).
+
+- Wait for all OAuth cache operations to finish before reporting a failure, preventing delayed writes from racing cleanup or subsequent requests.
+
+- Keep server proxies non-thenable so awaiting them or returning them from async functions cannot dispatch an unintended then tool call. Thanks @JYunth (#503).
+
+- Use cached OAuth credentials when a resolved static Authorization header is empty, preserving valid static credentials and required environment validation. Thanks @koinzhang (#506, #505).
+
+- Patch six Hono and Node adapter security advisories in development fixtures; refresh runtime helpers, bundling, and lint tooling while preserving Node 24 support, the 48-hour dependency cooldown, and existing security overrides.
 
 ## [0.17.0] - 2026-11-05
 

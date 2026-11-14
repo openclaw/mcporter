@@ -218,6 +218,20 @@ it.each(['', 'malformed'])('blocks retirement on invalid POSIX inventory %j', as
   await expect(awaitRetirement([root])).rejects.toThrow(/Invalid process observation/);
 });
 
+it('invokes ps with per-column -o headers so BSD ps does not collapse the inventory', async () => {
+  vi.spyOn(process, 'platform', 'get').mockReturnValue('freebsd');
+  execute.mockResolvedValue({ stdout: '101 50 123 Fri Nov  6 22:19:36 2026\n' });
+  const { processInventory } = await import('../src/daemon/process-retirement.js');
+  await expect(processInventory([101])).resolves.toMatchObject({
+    processes: [{ pid: 101, parent: 50, owner: '123', born: 'Fri Nov  6 22:19:36 2026' }],
+  });
+  expect(execute).toHaveBeenCalledWith(
+    'ps',
+    ['-axo', 'pid=', '-o', 'ppid=', '-o', 'uid=', '-o', 'lstart='],
+    expect.anything()
+  );
+});
+
 it('resolves the POSIX inventory command through PATH on hosts without /bin/ps', async () => {
   vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
   execute.mockImplementation(async (command: string) => {
