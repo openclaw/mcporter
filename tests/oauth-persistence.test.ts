@@ -409,7 +409,7 @@ describe('oauth persistence', () => {
       expect.objectContaining({
         clientInformation: expect.objectContaining({ client_id: 'client-123' }),
         refreshToken: 'refresh-123',
-        resource: new URL('https://example.com/mcp'),
+        resource: 'https://example.com/mcp',
       })
     );
     await expect(loadVaultEntry(currentDefinition)).resolves.toMatchObject({
@@ -895,7 +895,7 @@ describe('oauth persistence', () => {
       expect.objectContaining({
         clientInformation: { client_id: 'client-123' },
         refreshToken: 'refresh-123',
-        resource: new URL('https://example.com/mcp'),
+        resource: 'https://example.com/mcp',
       })
     );
     const persisted = (await readJsonFile(path.join(cacheDir, 'tokens.json'))) as

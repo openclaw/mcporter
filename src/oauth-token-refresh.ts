@@ -197,7 +197,7 @@ function shouldRefreshCachedToken(tokens: OAuthTokens, skewSeconds = TOKEN_EXPIR
 function resourceForRefresh(
   serverUrl: URL,
   resourceMetadata: OAuthProtectedResourceMetadata | undefined
-): URL | undefined {
+): string | undefined {
   if (!resourceMetadata) {
     return undefined;
   }
@@ -207,7 +207,7 @@ function resourceForRefresh(
       `Protected resource ${resourceMetadata.resource} does not match expected ${defaultResource} (or origin)`
     );
   }
-  return new URL(resourceMetadata.resource);
+  return resourceMetadata.resource;
 }
 
 function normalizedIssuer(value: unknown): string | undefined {
