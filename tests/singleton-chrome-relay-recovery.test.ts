@@ -13,6 +13,19 @@ import { privateFixtureDirectory } from './helpers/private-directory.js';
 import { fixtureResult } from './helpers/singleton.js';
 import { budget } from './helpers/timing.js';
 
+// Keep relay recovery independent of Windows process-inventory timing. Real
+// ownership and retirement checks have dedicated process-retirement integration coverage.
+vi.mock('../src/daemon/process-retirement.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/daemon/process-retirement.js')>();
+  return process.platform === 'win32'
+    ? {
+        ...actual,
+        ownedProcessTree: vi.fn().mockResolvedValue([]),
+        awaitRetirement: vi.fn().mockResolvedValue(undefined),
+      }
+    : actual;
+});
+
 vi.setConfig({ testTimeout: budget(15_000) });
 
 it('replaces an idle Chrome child once after its relay disappears while stdio stays alive', async () => {
@@ -153,6 +166,10 @@ async function chromeRecoveryFixture(options: { holdSetup?: boolean; protocolVer
       await Promise.allSettled(inFlight);
       await Promise.allSettled([...clients.values()].map((client) => client.release()));
       await host?.close();
+      const launched = await launches();
+      await vi.waitFor(() => expect(launched.every(({ pid }) => !isProcessRunning(pid))).toBe(true), {
+        timeout: budget(5_000),
+      });
     } finally {
       identity.mockRestore();
       if (previous === undefined) delete process.env.MCPORTER_DAEMON_DIR;
