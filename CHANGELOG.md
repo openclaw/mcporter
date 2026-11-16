@@ -1,5 +1,7 @@
 # mcporter Changelog
 
+## [0.17.2] - Unreleased
+
 ## [0.17.1] - 2026-11-15
 
 **Highlights:** Keep the daemon available after a refused stop, improve OAuth credential handling and CLI argument fidelity, and patch six development dependency security advisories.
@@ -25,6 +27,8 @@
 - Report remaining CLI argument errors once without internal stack traces, preserving messages, exit codes, and runtime diagnostics. Thanks @KrasimirKralev (#495).
 
 - Patch six Hono and Node adapter security advisories in development fixtures; refresh runtime helpers, bundling, and lint tooling while preserving Node 24 support, the 48-hour dependency cooldown, and existing security overrides.
+
+**Verification:** [npm](https://www.npmjs.com/package/mcporter/v/0.17.1), [registry tarball](https://registry.npmjs.org/mcporter/-/mcporter-0.17.1.tgz), [release CI](https://github.com/openclaw/mcporter/actions/runs/43816588697), [release rehearsal](https://github.com/openclaw/mcporter/actions/runs/43814933281), and [native assets](https://github.com/openclaw/mcporter/actions/runs/43816002746). npm integrity: `sha512-ukSt7Vjdw3h+7262yRzJ6o9kUcEszvmnKDnxxMgFujD7vcvIOrRo5UjXn8/TAGRP8NbrA4dzsawJG++xQxuW+g==`.
 
 ## [0.17.0] - 2026-11-05
 
