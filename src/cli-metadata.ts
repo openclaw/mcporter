@@ -103,11 +103,14 @@ export async function readCliMetadata(artifactPath: string): Promise<CliArtifact
 }
 
 // spawn reports a missing or non-executable artifact as a bare errno; name the artifact instead.
+// A failed Windows shebang interpreter (`spawn bun`) has another path and keeps its own error.
 function describeArtifactSpawnError(artifactPath: string, error: unknown): unknown {
-  if (isErrno(error, 'ENOENT') && error.syscall?.startsWith('spawn')) {
+  const spawnedArtifact = (code: string) =>
+    isErrno(error, code) && error.syscall?.startsWith('spawn') && error.path === artifactPath;
+  if (spawnedArtifact('ENOENT')) {
     return new CliUsageError(`CLI artifact not found: ${artifactPath}`);
   }
-  if (isErrno(error, 'EACCES') && error.syscall?.startsWith('spawn')) {
+  if (spawnedArtifact('EACCES')) {
     return new CliUsageError(`CLI artifact is not executable: ${artifactPath}`);
   }
   return error;

@@ -78,6 +78,23 @@ describe('readCliMetadata', () => {
     }
   });
 
+  it('keeps a missing Windows shebang interpreter error instead of blaming the artifact', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-metadata-interpreter-'));
+    const artifact = path.join(tempDir, 'bun-cli.js');
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    const pathEnv = process.env.PATH;
+    await fs.writeFile(artifact, '#!/usr/bin/env bun\n');
+    try {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      process.env.PATH = tempDir;
+      await expect(readCliMetadata(artifact)).rejects.toMatchObject({ code: 'ENOENT', path: 'bun' });
+    } finally {
+      Object.defineProperty(process, 'platform', platform);
+      process.env.PATH = pathEnv;
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it('preserves native PATH lookup when no script header is available on Windows', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-metadata-path-'));
     const preload = path.join(tempDir, 'inspect.cjs');
