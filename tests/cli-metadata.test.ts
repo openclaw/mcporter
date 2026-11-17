@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { metadataPathForArtifact, readCliMetadata } from '../src/cli-metadata.js';
+import { CliUsageError } from '../src/cli/errors.js';
 
 describe('readCliMetadata', () => {
   it('prefers embedded metadata over stale sidecar metadata', async () => {
@@ -104,6 +105,17 @@ describe('readCliMetadata', () => {
     await fs.writeFile(metadataPathForArtifact(artifact), '{ invalid json', 'utf8');
     try {
       await expect(readCliMetadata(artifact)).rejects.toThrow(/JSON|position|property/u);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(process.platform === 'win32')('reports an artifact that cannot be executed', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-metadata-dir-'));
+    try {
+      await expect(readCliMetadata(tempDir)).rejects.toThrow(
+        new CliUsageError(`CLI artifact is not executable: ${tempDir}`)
+      );
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }

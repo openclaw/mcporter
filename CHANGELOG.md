@@ -2,6 +2,8 @@
 
 ## [0.17.2] - Unreleased
 
+- Report a missing or non-executable artifact in `mcporter inspect-cli` and `generate-cli --from` as `CLI artifact not found: <path>` or `CLI artifact is not executable: <path>` instead of a raw `spawn … ENOENT`/`EACCES` stack trace. Thanks @KrasimirKralev.
+
 ## [0.17.1] - 2026-11-15
 
 **Highlights:** Keep the daemon available after a refused stop, improve OAuth credential handling and CLI argument fidelity, and patch six development dependency security advisories.
