@@ -15,6 +15,7 @@ export type SerializedServerDefinition = {
   oauthClientSecretEnv?: string;
   oauthTokenEndpointAuthMethod?: string;
   oauthRedirectUrl?: string;
+  oauthCallbackListen?: string;
   oauthClientMetadataUrl?: string;
   oauthScope?: string;
   oauthRequestedScope?: string;

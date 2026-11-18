@@ -100,6 +100,35 @@ describe('oauth callback handling', () => {
     await expect(wait).resolves.toBe('xyz');
   });
 
+  it('listens on oauthCallbackListen and keeps a forwarded oauthRedirectUrl unchanged', async () => {
+    const port = await freePort();
+    const session = await createOAuthSession(
+      makeDefinition({
+        oauthRedirectUrl: 'https://box-8080.dev.example.com/callback',
+        oauthCallbackListen: `127.0.0.1:${port}`,
+      }),
+      logger
+    );
+    cleanup = () => session.close();
+    const provider = session.provider as StatefulProvider;
+    expect(String(provider.redirectUrl)).toBe('https://box-8080.dev.example.com/callback');
+    const state = await provider.state();
+
+    const wait = session.waitForAuthorizationCode();
+    const forwarded = new URL(`http://127.0.0.1:${port}/callback`);
+    forwarded.searchParams.set('code', 'forwarded');
+    forwarded.searchParams.set('state', state);
+
+    expect(await requestStatus(forwarded)).toBe(200);
+    await expect(wait).resolves.toBe('forwarded');
+  });
+
+  it('rejects an oauthCallbackListen without a port', async () => {
+    await expect(createOAuthSession(makeDefinition({ oauthCallbackListen: '127.0.0.1' }), logger)).rejects.toThrow(
+      /host:port/
+    );
+  });
+
   it('captures the RFC 9207 issuer with the authorization code', async () => {
     const session = await createOAuthSession(makeDefinition(), logger);
     cleanup = () => session.close();
@@ -161,3 +190,14 @@ describe('oauth callback handling', () => {
     await isolatedHome.assertAmbientVaultUntouched();
   });
 });
+
+async function freePort(): Promise<number> {
+  const server = http.createServer();
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  if (typeof address !== 'object' || !address) {
+    throw new Error('no free port');
+  }
+  return address.port;
+}

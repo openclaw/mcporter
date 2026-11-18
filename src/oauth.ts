@@ -195,10 +195,16 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
 
     const server = http.createServer();
     const overrideRedirect = definition.oauthRedirectUrl ? new URL(definition.oauthRedirectUrl) : null;
-    const listenHost = overrideRedirect?.hostname ?? CALLBACK_HOST;
+    // A redirect that a proxy forwards to this machine names the proxy, so the callback server listens elsewhere.
+    const callbackListen = definition.oauthCallbackListen ? parseCallbackListen(definition.oauthCallbackListen) : null;
+    const listenHost = callbackListen?.host ?? overrideRedirect?.hostname ?? CALLBACK_HOST;
     const overridePort = overrideRedirect?.port ?? '';
-    const usesDynamicPort = !overrideRedirect || overridePort === '' || overridePort === '0';
-    const desiredPort = usesDynamicPort ? undefined : Number.parseInt(overridePort, 10);
+    const usesDynamicPort = !callbackListen && (!overrideRedirect || overridePort === '' || overridePort === '0');
+    const desiredPort = callbackListen
+      ? callbackListen.port
+      : usesDynamicPort
+        ? undefined
+        : Number.parseInt(overridePort, 10);
     const callbackPath =
       overrideRedirect?.pathname && overrideRedirect.pathname !== '/' ? overrideRedirect.pathname : CALLBACK_PATH;
     const port = await new Promise<number>((resolve, reject) => {
@@ -215,7 +221,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
 
     const redirectUrl = overrideRedirect
       ? new URL(overrideRedirect.toString())
-      : new URL(`http://${listenHost}:${port}${callbackPath}`);
+      : new URL(`http://${formatHost(listenHost)}:${port}${callbackPath}`);
     if (usesDynamicPort) {
       redirectUrl.port = String(port);
     }
@@ -730,3 +736,17 @@ function issuersMatch(first: string, second: string): boolean {
 export const __oauthInternals = {
   openExternal,
 };
+
+/** Parses `host:port` or `[ipv6]:port` for `oauthCallbackListen`. */
+export function parseCallbackListen(value: string): { host: string; port: number } {
+  const match = /^(?:\[([^\]]+)\]|([^:]+)):(\d+)$/.exec(value.trim());
+  const port = match ? Number.parseInt(match[3] ?? '', 10) : Number.NaN;
+  if (!match || !Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`oauthCallbackListen must be host:port, such as 127.0.0.1:8080; got '${value}'.`);
+  }
+  return { host: (match[1] ?? match[2]) as string, port };
+}
+
+function formatHost(host: string): string {
+  return host.includes(':') ? `[${host}]` : host;
+}
