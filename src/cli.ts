@@ -679,6 +679,18 @@ function createDaemonOnlyRuntime(daemonClient: import('./daemon/client.js').Daem
         disableOAuth: options?.disableOAuth,
       });
     },
+    listResourceTemplates: (server, options) => {
+      const params: Record<string, unknown> = { ...options };
+      delete params.allowCachedAuth;
+      delete params.disableOAuth;
+      delete params.oauthSessionOptions;
+      return daemonClient.listResourceTemplates({
+        server,
+        params,
+        allowCachedAuth: options?.allowCachedAuth,
+        disableOAuth: options?.disableOAuth,
+      });
+    },
     readResource: (server, uri, options) =>
       daemonClient.readResource({
         server,

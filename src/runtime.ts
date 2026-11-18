@@ -3,6 +3,7 @@ import type { ServerMetadata } from './daemon/protocol.js';
 import {
   type CallToolRequest,
   type ListResourcesRequest,
+  type ListResourceTemplatesRequest,
   type ReadResourceRequest,
   specTypeSchemas,
   type ProtocolEra,
@@ -80,6 +81,8 @@ export type ListResourcesOptions = Partial<ListResourcesRequest['params']> & {
   readonly disableOAuth?: boolean;
 };
 
+export type ListResourceTemplatesOptions = Partial<ListResourceTemplatesRequest['params']> & ReadResourceOptions;
+
 export interface ReadResourceOptions {
   readonly allowCachedAuth?: boolean;
   readonly oauthSessionOptions?: OAuthSessionOptions;
@@ -124,6 +127,7 @@ export interface Runtime {
   listTools(server: string, options?: ListToolsOptions): Promise<ServerToolInfo[]>;
   callTool(server: string, toolName: string, options?: CallOptions): Promise<unknown>;
   listResources(server: string, options?: ListResourcesOptions): Promise<unknown>;
+  listResourceTemplates(server: string, options?: ListResourceTemplatesOptions): Promise<unknown>;
   readResource(server: string, uri: string, options?: ReadResourceOptions): Promise<unknown>;
   connect(server: string, options?: ConnectOptions): Promise<ClientContext>;
   close(server?: string): Promise<void>;
@@ -399,6 +403,57 @@ class McpRuntime implements Runtime {
       return { ...response, resources };
     } catch (error) {
       // Fatal listResources errors usually mean the underlying transport has gone away.
+      await this.resetConnectionOnError(server, error, context);
+      throw error;
+    }
+  }
+
+  // listResourceTemplates delegates to the MCP resources/templates/list method with passthrough params.
+  async listResourceTemplates(server: string, options: ListResourceTemplatesOptions = {}): Promise<unknown> {
+    const { allowCachedAuth, disableOAuth, oauthSessionOptions, ...params } = options;
+    let context: ClientContext | undefined;
+    try {
+      const effectiveDisableOAuth = this.effectiveDisableOAuthForOperation(server, disableOAuth);
+      context = await this.connect(server, {
+        allowCachedAuth: this.effectiveAllowCachedAuthForOperation(
+          server,
+          allowCachedAuth,
+          effectiveDisableOAuth,
+          undefined
+        ),
+        oauthSessionOptions,
+        disableOAuth: effectiveDisableOAuth,
+      });
+      const { client } = context;
+      const requestParams = params as NonNullable<ListResourceTemplatesRequest['params']>;
+      if (requestParams.cursor !== undefined) {
+        await validateBrokerRequestAuthority(this.definitions.get(server.trim()));
+        return await client.listResourceTemplates(requestParams);
+      }
+
+      // v2 auto-aggregation throws when listMaxPages is reached, while
+      // mcporter's existing resource contract returns the bounded partial
+      // result. Use the low-level typed request path to preserve that behavior.
+      await validateBrokerRequestAuthority(this.definitions.get(server.trim()));
+      let response = await client.request(
+        { method: 'resources/templates/list', params: requestParams },
+        specTypeSchemas.ListResourceTemplatesResult
+      );
+      const resourceTemplates = [...response.resourceTemplates];
+      const seenCursors = new Set<string>();
+      for (let page = 1; page < MAX_RESOURCE_LIST_PAGES && response.nextCursor; page += 1) {
+        if (seenCursors.has(response.nextCursor)) break;
+        seenCursors.add(response.nextCursor);
+        await validateBrokerRequestAuthority(this.definitions.get(server.trim()));
+        response = await client.request(
+          { method: 'resources/templates/list', params: { ...requestParams, cursor: response.nextCursor } },
+          specTypeSchemas.ListResourceTemplatesResult
+        );
+        resourceTemplates.push(...response.resourceTemplates);
+      }
+      return { ...response, resourceTemplates };
+    } catch (error) {
+      // Fatal listResourceTemplates errors usually mean the underlying transport has gone away.
       await this.resetConnectionOnError(server, error, context);
       throw error;
     }

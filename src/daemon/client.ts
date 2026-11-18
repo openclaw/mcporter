@@ -104,6 +104,10 @@ export class DaemonClient {
     return this.invoke('listResources', params);
   }
 
+  async listResourceTemplates(params: ListResourcesParams): Promise<unknown> {
+    return this.invoke('listResourceTemplates', params);
+  }
+
   async readResource(params: ReadResourceParams): Promise<unknown> {
     return this.invoke('readResource', params);
   }

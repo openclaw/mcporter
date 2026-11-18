@@ -310,6 +310,8 @@ export class DaemonBroker {
                 );
               case 'listResources':
                 return await runtime.listResources(server, { ...params.params, ...policy });
+              case 'listResourceTemplates':
+                return await runtime.listResourceTemplates(server, { ...params.params, ...policy });
               case 'readResource':
                 if (typeof params.uri !== 'string') throw new BrokerError('invalid_params', 'Resource URI required.');
                 return await runtime.readResource(server, params.uri, policy);

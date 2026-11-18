@@ -216,6 +216,7 @@ describe('mcporter serve bridge', () => {
       registerDefinition: vi.fn(),
       listTools: vi.fn().mockResolvedValue([{ name: 'local-tool' }]),
       callTool: vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'local' }] }),
+      listResourceTemplates: vi.fn(),
       listResources: vi.fn(),
       readResource: vi.fn(),
       connect: vi.fn(),
@@ -237,6 +238,7 @@ describe('mcporter serve bridge', () => {
         .mockResolvedValueOnce({
           content: [{ type: 'text', text: 'daemon pong' }],
         }),
+      listResourceTemplates: vi.fn(),
       listResources: vi.fn(),
       readResource: vi.fn(),
       closeServer: vi.fn().mockResolvedValue(undefined),

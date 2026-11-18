@@ -3,6 +3,7 @@ import { handleResource } from '../src/cli/resource-command.js';
 import type { Runtime } from '../src/runtime.js';
 
 function createRuntime(): Runtime & {
+  listResourceTemplates: ReturnType<typeof vi.fn>;
   listResources: ReturnType<typeof vi.fn>;
   readResource: ReturnType<typeof vi.fn>;
 } {
@@ -15,6 +16,7 @@ function createRuntime(): Runtime & {
     registerDefinition: vi.fn(),
     listTools: vi.fn(async () => []),
     callTool: vi.fn(async () => undefined),
+    listResourceTemplates: vi.fn(async () => ({ resourceTemplates: [] })),
     listResources: vi.fn(async () => ({
       resources: [{ uri: 'memo://one', name: 'One' }],
     })),
@@ -27,6 +29,27 @@ function createRuntime(): Runtime & {
     close: vi.fn(async () => undefined),
   };
 }
+
+describe('resource templates', () => {
+  it('discovers templates while retaining non-interactive auth policy', async () => {
+    const runtime = createRuntime();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await handleResource(runtime, ['docs', '--templates', '--no-oauth', '--json']);
+      expect(runtime.listResourceTemplates).toHaveBeenCalledWith('docs', { disableOAuth: true });
+      expect(runtime.listResources).not.toHaveBeenCalled();
+      expect(runtime.readResource).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('rejects a template listing combined with a concrete URI', async () => {
+    const runtime = createRuntime();
+    await expect(handleResource(runtime, ['docs', 'docs://one', '--templates'])).rejects.toThrow('cannot be combined');
+    expect(runtime.listResourceTemplates).not.toHaveBeenCalled();
+  });
+});
 
 describe('handleResource', () => {
   it('reads a resource URI and prints text content', async () => {

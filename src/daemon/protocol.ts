@@ -37,6 +37,7 @@ export type DaemonRequestMethod =
   | 'listTools'
   | 'getServerMetadata'
   | 'listResources'
+  | 'listResourceTemplates'
   | 'readResource'
   | 'closeServer'
   | 'status'

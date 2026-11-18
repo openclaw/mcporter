@@ -14,6 +14,9 @@ export async function handleResource(runtime: Runtime, args: string[]): Promise<
     jsonShortcutFlag: '--json',
   });
   const disableOAuth = consumeDisableOAuthFlag(args);
+  const templateIndex = args.indexOf('--templates');
+  const templates = templateIndex !== -1;
+  if (templates) args.splice(templateIndex, 1);
   const server = args.shift();
   if (!server) {
     throw new CliUsageError('Missing server name. Usage: mcporter resource <server> [uri]');
@@ -23,9 +26,15 @@ export async function handleResource(runtime: Runtime, args: string[]): Promise<
     throw new CliUsageError(`Unexpected resource arguments: ${args.join(' ')}`);
   }
 
+  if (templates && uri) {
+    throw new CliUsageError('--templates lists resource templates and cannot be combined with a URI.');
+  }
+
   let result: unknown;
   try {
-    if (disableOAuth === undefined) {
+    if (templates) {
+      result = await runtime.listResourceTemplates(server, { disableOAuth });
+    } else if (disableOAuth === undefined) {
       result = uri ? await runtime.readResource(server, uri) : await runtime.listResources(server);
     } else {
       const connectOptions = { disableOAuth };
@@ -70,6 +79,7 @@ export function printResourceHelp(): void {
       'With a URI, reads that MCP resource and prints text/markdown/json content when possible.',
       '',
       'Flags:',
+      '  --templates                        List parameterized resource URI templates.',
       '  --output auto|text|markdown|json|raw  Choose output rendering.',
       '  --json                               Shortcut for --output json.',
       '  --raw                                Shortcut for --output raw.',
@@ -77,6 +87,7 @@ export function printResourceHelp(): void {
       '',
       'Examples:',
       '  mcporter resource docs',
+      '  mcporter resource docs --templates',
       '  mcporter resource docs file:///repo/README.md',
       '  mcporter resource docs greeting://Peter --output text',
     ].join('\n')

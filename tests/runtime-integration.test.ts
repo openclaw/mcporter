@@ -125,6 +125,11 @@ describe('runtime integration', () => {
     const listed = (await runtime.listResources('integration')) as { resources?: Array<{ uri: string }> };
     expect(Array.isArray(listed.resources)).toBe(true);
 
+    const templates = (await runtime.listResourceTemplates('integration')) as {
+      resourceTemplates: Array<{ uriTemplate: string }>;
+    };
+    expect(templates.resourceTemplates).toEqual([expect.objectContaining({ uriTemplate: 'greeting://{name}' })]);
+
     const result = (await runtime.readResource('integration', 'greeting://Ada')) as {
       contents?: Array<{ uri: string; text?: string }>;
     };

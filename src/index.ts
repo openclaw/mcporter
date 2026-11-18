@@ -21,6 +21,7 @@ export type {
   ConnectionInfo,
   ConnectOptions,
   ListResourcesOptions,
+  ListResourceTemplatesOptions,
   ListToolsOptions,
   ReadResourceOptions,
   Runtime,

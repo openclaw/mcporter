@@ -9,6 +9,7 @@ class FakeRuntime implements Runtime {
   private readonly definitions: ServerDefinition[];
   public readonly callToolMock = vi.fn().mockResolvedValue('local-call');
   public readonly listToolsMock = vi.fn().mockResolvedValue([{ name: 'local-tool' }]);
+  public readonly listResourceTemplatesMock = vi.fn().mockResolvedValue({ resourceTemplates: [] });
   public readonly listResourcesMock = vi.fn().mockResolvedValue([]);
   public readonly readResourceMock = vi.fn().mockResolvedValue({ contents: [] });
   public readonly connectMock = vi.fn().mockResolvedValue({ client: {}, transport: {}, definition: {} });
@@ -48,6 +49,10 @@ class FakeRuntime implements Runtime {
 
   async callTool(server: string, toolName: string, options?: CallOptions): Promise<unknown> {
     return await this.callToolMock(server, toolName, options);
+  }
+
+  async listResourceTemplates(server: string, options?: unknown): Promise<unknown> {
+    return await this.listResourceTemplatesMock(server, options);
   }
 
   async listResources(server: string, options?: unknown): Promise<unknown> {
@@ -91,6 +96,7 @@ describe('createKeepAliveRuntime', () => {
       release: vi.fn().mockResolvedValue(undefined),
       callTool: vi.fn().mockResolvedValue('daemon-call'),
       listTools: vi.fn().mockResolvedValue([{ name: 'remote-tool' }]),
+      listResourceTemplates: vi.fn().mockResolvedValue({ resourceTemplates: [] }),
       listResources: vi.fn().mockResolvedValue(['resource']),
       readResource: vi.fn().mockResolvedValue({ contents: [{ uri: 'memo://1', text: 'daemon-resource' }] }),
       closeServer: vi.fn().mockResolvedValue(undefined),
@@ -129,6 +135,16 @@ describe('createKeepAliveRuntime', () => {
       timeoutMs: undefined,
     });
 
+    await keepAliveRuntime.listResourceTemplates('alpha', { cursor: 'next', disableOAuth: true });
+    expect(daemon.listResourceTemplates).toHaveBeenCalledWith({
+      server: 'alpha',
+      params: { cursor: 'next' },
+      disableOAuth: true,
+      allowCachedAuth: undefined,
+    });
+    await keepAliveRuntime.listResourceTemplates('beta');
+    expect(runtime.listResourceTemplatesMock).toHaveBeenCalledWith('beta', undefined);
+
     await keepAliveRuntime.listResources('alpha', { cursor: '1' });
     expect(daemon.listResources).toHaveBeenCalledWith({
       server: 'alpha',
@@ -165,6 +181,7 @@ describe('createKeepAliveRuntime', () => {
       callTool: vi.fn().mockResolvedValue('daemon-call'),
       getServerMetadata: vi.fn().mockResolvedValue({ instructions: 'synthetic' }),
       listTools: vi.fn().mockResolvedValue([{ name: 'remote-tool' }]),
+      listResourceTemplates: vi.fn().mockResolvedValue({ resourceTemplates: [] }),
       listResources: vi.fn().mockResolvedValue(['resource']),
       readResource: vi.fn().mockResolvedValue({ contents: [] }),
       closeServer: vi.fn().mockResolvedValue(undefined),
@@ -255,6 +272,7 @@ describe('createKeepAliveRuntime', () => {
       callTool: vi.fn().mockRejectedValue(error),
       closeServer: vi.fn().mockResolvedValue(undefined),
       listTools: vi.fn(),
+      listResourceTemplates: vi.fn().mockResolvedValue({ resourceTemplates: [] }),
       listResources: vi.fn(),
       readResource: vi.fn(),
     };
@@ -276,6 +294,7 @@ describe('createKeepAliveRuntime', () => {
       callTool: vi.fn().mockRejectedValue(new Error('HTTP 401 Unauthorized')),
       closeServer: vi.fn().mockResolvedValue(undefined),
       listTools: vi.fn(),
+      listResourceTemplates: vi.fn().mockResolvedValue({ resourceTemplates: [] }),
       listResources: vi.fn(),
       readResource: vi.fn(),
     };
@@ -298,6 +317,7 @@ describe('createKeepAliveRuntime', () => {
       callTool: vi.fn(),
       closeServer: vi.fn().mockResolvedValue(undefined),
       listTools: vi.fn().mockRejectedValue(timeout),
+      listResourceTemplates: vi.fn().mockResolvedValue({ resourceTemplates: [] }),
       listResources: vi.fn(),
       readResource: vi.fn(),
     };
@@ -322,6 +342,7 @@ describe('createKeepAliveRuntime', () => {
       callTool: vi.fn().mockRejectedValue(oauthFlowError),
       closeServer: vi.fn().mockResolvedValue(undefined),
       listTools: vi.fn(),
+      listResourceTemplates: vi.fn().mockResolvedValue({ resourceTemplates: [] }),
       listResources: vi.fn(),
       readResource: vi.fn(),
     };

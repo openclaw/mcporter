@@ -5,6 +5,7 @@ import type {
   CallOptions,
   ConnectOptions,
   ListResourcesOptions,
+  ListResourceTemplatesOptions,
   ListToolsOptions,
   ReadResourceOptions,
   Runtime,
@@ -130,6 +131,17 @@ class KeepAliveRuntime implements Runtime {
       );
     }
     return this.base.listResources(server, options);
+  }
+
+  async listResourceTemplates(server: string, options?: ListResourceTemplatesOptions): Promise<unknown> {
+    const { allowCachedAuth, disableOAuth, ...params } = options ?? {};
+    if (this.shouldUseDaemon(server)) {
+      this.assertBrokerOptions(options);
+      return this.invokeOnce(server, 'listResourceTemplates', () =>
+        this.daemon.listResourceTemplates({ server, params, allowCachedAuth, disableOAuth })
+      );
+    }
+    return this.base.listResourceTemplates(server, options);
   }
 
   async readResource(server: string, uri: string, options?: ReadResourceOptions): Promise<unknown> {

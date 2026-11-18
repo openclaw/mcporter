@@ -13,6 +13,7 @@ function createRuntimeStub(listToolsImpl: Runtime['listTools']): Runtime {
     registerDefinition: () => {},
     listTools: listToolsImpl,
     callTool: async () => ({}),
+    listResourceTemplates: vi.fn(async () => ({ resourceTemplates: [] })),
     listResources: async () => ({}),
     connect: async () => {
       throw new Error('not implemented');

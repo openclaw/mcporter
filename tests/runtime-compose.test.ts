@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => {
   const listToolsMock = vi.fn();
   const callToolMock = vi.fn();
   const listResourcesMock = vi.fn();
+  const listResourceTemplatesMock = vi.fn();
   const readCachedAccessTokenMock = vi.fn();
   const clientInstances: unknown[] = [];
   const streamableInstances: unknown[] = [];
@@ -49,7 +50,12 @@ const mocks = vi.hoisted(() => {
       return listResourcesMock(params);
     }
 
+    async listResourceTemplates(params: unknown) {
+      return listResourceTemplatesMock(params);
+    }
+
     async request(request: { method: string; params?: unknown }) {
+      if (request.method === 'resources/templates/list') return listResourceTemplatesMock(request.params);
       if (request.method !== 'resources/list') throw new Error(`Unexpected request method ${request.method}`);
       return listResourcesMock(request.params);
     }
@@ -90,6 +96,7 @@ const mocks = vi.hoisted(() => {
     listToolsMock,
     callToolMock,
     listResourcesMock,
+    listResourceTemplatesMock,
     readCachedAccessTokenMock,
     clientInstances,
     streamableInstances,
@@ -128,6 +135,7 @@ describe('mcporter composability', () => {
     mocks.listToolsMock.mockReset();
     mocks.callToolMock.mockReset();
     mocks.listResourcesMock.mockReset();
+    mocks.listResourceTemplatesMock.mockReset();
     mocks.readCachedAccessTokenMock.mockReset();
     mocks.clientInstances.length = 0;
     mocks.streamableInstances.length = 0;
@@ -347,6 +355,34 @@ describe('mcporter composability', () => {
 
       expect(mocks.streamableInstances).toHaveLength(1);
       expect(mocks.connectMock).toHaveBeenCalledTimes(1);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it('aggregates resource templates and supports explicit continuation', async () => {
+    const first = { uriTemplate: 'docs://{section}', name: 'Docs' };
+    const second = { uriTemplate: 'notes://{id}', name: 'Notes' };
+    mocks.listResourceTemplatesMock
+      .mockResolvedValueOnce({ resourceTemplates: [first], nextCursor: 'next' })
+      .mockResolvedValueOnce({ resourceTemplates: [second] });
+    const runtime = await createRuntime({
+      servers: [{ name: 'templates', command: { kind: 'http', url: new URL('https://example.com/mcp') } }],
+    });
+    try {
+      await expect(runtime.listResourceTemplates('templates')).resolves.toEqual({ resourceTemplates: [first, second] });
+      expect(mocks.listResourceTemplatesMock).toHaveBeenNthCalledWith(2, { cursor: 'next' });
+      mocks.listResourceTemplatesMock
+        .mockReset()
+        .mockResolvedValue({ resourceTemplates: [second], nextCursor: 'next' });
+      await expect(runtime.listResourceTemplates('templates', { cursor: 'next' })).resolves.toEqual({
+        resourceTemplates: [second],
+        nextCursor: 'next',
+      });
+      expect(mocks.listResourceTemplatesMock).toHaveBeenCalledOnce();
+      mocks.listResourceTemplatesMock.mockClear();
+      await runtime.listResourceTemplates('templates');
+      expect(mocks.listResourceTemplatesMock).toHaveBeenCalledTimes(2);
     } finally {
       await runtime.close();
     }

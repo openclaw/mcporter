@@ -71,6 +71,7 @@ List accepts one target. Extra targets and unknown options fail with a usage err
   or raw output using the same output formatter as `mcporter call`.
 - Hidden alias: `resources`.
 - Useful flags:
+  - `--templates` – discover parameterized resource URI templates, then read a concrete URI.
   - `--output auto|text|markdown|json|raw` – choose how to render the response.
   - `--json` – shortcut for `--output json`.
   - `--raw` – shortcut for `--output raw`.

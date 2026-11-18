@@ -35,6 +35,7 @@ function createRuntime(definitions: ServerDefinition[]) {
     registerDefinition: vi.fn(),
     listTools,
     callTool: vi.fn(async () => undefined),
+    listResourceTemplates: vi.fn(async () => ({ resourceTemplates: [] })),
     listResources: vi.fn(async () => undefined),
     readResource: vi.fn(async () => undefined),
     connect: vi.fn(async () => {

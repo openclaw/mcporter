@@ -4,7 +4,7 @@ import { createRuntime } from '../src/runtime.js';
 import { authorizeBrokerDefinition } from '../src/daemon/transport-authority.js';
 import { BrowserOwnerConflict } from '../src/daemon/browser-owner.js';
 
-for (const operation of ['callTool', 'listTools', 'listResources', 'readResource'] as const)
+for (const operation of ['callTool', 'listTools', 'listResources', 'listResourceTemplates', 'readResource'] as const)
   it(`rechecks authority after the runtime connection await immediately before ${operation} dispatch`, async () => {
     const definition: ServerDefinition = {
       name: 'synthetic',
@@ -17,7 +17,7 @@ for (const operation of ['callTool', 'listTools', 'listResources', 'readResource
     });
     const runtime = await createRuntime({ servers: [definition] });
     const held = Promise.withResolvers<Awaited<ReturnType<typeof runtime.connect>>>();
-    const effect = vi.fn(async () => ({ tools: [], resources: [], contents: [], content: [] }));
+    const effect = vi.fn(async () => ({ tools: [], resources: [], resourceTemplates: [], contents: [], content: [] }));
     const context = {
       definition,
       transport: {},
@@ -34,6 +34,7 @@ for (const operation of ['callTool', 'listTools', 'listResources', 'readResource
       callTool: () => runtime.callTool('synthetic', 'identity'),
       listTools: () => runtime.listTools('synthetic'),
       listResources: () => runtime.listResources('synthetic'),
+      listResourceTemplates: () => runtime.listResourceTemplates('synthetic'),
       readResource: () => runtime.readResource('synthetic', 'synthetic://resource'),
     }[operation];
     try {

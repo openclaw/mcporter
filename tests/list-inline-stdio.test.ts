@@ -36,6 +36,7 @@ function createRuntimeStub() {
     },
     listTools,
     callTool: vi.fn(async () => undefined),
+    listResourceTemplates: vi.fn(),
     listResources: vi.fn(async () => undefined),
     readResource: vi.fn(async () => undefined),
     connect: vi.fn(async () => {
