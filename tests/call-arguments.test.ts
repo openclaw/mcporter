@@ -169,6 +169,18 @@ describe('parseCallArguments', () => {
     expect(parseCallArguments(['server.tool', '--', '  padded  ']).positionalArgs).toEqual(['  padded  ']);
   });
 
+  it('drops the separator space in a single `key: value` token', () => {
+    const parsed = parseCallArguments([
+      'server.tool',
+      'issueId: LNR-123',
+      'query:   hello world  ',
+      'note: ',
+      'tool: list_issues',
+    ]);
+    expect(parsed.args).toEqual({ issueId: 'LNR-123', query: 'hello world  ', note: ' ' });
+    expect(parsed.tool).toBe('list_issues');
+  });
+
   it('still coerces padded literals by their trimmed text', () => {
     const parsed = parseCallArguments(['server.tool', 'count= 42 ', 'flag= true ', 'items= [1, 2] ']);
     expect(parsed.args).toEqual({ count: 42, flag: true, items: [1, 2] });

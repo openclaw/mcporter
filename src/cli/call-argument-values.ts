@@ -27,7 +27,8 @@ export function parseKeyValueToken(token: string, nextToken: string | undefined)
       return undefined;
     }
     if (remainder.length > 0) {
-      return { key, rawValue: remainder, consumed: 1 };
+      // In a single `key: value` token the whitespace after the colon separates; it is not part of the value.
+      return { key, rawValue: remainder.replace(/^\s+(?=\S)/, ''), consumed: 1 };
     }
     if (nextToken !== undefined) {
       return { key, rawValue: nextToken, consumed: 2 };
