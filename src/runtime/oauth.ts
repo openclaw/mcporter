@@ -123,7 +123,12 @@ function hasUsableCachedAccessToken(tokens: OAuthTokens | undefined): boolean {
   }
   const stored = tokens as OAuthTokens & { expires_at?: number; expiresAt?: number };
   const expiresAt = typeof stored.expires_at === 'number' ? stored.expires_at : stored.expiresAt;
-  return typeof expiresAt === 'number' && expiresAt > Math.floor(Date.now() / 1000) + PROACTIVE_TOKEN_SKEW_SECONDS;
+  if (typeof expiresAt !== 'number') {
+    // A token issued without any lifetime (expires_in is optional) stays valid until revoked. With only a
+    // relative expires_in its age is unknown, so keep re-checking it.
+    return typeof tokens.expires_in !== 'number';
+  }
+  return expiresAt > Math.floor(Date.now() / 1000) + PROACTIVE_TOKEN_SKEW_SECONDS;
 }
 
 export async function connectWithAuth(

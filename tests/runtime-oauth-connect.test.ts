@@ -292,6 +292,48 @@ describe('connectWithAuth', () => {
     expect(connectedTransport).toBe(transport);
   });
 
+  it('skips proactive OAuth when cached tokens were issued without an expiry', async () => {
+    const connect = vi.fn().mockResolvedValueOnce(undefined);
+    const client = { connect } as unknown as Client;
+    const { session, waitForAuthorizationCode } = createPendingAuthorizationSession();
+    session.provider.tokens = vi.fn(async () => ({ access_token: 'non-expiring-token', token_type: 'Bearer' }));
+    mocks.sdkAuth.mockResolvedValueOnce('REDIRECT');
+
+    const transport = new MockTransport();
+    const connectedTransport = await connectWithAuth(client, transport, session, createLogger(), {
+      serverName: 'slack',
+      maxAttempts: 1,
+      oauthTimeoutMs: 5000,
+      serverUrl: 'https://slack.example/mcp',
+    });
+
+    expect(mocks.sdkAuth).not.toHaveBeenCalled();
+    expect(waitForAuthorizationCode).not.toHaveBeenCalled();
+    expect(session.close).toHaveBeenCalled();
+    expect(connectedTransport).toBe(transport);
+  });
+
+  it('runs proactive OAuth when cached tokens have only a relative expiry', async () => {
+    const connect = vi.fn().mockResolvedValueOnce(undefined);
+    const client = { connect } as unknown as Client;
+    const { session } = createPendingAuthorizationSession();
+    session.provider.tokens = vi.fn(async () => ({
+      access_token: 'unknown-age-token',
+      token_type: 'Bearer',
+      expires_in: 3600,
+    }));
+    mocks.sdkAuth.mockResolvedValueOnce('AUTHORIZED');
+
+    await connectWithAuth(client, new MockTransport(), session, createLogger(), {
+      serverName: 'courtlistener',
+      maxAttempts: 1,
+      oauthTimeoutMs: 5000,
+      serverUrl: 'https://courtlistener.example/mcp',
+    });
+
+    expect(mocks.sdkAuth).toHaveBeenCalledTimes(1);
+  });
+
   it('runs proactive OAuth when cached tokens are expired', async () => {
     const connect = vi.fn().mockResolvedValueOnce(undefined);
     const client = { connect } as unknown as Client;
