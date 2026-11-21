@@ -8,7 +8,7 @@ import {
 import { MCPORTER_VERSION } from '../version.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
-import { SdkErrorCode } from '@modelcontextprotocol/client';
+import { SdkErrorCode, SdkHttpError } from '@modelcontextprotocol/client';
 import type { ServerDefinition } from '../config.js';
 import { createRuntime, type Runtime } from '../runtime.js';
 import type { ClientContext } from '../runtime/transport-types.js';
@@ -318,7 +318,11 @@ export class DaemonBroker {
             }
           } catch (error) {
             const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
-            if (code === SdkErrorCode.ConnectionClosed || code === SdkErrorCode.NotConnected) {
+            if (
+              code === SdkErrorCode.ConnectionClosed ||
+              code === SdkErrorCode.NotConnected ||
+              error instanceof SdkHttpError
+            ) {
               target.state = 'disconnected';
             }
             if (code === SdkErrorCode.RequestTimeout || (error instanceof Error && error.message === 'Timeout')) {

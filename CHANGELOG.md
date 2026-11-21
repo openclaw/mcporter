@@ -2,6 +2,12 @@
 
 ## [0.17.2] - Unreleased
 
+- Preserve schema-allowed argument types across composed schemas and string/numeric literal alternatives. Thanks @HengYangDS (#508).
+- Reconnect a daemon transport on the next call after an HTTP rejection without replaying the failed request, and include its HTTP status. Thanks @zm2231 (#510).
+- Keep the protected-resource identifier verbatim during silent OAuth refresh so origin-only resources match their authorization grant. Thanks @zm2231 (#511).
+- Name missing or non-executable generated artifacts without internal spawn stacks, and list config doctor and daemon migrate in top-level help. Thanks @KrasimirKralev (#517, #509).
+- Document numeric precision limits and the exact string-ID workaround for JSON output (#515).
+
 ## [0.17.1] - 2026-11-15
 
 **Highlights:** Keep the daemon available after a refused stop, improve OAuth credential handling and CLI argument fidelity, and patch six development dependency security advisories.
