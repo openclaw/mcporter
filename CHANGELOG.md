@@ -7,6 +7,7 @@
 - Keep the protected-resource identifier verbatim during silent OAuth refresh so origin-only resources match their authorization grant. Thanks @zm2231 (#511).
 - Name missing or non-executable generated artifacts without internal spawn stacks, and list config doctor and daemon migrate in top-level help. Thanks @KrasimirKralev (#517, #509).
 - Document numeric precision limits and the exact string-ID workaround for JSON output (#515).
+- Drop the separator space from a single `'key: value'` call argument again, so `'issueId: LNR-123'` sends `"LNR-123"` instead of `" LNR-123"` (regression from #504). Thanks @JYunth.
 
 ## [0.17.1] - 2026-11-15
 
