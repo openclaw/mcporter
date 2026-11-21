@@ -24,6 +24,21 @@ This file tracks limitations that users regularly run into. Most of these requir
 - Workarounds: inspect the server’s README / manual docs for output details, or wrap the tool via `createServerProxy` and handle the raw envelope manually.
 - Potential improvement: allow user-provided schema overrides (e.g., `mcporter config patch`, CLI flag to load schema JSON) so we can fill gaps on a per-tool basis.
 
+## Large numeric identifiers in JSON results
+
+MCPorter's JSON decoding uses JavaScript numbers. Integer identifiers outside
+`Number.MAX_SAFE_INTEGER` (`9007199254740991`) can lose digits before output is
+formatted. This affects `structuredContent` in both `--output json` and
+`--output raw`, and JSON text interpreted by `--output json`. `--output raw`
+preserves the original text in `content[].text`, but it cannot restore a number
+already decoded from `structuredContent`.
+
+Servers should return identifiers as JSON strings, and callers should keep those
+strings intact. For example, return `"730027840032501799"`, not the numeric token
+`730027840032501799`. A lossless-output option is not currently available; see
+[#515](https://github.com/openclaw/mcporter/issues/515). Changing the final output
+formatter alone cannot recover digits lost while parsing the MCP response.
+
 ## Next Steps
 
 - For apps with fewer permissions than a provider advertises, configure `oauthRequestedScope` or `config add --oauth-requested-scope` to control authorization consent; see [requested OAuth scopes](config.md#requested-oauth-scopes).

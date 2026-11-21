@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
+import { CliUsageError } from './cli/errors.js';
 import type { ServerDefinition, ServerSource } from './config.js';
 import { pickSharedDefinitionFields } from './definition-fields.js';
 
@@ -94,14 +95,25 @@ export async function readCliMetadata(artifactPath: string): Promise<CliArtifact
     const buffer = await fs.readFile(legacyPath, 'utf8');
     return JSON.parse(buffer) as CliArtifactMetadata;
   } catch (error) {
-    if (isErrno(error, 'ENOENT') && embeddedError) {
-      throw embeddedError;
-    }
     if (!isErrno(error, 'ENOENT')) {
       throw error;
     }
   }
-  throw embeddedError;
+  throw describeArtifactSpawnError(artifactPath, embeddedError);
+}
+
+// spawn reports a missing or non-executable artifact as a bare errno; name the artifact instead.
+// A failed Windows shebang interpreter (`spawn bun`) has another path and keeps its own error.
+function describeArtifactSpawnError(artifactPath: string, error: unknown): unknown {
+  const spawnedArtifact = (code: string) =>
+    isErrno(error, code) && error.syscall?.startsWith('spawn') && error.path === artifactPath;
+  if (spawnedArtifact('ENOENT')) {
+    return new CliUsageError(`CLI artifact not found: ${artifactPath}`);
+  }
+  if (spawnedArtifact('EACCES')) {
+    return new CliUsageError(`CLI artifact is not executable: ${artifactPath}`);
+  }
+  return error;
 }
 
 async function readMetadataFromCli(artifactPath: string): Promise<CliArtifactMetadata> {

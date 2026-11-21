@@ -25,6 +25,8 @@ describe('mcporter usage errors', () => {
   it.each([
     [['resource'], 'Missing server name. Usage: mcporter resource <server> [uri]'],
     [['inspect-cli'], 'Usage: mcporter inspect-cli <artifact> [--json]'],
+    [['inspect-cli', './missing-cli.js'], 'CLI artifact not found: ./missing-cli.js'],
+    [['generate-cli', '--from', './missing-cli.js'], 'CLI artifact not found: ./missing-cli.js'],
     [['auth', '--browser', 'x', 'linear'], "--browser must be 'none' when provided to mcporter auth."],
     [['list', '--output', 'bogus'], '--output format must be one of: auto, text, markdown, json, raw.'],
     [['list', '--brief'], '--brief requires a server target.'],
