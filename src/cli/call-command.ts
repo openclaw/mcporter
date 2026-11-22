@@ -6,11 +6,13 @@ import { type CallArgsParseResult, type GenericLongFlagArgument, parseCallArgume
 import {
   buildUnknownCallFlagMessage,
   buildUnvalidatedCallFlagMessage,
-  CALL_HELP_ARGUMENT_LINES,
+  CALL_HELP_ARGUMENT_ROWS,
   CALL_HELP_EXAMPLE_LINES,
-  CALL_HELP_RUNTIME_FLAG_LINES,
+  CALL_HELP_RUNTIME_FLAG_ROWS,
+  CALL_HELP_SELECTOR_ROWS,
 } from './call-help.js';
-import { renderAdhocServerHelpLines } from './adhoc-help.js';
+import { formatHelpRows, type HelpRow, helpFlagWidth } from './help-rows.js';
+import { ADHOC_SERVER_HELP_ENTRIES } from './adhoc-help.js';
 import { CliUsageError } from './errors.js';
 import {
   persistPreparedEphemeralServer,
@@ -232,23 +234,27 @@ function isErrorCallResult(result: unknown): boolean {
 }
 
 export function printCallHelp(): void {
+  const adhocRows = ADHOC_SERVER_HELP_ENTRIES.map((entry): HelpRow => [entry.flag, entry.description]);
+  const flagWidth = helpFlagWidth(
+    CALL_HELP_SELECTOR_ROWS,
+    CALL_HELP_ARGUMENT_ROWS,
+    CALL_HELP_RUNTIME_FLAG_ROWS,
+    adhocRows
+  );
   const lines = [
     'Usage: mcporter call <server.tool | url> [arguments] [flags]',
     '',
     'Selectors:',
-    '  server.tool            Use a configured server and tool (e.g., linear.list_issues).',
-    '  https://host/mcp.tool  Call a tool by full HTTP URL (auto-registers ad-hoc).',
-    '  --server <name>        Override the server name.',
-    '  --tool <name>          Override the tool name.',
+    ...formatHelpRows(CALL_HELP_SELECTOR_ROWS, flagWidth),
     '',
     'Arguments:',
-    ...CALL_HELP_ARGUMENT_LINES,
+    ...formatHelpRows(CALL_HELP_ARGUMENT_ROWS, flagWidth),
     '',
     'Runtime flags:',
-    ...CALL_HELP_RUNTIME_FLAG_LINES,
+    ...formatHelpRows(CALL_HELP_RUNTIME_FLAG_ROWS, flagWidth),
     '',
     'Ad-hoc servers:',
-    ...renderAdhocServerHelpLines(),
+    ...formatHelpRows(adhocRows, flagWidth),
     '',
     'Examples:',
     ...CALL_HELP_EXAMPLE_LINES,

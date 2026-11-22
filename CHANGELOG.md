@@ -7,6 +7,7 @@
 - Keep the protected-resource identifier verbatim during silent OAuth refresh so origin-only resources match their authorization grant. Thanks @zm2231 (#511).
 - Name missing or non-executable generated artifacts without internal spawn stacks, and list config doctor and daemon migrate in top-level help. Thanks @KrasimirKralev (#517, #509).
 - Document numeric precision limits and the exact string-ID workaround for JSON output (#515).
+- Align every `call --help` and `resource --help` description in one column, so `--args, --params <json>`, `--output` and `resource --no-oauth` no longer run off it. Thanks @KrasimirKralev.
 
 ## [0.17.1] - 2026-11-15
 
