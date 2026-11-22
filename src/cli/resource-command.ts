@@ -5,6 +5,7 @@ import { buildConnectionIssueEnvelope, formatErrorMessage } from './json-output.
 import { consumeOutputFormat } from './output-format.js';
 import { printCallOutput } from './output-utils.js';
 import { CliUsageError } from './errors.js';
+import { formatHelpRows } from './help-rows.js';
 
 export async function handleResource(runtime: Runtime, args: string[]): Promise<void> {
   const output = consumeOutputFormat(args, {
@@ -70,10 +71,12 @@ export function printResourceHelp(): void {
       'With a URI, reads that MCP resource and prints text/markdown/json content when possible.',
       '',
       'Flags:',
-      '  --output auto|text|markdown|json|raw  Choose output rendering.',
-      '  --json                               Shortcut for --output json.',
-      '  --raw                                Shortcut for --output raw.',
-      '  --no-oauth                          Never start OAuth; use cached tokens only.',
+      ...formatHelpRows([
+        ['--output auto|text|markdown|json|raw', 'Choose output rendering.'],
+        ['--json', 'Shortcut for --output json.'],
+        ['--raw', 'Shortcut for --output raw.'],
+        ['--no-oauth', 'Never start OAuth; use cached tokens only.'],
+      ]),
       '',
       'Examples:',
       '  mcporter resource docs',

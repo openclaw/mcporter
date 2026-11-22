@@ -1,21 +1,30 @@
-export const CALL_HELP_ARGUMENT_LINES = [
-  '  key=value / key:value  Flag-style named arguments.',
-  '  key=@path              Read a UTF-8 string value from a file; use @@ for a literal @.',
-  '  function-call syntax   \'server.tool(arg: "value", other: 1)\'.',
-  '  --args, --params <json>  Provide a JSON object payload.',
-  '  positional values      Accepted when schema order is known.',
-  '  --                     Treat remaining tokens as literal positional values.',
-] as const;
+import type { HelpRow } from './help-rows.js';
 
-export const CALL_HELP_RUNTIME_FLAG_LINES = [
-  '  --timeout <ms>         Override the call timeout.',
-  '  --output text|markdown|json|raw  Control formatting.',
-  '  --save-images <dir>    Save image content blocks to a directory.',
-  '  --no-oauth             Never start OAuth; use cached tokens only.',
-  '  --raw-strings          Keep numeric-looking argument values as strings.',
-  '  --no-coerce            Keep all key/value and positional arguments as raw strings.',
-  '  --tail-log             Stream returned log handles.',
-] as const;
+export const CALL_HELP_SELECTOR_ROWS: readonly HelpRow[] = [
+  ['server.tool', 'Use a configured server and tool (e.g., linear.list_issues).'],
+  ['https://host/mcp.tool', 'Call a tool by full HTTP URL (auto-registers ad-hoc).'],
+  ['--server <name>', 'Override the server name.'],
+  ['--tool <name>', 'Override the tool name.'],
+];
+
+export const CALL_HELP_ARGUMENT_ROWS: readonly HelpRow[] = [
+  ['key=value / key:value', 'Flag-style named arguments.'],
+  ['key=@path', 'Read a UTF-8 string value from a file; use @@ for a literal @.'],
+  ['function-call syntax', '\'server.tool(arg: "value", other: 1)\'.'],
+  ['--args, --params <json>', 'Provide a JSON object payload.'],
+  ['positional values', 'Accepted when schema order is known.'],
+  ['--', 'Treat remaining tokens as literal positional values.'],
+];
+
+export const CALL_HELP_RUNTIME_FLAG_ROWS: readonly HelpRow[] = [
+  ['--timeout <ms>', 'Override the call timeout.'],
+  ['--output text|markdown|json|raw', 'Control formatting.'],
+  ['--save-images <dir>', 'Save image content blocks to a directory.'],
+  ['--no-oauth', 'Never start OAuth; use cached tokens only.'],
+  ['--raw-strings', 'Keep numeric-looking argument values as strings.'],
+  ['--no-coerce', 'Keep all key/value and positional arguments as raw strings.'],
+  ['--tail-log', 'Stream returned log handles.'],
+];
 
 export const CALL_HELP_EXAMPLE_LINES = [
   '  mcporter call linear.list_issues team=ENG limit:5',
