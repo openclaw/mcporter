@@ -15,14 +15,18 @@ const MCP_SERVER_MODULE = pathToFileURL(testRequire.resolve('@modelcontextprotoc
 const STDIO_SERVER_MODULE = pathToFileURL(testRequire.resolve('@modelcontextprotocol/sdk/server/stdio.js')).href;
 const ZOD_MODULE = pathToFileURL(path.join(process.cwd(), 'node_modules', 'zod', 'index.js')).href;
 
-function runCli(args: string[], configPath: string): Promise<{ stdout: string; stderr: string; code: number }> {
+function runCli(
+  args: string[],
+  configPath: string,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<{ stdout: string; stderr: string; code: number }> {
   return new Promise((resolve) => {
     execFile(
       process.execPath,
       [CLI_ENTRY, '--config', configPath, ...args],
       {
         cwd: process.cwd(),
-        env: process.env,
+        env,
         maxBuffer: 1024 * 1024,
       },
       (error, stdout, stderr) => {
@@ -136,6 +140,21 @@ await server.connect(transport);
       const payload = JSON.parse(result.stdout) as { tools: Array<{ name: string }> };
       expect(payload.tools).toHaveLength(65);
       expect(payload.tools.at(-1)?.name).toBe('tool_63');
+    },
+    budget(20_000)
+  );
+
+  it(
+    'writes hang diagnostics to stderr at the default log level',
+    async () => {
+      const env: NodeJS.ProcessEnv = { ...process.env, MCPORTER_DEBUG_HANG: '1' };
+      delete env.MCPORTER_LOG_LEVEL;
+      const result = await runCli(['call', 'force-exit.tool_0', 'alpha:x', '--output', 'json'], configPath, env);
+      expect(result.code).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual({ ok: true });
+      expect(result.stderr).toContain('[mcporter] [debug] after call (formatted result):');
+      expect(result.stderr).toContain('[mcporter] [debug] beginning runtime.close()');
+      expect(result.stderr).toContain('[mcporter] [debug] after runtime.close:');
     },
     budget(20_000)
   );

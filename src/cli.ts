@@ -3,7 +3,7 @@ import { buildGlobalContext } from './cli/cli-factory.js';
 import { inferCommandRouting } from './cli/command-inference.js';
 import { CliUsageError } from './cli/errors.js';
 import { consumeHelpTokens, isHelpToken, isVersionToken, printHelp, printVersion } from './cli/help-output.js';
-import { logError, logInfo } from './cli/logger-context.js';
+import { logError, logWarn } from './cli/logger-context.js';
 import { isRecordReplayModeActive, isReplayModeActive } from './cli/record-replay-env.js';
 import { DEBUG_HANG, dumpActiveHandles, terminateChildProcesses } from './cli/runtime-debug.js';
 import { resolveConfigPath } from './config/path-discovery.js';
@@ -380,14 +380,14 @@ async function closeRuntimeAfterCommand(
   const closeStart = Date.now();
   let closeError: unknown;
   if (DEBUG_HANG) {
-    logInfo('[debug] beginning runtime.close()');
+    logWarn('[debug] beginning runtime.close()');
     dumpActiveHandles('before runtime.close');
   }
   try {
     await runtime.close();
     if (DEBUG_HANG) {
       const duration = Date.now() - closeStart;
-      logInfo(`[debug] runtime.close() completed in ${duration}ms`);
+      logWarn(`[debug] runtime.close() completed in ${duration}ms`);
       dumpActiveHandles('after runtime.close');
     }
   } catch (error) {

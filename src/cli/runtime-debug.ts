@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
-import { logInfo, logWarn } from './logger-context.js';
+import { logWarn } from './logger-context.js';
 
 export const DEBUG_HANG = process.env.MCPORTER_DEBUG_HANG === '1';
 
@@ -73,12 +73,12 @@ export function dumpActiveHandles(label: string): void {
   const proc = process as ProcessWithHandles;
   const activeHandles = proc._getActiveHandles?.() ?? [];
   const activeRequests = proc._getActiveRequests?.() ?? [];
-  logInfo(`[debug] ${label}: ${activeHandles.length} active handle(s), ${activeRequests.length} request(s)`);
+  logWarn(`[debug] ${label}: ${activeHandles.length} active handle(s), ${activeRequests.length} request(s)`);
   for (const handle of activeHandles) {
-    logInfo(`[debug] handle => ${describeHandle(handle)}`);
+    logWarn(`[debug] handle => ${describeHandle(handle)}`);
   }
   for (const request of activeRequests) {
-    logInfo(`[debug] request => ${describeHandle(request)}`);
+    logWarn(`[debug] request => ${describeHandle(request)}`);
   }
 }
 
