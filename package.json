@@ -95,7 +95,7 @@
     "express": "^5.3.0",
     "oxfmt": "^0.78.0",
     "oxlint": "^1.93.0",
-    "oxlint-tsgolint": "^7.0.2007",
+    "oxlint-tsgolint": "^7.0.2006",
     "rimraf": "^6.1.4",
     "tsx": "^4.23.15",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
@@ -116,5 +116,5 @@
   "engines": {
     "node": ">=24"
   },
-  "packageManager": "pnpm@10.34.9"
+  "packageManager": "pnpm@10.34.6"
 }

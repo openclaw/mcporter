@@ -281,6 +281,47 @@ describe('OAuth refresh across fresh built-artifact processes', () => {
         expect(resourceRequests).toEqual([metadataUrl.slice(resourceOrigin.length)]);
         expect(tokenRequests).toHaveLength(1);
         expect(tokenRequests[0]?.get('refresh_token')).toBe(seed);
+        expect(tokenRequests[0]?.get('resource')).toBe(resourceEndpoint);
+      } finally {
+        await new Promise<void>((resolve) => resourceServer.close(() => resolve()));
+      }
+    },
+    budget(20_000)
+  );
+
+  it(
+    'sends an origin-only protected resource verbatim during silent refresh',
+    async () => {
+      const resourceServer = createServer((request, response) => {
+        const origin = `http://127.0.0.1:${(resourceServer.address() as AddressInfo).port}`;
+        const url = new URL(request.url ?? '/', origin);
+        if (url.pathname === '/mcp/.well-known/oauth-protected-resource') {
+          return sendJson(response, { resource: origin, authorization_servers: [authOrigin] });
+        }
+        response.statusCode = 404;
+        response.end('not found');
+      });
+      await new Promise<void>((resolve, reject) => {
+        resourceServer.once('error', reject);
+        resourceServer.listen(0, '127.0.0.1', resolve);
+      });
+
+      try {
+        const resourceOrigin = `http://127.0.0.1:${(resourceServer.address() as AddressInfo).port}`;
+        const resourceEndpoint = `${resourceOrigin}/mcp`;
+        const seed = 'origin-resource-seed';
+        registerSeed(seed, 'origin-resource');
+        const env = await freshEnv('origin-resource', seed);
+        env.MCPORTER_TEST_OAUTH_ENDPOINT = resourceEndpoint;
+        env.MCPORTER_TEST_OAUTH_ISSUER = authOrigin;
+        env.MCPORTER_TEST_OAUTH_RESOURCE_METADATA_URL = `${resourceEndpoint}/.well-known/oauth-protected-resource`;
+
+        await runFixture('seed', env);
+        const result = JSON.parse(await runFixture('refresh-cached', env)) as { accessMarker: string };
+
+        expect(result.accessMarker).toBe(marker('access-origin-resource-1'));
+        expect(tokenRequests).toHaveLength(1);
+        expect(tokenRequests[0]?.get('resource')).toBe(resourceOrigin);
       } finally {
         await new Promise<void>((resolve) => resourceServer.close(() => resolve()));
       }

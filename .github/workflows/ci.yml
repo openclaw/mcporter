@@ -25,12 +25,12 @@ jobs:
           - { os: ubuntu-latest, node: '24.22.3', label: ubuntu-latest }
           - { os: xcode-27, node: '24.22.3', label: xcode-27 }
           - { os: windows-latest, node: '24.22.3', label: windows-latest }
-          - { os: ubuntu-latest, node: '26.13.1', label: 'ubuntu-latest, Node 26' }
+          - { os: ubuntu-latest, node: '26.12.1', label: 'ubuntu-latest, Node 26' }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ matrix.node }}
 
@@ -89,7 +89,7 @@ jobs:
       # WMI process queries share one machine-wide provider across test files.
       # Serialize Windows files; each regression retains its full internal process concurrency.
       - run: pnpm test ${{ matrix.os == 'windows-latest' && '--maxWorkers=1' || '' }}
-        if: matrix.os != 'ubuntu-latest' || matrix.node == '26.13.1'
+        if: matrix.os != 'ubuntu-latest' || matrix.node == '26.12.1'
         env:
           FIRECRAWL_API_KEY: test
           LINEAR_API_KEY: test
@@ -119,7 +119,7 @@ jobs:
 
       - name: Upload coverage report
         if: matrix.os == 'ubuntu-latest' && matrix.node == '24.22.3' && always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage
           path: coverage/
