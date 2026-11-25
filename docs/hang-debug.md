@@ -63,7 +63,7 @@ child process, which mcporter will now terminate during shutdown.
 
 ## Notes
 
-- The diagnostics only appear when `MCPORTER_DEBUG_HANG=1` is set.
+- The diagnostics only appear when `MCPORTER_DEBUG_HANG=1` is set. They are written to stderr, so `--output json` on stdout stays parseable.
 - Killing residual children is best-effort; if you see repeated `kill-failed`
   messages, manually terminate the PID listed in the log.
 - Always keep tmux sessions tidy after debugging: `tmux kill-session -t

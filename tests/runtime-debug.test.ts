@@ -8,11 +8,10 @@ afterEach(() => {
 });
 
 describe('runtime debug cleanup', () => {
-  it('describes active handles and requests when hang diagnostics are enabled', async () => {
+  it('writes active handles and requests to stderr when hang diagnostics are enabled', async () => {
     vi.stubEnv('MCPORTER_DEBUG_HANG', '1');
-    const info = vi.fn();
     const warn = vi.fn();
-    vi.doMock('../src/cli/logger-context.js', () => ({ logInfo: info, logWarn: warn }));
+    vi.doMock('../src/cli/logger-context.js', () => ({ logInfo: vi.fn(), logWarn: warn }));
     const socket = namedHandle('Socket', {
       localAddress: '127.0.0.1',
       localPort: 1234,
@@ -37,12 +36,12 @@ describe('runtime debug cleanup', () => {
 
     dumpActiveHandles('after-test');
 
-    expect(info).toHaveBeenCalledWith('[debug] after-test: 2 active handle(s), 2 request(s)');
-    expect(info).toHaveBeenCalledWith(expect.stringContaining('Socket local=127.0.0.1:1234'));
-    expect(info).toHaveBeenCalledWith(expect.stringContaining('remote=127.0.0.2:4321'));
-    expect(info).toHaveBeenCalledWith('[debug] handle => ChildProcess (pid=42)');
-    expect(info).toHaveBeenCalledWith('[debug] request => FSReqCallback (fd=7)');
-    expect(info).toHaveBeenCalledWith('[debug] request => null');
+    expect(warn).toHaveBeenCalledWith('[debug] after-test: 2 active handle(s), 2 request(s)');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Socket local=127.0.0.1:1234'));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('remote=127.0.0.2:4321'));
+    expect(warn).toHaveBeenCalledWith('[debug] handle => ChildProcess (pid=42)');
+    expect(warn).toHaveBeenCalledWith('[debug] request => FSReqCallback (fd=7)');
+    expect(warn).toHaveBeenCalledWith('[debug] request => null');
   });
 
   it('closes socket and child streams and force-kills children in normal mode', async () => {

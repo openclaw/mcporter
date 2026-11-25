@@ -7,6 +7,7 @@
 - Keep the protected-resource identifier verbatim during silent OAuth refresh so origin-only resources match their authorization grant. Thanks @zm2231 (#511).
 - Name missing or non-executable generated artifacts without internal spawn stacks, and list config doctor and daemon migrate in top-level help. Thanks @KrasimirKralev (#517, #509).
 - Document numeric precision limits and the exact string-ID workaround for JSON output (#515).
+- Show `MCPORTER_DEBUG_HANG=1` handle dumps at the default log level, on stderr so JSON output stays parseable. Thanks @KrasimirKralev.
 
 ## [0.17.1] - 2026-11-15
 
