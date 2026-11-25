@@ -34,6 +34,7 @@ export function normalizeServerEntry(
   const oauthTokenEndpointAuthMethod =
     raw.oauthTokenEndpointAuthMethod ?? raw.oauth_token_endpoint_auth_method ?? undefined;
   const oauthRedirectUrl = raw.oauthRedirectUrl ?? raw.oauth_redirect_url ?? undefined;
+  const oauthCallbackListen = raw.oauthCallbackListen ?? raw.oauth_callback_listen ?? undefined;
   const oauthClientMetadataUrl = raw.oauthClientMetadataUrl ?? raw.oauth_client_metadata_url ?? undefined;
   const oauthScope = raw.oauthScope ?? raw.oauth_scope ?? undefined;
   const oauthRequestedScope = raw.oauthRequestedScope ?? raw.oauth_requested_scope ?? undefined;
@@ -90,6 +91,7 @@ export function normalizeServerEntry(
     oauthClientSecretEnv,
     oauthTokenEndpointAuthMethod,
     oauthRedirectUrl,
+    oauthCallbackListen,
     oauthClientMetadataUrl,
     oauthScope,
     oauthRequestedScope,

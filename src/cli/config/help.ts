@@ -65,6 +65,11 @@ export const CONFIG_HELP_ENTRIES: Record<ConfigSubcommand, ConfigHelpEntry> = {
         description: 'Set token auth, e.g. client_secret_post.',
       },
       { flag: '--oauth-redirect-url <url>', description: 'Set a custom OAuth redirect URL.' },
+      {
+        flag: '--oauth-callback-listen <host:port>',
+        description:
+          'Listen for the OAuth callback here instead of on the redirect URL host (for forwarded redirects).',
+      },
       { flag: '--oauth-requested-scope <scopes>', description: 'Request exactly these space-separated OAuth scopes.' },
       { flag: '--auth <strategy>', description: 'Force the auth type (e.g., oauth).' },
       { flag: '--copy-from <import:name>', description: 'Start with an imported definition by name.' },

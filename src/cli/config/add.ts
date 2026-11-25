@@ -24,6 +24,7 @@ export type AddFlags = {
   oauthClientSecretEnv?: string;
   oauthTokenEndpointAuthMethod?: string;
   oauthRedirectUrl?: string;
+  oauthCallbackListen?: string;
   oauthRequestedScope?: string;
   auth?: string;
   copyFrom?: string;
@@ -168,6 +169,10 @@ function extractAddFlags(args: string[]): AddFlags {
         continue;
       case '--oauth-redirect-url':
         flags.oauthRedirectUrl = requireValue(args, index, token);
+        args.splice(index, 2);
+        continue;
+      case '--oauth-callback-listen':
+        flags.oauthCallbackListen = requireValue(args, index, token);
         args.splice(index, 2);
         continue;
       case '--oauth-requested-scope': {
@@ -321,6 +326,9 @@ function applyFlagsToEntry(entry: RawEntry, flags: AddFlags): void {
   }
   if (flags.oauthRedirectUrl) {
     entry.oauthRedirectUrl = flags.oauthRedirectUrl;
+  }
+  if (flags.oauthCallbackListen) {
+    entry.oauthCallbackListen = flags.oauthCallbackListen;
   }
   if (flags.oauthRequestedScope !== undefined) {
     entry.oauthRequestedScope = flags.oauthRequestedScope;

@@ -31,6 +31,7 @@ export interface SerializedServerDefinition {
   readonly oauthClientSecretEnv?: string;
   readonly oauthTokenEndpointAuthMethod?: string;
   readonly oauthRedirectUrl?: string;
+  readonly oauthCallbackListen?: string;
   readonly oauthClientMetadataUrl?: string;
   readonly oauthScope?: string;
   readonly oauthRequestedScope?: string;
