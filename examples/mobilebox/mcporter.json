@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "mobilebox": {
+      "description": "Mobilebox cloud Android phones and iOS simulators that an agent drives through the screen; needs MOBILESANDBOX_API_KEY.",
+      "baseUrl": "https://mobilebox.dev/mcp",
+      "headers": {
+        "Authorization": "Bearer ${MOBILESANDBOX_API_KEY}",
+        "User-Agent": "mcporter/mobilebox-example"
+      }
+    }
+  },
+  "imports": []
+}
