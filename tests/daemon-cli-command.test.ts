@@ -2,6 +2,8 @@ import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CliUsageError } from '../src/cli/errors.js';
 
+const recoverDaemonMock = vi.fn();
+vi.mock('../src/daemon/recovery.js', () => ({ recoverDaemon: recoverDaemonMock }));
 const stopMock = vi.fn();
 const statusMock = vi.fn();
 const mkdirMock = vi.fn();
@@ -67,6 +69,7 @@ const { handleDaemonCli } = await import('../src/cli/daemon-command.js');
 
 describe('daemon CLI restart', () => {
   beforeEach(() => {
+    recoverDaemonMock.mockReset();
     stopMock.mockReset();
     statusMock.mockReset();
     mkdirMock.mockReset();
@@ -100,7 +103,7 @@ describe('daemon CLI restart', () => {
   });
 
   it.each([
-    ...['start', 'status', 'stop', 'restart', 'migrate'].flatMap((command) =>
+    ...['start', 'status', 'stop', 'restart', 'recover', 'migrate'].flatMap((command) =>
       ['--help', '-h', 'help'].map((help) => [[command, help]])
     ),
     [['-h']],
@@ -115,6 +118,7 @@ describe('daemon CLI restart', () => {
       await handleDaemonCli(args, { configPath: '/tmp/config.json', configExplicit: true });
       expect(log).toHaveBeenCalledWith(expect.stringContaining('Usage: mcporter daemon'));
       expect(DaemonClientMock).not.toHaveBeenCalled();
+      expect(recoverDaemonMock).not.toHaveBeenCalled();
       expect(stopMock).not.toHaveBeenCalled();
       expect(statusMock).not.toHaveBeenCalled();
       expect(mkdirMock).not.toHaveBeenCalled();
@@ -304,6 +308,26 @@ describe('daemon CLI restart', () => {
     await expect(handleDaemonCli(['start', '--log-file'], { configPath: '/tmp/config.json' })).rejects.toThrow(
       CliUsageError
     );
+  });
+
+  it('recovers only through the explicit operation and rejects extra arguments', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await expect(handleDaemonCli(['recover', '--force'], { configPath: '' })).rejects.toThrow(CliUsageError);
+      expect(recoverDaemonMock).not.toHaveBeenCalled();
+      recoverDaemonMock.mockResolvedValue('/private/recovered.json');
+      await handleDaemonCli(['recover'], { configPath: '' });
+      expect(recoverDaemonMock).toHaveBeenCalledOnce();
+      expect(stopMock).not.toHaveBeenCalled();
+      expect(statusMock).not.toHaveBeenCalled();
+      expect(launchDaemonDetachedMock).not.toHaveBeenCalled();
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('No request was replayed'));
+      recoverDaemonMock.mockResolvedValue(undefined);
+      await handleDaemonCli(['recover'], { configPath: '' });
+      expect(log).toHaveBeenCalledWith('No stale daemon metadata to recover.');
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it('reports a legacy stop without the drain confirmation as a usage error', async () => {

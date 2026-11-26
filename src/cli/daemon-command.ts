@@ -1,4 +1,5 @@
 import fsPromises from 'node:fs/promises';
+import { recoverDaemon } from '../daemon/recovery.js';
 import { legacyDaemons, stopVerifiedLegacyDaemons } from '../daemon/migration.js';
 import path from 'node:path';
 import { DaemonClient, resolveDaemonPaths } from '../daemon/client.js';
@@ -38,6 +39,16 @@ export async function handleDaemonCli(args: string[], options: DaemonCliOptions)
     rootDir: options.rootDir,
   });
 
+  if (subcommand === 'recover') {
+    if (args.length) throw new CliUsageError('daemon recover accepts no flags or arguments.');
+    const archive = await recoverDaemon();
+    console.log(
+      archive
+        ? `Recovered prior-boot daemon state; metadata preserved at ${archive}. No request was replayed; remote outcomes may remain unknown.`
+        : 'No stale daemon metadata to recover.'
+    );
+    return;
+  }
   if (subcommand === 'migrate') {
     if (args.includes('--stop-legacy')) {
       if (!args.includes('--confirmed-drained'))
@@ -70,13 +81,14 @@ export async function handleDaemonCli(args: string[], options: DaemonCliOptions)
 }
 
 function printDaemonHelp(): void {
-  console.log(`Usage: mcporter daemon <start|status|stop|restart|migrate>
+  console.log(`Usage: mcporter daemon <start|status|stop|restart|recover|migrate>
 
 Commands:
   start    Start the single-user daemon (configuration views register on demand).
   status   Show whether the daemon is running and which servers are active.
   stop     Shut down the daemon and all managed servers.
   restart  Drain and stop the daemon, then start a fresh instance.
+  recover  Clear verified prior-boot state without starting a daemon or replaying calls.
   migrate  Inspect legacy ownership without changing directory permissions.
            --stop-legacy --confirmed-drained upgrades owned legacy 0755 directories
            and retires verified owners (also works when old daemons are already stopped).
@@ -163,6 +175,7 @@ async function handleDaemonStatus(client: DaemonClient): Promise<void> {
   const status = await client.status();
   if (!status) {
     console.log('Daemon is not running.');
+    console.log('If stale metadata blocks startup, use mcporter daemon recover only for verified prior-boot state.');
     return;
   }
   console.log(`Daemon pid ${status.pid} — socket: ${status.socketPath}`);

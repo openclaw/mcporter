@@ -22,6 +22,7 @@ mcporter daemon status
 mcporter daemon status --json
 mcporter daemon stop
 mcporter daemon restart
+mcporter daemon recover
 mcporter daemon migrate
 ```
 
@@ -44,6 +45,23 @@ Ordinary application errors and timeouts leave healthy connections intact. A tim
 Generic keep-alive transports honor `lifecycle.idleTimeoutMs` after all queued and active calls finish. Different idle policies use separate transports. Idle periods longer than the native timer limit (2,147,483,647 ms) retain their full configured deadline: the broker and host wait in bounded slices, recheck elapsed inactivity, and extend the deadline on activity. Blocked shutdowns do not spin on an expired deadline. Expiry retires the owned process tree; the next explicit call creates one new connection generation. Chrome owners stay retained across idle gaps. An unknown-outcome timeout also blocks automatic idle retirement until a definitive disconnect/recovery or deliberate operator stop. Status reports `servers[].idleTimeoutMs` and, when applicable, `idleBlocked` (`browser-owner` or `unknown-outcome`). The broker holds at most 256 transports. At that limit, before creating a new one, it retires the least recently used transport that has no queued or active call, already idle-retired ones and failed connects first; this can retire a quiet live session before its configured idle deadline, or one with no idle timeout at all. That caller's next call creates a new connection (and respawns a stdio child), so server-side session state may be lost. Below the limit, no capacity reclamation occurs. Chrome owners, unknown outcomes and failed retirements are never reclaimed, and `transport_limit` is returned only when no transport can be reclaimed: retry after active calls finish, and use `mcporter daemon stop` to drain transports if it persists.
 
 Only `daemonIdleTimeoutMs` in the selected canonical user config controls automatic host shutdown. Project/explicit caller settings do not control it. The host may stop after the configured inactivity period only when no active calls, reserved Chrome owner, unknown outcomes or failed retirements remain. Status exposes the canonical `idleTimeoutMs` and `idleShutdownBlocked`. Explicit generic/test namespaces have no canonical-user idle authority; per-server idle expiry still applies there.
+
+## Recovery after an unexpected daemon exit
+
+Automatic startup still refuses stale singleton metadata. On Linux and macOS, new daemons record the kernel boot UUID in `bootIdentity`, also exposed by authenticated status. After a confirmed host reboot, run:
+
+```sh
+mcporter daemon recover
+mcporter daemon start
+```
+
+`recover` is a deliberate ownership operation, not a restart or request retry. It takes the same metadata lock as startup, checks directory and artifact safety, and refuses any responding socket owner. It clears state only when compatible metadata names the same namespace and platform but a different kernel boot UUID. Linux reads `/proc/sys/kernel/random/boot_id`; macOS reads `kern.bootsessionuuid`. Sleep, wall-clock changes and an absent PID are not reboot evidence. A prior boot's local processes cannot survive a kernel reboot; a reused PID is never signalled.
+
+The command removes the stale socket and atomically archives metadata as `user.json.recovered-<uuid>`. If interrupted before archival, metadata continues to block startup and recovery can be retried. If interrupted after archival, normal startup can proceed. Concurrent recovery and startup use the existing singleton lock. Recovery does not launch a replacement; the next explicit start or ordinary call does that. Status does not clear stale state. Existing lock rules remain conservative: if a stale lock names a PID now used by another live process, recovery times out rather than breaking that lock.
+
+Same-boot crashes remain refused, even when the recorded PID is absent: current metadata cannot prove that orphaned stdio descendants have retired. Older metadata without boot identity, incompatible protocols, malformed metadata, unsafe paths, authentication failures, and unavailable kernel boot evidence also remain refused. Upgrade before relying on this recovery path; it cannot certify a reboot for an older daemon that never recorded boot identity. Windows and other platforms explicitly refuse recovery; normal daemon operation is unchanged.
+
+A reboot proves only local process retirement. An earlier HTTP request or browser action may already have completed remotely. Recovery never replays requests or claims their success. Check the remote result before deliberately repeating an interrupted operation. Treat the daemon namespace as local state; do not copy metadata between machines or edit boot identity to force recovery.
 
 ## Existing Chrome ownership
 
