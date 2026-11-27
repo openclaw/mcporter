@@ -52,6 +52,10 @@ The shared `openclaw/release-workflows` npm archetype is not used here: mcporter
 
 ## 2. Local native package gate
 
+The Node build stages pinned Koffi 3.3.8 Windows/macOS x64 and ARM64 prebuilds with SHA-512 verification. The first maintainer build needs registry access; later builds can reuse `tmp/koffi-*.tgz`. Installed packages and generated artifacts never download native code or require a compiler. Portable bundles extract verified bytes to a private, content-addressed cache.
+
+The official packager finishes the credential-free npm tarball first, then signs both Darwin addons with the same Team ID as the standalone executables before embedding them. Release verification starts and stops a real managed daemon from each matching-architecture executable, exercising lazy addon loading under library validation. Do not weaken the executable entitlements to admit unsigned addons.
+
 This step is secret-bearing and must wait for the exact-tag serialized release gate. It requires Apple Silicon plus Rosetta, the canonical managed Foundation release keychain supplied at runtime, and the existing notary profile name:
 
 ```bash

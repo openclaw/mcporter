@@ -22,6 +22,27 @@ if (args.includes('--print')) {
   process.exit(0);
 }
 
+if (args.length === 1 && args[0].endsWith('build.mjs')) {
+  const driver = await fs.readFile(args[0], 'utf8');
+  const entry = JSON.parse(/entrypoints:\[("(?:[^"\\]|\\.)*")\]/.exec(driver)[1]);
+  const directory = JSON.parse(/outdir:("(?:[^"\\]|\\.)*")/.exec(driver)[1]);
+  const name = JSON.parse(/naming:("(?:[^"\\]|\\.)*")/.exec(driver)[1]);
+  const target = JSON.parse(/target:("(?:[^"\\]|\\.)*")/.exec(driver)[1]);
+  const minify = /minify:true/.test(driver);
+  args.splice(
+    0,
+    args.length,
+    'build',
+    entry,
+    '--outfile',
+    path.join(directory, name),
+    '--target',
+    target,
+    ...(minify ? ['--minify'] : [])
+  );
+  if (logPath) await fs.appendFile(logPath, `${JSON.stringify({ args, cwd: process.cwd() })}\n`, 'utf8');
+}
+
 if (process.env.FAKE_BUN_FAIL === '1') {
   console.error('fake bun build failure');
   process.exit(1);

@@ -12,7 +12,7 @@ import { isProcessRunning } from '../process-utils.js';
 import { getDaemonMetadataPath, getDaemonSocketPath } from './paths.js';
 import { DAEMON_PROTOCOL_VERSION, resolveProgressTiming } from './protocol.js';
 import { readLifecycle } from './lifecycle-state.js';
-import { ensureDaemonRunning } from './recovery.js';
+import { ensureDaemonRunning, stopManagedDaemon } from './recovery.js';
 import type {
   CallToolParams,
   CloseServerParams,
@@ -123,14 +123,20 @@ export class DaemonClient {
   }
 
   async stop(): Promise<void> {
-    try {
-      await this.sendRequest('stop', {});
-    } catch (error) {
-      if (isTransportError(error) && !(error instanceof UnsentDaemonRequestError && error.authenticationEnded)) {
-        return;
+    const stopRpc = async () => {
+      try {
+        await this.sendRequest('stop', {});
+      } catch (error) {
+        if (isTransportError(error) && !(error instanceof UnsentDaemonRequestError && error.authenticationEnded))
+          return;
+        throw error;
       }
-      throw error;
-    }
+    };
+    await secureDaemonDirectory();
+    await stopManagedDaemon(
+      { configPath: this.options.configPath, socketPath: this.socketPath, metadataPath: this.metadataPath },
+      stopRpc
+    );
   }
 
   private epoch?: ViewEpoch;
@@ -337,6 +343,10 @@ export class DaemonClient {
       ...handle,
       method,
       params,
+      ...(method === 'registerView' &&
+      (process.env.MCPORTER_VAULT_PASSWORD !== undefined || process.env.MCPORTER_VAULT_ENCRYPTION !== undefined)
+        ? { vault: { password: process.env.MCPORTER_VAULT_PASSWORD, policy: process.env.MCPORTER_VAULT_ENCRYPTION } }
+        : {}),
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       progressIntervalMs: progressTiming.progressIntervalMs,
     };
@@ -344,7 +354,7 @@ export class DaemonClient {
       this.socketPath,
       request,
       progressTiming.idleTimeoutMs,
-      method === 'status' ? (timeoutOverrideMs ?? 2000) : undefined
+      method === 'status' ? (timeoutOverrideMs ?? 2000) : method === 'stop' ? 5000 : undefined
     );
     for (const notice of parsed.notices ?? []) {
       console.warn(`[mcporter] ${notice}`);

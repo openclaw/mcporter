@@ -73,7 +73,14 @@ export async function effectiveDefinition(
     if (!Object.hasOwn(configuredEnv, 'PWD')) env.PWD = command.cwd;
     if (!Object.hasOwn(configuredEnv, 'SHLVL')) delete env.SHLVL;
   }
-  return { ...definition, command, env, configuredEnv, ...(chrome ? { launchCommand } : {}) };
+  return {
+    ...definition,
+    ...(definition.tokenCacheDir ? { tokenCacheDir: path.resolve(definition.tokenCacheDir) } : {}),
+    command,
+    env,
+    configuredEnv,
+    ...(chrome ? { launchCommand } : {}),
+  };
 }
 
 export function normalizeChromeEnvironment(definition: ServerDefinition, env: Record<string, string>): void {

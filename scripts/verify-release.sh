@@ -330,6 +330,15 @@ NODE
       echo "candidate version mismatch for $expected_arch: $output" >&2
       exit 1
     }
+
+    # Exercise lazy native loading under the candidate's actual library-validation policy.
+    (
+      daemon_root=$(mktemp -d /tmp/mcp-rv.XXXXXX)
+      trap 'original=$?; if env MCPORTER_DAEMON_DIR="$daemon_root" "$binary" --config "$daemon_root/config.json" daemon stop; then rm -rf "$daemon_root"; else echo "Daemon smoke cleanup failed; ownership evidence retained: $daemon_root" >&2; exit 1; fi; exit "$original"' EXIT
+      printf '{"imports":[],"mcpServers":{}}\n' >"$daemon_root/config.json"
+      env MCPORTER_DAEMON_DIR="$daemon_root" "$binary" --config "$daemon_root/config.json" daemon start
+      env MCPORTER_DAEMON_DIR="$daemon_root" "$binary" --config "$daemon_root/config.json" daemon status --json
+    )
   fi
 }
 

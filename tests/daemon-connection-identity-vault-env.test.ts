@@ -1,4 +1,5 @@
 import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { ServerDefinition } from '../src/config.js';
 import { effectiveDefinition } from '../src/daemon/connection-identity.js';
@@ -43,4 +44,9 @@ it('never passes private recovery controls to an MCP subprocess', async () => {
     expect(resolved.env).not.toHaveProperty(key);
     expect(resolved.configuredEnv).not.toHaveProperty(key);
   }
+});
+
+it('resolves a caller-relative OAuth store before the OS manager changes daemon cwd', async () => {
+  const resolved = await effectiveDefinition({ ...stdio(), tokenCacheDir: './acceptance-tokens' }, process.env, 'view');
+  expect(resolved.tokenCacheDir).toBe(path.resolve('acceptance-tokens'));
 });

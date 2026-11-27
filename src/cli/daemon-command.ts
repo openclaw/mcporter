@@ -3,7 +3,10 @@ import { legacyDaemons, stopVerifiedLegacyDaemons } from '../daemon/migration.js
 import path from 'node:path';
 import { DaemonClient, resolveDaemonPaths } from '../daemon/client.js';
 import { runDaemonHost } from '../daemon/host.js';
-import { prepareManagedWorker, runPosixGuardian } from '../daemon/managed-owner.js';
+import { prepareManagedWorker } from '../daemon/managed-owner.js';
+import { receiveBootstrap } from '../daemon/bootstrap.js';
+import { generationExitPath } from '../daemon/service-manager.js';
+import { writeFileSync } from 'node:fs';
 import { isGeneration } from '../daemon/lifecycle-state.js';
 import { getDaemonLogPath, secureDaemonDirectory } from '../daemon/paths.js';
 import { expandHome } from '../env.js';
@@ -82,7 +85,7 @@ Commands:
            and retires verified owners (also works when old daemons are already stopped).
 
 Flags:
-  --foreground        Run the daemon in the current process (debug only).
+  --foreground        Follow daemon output and wait for exit; Ctrl-C stops this generation.
   --json              Print machine-readable status.
   --log               Enable bounded operation logging (OS-user .mcporter/daemon/user.log).
   --log-file <path>   Write daemon stdout/stderr to a specific log file.
@@ -98,6 +101,16 @@ async function handleDaemonStart(args: string[], options: DaemonCliOptions, clie
   const socketPath = paths.socketPath;
   const metadataPath = paths.metadataPath;
   await secureDaemonDirectory();
+  if (isChildLaunch && isGeneration(process.env.MCPORTER_DAEMON_GENERATION)) {
+    const generation = process.env.MCPORTER_DAEMON_GENERATION;
+    await prepareManagedWorker(generation);
+    process.once('exit', (code) => {
+      try {
+        writeFileSync(generationExitPath(generation), JSON.stringify({ generation, code }), { mode: 0o600 });
+      } catch {}
+    });
+    await receiveBootstrap({ generation, socketPath, metadataPath });
+  }
   const logging = await resolveDaemonLoggingOptions(args, paths.key);
 
   const forwardedArgs: string[] = [];
@@ -110,14 +123,6 @@ async function handleDaemonStart(args: string[], options: DaemonCliOptions, clie
 
   if (isChildLaunch && isGeneration(process.env.MCPORTER_DAEMON_GENERATION)) {
     const generation = process.env.MCPORTER_DAEMON_GENERATION;
-    if (process.platform !== 'win32' && process.env.MCPORTER_DAEMON_WORKER !== '1') {
-      await runPosixGuardian(
-        { configPath: options.configPath, socketPath, metadataPath, generation, extraArgs: forwardedArgs },
-        generation
-      );
-      return;
-    }
-    await prepareManagedWorker(generation);
     await runDaemonHost({
       generation,
       socketPath,

@@ -1,7 +1,10 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { startService, waitForServiceExit } from './service-manager.js';
+import { readLifecycle } from './lifecycle-state.js';
 
 export interface DaemonLaunchOptions {
   readonly configPath: string;
@@ -31,9 +34,23 @@ interface DaemonLaunchInvocation {
 export async function launchDaemonDetached(
   options: DaemonLaunchOptions,
   launch: typeof spawn = spawn
-): Promise<ChildProcess> {
+): Promise<ChildProcess & { waitForExit?: () => Promise<number> }> {
   const invocation = buildDaemonLaunchInvocation(options);
   try {
+    if (process.platform !== 'win32' && options.generation) {
+      const owner = (await readLifecycle()).active;
+      if (owner?.generation !== options.generation) throw new Error('Daemon launch reservation expired.');
+      if (!existsSync(process.execPath))
+        throw Object.assign(new Error('ENOENT: daemon executable missing'), { code: 'ENOENT', path: process.execPath });
+      const command = invocation.command === 'nohup' ? invocation.args[0]! : invocation.command;
+      const args = invocation.command === 'nohup' ? invocation.args.slice(1) : invocation.args;
+      await startService(owner, command, args, invocation.env);
+      return {
+        exitCode: null,
+        signalCode: null,
+        waitForExit: () => waitForServiceExit(owner, options.foreground),
+      } as ChildProcess & { waitForExit: () => Promise<number> };
+    }
     return await new Promise<ChildProcess>((resolve, reject) => {
       const child = launch(invocation.command, invocation.args, {
         detached: true,
@@ -63,14 +80,14 @@ export function buildDaemonLaunchInvocation(
 ): DaemonLaunchInvocation {
   const cliEntry = resolveCliEntry(processInfo.argvEntry);
   const args = [
-    ...processInfo.execArgv,
+    ...resolveDaemonExecArgs(processInfo.execArgv),
     ...(cliEntry ? [cliEntry] : []),
     'daemon',
     'start',
     '--foreground',
     ...(options.extraArgs ?? []),
   ];
-  const env = {
+  const env: NodeJS.ProcessEnv = {
     ...processInfo.env,
     MCPORTER_DAEMON_CHILD: '1',
     ...(options.generation ? { MCPORTER_DAEMON_GENERATION: options.generation, MCPORTER_DAEMON_WORKER: '' } : {}),
@@ -78,6 +95,8 @@ export function buildDaemonLaunchInvocation(
     MCPORTER_DAEMON_SOCKET: options.socketPath,
     MCPORTER_DAEMON_METADATA: options.metadataPath,
   };
+  delete env.MCPORTER_VAULT_PASSWORD;
+  delete env.MCPORTER_VAULT_ENCRYPTION;
   if (shouldWrapDetachedLaunchWithNohup(processInfo.platform, cliEntry)) {
     return {
       command: 'nohup',
@@ -103,7 +122,7 @@ function resolveCliEntry(entry = process.argv[1]): string | undefined {
   // In Bun compiled binaries, argv[1] is a virtual /$bunfs/... path that Bun
   // auto-injects into every spawned child.  Including it explicitly would
   // duplicate it and break CLI argument parsing in the child process.
-  if (entry.startsWith('/$bunfs/')) {
+  if (entry.startsWith('/$bunfs/') || /^[a-z]:[\\/][~$]BUN[\\/]/i.test(entry)) {
     return undefined;
   }
   const candidate = fileURLToPath(new URL('../cli.js', import.meta.url));
@@ -111,4 +130,30 @@ function resolveCliEntry(entry = process.argv[1]): string | undefined {
   const sourceBuild = fileURLToPath(new URL('../../dist/cli.js', import.meta.url));
   if (existsSync(sourceBuild)) return sourceBuild;
   return path.resolve(entry);
+}
+
+export function resolveDaemonExecArgs(args: readonly string[]): string[] {
+  const require = createRequire(path.join(process.cwd(), 'package.json'));
+  const modulePath = (value: string) => {
+    if (/^(?:file|data|node):/.test(value)) return value;
+    if (path.isAbsolute(value) || value.startsWith('./') || value.startsWith('../')) return path.resolve(value);
+    try {
+      return require.resolve(value);
+    } catch {
+      return value;
+    }
+  };
+  let nextModule = false;
+  return args.map((arg) => {
+    if (nextModule) {
+      nextModule = false;
+      return modulePath(arg);
+    }
+    if (['--require', '-r', '--import', '--loader', '--experimental-loader', '--preload'].includes(arg)) {
+      nextModule = true;
+      return arg;
+    }
+    const match = /^(--(?:require|import|loader|experimental-loader|preload))=(.+)$/.exec(arg);
+    return match ? `${match[1]}=${modulePath(match[2]!)}` : arg;
+  });
 }

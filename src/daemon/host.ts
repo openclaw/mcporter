@@ -1,3 +1,4 @@
+import { authorizationBrowser } from '../oauth-browser-context.js';
 import { SdkHttpError } from '@modelcontextprotocol/client';
 import { ChromeDevtoolsRelayDiscoveryError } from '../chrome-devtools-relay.js';
 import { idleTimerDelay } from './idle-timer.js';
@@ -9,6 +10,7 @@ import { DaemonBroker, BrokerError, ExpiredViewError, GenerationChangedError } f
 import { canonicalUserConfiguration } from './browser-owner.js';
 import { assertLegacyDrained } from './migration.js';
 import { ProcessObservationError } from './process-retirement.js';
+import { generationOutputPath } from './service-manager.js';
 import { secureDaemonDirectory } from './paths.js';
 import { authenticateServer, daemonKey, requestDaemon, SocketFrames } from './socket-rpc.js';
 import { readLifecycle, writeLifecycle } from './lifecycle-state.js';
@@ -55,6 +57,17 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
     idleTimeoutMs: canonical.idleTimeoutMs,
     idleShutdownBlocked: !broker.canIdleShutdown(),
   });
+  const outputTimer =
+    options.generation && process.platform !== 'win32'
+      ? setInterval(() => {
+          void (async () => {
+            const file = generationOutputPath(options.generation!);
+            const info = await fs.stat(file);
+            if (info.size > 1024 * 1024) await fs.truncate(file, 0);
+          })().catch(() => {});
+        }, 1000)
+      : undefined;
+  outputTimer?.unref();
   let shuttingDown = false;
   let closing: Promise<void> | undefined;
   let lastActivity = Date.now();
@@ -81,6 +94,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
       await broker.close();
       shuttingDown = true;
       clearTimeout(idleTimer);
+      clearInterval(outputTimer);
       process.off('SIGINT', onSignal);
       process.off('SIGTERM', onSignal);
       server.close();
@@ -137,7 +151,26 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
           case 'status':
             result = status();
             break;
+          case 'bootstrap':
+            if (request.generation !== broker.generation) throw new GenerationChangedError();
+            result = true;
+            break;
           case 'registerView':
+            if (request.vault) {
+              const { password, policy } = request.vault;
+              if (
+                (password !== undefined &&
+                  (typeof password !== 'string' || password !== process.env.MCPORTER_VAULT_PASSWORD)) ||
+                (policy !== undefined &&
+                  (typeof policy !== 'string' ||
+                    policy.trim().toLowerCase() !==
+                      (process.env.MCPORTER_VAULT_ENCRYPTION ?? 'optional').trim().toLowerCase()))
+              )
+                throw new BrokerError(
+                  'daemon_vault_context_mismatch',
+                  'Daemon vault settings differ from this client. Drain and restart the daemon with the intended vault environment.'
+                );
+            }
             result = broker.register(request.params);
             break;
           case 'releaseView':
@@ -150,7 +183,20 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
             break;
           default:
             if (logActivity) logEvent(log, `${request.method} start`);
-            ({ result, notices } = await broker.invokeWithNotices(request));
+            ({ result, notices } = await authorizationBrowser.run(
+              (authorization, open) => {
+                if (!open || socket.destroyed || socket.writableEnded) return false;
+                frames.write({
+                  type: 'authorization',
+                  id,
+                  authorizationUrl: authorization.authorizationUrl,
+                  redirectUrl: authorization.redirectUrl,
+                  open,
+                });
+                return true;
+              },
+              () => broker.invokeWithNotices(request)
+            ));
             if (logActivity) logEvent(log, `${request.method} success`);
         }
         frames.write({ id, ok: true, result, notices });
@@ -241,6 +287,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
     claimed = true;
   });
   if (!claimed) {
+    clearInterval(outputTimer);
     server.close();
     await disposeLogContext(log);
     key.fill(0);

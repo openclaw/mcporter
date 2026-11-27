@@ -4,7 +4,7 @@
  * Mirrors the poltergeist release flow so we can dual-publish via npm + Homebrew.
  */
 
-import { spawnSync } from 'node:child_process';
+import { bunNativeAddonPlugin, readNativeAssets } from '../src/cli/generate/native-addon-plugin.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -73,10 +73,19 @@ function readPackageVersion(projectRoot: string): string {
   return pkg.version;
 }
 
-export function createCompiledEntrypoint(projectRoot: string, version: string): string {
+export function createCompiledEntrypoint(
+  projectRoot: string,
+  version: string,
+  nativeAssets?: ReturnType<typeof readNativeAssets>
+): string {
   const cliPath = JSON.stringify(path.join(projectRoot, 'src', 'cli.ts'));
   const embeddedVersion = JSON.stringify(version);
-  return [`process.env.MCPORTER_VERSION ??= ${embeddedVersion};`, `await import(${cliPath});`, ''].join('\n');
+  return [
+    ...(nativeAssets ? [`globalThis.__mcporterNativeAssets=${JSON.stringify(nativeAssets)};`] : []),
+    `process.env.MCPORTER_VERSION ??= ${embeddedVersion};`,
+    `await import(${cliPath});`,
+    '',
+  ].join('\n');
 }
 
 // main orchestrates the Bun compile flow for the mcporter binary.
@@ -95,25 +104,19 @@ async function main(): Promise<void> {
     : path.join(distDir, options.target ? `mcporter-${options.target}` : 'mcporter');
 
   const entryPath = path.join(distDir, '.mcporter-build-entry.ts');
-  fs.writeFileSync(entryPath, createCompiledEntrypoint(projectRoot, version), 'utf8');
-
-  const buildArgs = ['build', entryPath, '--compile', '--outfile', outputPath];
-
-  if (options.minify) {
-    buildArgs.push('--minify');
-  }
-  if (options.bytecode) {
-    buildArgs.push('--bytecode');
-  }
-  if (options.target) {
-    buildArgs.push('--target', options.target);
-  }
+  fs.writeFileSync(entryPath, createCompiledEntrypoint(projectRoot, version, readNativeAssets()), 'utf8');
 
   console.log(`Building mcporter binary → ${outputPath}`);
-  const result = spawnSync(process.execPath, buildArgs, { stdio: 'inherit' });
+  const result = await Bun.build({
+    entrypoints: [entryPath],
+    compile: { outfile: outputPath, ...(options.target ? { target: options.target as Bun.Build.CompileTarget } : {}) },
+    minify: options.minify,
+    bytecode: options.bytecode,
+    plugins: [bunNativeAddonPlugin()],
+  });
   try {
-    if (result.status !== 0) {
-      throw new Error(`bun build exited with status ${result.status ?? 'unknown'}`);
+    if (!result.success) {
+      throw new Error(`bun build failed: ${result.logs.map((log) => log.message).join('\n')}`);
     }
 
     if (process.platform !== 'win32') {

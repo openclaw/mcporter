@@ -1,13 +1,18 @@
 import fs from 'node:fs/promises';
+import { windowsJobName } from './windows-job.js';
 import path from 'node:path';
 import { writeJsonFile, withFileLock } from '../fs-json.js';
 import { daemonRunDir, getDaemonMetadataPath } from './paths.js';
+import type { ServiceReference } from './service-manager.js';
 import type { ProcessIdentity } from './process-retirement.js';
 
 export interface ManagedOwner {
   generation: string;
   startedAt: number;
   kind: 'posix' | 'windows';
+  service?: ServiceReference;
+  serviceSubmitted?: boolean;
+  darwinOwnership?: { boot: string; coalition: string };
   phase: 'starting' | 'ready' | 'retiring';
   identity?: ProcessIdentity;
   guardSocket?: string;
@@ -65,9 +70,17 @@ export async function readLifecycle(): Promise<LifecycleState> {
       !['starting', 'ready', 'retiring'].includes(owner.phase) ||
       (owner.kind !== 'posix' && owner.kind !== 'windows') ||
       (owner.anchorBornUtc !== undefined && (typeof owner.anchorBornUtc !== 'string' || !owner.anchorBornUtc)) ||
+      (owner.darwinOwnership !== undefined &&
+        (!/^[a-f0-9-]{36}$/.test(owner.darwinOwnership.boot) ||
+          !/^\d{1,20}$/.test(owner.darwinOwnership.coalition) ||
+          BigInt(owner.darwinOwnership.coalition) <= 1n ||
+          BigInt(owner.darwinOwnership.coalition) > 0xffffffffffffffffn)) ||
+      (owner.serviceSubmitted !== undefined && typeof owner.serviceSubmitted !== 'boolean') ||
       (owner.cleanExit !== undefined && typeof owner.cleanExit !== 'boolean') ||
       (owner.guardSocket !== undefined && owner.guardSocket !== guardSocketPath(owner.generation)) ||
-      (owner.jobName !== undefined && owner.jobName !== `Global\\MCPorter-${owner.generation}`) ||
+      (owner.jobName !== undefined &&
+        owner.jobName !== windowsJobName(owner.generation) &&
+        owner.jobName !== `Global\\MCPorter-${owner.generation}`) ||
       (owner.identity &&
         (!Number.isSafeInteger(owner.identity.pid) ||
           owner.identity.pid <= 0 ||

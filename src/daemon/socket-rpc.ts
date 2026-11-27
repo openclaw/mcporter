@@ -1,3 +1,4 @@
+import { openExternal } from '../open-browser.js';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs/promises';
 import net from 'node:net';
@@ -142,7 +143,8 @@ export async function requestDaemon<T>(
   socketPath: string,
   request: DaemonRequest,
   idleTimeoutMs: number,
-  absoluteTimeoutMs?: number
+  absoluteTimeoutMs?: number,
+  onAuthorization?: (url: string, open: boolean) => void
 ): Promise<DaemonResponse<T>> {
   // Windows ACL verification starts a local helper; it is not evidence of an unresponsive daemon.
   await secureDaemonDirectory();
@@ -171,6 +173,23 @@ export async function requestDaemon<T>(
       const response = (await frames.read()) as DaemonResponse<T> & { type?: string };
       if (!response || response.id !== request.id) throw new Error('Mismatched daemon response.');
       if (response.type === 'progress') continue;
+      if (response.type === 'authorization') {
+        const frame = response as unknown as { authorizationUrl: unknown; open: unknown };
+        if (
+          typeof frame.authorizationUrl !== 'string' ||
+          frame.authorizationUrl.length > 65536 ||
+          typeof frame.open !== 'boolean'
+        )
+          throw new Error('Invalid daemon authorization frame.');
+        const url = new URL(frame.authorizationUrl);
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('Invalid daemon authorization URL.');
+        if (onAuthorization) onAuthorization(url.toString(), frame.open);
+        else {
+          console.warn(`[mcporter] Authorize in your browser: ${url}`);
+          if (frame.open) openExternal(url.toString());
+        }
+        continue;
+      }
       if (typeof response.ok !== 'boolean') throw new Error('Invalid daemon response.');
       return response;
     }

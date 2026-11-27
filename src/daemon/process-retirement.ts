@@ -1,6 +1,5 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { resolveSystemPowerShellPath } from '../chrome-devtools-relay-handoff.js';
 const exec = promisify(execFile);
 export interface ProcessIdentity {
   pid: number;
@@ -77,89 +76,12 @@ function decodeWindowsInventory(stdout: string): Inventory {
 async function windowsInventory(requests: readonly ObservationRequest[]): Promise<Inventory> {
   const roots = [...new Set(requests.filter((r) => r.tree).flatMap((r) => r.pids))];
   const targets = [...new Set(requests.flatMap((r) => r.pids))];
-  const query =
-    'SELECT Handle,ProcessId,ParentProcessId,CreationDate FROM Win32_Process' +
-    (roots.length ? '' : ` WHERE ${targets.map((pid) => `ProcessId=${pid}`).join(' OR ')}`);
-  // System.Management avoids CIM module startup. Only the selected tree needs owner queries.
-  const script = String.raw`
-$ErrorActionPreference='Stop'
-[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
-try {
-Add-Type -AssemblyName System.Management
-$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-$searcher=New-Object System.Management.ManagementObjectSearcher('${query}')
-$rows=@($searcher.Get())
-$selected=@{}
-foreach ($target in @(${targets.join(',')})) { $selected[[int]$target]=$true }
-$frontier=@(${roots.join(',')})
-$descendants=@{}
-foreach ($root in $frontier) { $descendants[[int]$root]=$true }
-while ($frontier.Count -gt 0) {
-  $next=@()
-  foreach ($item in $rows) {
-    if ($frontier -contains [int]$item.ParentProcessId -and -not $descendants.ContainsKey([int]$item.ProcessId)) {
-      $descendants[[int]$item.ProcessId]=$true
-      $selected[[int]$item.ProcessId]=$true
-      $next+=([int]$item.ProcessId)
-      if ($selected.Count -gt ${MAX_TREE}) { throw 'tree limit' }
-    }
-  }
-  $frontier=$next
-}
-$items=@(foreach ($item in $rows) {
-  if (-not $selected.ContainsKey([int]$item.ProcessId)) { continue }
-  $born=$null
-  if ($null -ne $item.CreationDate) { $born=[System.Management.ManagementDateTimeConverter]::ToDateTime($item.CreationDate).ToUniversalTime().ToString('o') }
-  $owner=$null
   try {
-    $ownerArgs=[object[]]@('')
-    if ($item.InvokeMethod('GetOwnerSid',$ownerArgs) -eq 0) { $owner=[string]$ownerArgs[0] }
-  } catch { $owner=$null }
-  @{pid=[int]$item.ProcessId;parent=[int]$item.ParentProcessId;owner=$owner;born=$born}
-})
-# Bind owner results to the same start identities; an exited process is definite absence.
-$filter=($selected.Keys | ForEach-Object { 'ProcessId='+$_ }) -join ' OR '
-$verify=New-Object System.Management.ManagementObjectSearcher("SELECT Handle,ProcessId,ParentProcessId,CreationDate FROM Win32_Process WHERE $filter")
-$current=@{}
-foreach ($item in $verify.Get()) { $current[[int]$item.ProcessId]=$item }
-$checked=@(foreach ($item in $items) {
-  $now=$current[$item.pid]
-  if ($null -eq $now) { continue }
-  $born=$null
-  if ($null -ne $now.CreationDate) { $born=[System.Management.ManagementDateTimeConverter]::ToDateTime($now.CreationDate).ToUniversalTime().ToString('o') }
-  if ($born -ne $item.born) { $item.owner=$null; $item.born=$null }
-  $item
-})
-[Console]::Write((@{version=1;owner=$sid;processes=$checked}|ConvertTo-Json -Compress -Depth 4))
-} catch { exit 1 }
-`;
-  const observe = () =>
-    exec(
-      resolveSystemPowerShellPath(),
-      [
-        '-NoLogo',
-        '-NoProfile',
-        '-NonInteractive',
-        '-EncodedCommand',
-        Buffer.from(script, 'utf16le').toString('base64'),
-      ],
-      { timeout: 5000, maxBuffer: 4 * 1024 * 1024, windowsHide: true, encoding: 'utf8' }
-    );
-  let stdout: string;
-  try {
-    ({ stdout } = await observe().catch((error: unknown) => {
-      const failure = error as { code?: unknown; killed?: unknown; signal?: unknown } | null;
-      const timedOut = failure?.code === null && failure.killed === true && failure.signal === 'SIGTERM';
-      // A transient WMI exit or timeout gets one fresh, read-only observation.
-      // Spawn failures, oversized output, and invalid identities remain fail-closed.
-      if (failure?.code === 1 || timedOut) return observe();
-      throw error;
-    }));
+    const { observeWindowsProcesses } = await import('./win32-native.js');
+    return decodeWindowsInventory(JSON.stringify(await observeWindowsProcesses(targets, roots)));
   } catch {
-    // execFile errors include the command and child output; neither is a safe diagnostic.
     throw observationFailure('failed');
   }
-  return decodeWindowsInventory(stdout);
 }
 
 export async function processInventory(pids: readonly number[], tree = false): Promise<Inventory> {
@@ -203,6 +125,7 @@ export async function processInventory(pids: readonly number[], tree = false): P
   const { stdout } = await exec('ps', ['-axo', 'pid=', '-o', 'ppid=', '-o', 'uid=', '-o', 'lstart='], {
     timeout: 5000,
     maxBuffer: 4 * 1024 * 1024,
+    env: { ...process.env, TZ: 'UTC', LC_ALL: 'C' },
   });
   const processes = stdout
     .trim()

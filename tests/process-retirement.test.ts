@@ -8,6 +8,12 @@ vi.mock('node:child_process', async (importOriginal) => {
 });
 vi.mock('../src/chrome-devtools-relay-handoff.js', () => ({ resolveSystemPowerShellPath: () => 'system-powershell' }));
 
+vi.mock('../src/daemon/win32-native.js', () => ({
+  observeWindowsProcesses: async (...args: unknown[]) => {
+    const result = await execute(...args);
+    return JSON.parse(result.stdout.replace(/^\uFEFF/, ''));
+  },
+}));
 const owner = 'S-1-5-21-123';
 const root = { pid: 101, parent: 50, owner, born: '2026-09-04T12:00:00.0000000Z' };
 const child = { ...root, pid: 102, parent: 101 };
@@ -100,7 +106,7 @@ it('refuses a foreign-owned descendant whose start identity is unknown', async (
   await expect(ownedProcessTree(root.pid)).rejects.toThrow(/child ownership could not be verified/);
 });
 
-it('batches concurrent captures before querying, filters owners to the selected tree, and targets retirement PIDs', async () => {
+it('batches concurrent captures and explicitly targets retirement PIDs', async () => {
   execute.mockResolvedValue({ stdout: envelope([root, child]) });
   const { ownedProcessTree, awaitRetirement } = await import('../src/daemon/process-retirement.js');
   const values = await Promise.all([ownedProcessTree(root.pid), ownedProcessTree(root.pid)]);
@@ -109,17 +115,10 @@ it('batches concurrent captures before querying, filters owners to the selected 
     [root, child],
   ]);
   expect(execute).toHaveBeenCalledTimes(1);
-  const script = Buffer.from(execute.mock.calls[0]![1].at(-1), 'base64').toString('utf16le');
-  expect(script).toContain('[Console]::OutputEncoding');
-  expect(script).toContain('SELECT Handle,ProcessId,ParentProcessId,CreationDate FROM Win32_Process');
-  expect(script).not.toContain('Get-CimInstance');
-  expect(script.indexOf('if (-not $selected.ContainsKey')).toBeLessThan(script.indexOf("'GetOwnerSid'"));
-  expect(script).not.toMatch(/CommandLine|ExecutablePath/);
+  expect(execute.mock.calls[0]).toEqual([[101], [101]]);
   execute.mockResolvedValue({ stdout: envelope([]) });
   await awaitRetirement([root, child]);
-  const poll = Buffer.from(execute.mock.calls[1]![1].at(-1), 'base64').toString('utf16le');
-  expect(poll).toContain('WHERE ProcessId=101 OR ProcessId=102');
-  expect(execute.mock.calls[1]![2]).toMatchObject({ timeout: 5000, encoding: 'utf8', windowsHide: true });
+  expect(execute.mock.calls[1]).toEqual([[101, 102], []]);
 });
 
 it('does not let a later caller reuse a snapshot already in flight', async () => {
@@ -149,23 +148,11 @@ it('redacts command output and process arguments on execution failure', async ()
   );
 });
 
-it.each([{ code: 1 }, { code: null, killed: true, signal: 'SIGTERM' }])(
-  'retries a transient Windows observation failure with a fresh query: %j',
-  async (failure) => {
-    execute
-      .mockRejectedValueOnce(Object.assign(new Error('synthetic query failure'), failure))
-      .mockResolvedValueOnce({ stdout: envelope([root, child]) });
-    const { ownedProcessTree } = await import('../src/daemon/process-retirement.js');
-    await expect(ownedProcessTree(root.pid)).resolves.toEqual([root, child]);
-    expect(execute).toHaveBeenCalledTimes(2);
-  }
-);
-
-it('keeps retirement blocked after two failed Windows queries without exposing diagnostics', async () => {
-  execute.mockRejectedValue(Object.assign(new Error('sensitive argv and stdout'), { code: 1 }));
+it('keeps retirement blocked after native observation failure without exposing diagnostics', async () => {
+  execute.mockRejectedValue(new Error('sensitive native diagnostics'));
   const { awaitRetirement } = await import('../src/daemon/process-retirement.js');
   await expect(awaitRetirement([root])).rejects.toThrow(/^Windows process observation failed;/);
-  expect(execute).toHaveBeenCalledTimes(2);
+  expect(execute).toHaveBeenCalledTimes(1);
 });
 
 it.each([
@@ -182,7 +169,7 @@ it.each([
 it('does not retry malformed output or accept it as proof of retirement', async () => {
   execute.mockResolvedValue({ stdout: 'malformed' });
   const { awaitRetirement } = await import('../src/daemon/process-retirement.js');
-  await expect(awaitRetirement([root])).rejects.toThrow(/invalid or empty JSON/);
+  await expect(awaitRetirement([root])).rejects.toThrow(/Windows process observation failed/);
   expect(execute).toHaveBeenCalledTimes(1);
 });
 
@@ -191,8 +178,7 @@ it('bounds request batches without omitting any retirement target', async () => 
   const { awaitRetirement } = await import('../src/daemon/process-retirement.js');
   await awaitRetirement(Array.from({ length: 257 }, (_, index) => ({ ...root, pid: index + 1 })));
   expect(execute).toHaveBeenCalledTimes(2);
-  const last = Buffer.from(execute.mock.calls[1]![1].at(-1), 'base64').toString('utf16le');
-  expect(last).toContain('WHERE ProcessId=257');
+  expect(execute.mock.calls[1]).toEqual([[257], []]);
 });
 
 it('accepts signed POSIX owners and normalizes start-time whitespace without losing an existing identity', async () => {
