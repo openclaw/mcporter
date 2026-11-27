@@ -144,6 +144,8 @@ export async function requestDaemon<T>(
   idleTimeoutMs: number,
   absoluteTimeoutMs?: number
 ): Promise<DaemonResponse<T>> {
+  // Windows ACL verification starts a local helper; it is not evidence of an unresponsive daemon.
+  await secureDaemonDirectory();
   const startedAt = Date.now();
   const key = await daemonKey(absoluteTimeoutMs);
   const socket = net.createConnection(socketPath);

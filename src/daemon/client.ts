@@ -344,7 +344,7 @@ export class DaemonClient {
       this.socketPath,
       request,
       progressTiming.idleTimeoutMs,
-      method === 'status' ? 1000 : undefined
+      method === 'status' ? (timeoutOverrideMs ?? 2000) : undefined
     );
     for (const notice of parsed.notices ?? []) {
       console.warn(`[mcporter] ${notice}`);
