@@ -79,6 +79,7 @@ You get a `.d.ts` interface and a `createServerProxy()`-backed factory. Calls re
 - [FXMacroData macro data](fxmacrodata.md) — USD indicators and release calendars without an API key.
 - [Keenable web search](keenable-search.md) — search and fetch pages without an API key.
 - [deed.page publishing](deed-page.md) — publish generated HTML to a public URL without an API key.
+- [Mobilebox cloud phones](mobilebox.md) — start a cloud Android phone, act on its screen and delete it (API key).
 - [Configuration](config.md) — `mcporter.json` schema, env interpolation, OAuth fields.
 - [Ad-hoc connections](adhoc.md) — point at any MCP endpoint without editing config.
 - [Agent skills](agent-skills.md) — wiring per-server skills into a coding agent.
