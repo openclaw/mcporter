@@ -162,8 +162,9 @@ export async function observeWindowsProcesses(
       if (state(row.handle) === 0 || !second.has(row.pid)) continue;
       const parent = first.get(row.pid);
       if (parent === undefined || second.get(row.pid) !== parent) throw new Error('Snapshot identity changed');
-      if (held.has(parent) && held.get(parent)!.ticks > row.ticks) throw new Error('Reused parent PID');
-      processes.push({ pid: row.pid, parent, owner: row.owner, born: row.born });
+      // A stale PPID can name a younger process after PID reuse; that edge proves no ownership.
+      const verifiedParent = held.has(parent) && held.get(parent)!.ticks > row.ticks ? 0 : parent;
+      processes.push({ pid: row.pid, parent: verifiedParent, owner: row.owner, born: row.born });
     }
     return { version: 1, owner: owner(api.GetCurrentProcess()), processes };
   } finally {
