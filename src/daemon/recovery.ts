@@ -6,7 +6,7 @@ import { FileLockTimeoutError, withFileLock } from '../fs-json.js';
 import { launchDaemonDetached, type DaemonLaunchOptions } from './launch.js';
 import { readLifecycle, writeLifecycle, recoveryLockPath, type ManagedOwner } from './lifecycle-state.js';
 import { retireManagedOwner } from './managed-owner.js';
-import { resolveServiceReference } from './service-manager.js';
+import { resolveServiceReference, generationExitPath } from './service-manager.js';
 import { sendBootstrap } from './bootstrap.js';
 import { waitForDaemonReady } from './startup-readiness.js';
 import type { StatusResult } from './protocol.js';
@@ -216,6 +216,13 @@ export async function ensureDaemonRunning(
         if (exitCode === null && signal === null)
           [exitCode, signal] = (await once(launched, 'exit')) as [number | null, NodeJS.Signals | null];
         code = exitCode ?? (signal ? 128 + (os.constants.signals[signal] ?? 1) : 1);
+        if (foregroundGeneration) {
+          const receipt = (await fs
+            .readFile(generationExitPath(foregroundGeneration), 'utf8')
+            .then(JSON.parse)
+            .catch(() => undefined)) as { generation?: string; code?: number } | undefined;
+          if (receipt?.generation === foregroundGeneration && Number.isInteger(receipt.code)) code = receipt.code!;
+        }
       }
       if (!cancelled) process.exitCode = code;
     }

@@ -10,7 +10,7 @@ import { DaemonBroker, BrokerError, ExpiredViewError, GenerationChangedError } f
 import { canonicalUserConfiguration } from './browser-owner.js';
 import { assertLegacyDrained } from './migration.js';
 import { ProcessObservationError } from './process-retirement.js';
-import { generationOutputPath } from './service-manager.js';
+import { generationOutputPath, generationExitPath } from './service-manager.js';
 import { secureDaemonDirectory } from './paths.js';
 import { authenticateServer, daemonKey, requestDaemon, SocketFrames } from './socket-rpc.js';
 import { readLifecycle, writeLifecycle } from './lifecycle-state.js';
@@ -100,6 +100,9 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
       server.close();
       await cleanupDaemonArtifactsIfOwned(options, process.pid, broker.generation);
       await disposeLogContext(log);
+      // A Windows coordinator may close the Job before Node emits its exit event.
+      if (options.generation)
+        await writeJsonFile(generationExitPath(options.generation), { generation: options.generation, code: 0 });
       key.fill(0);
     })().catch((error: unknown) => {
       closing = undefined;

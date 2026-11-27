@@ -6,6 +6,7 @@ import { launchDaemonDetached } from '../src/daemon/launch.js';
 import { readLifecycle, writeLifecycle, updateOwner } from '../src/daemon/lifecycle-state.js';
 import { retireManagedOwner } from '../src/daemon/managed-owner.js';
 import { secureDaemonDirectory, getDaemonMetadataPath, getDaemonSocketPath } from '../src/daemon/paths.js';
+import { generationExitPath } from '../src/daemon/service-manager.js';
 import { privateFixtureDirectory } from './helpers/private-directory.js';
 import type { StatusResult } from '../src/daemon/protocol.js';
 
@@ -188,4 +189,22 @@ it('stops an abandoned Windows reservation before its delayed worker publishes o
   await expect(
     updateOwner(old, { identity: { pid: process.pid, parent: process.ppid, owner: 'test', born: 'test' } })
   ).rejects.toThrow('reservation expired');
+});
+
+it('preserves a completed clean shutdown when the Windows Job then terminates its worker', async () => {
+  vi.mocked(launchDaemonDetached).mockImplementation(async (launch) => {
+    ready = launch.generation;
+    await fs.writeFile(
+      generationExitPath(launch.generation!),
+      JSON.stringify({ generation: launch.generation, code: 0 })
+    );
+    return { exitCode: 1, signalCode: null } as Awaited<ReturnType<typeof launchDaemonDetached>>;
+  });
+  const previous = process.exitCode;
+  try {
+    await ensureDaemonRunning({ ...options(), foreground: true }, probe);
+    expect(process.exitCode).toBe(0);
+  } finally {
+    process.exitCode = previous;
+  }
 });
