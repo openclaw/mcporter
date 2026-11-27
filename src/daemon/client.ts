@@ -253,7 +253,7 @@ export class DaemonClient {
     const previous = await readDaemonMetadata(this.metadataPath);
     if (previous && !isProcessRunning(previous.pid))
       throw new Error(
-        'Previous daemon exited unexpectedly; verify retirement of its transports before deliberate recovery. No replacement was launched. Use mcporter daemon recover only for verified prior-boot state.'
+        'Previous daemon exited unexpectedly; verify retirement of its transports before deliberate recovery. No replacement was launched.'
       );
     this.startingPromise ??= (async () => {
       const { launchDaemonDetached } = await import('./launch.js');

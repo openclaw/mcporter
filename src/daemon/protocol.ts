@@ -1,4 +1,3 @@
-import type { BootIdentity } from './boot-identity.js';
 import type { ChromeDevtoolsRelayDecision } from '../chrome-devtools-relay.js';
 import { normalizeTimeout } from '../runtime/utils.js';
 
@@ -166,7 +165,6 @@ export interface CloseServerParams {
 }
 
 export interface StatusResult {
-  readonly bootIdentity?: BootIdentity;
   readonly generation?: string;
   readonly views?: number;
   readonly browserOwner?: { readonly connectionId: string; readonly state: string };

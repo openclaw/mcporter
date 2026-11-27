@@ -77,10 +77,6 @@ List accepts one target. Extra targets and unknown options fail with a usage err
   - `--no-oauth` – never start an interactive OAuth flow; use cached
     tokens only while keeping eligible connections pooled.
 
-## `mcporter daemon`
-
-`mcporter daemon recover` deliberately clears verified prior-boot singleton state on Linux and macOS. It refuses same-boot and legacy state, archives metadata, and never replays requests. See [daemon recovery](daemon.md#recovery-after-an-unexpected-daemon-exit).
-
 ## `mcporter serve [--servers a,b,c] [--stdio | --http <port>]`
 
 - Exposes daemon-managed keep-alive servers as one MCP server for clients that

@@ -8,7 +8,6 @@ import { withFileLock, writeJsonFile } from '../fs-json.js';
 import { DaemonBroker, BrokerError, ExpiredViewError } from './broker.js';
 import { canonicalUserConfiguration } from './browser-owner.js';
 import { assertLegacyDrained } from './migration.js';
-import { readBootIdentity } from './boot-identity.js';
 import { ProcessObservationError } from './process-retirement.js';
 import { secureDaemonDirectory } from './paths.js';
 import { authenticateServer, daemonKey, requestDaemon, SocketFrames } from './socket-rpc.js';
@@ -42,13 +41,11 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
     logAllServers: options.logAllServers ?? false,
     servers: options.logServers ?? new Set(),
   });
-  const bootIdentity = await readBootIdentity();
   const startedAt = Date.now();
   const status = (): StatusResult => ({
     pid: process.pid,
     protocolVersion: DAEMON_PROTOCOL_VERSION,
     startedAt,
-    ...(bootIdentity ? { bootIdentity } : {}),
     configPath: '',
     socketPath: options.socketPath,
     logPath: options.logPath,
@@ -201,7 +198,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
     if (metadata)
       throw new BrokerError(
         'daemon_unresponsive',
-        'Previous daemon retirement is unverified; inspect its transports before deliberate recovery. Use mcporter daemon recover only for verified prior-boot state.'
+        'Previous daemon retirement is unverified; inspect its transports before deliberate recovery.'
       );
     if (process.platform !== 'win32')
       await fs.unlink(options.socketPath).catch((error: NodeJS.ErrnoException) => {
