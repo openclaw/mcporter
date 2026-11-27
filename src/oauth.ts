@@ -114,6 +114,12 @@ function openExternal(url: string, platform: NodeJS.Platform = process.platform,
       child.on('error', () => {}); // swallow ENOENT when `open` is missing
       child.unref();
     } else if (platform === 'win32') {
+      if (process.env.MCPORTER_DAEMON_WORKER === '1') {
+        void import('./daemon/windows-job.js')
+          .then(({ openManagedBrowser }) => openManagedBrowser(url))
+          .catch(() => {});
+        return;
+      }
       // Shell-free: do not pass the OAuth URL through cmd.exe. Command metacharacters
       // such as `&` in query strings are still parsed by cmd even when argv is split.
       // rundll32 FileProtocolHandler treats the URL as a document path, not command text.

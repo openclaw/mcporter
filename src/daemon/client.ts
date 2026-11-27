@@ -1,5 +1,5 @@
-import { requestDaemon } from './socket-rpc.js';
-import { writeJsonFile } from '../fs-json.js';
+import { UnsentDaemonRequestError, requestDaemon } from './socket-rpc.js';
+import { withFileLock, writeJsonFile } from '../fs-json.js';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { loadServerDefinitions, type ServerDefinition } from '../config.js';
@@ -11,7 +11,8 @@ import type { ChromeDevtoolsRelayIdentityOptions } from '../chrome-devtools-rela
 import { isProcessRunning } from '../process-utils.js';
 import { getDaemonMetadataPath, getDaemonSocketPath } from './paths.js';
 import { DAEMON_PROTOCOL_VERSION, resolveProgressTiming } from './protocol.js';
-import { waitForDaemonReady } from './startup-readiness.js';
+import { readLifecycle } from './lifecycle-state.js';
+import { ensureDaemonRunning } from './recovery.js';
 import type {
   CallToolParams,
   CloseServerParams,
@@ -65,7 +66,12 @@ export function resolveDaemonPaths(configPath: string): DaemonPaths {
 }
 
 class RenewViewError extends Error {
-  readonly code = 'view_expired';
+  constructor(
+    message: string,
+    readonly code: string
+  ) {
+    super(message);
+  }
 }
 
 interface ViewEpoch {
@@ -120,7 +126,7 @@ export class DaemonClient {
     try {
       await this.sendRequest('stop', {});
     } catch (error) {
-      if (isTransportError(error)) {
+      if (isTransportError(error) && !(error instanceof UnsentDaemonRequestError && error.authenticationEnded)) {
         return;
       }
       throw error;
@@ -159,7 +165,12 @@ export class DaemonClient {
             await this.sendRequest('releaseView', {}, undefined, handle);
           } catch (error) {
             // Expired views have already been removed by the broker.
-            if (!(error instanceof RenewViewError)) throw error;
+            if (
+              !(error instanceof RenewViewError) &&
+              !isTransportError(error) &&
+              (error as NodeJS.ErrnoException).code !== 'daemon_generation_changed'
+            )
+              throw error;
           }
         }
       })();
@@ -183,8 +194,8 @@ export class DaemonClient {
     // Retain before registration or authenticated RPC establishment can yield to a replacement/close.
     epoch.active++;
     try {
+      await this.ensureDaemon();
       epoch.registrationParams ??= (async () => {
-        await this.ensureDaemon(timeoutMs);
         const definitions =
           epoch.definitions ??
           (await loadServerDefinitions({
@@ -198,10 +209,20 @@ export class DaemonClient {
         );
         return { definitions: effective, clientInfo: epoch.clientInfo };
       })();
-      const register = () =>
+      const registerRaw = () =>
         epoch.registrationParams!.then((registrationParams) =>
           this.sendRequest<{ view: string; generation: string }>('registerView', registrationParams)
         );
+      const register = async () => {
+        try {
+          return await registerRaw();
+        } catch (error) {
+          if ((!isTransportError(error) && !(error instanceof RenewViewError)) || this.epoch !== epoch) throw error;
+          await this.ensureDaemon();
+          if (this.epoch !== epoch) throw error;
+          return registerRaw();
+        }
+      };
       const registration = (epoch.registration ??= register());
       let handle: { view: string; generation: string };
       try {
@@ -213,7 +234,10 @@ export class DaemonClient {
       try {
         return await this.sendRequest<T>(method, params, timeoutMs, handle);
       } catch (error) {
-        if (!(error instanceof RenewViewError) || this.epoch !== epoch) throw error;
+        if (!(error instanceof RenewViewError || error instanceof UnsentDaemonRequestError) || this.epoch !== epoch)
+          throw error;
+        await this.ensureDaemon();
+        if (this.epoch !== epoch) throw error;
         // Compare the rejected registration so concurrent callers share one renewal.
         // Keep the resolved authority snapshot, and never replay after config replacement/close.
         if (epoch.registration === registration) epoch.registration = register();
@@ -225,13 +249,6 @@ export class DaemonClient {
           throw registrationError;
         }
         if (this.epoch !== epoch) throw error;
-        if (renewed.generation !== handle.generation)
-          throw Object.assign(
-            new Error('Daemon generation changed during config view renewal; request not replayed.'),
-            {
-              code: 'daemon_generation_changed',
-            }
-          );
         // Deliberately outside the retry catch: repeated expiry gets no further replay.
         return await this.sendRequest<T>(method, params, timeoutMs, renewed);
       }
@@ -246,24 +263,21 @@ export class DaemonClient {
     }
   }
 
-  async ensureDaemon(timeoutMs?: number): Promise<void> {
+  async ensureDaemon(
+    _timeoutMs?: number,
+    launchOptions: { extraArgs?: string[]; foreground?: boolean } = {}
+  ): Promise<void> {
     await secureDaemonDirectory();
     await assertLegacyDrained();
-    if (await this.readVerifiedStatus(timeoutMs)) return;
-    const previous = await readDaemonMetadata(this.metadataPath);
-    if (previous && !isProcessRunning(previous.pid))
-      throw new Error(
-        'Previous daemon exited unexpectedly; verify retirement of its transports before deliberate recovery. No replacement was launched.'
-      );
-    this.startingPromise ??= (async () => {
-      const { launchDaemonDetached } = await import('./launch.js');
-      await launchDaemonDetached({
+    this.startingPromise ??= ensureDaemonRunning(
+      {
         configPath: this.options.configPath,
         metadataPath: this.metadataPath,
         socketPath: this.socketPath,
-      });
-      await waitForDaemonReady((timeout) => this.readVerifiedStatus(timeout));
-    })().finally(() => {
+        ...launchOptions,
+      },
+      (timeout) => this.readVerifiedStatus(timeout)
+    ).finally(() => {
       this.startingPromise = null;
     });
     await this.startingPromise;
@@ -287,7 +301,27 @@ export class DaemonClient {
       !isProcessRunning(result.pid)
     )
       throw new Error('Incompatible or unverified daemon; no restart attempted.');
-    if (!metadata || metadata.pid !== result.pid) await writeJsonFile(this.metadataPath, result);
+    if (!metadata || metadata.pid !== result.pid) {
+      let accepted = true;
+      await withFileLock(
+        this.metadataPath,
+        async () => {
+          const lifecycle = await readLifecycle();
+          const current = await readDaemonMetadata(this.metadataPath);
+          if (
+            (lifecycle.active &&
+              (lifecycle.active.phase === 'retiring' || lifecycle.active.generation !== result.generation)) ||
+            (current && current.pid !== result.pid && current.startedAt > result.startedAt)
+          ) {
+            accepted = false;
+            return;
+          }
+          await writeJsonFile(this.metadataPath, result);
+        },
+        { timeoutMs: 1000 }
+      );
+      if (!accepted) return null;
+    }
     return result;
   }
 
@@ -306,15 +340,21 @@ export class DaemonClient {
       protocolVersion: DAEMON_PROTOCOL_VERSION,
       progressIntervalMs: progressTiming.progressIntervalMs,
     };
-    const parsed = await requestDaemon<T>(this.socketPath, request, progressTiming.idleTimeoutMs);
+    const parsed = await requestDaemon<T>(
+      this.socketPath,
+      request,
+      progressTiming.idleTimeoutMs,
+      method === 'status' ? 1000 : undefined
+    );
     for (const notice of parsed.notices ?? []) {
       console.warn(`[mcporter] ${notice}`);
     }
     if (!parsed.ok) {
       const message = parsed.error?.message ?? 'Daemon error';
       const error =
-        parsed.error?.code === 'view_expired' && parsed.error.retry === 'renew_view'
-          ? new RenewViewError(message)
+        (parsed.error?.code === 'view_expired' || parsed.error?.code === 'daemon_generation_changed') &&
+        parsed.error.retry === 'renew_view'
+          ? new RenewViewError(message, parsed.error.code!)
           : new Error(message);
       (error as NodeJS.ErrnoException).code = parsed.error?.code;
       throw error;

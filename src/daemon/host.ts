@@ -5,16 +5,18 @@ import fs from 'node:fs/promises';
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { withFileLock, writeJsonFile } from '../fs-json.js';
-import { DaemonBroker, BrokerError, ExpiredViewError } from './broker.js';
+import { DaemonBroker, BrokerError, ExpiredViewError, GenerationChangedError } from './broker.js';
 import { canonicalUserConfiguration } from './browser-owner.js';
 import { assertLegacyDrained } from './migration.js';
 import { ProcessObservationError } from './process-retirement.js';
 import { secureDaemonDirectory } from './paths.js';
 import { authenticateServer, daemonKey, requestDaemon, SocketFrames } from './socket-rpc.js';
+import { readLifecycle, writeLifecycle } from './lifecycle-state.js';
 import { createLogContext, disposeLogContext, logEvent } from './log-context.js';
 import { DAEMON_PROTOCOL_VERSION, resolveProgressInterval, type DaemonRequest, type StatusResult } from './protocol.js';
 
 export interface DaemonHostOptions {
+  readonly generation?: string;
   readonly socketPath: string;
   readonly metadataPath: string;
   readonly configPath: string;
@@ -34,7 +36,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
   await assertLegacyDrained();
   const key = await daemonKey();
   const canonical = await canonicalUserConfiguration();
-  const broker = new DaemonBroker(canonical.definitions);
+  const broker = new DaemonBroker(canonical.definitions, options.generation);
   const log = createLogContext({
     enabled: Boolean(options.logPath),
     logPath: options.logPath,
@@ -82,7 +84,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
       process.off('SIGINT', onSignal);
       process.off('SIGTERM', onSignal);
       server.close();
-      await cleanupDaemonArtifactsIfOwned(options, process.pid);
+      await cleanupDaemonArtifactsIfOwned(options, process.pid, broker.generation);
       await disposeLogContext(log);
       key.fill(0);
     })().catch((error: unknown) => {
@@ -117,6 +119,13 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
           timer = setInterval(() => {
             if (!socket.destroyed) frames.write({ type: 'progress', id });
           }, resolveProgressInterval(request.progressIntervalMs));
+        if (options.generation && request.method !== 'status' && request.method !== 'stop') {
+          await withFileLock(options.metadataPath, async () => {
+            const state = await readLifecycle();
+            if (!state.active || state.active.generation !== options.generation || state.active.phase !== 'ready')
+              throw new GenerationChangedError();
+          });
+        }
         let result: unknown;
         let notices: string[] = [];
         const activityServer = 'server' in request.params ? request.params.server : undefined;
@@ -158,7 +167,13 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
         frames.write({
           id,
           ok: false,
-          error: { code, message, ...(error instanceof ExpiredViewError ? { retry: 'renew_view' as const } : {}) },
+          error: {
+            code,
+            message,
+            ...(error instanceof ExpiredViewError || error instanceof GenerationChangedError
+              ? { retry: 'renew_view' as const }
+              : {}),
+          },
         });
         socket.end();
       } finally {
@@ -183,6 +198,11 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code !== 'ENOENT' && code !== 'ECONNREFUSED') throw error;
+    }
+    if (options.generation) {
+      const state = await readLifecycle();
+      if (state.active?.generation !== options.generation || state.active.phase !== 'starting')
+        throw new Error('Daemon launch reservation expired.');
     }
     if (live) {
       await writeJsonFile(options.metadataPath, live);
@@ -213,6 +233,11 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
     });
     if (process.platform !== 'win32') await fs.chmod(options.socketPath, 0o600);
     await writeJsonFile(options.metadataPath, status());
+    if (options.generation) {
+      const state = await readLifecycle();
+      state.active!.phase = 'ready';
+      await writeLifecycle(state);
+    }
     claimed = true;
   });
   if (!claimed) {
@@ -229,18 +254,31 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
 
 export async function cleanupDaemonArtifactsIfOwned(
   paths: Pick<DaemonHostOptions, 'metadataPath' | 'socketPath'>,
-  ownerPid: number
+  ownerPid: number,
+  ownerGeneration?: string
 ): Promise<void> {
-  const metadata = await fs
-    .readFile(paths.metadataPath, 'utf8')
-    .then((raw) => JSON.parse(raw) as { pid: number; socketPath: string })
-    .catch(() => undefined);
-  if (metadata?.pid !== ownerPid || metadata.socketPath !== paths.socketPath) return;
-  if (process.platform !== 'win32')
-    await fs.unlink(paths.socketPath).catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== 'ENOENT') throw error;
-    });
-  await fs.unlink(paths.metadataPath);
+  await withFileLock(paths.metadataPath, async () => {
+    const metadata = await fs
+      .readFile(paths.metadataPath, 'utf8')
+      .then((raw) => JSON.parse(raw) as { pid: number; socketPath: string })
+      .catch(() => undefined);
+    if (
+      metadata?.pid !== ownerPid ||
+      metadata.socketPath !== paths.socketPath ||
+      (ownerGeneration !== undefined && (metadata as { generation?: string }).generation !== ownerGeneration)
+    )
+      return;
+    if (process.platform !== 'win32')
+      await fs.unlink(paths.socketPath).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error;
+      });
+    const state = await readLifecycle();
+    if (state.active && state.active.generation === (metadata as { generation?: string }).generation) {
+      state.active.cleanExit = true;
+      await writeLifecycle(state);
+    }
+    await fs.unlink(paths.metadataPath);
+  });
 }
 
 function httpStatusSuffix(error: unknown): string {

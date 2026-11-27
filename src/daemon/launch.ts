@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +10,8 @@ export interface DaemonLaunchOptions {
   readonly socketPath: string;
   readonly metadataPath: string;
   readonly extraArgs?: string[];
+  readonly generation?: string;
+  readonly foreground?: boolean;
 }
 
 interface DaemonLaunchProcessInfo {
@@ -26,19 +28,22 @@ interface DaemonLaunchInvocation {
   readonly env: NodeJS.ProcessEnv;
 }
 
-export async function launchDaemonDetached(options: DaemonLaunchOptions, launch: typeof spawn = spawn): Promise<void> {
+export async function launchDaemonDetached(
+  options: DaemonLaunchOptions,
+  launch: typeof spawn = spawn
+): Promise<ChildProcess> {
   const invocation = buildDaemonLaunchInvocation(options);
   try {
-    await new Promise<void>((resolve, reject) => {
+    return await new Promise<ChildProcess>((resolve, reject) => {
       const child = launch(invocation.command, invocation.args, {
         detached: true,
-        stdio: 'ignore',
+        stdio: options.foreground ? 'inherit' : 'ignore',
         env: invocation.env,
       });
       // Keep handling late errors after spawn; readiness is checked by the caller.
       child.on('error', reject);
-      child.once('spawn', resolve);
-      child.unref();
+      child.once('spawn', () => resolve(child));
+      if (!options.foreground) child.unref();
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -68,6 +73,7 @@ export function buildDaemonLaunchInvocation(
   const env = {
     ...processInfo.env,
     MCPORTER_DAEMON_CHILD: '1',
+    ...(options.generation ? { MCPORTER_DAEMON_GENERATION: options.generation, MCPORTER_DAEMON_WORKER: '' } : {}),
     MCPORTER_DISABLE_AUTORUN: '0',
     MCPORTER_DAEMON_SOCKET: options.socketPath,
     MCPORTER_DAEMON_METADATA: options.metadataPath,

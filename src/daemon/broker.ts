@@ -71,14 +71,21 @@ export class ExpiredViewError extends BrokerError {
   }
 }
 
+export class GenerationChangedError extends BrokerError {
+  constructor() {
+    super('daemon_generation_changed', 'Daemon generation changed before dispatch; register a new view.');
+  }
+}
+
 export class DaemonBroker {
-  readonly generation = randomUUID();
+  readonly generation: string;
   private readonly views = new Map<string, View>();
   private readonly entries = new Map<string, Entry>();
   private readonly owner: BrowserOwner;
   private draining = false;
   private activeRequests = 0;
-  constructor(canonical: readonly ServerDefinition[] = []) {
+  constructor(canonical: readonly ServerDefinition[] = [], generation: string = randomUUID()) {
+    this.generation = generation;
     this.owner = new BrowserOwner(canonical);
   }
 
@@ -102,11 +109,7 @@ export class DaemonBroker {
     this.views.delete(request.view!);
   }
   private getView(request: DaemonRequest): View {
-    if (request.generation !== this.generation)
-      throw new BrokerError(
-        'daemon_generation_changed',
-        'Daemon generation changed; register before a new operation. The request was not replayed.'
-      );
+    if (request.generation !== this.generation) throw new GenerationChangedError();
     const view = this.views.get(request.view ?? '');
     if (!view) throw new ExpiredViewError();
     view.lastUsed = Date.now();

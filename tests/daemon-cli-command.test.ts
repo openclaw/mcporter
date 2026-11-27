@@ -2,6 +2,7 @@ import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CliUsageError } from '../src/cli/errors.js';
 
+const ensureDaemonMock = vi.fn();
 const stopMock = vi.fn();
 const statusMock = vi.fn();
 const mkdirMock = vi.fn();
@@ -67,6 +68,7 @@ const { handleDaemonCli } = await import('../src/cli/daemon-command.js');
 
 describe('daemon CLI restart', () => {
   beforeEach(() => {
+    ensureDaemonMock.mockReset().mockResolvedValue(undefined);
     stopMock.mockReset();
     statusMock.mockReset();
     mkdirMock.mockReset();
@@ -84,6 +86,7 @@ describe('daemon CLI restart', () => {
     });
     DaemonClientMock.mockImplementation(function MockDaemonClient() {
       return {
+        ensureDaemon: ensureDaemonMock,
         stop: stopMock,
         status: statusMock,
       };
@@ -115,6 +118,7 @@ describe('daemon CLI restart', () => {
       await handleDaemonCli(args, { configPath: '/tmp/config.json', configExplicit: true });
       expect(log).toHaveBeenCalledWith(expect.stringContaining('Usage: mcporter daemon'));
       expect(DaemonClientMock).not.toHaveBeenCalled();
+      expect(ensureDaemonMock).not.toHaveBeenCalled();
       expect(stopMock).not.toHaveBeenCalled();
       expect(statusMock).not.toHaveBeenCalled();
       expect(mkdirMock).not.toHaveBeenCalled();
@@ -142,13 +146,14 @@ describe('daemon CLI restart', () => {
       configExplicit: true,
     });
 
-    expect(runDaemonHostMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        logPath: flag === '--log-file' ? path.resolve(value) : '/tmp/mock-daemon.log',
-        logServers: new Set(flag === '--log-servers' ? [value] : []),
-        logAllServers: flag === '--log-file',
-      })
-    );
+    expect(ensureDaemonMock).toHaveBeenCalledWith(undefined, {
+      foreground: true,
+      extraArgs: [
+        '--log-file',
+        flag === '--log-file' ? path.resolve(value) : '/tmp/mock-daemon.log',
+        ...(flag === '--log-servers' ? ['--log-servers', value] : []),
+      ],
+    });
     expect(stopMock).toHaveBeenCalledTimes(command === 'restart' ? 1 : 0);
   });
 
@@ -162,12 +167,8 @@ describe('daemon CLI restart', () => {
     await handleDaemonCli(['restart', '--log'], { configPath: '/tmp/config.json', configExplicit: true });
 
     expect(stopMock).toHaveBeenCalledTimes(1);
-    expect(launchDaemonDetachedMock).toHaveBeenCalledWith({
-      configPath: '/tmp/config.json',
-      configExplicit: true,
-      rootDir: undefined,
-      metadataPath: '/tmp/meta',
-      socketPath: '/tmp/socket',
+    expect(ensureDaemonMock).toHaveBeenCalledWith(undefined, {
+      foreground: false,
       extraArgs: ['--log-file', '/tmp/mock-daemon.log'],
     });
   });
@@ -181,7 +182,7 @@ describe('daemon CLI restart', () => {
     await handleDaemonCli(['restart'], { configPath: '/tmp/config.json', configExplicit: false });
 
     expect(createRuntimeMock).not.toHaveBeenCalled();
-    expect(launchDaemonDetachedMock).toHaveBeenCalledOnce();
+    expect(ensureDaemonMock).toHaveBeenCalledOnce();
   });
 
   it('prints help, rejects unknown commands, and stops directly', async () => {
@@ -257,26 +258,21 @@ describe('daemon CLI restart', () => {
     });
 
     expect(mkdirMock).toHaveBeenCalled();
-    expect(runDaemonHostMock).toHaveBeenCalledWith({
-      socketPath: '/tmp/socket',
-      metadataPath: '/tmp/meta',
-      configPath: '/tmp/config.json',
-      configExplicit: true,
-      rootDir: '/tmp/root',
-      logPath: '/tmp/mock-daemon.log',
-      logServers: new Set(['alpha', 'beta']),
-      logAllServers: false,
+    expect(ensureDaemonMock).toHaveBeenCalledWith(undefined, {
+      foreground: true,
+      extraArgs: ['--log-file', '/tmp/mock-daemon.log', '--log-servers', 'alpha,beta'],
     });
     expect(launchDaemonDetachedMock).not.toHaveBeenCalled();
   });
 
-  it('reports an already running daemon without launching another', async () => {
+  it('delegates readiness to the shared coordinator without launching independently', async () => {
     statusMock.mockResolvedValue({ pid: 99, servers: [], socketPath: '/tmp/socket' });
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
       await handleDaemonCli(['start'], { configPath: '/tmp/config.json' });
       expect(launchDaemonDetachedMock).not.toHaveBeenCalled();
-      expect(log).toHaveBeenCalledWith('Daemon already running (pid 99).');
+      expect(ensureDaemonMock).toHaveBeenCalledOnce();
+      expect(log).toHaveBeenCalledWith('Single-user daemon ready.');
     } finally {
       log.mockRestore();
     }
@@ -287,11 +283,11 @@ describe('daemon CLI restart', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
       await handleDaemonCli(['start', '--log-file', './daemon.log'], { configPath: '/tmp/config.json' });
-      expect(launchDaemonDetachedMock).toHaveBeenCalledWith(
-        expect.objectContaining({ extraArgs: ['--log-file', expect.stringMatching(/daemon\.log$/u)] })
-      );
-      expect(waitForDaemonReadyMock).toHaveBeenCalledOnce();
-      expect(log).toHaveBeenCalledWith('Single-user daemon started.');
+      expect(ensureDaemonMock).toHaveBeenCalledWith(undefined, {
+        foreground: false,
+        extraArgs: ['--log-file', expect.stringMatching(/daemon\.log$/u)],
+      });
+      expect(log).toHaveBeenCalledWith('Single-user daemon ready.');
     } finally {
       log.mockRestore();
     }

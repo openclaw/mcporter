@@ -16,6 +16,8 @@ import { childEnvWithoutVaultSecrets } from '../oauth-vault-encryption.js';
 const BROKER_ENV = new Set([
   'MCPORTER_DAEMON_DIR',
   'MCPORTER_DAEMON_CHILD',
+  'MCPORTER_DAEMON_GENERATION',
+  'MCPORTER_DAEMON_WORKER',
   'MCPORTER_DAEMON_SOCKET',
   'MCPORTER_DAEMON_METADATA',
   'MCPORTER_CONFIG',
