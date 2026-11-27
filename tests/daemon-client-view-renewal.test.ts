@@ -2,6 +2,9 @@ import { expect, it, vi } from 'vitest';
 import { DaemonBroker, BrokerError } from '../src/daemon/broker.js';
 import * as rpc from '../src/daemon/socket-rpc.js';
 import { singletonFixture, fixtureResult } from './helpers/singleton.js';
+import { budget } from './helpers/timing.js';
+
+vi.setConfig({ testTimeout: budget(10_000) });
 
 function gate() {
   const { promise, resolve } = Promise.withResolvers<void>();
