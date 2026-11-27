@@ -36,15 +36,18 @@ app: com.android.launcher3
 ...
 ```
 
-Open Settings and wait for a label, then delete the phone:
+Put the id it printed for you into `PHONE`, then open Settings, wait for a label and delete that phone:
 
 ```sh
-node dist/cli.js --config examples/mobilebox/mcporter.json call mobilebox.act \
-  --args '{"phone_id":"ph_km257oxpjhhv","actions":[{"type":"open_app","package":"com.android.settings"},{"type":"wait_for","text":"Network"}]}'
+PHONE=ph_km257oxpjhhv   # replace with the id your create_phone printed
 
-node dist/cli.js --config examples/mobilebox/mcporter.json call mobilebox.delete_phone \
-  --args '{"phone_id":"ph_km257oxpjhhv"}'
+node dist/cli.js --config examples/mobilebox/mcporter.json call mobilebox.act phone_id="$PHONE" \
+  actions='[{"type":"open_app","package":"com.android.settings"},{"type":"wait_for","text":"Network"}]'
+
+node dist/cli.js --config examples/mobilebox/mcporter.json call mobilebox.delete_phone phone_id="$PHONE"
 ```
+
+Lost the id? `call mobilebox.list_phones` lists your running phones, so none keeps billing unnoticed.
 
 `act` runs up to 20 actions in order (`tap`, `type`, `swipe`, `open_app`, `wait_for`, …) and returns the new screen; target elements by their text, e.g. `{"type":"tap","target":{"text":"Battery"}}`. For an iPhone simulator pass `{"platform":"ios"}` to `create_phone`. Add `--output json` when processing results in a script.
 
