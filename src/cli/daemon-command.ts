@@ -85,7 +85,7 @@ Commands:
            and retires verified owners (also works when old daemons are already stopped).
 
 Flags:
-  --foreground        Follow daemon output and wait for exit; Ctrl-C stops this generation.
+  --foreground        Follow daemon output and wait for exit (debug only); Ctrl-C stops this generation.
   --json              Print machine-readable status.
   --log               Enable bounded operation logging (OS-user .mcporter/daemon/user.log).
   --log-file <path>   Write daemon stdout/stderr to a specific log file.
