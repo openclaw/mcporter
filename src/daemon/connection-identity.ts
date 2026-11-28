@@ -16,6 +16,8 @@ import { childEnvWithoutVaultSecrets } from '../oauth-vault-encryption.js';
 const BROKER_ENV = new Set([
   'MCPORTER_DAEMON_DIR',
   'MCPORTER_DAEMON_CHILD',
+  'MCPORTER_DAEMON_GENERATION',
+  'MCPORTER_DAEMON_WORKER',
   'MCPORTER_DAEMON_SOCKET',
   'MCPORTER_DAEMON_METADATA',
   'MCPORTER_CONFIG',
@@ -71,7 +73,14 @@ export async function effectiveDefinition(
     if (!Object.hasOwn(configuredEnv, 'PWD')) env.PWD = command.cwd;
     if (!Object.hasOwn(configuredEnv, 'SHLVL')) delete env.SHLVL;
   }
-  return { ...definition, command, env, configuredEnv, ...(chrome ? { launchCommand } : {}) };
+  return {
+    ...definition,
+    ...(definition.tokenCacheDir ? { tokenCacheDir: path.resolve(definition.tokenCacheDir) } : {}),
+    command,
+    env,
+    configuredEnv,
+    ...(chrome ? { launchCommand } : {}),
+  };
 }
 
 export function normalizeChromeEnvironment(definition: ServerDefinition, env: Record<string, string>): void {

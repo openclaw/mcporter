@@ -252,7 +252,7 @@ describe('mcporter CLI with completely empty environment (ENOENT regression)', (
     try {
       await expect(runCli(['daemon', 'start'])).resolves.not.toThrow();
       expect(warnSpy).not.toHaveBeenCalled();
-      expect(logs.join('\n')).toContain('Single-user daemon started.');
+      expect(logs.join('\n')).toContain('Single-user daemon ready.');
     } finally {
       await runCli(['daemon', 'stop']);
       logSpy.mockRestore();

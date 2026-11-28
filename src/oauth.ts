@@ -1,4 +1,5 @@
-import { spawn } from 'node:child_process';
+import { openExternal } from './open-browser.js';
+import { authorizationBrowser } from './oauth-browser-context.js';
 import { createHash, randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { URL } from 'node:url';
@@ -102,39 +103,6 @@ export class OAuthRedirectUriMismatchError extends Error {
   constructor(serverName: string) {
     super(`OAuth client registration for '${serverName}' used an obsolete redirect URI.`);
     this.name = 'OAuthRedirectUriMismatchError';
-  }
-}
-
-// openExternal attempts to launch the system browser cross-platform.
-function openExternal(url: string, platform: NodeJS.Platform = process.platform, launch: typeof spawn = spawn) {
-  const stdio = 'ignore';
-  try {
-    if (platform === 'darwin') {
-      const child = launch('open', [url], { stdio, detached: true });
-      child.on('error', () => {}); // swallow ENOENT when `open` is missing
-      child.unref();
-    } else if (platform === 'win32') {
-      // Shell-free: do not pass the OAuth URL through cmd.exe. Command metacharacters
-      // such as `&` in query strings are still parsed by cmd even when argv is split.
-      // rundll32 FileProtocolHandler treats the URL as a document path, not command text.
-      const child = launch('rundll32', ['url.dll,FileProtocolHandler', url], {
-        stdio,
-        detached: true,
-        windowsHide: true,
-      });
-      child.on('error', () => {}); // swallow ENOENT when rundll32 is missing
-      child.unref();
-    } else {
-      try {
-        const child = launch('xdg-open', [url], { stdio, detached: true });
-        child.on('error', () => {}); // swallow ENOENT on headless servers
-        child.unref();
-      } catch {
-        // headless server — no browser available
-      }
-    }
-  } catch {
-    // best-effort: fall back to printing URL
   }
 }
 
@@ -492,6 +460,16 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       authorizationUrl: authorizationUrl.toString(),
       redirectUrl: this.redirectUrlValue.toString(),
     } satisfies OAuthAuthorizationRequest;
+    const browser = authorizationBrowser.getStore();
+    if (browser || process.env.MCPORTER_DAEMON_CHILD === '1') {
+      const open = !(this.options.suppressBrowserLaunch ?? suppressBrowserLaunchFromEnv());
+      if (browser?.(request, open)) return;
+      const deferred = this.ensureAuthorizationDeferred();
+      deferred.promise.catch(() => {});
+      deferred.reject(new BrowserLaunchSuppressedError(this.definition.name));
+      this.clearInteractiveAuthorization();
+      return;
+    }
     if (this.options.suppressBrowserLaunch ?? suppressBrowserLaunchFromEnv()) {
       if (this.options.onAuthorizationUrl) {
         await this.options.onAuthorizationUrl(request);

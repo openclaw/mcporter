@@ -1,7 +1,7 @@
 import type { ChromeDevtoolsRelayDecision } from '../chrome-devtools-relay.js';
 import { normalizeTimeout } from '../runtime/utils.js';
 
-export const DAEMON_PROTOCOL_VERSION = 3;
+export const DAEMON_PROTOCOL_VERSION = 4;
 export const MAX_DAEMON_PAYLOAD_BYTES = 4 * 1024 * 1024;
 export const DAEMON_OPERATION_TIMEOUT_CODE = 'operation_timeout';
 export const DAEMON_OAUTH_FLOW_ERROR_CODE = 'oauth_flow_error';
@@ -31,6 +31,7 @@ export function resolveProgressTiming(requestedIdleTimeoutMs: number): {
 }
 
 export type DaemonRequestMethod =
+  | 'bootstrap'
   | 'registerView'
   | 'releaseView'
   | 'callTool'
@@ -49,6 +50,7 @@ export interface DaemonRequest<T extends DaemonRequestMethod = DaemonRequestMeth
   /** Protocol v2 clients opt in to progress frames by sending both fields. */
   readonly protocolVersion?: number;
   readonly progressIntervalMs?: number;
+  readonly vault?: { readonly password?: string; readonly policy?: string };
   readonly view?: string;
   readonly generation?: string;
 }

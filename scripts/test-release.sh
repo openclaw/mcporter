@@ -108,7 +108,10 @@ done
 mkdir -p "$(dirname "$output")"
 cat >"$output" <<EOF
 #!/usr/bin/env bash
-[[ "\${1:-}" == --version ]] && echo "$(node -p "require('$MCPORTER_TEST_ROOT/package.json').version")"
+if [[ "\${1:-}" == --version ]]; then echo "$(node -p "require('$MCPORTER_TEST_ROOT/package.json').version")"; fi
+if [[ " \$* " == *' daemon '* ]]; then printf 'candidate-daemon %s\n' "\$*" >>"\$MOCK_LOG"; fi
+if [[ "\${MOCK_DAEMON_STATUS_FAIL:-0}" == 1 && " \$* " == *' daemon status '* ]]; then exit 1; fi
+exit 0
 EOF
 chmod 755 "$output"
 MOCK
@@ -127,7 +130,9 @@ if [[ "${1:-}" == clean ]]; then
 fi
 if [[ "${1:-}" == build ]]; then
   version=$(node -p "require('$MCPORTER_TEST_ROOT/package.json').version")
-  mkdir -p "$MCPORTER_TEST_ROOT/dist"
+  mkdir -p "$MCPORTER_TEST_ROOT/dist/native/darwin_arm64" "$MCPORTER_TEST_ROOT/dist/native/darwin_x64"
+  printf native >"$MCPORTER_TEST_ROOT/dist/native/darwin_arm64/koffi.node"
+  printf native >"$MCPORTER_TEST_ROOT/dist/native/darwin_x64/koffi.node"
   cat >"$MCPORTER_TEST_ROOT/dist/cli.js" <<EOF
 #!/usr/bin/env node
 if (process.argv[2] === '--version') console.log('$version');
@@ -396,8 +401,15 @@ env -u MCP_RUNNER \
   MAC_RELEASE_CODESIGN_IDENTITY="$EXPECTED_IDENTITY" \
   NOTARYTOOL_KEYCHAIN_PROFILE=mock-profile \
   "$ROOT/scripts/package-release.sh" "$TAG"
-[[ "$(grep -c '^sign ' "$MOCK_LOG")" == 2 ]] || fail 'dual-architecture signing count mismatch'
+[[ "$(grep -c '^sign ' "$MOCK_LOG")" == 4 ]] || fail 'addon and dual-architecture signing count mismatch'
 [[ "$(grep -c '^notary-submit$' "$MOCK_LOG")" == 2 ]] || fail 'dual-architecture notarization count mismatch'
+
+: >"$MOCK_LOG"
+assert_fails env -u GH_TOKEN -u GITHUB_TOKEN \
+  MOCK_DAEMON_STATUS_FAIL=1 MCPORTER_VERIFY_EXEC_ARCH=all \
+  "$ROOT/scripts/verify-release.sh" "$TAG" "$release_out"
+grep -q '^candidate-daemon .* daemon stop' "$MOCK_LOG" || fail 'failed daemon smoke did not attempt cleanup'
+
 
 expected_inventory=$(printf '%s\n' \
   "mcporter_${VERSION}_darwin_arm64.tar.gz" \

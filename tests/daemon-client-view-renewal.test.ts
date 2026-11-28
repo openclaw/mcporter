@@ -2,6 +2,9 @@ import { expect, it, vi } from 'vitest';
 import { DaemonBroker, BrokerError } from '../src/daemon/broker.js';
 import * as rpc from '../src/daemon/socket-rpc.js';
 import { singletonFixture, fixtureResult } from './helpers/singleton.js';
+import { budget } from './helpers/timing.js';
+
+vi.setConfig({ testTimeout: budget(10_000) });
 
 function gate() {
   const { promise, resolve } = Promise.withResolvers<void>();
@@ -147,7 +150,7 @@ for (const action of ['replacement', 'close'] as const)
     }
   });
 
-it('does not replay across a daemon generation change and releases the replacement handle', async () => {
+it('renews across a generation change only after confirmed pre-dispatch rejection', async () => {
   const f = await singletonFixture();
   // oxlint-disable-next-line typescript/unbound-method -- Rebound to the intercepted broker with call below.
   const register = DaemonBroker.prototype.register;
@@ -171,11 +174,9 @@ it('does not replay across a daemon generation change and releases the replaceme
     await client.callTool({ server: 'fixture', tool: 'identity' });
     clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 16 * 60_000);
     expect(f.host.status().views).toBe(0);
-    await expect(client.callTool({ server: 'fixture', tool: 'identity' })).rejects.toMatchObject({
-      code: 'daemon_generation_changed',
-    });
+    await expect(client.callTool({ server: 'fixture', tool: 'identity' })).resolves.toBeDefined();
     await client.release();
-    expect(spy.mock.calls.filter(([, request]) => request.method === 'callTool')).toHaveLength(2);
+    expect(spy.mock.calls.filter(([, request]) => request.method === 'callTool')).toHaveLength(3);
     expect(registrations).toBe(2);
     expect(
       spy.mock.calls
@@ -193,3 +194,45 @@ it('does not replay across a daemon generation change and releases the replaceme
     await f.close();
   }
 });
+
+for (const action of ['replacement', 'close'] as const)
+  it(`does not register an old view when ${action} happens while registration recovery waits`, async () => {
+    const f = await singletonFixture();
+    const client = f.client();
+    const recovering = gate(),
+      resume = gate();
+    let ensures = 0;
+    const ensure = vi.spyOn(client, 'ensureDaemon').mockImplementation(async () => {
+      if (++ensures === 2) {
+        recovering.open();
+        await resume.promise;
+      }
+    });
+    const actual = rpc.requestDaemon;
+    const spy = vi.spyOn(rpc, 'requestDaemon').mockImplementation(async (...args) => {
+      if (args[1].method === 'registerView')
+        throw Object.assign(new Error('registration connection lost'), { code: 'ECONNRESET' });
+      return actual(...args);
+    });
+    let pending: Promise<unknown> | undefined;
+    try {
+      pending = expect(client.callTool({ server: 'fixture', tool: 'identity' })).rejects.toThrow(
+        'registration connection lost'
+      );
+      await recovering.promise;
+      if (action === 'replacement') client.setDefinitions([{ ...f.definition, env: { VALUE: 'replacement' } }]);
+      const closing = action === 'close' ? client.release() : undefined;
+      resume.open();
+      await pending;
+      await closing;
+      expect(spy.mock.calls.filter(([, request]) => request.method === 'registerView')).toHaveLength(1);
+      expect(spy.mock.calls.filter(([, request]) => request.method === 'callTool')).toHaveLength(0);
+    } finally {
+      resume.open();
+      await pending;
+      ensure.mockRestore();
+      spy.mockRestore();
+      await client.release();
+      await f.close();
+    }
+  });

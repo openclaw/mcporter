@@ -1,6 +1,8 @@
+import { nativeAddonPlugin, bunNativeAddonPlugin } from './native-addon-plugin.js';
 import { execFile } from 'node:child_process';
 import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import { builtinModules, createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -64,7 +66,7 @@ async function bundleWithRolldown({
   }
   const absTarget = path.resolve(targetPath);
   await fs.mkdir(path.dirname(absTarget), { recursive: true });
-  const plugins = dependencyAliasPlugin ? [dependencyAliasPlugin] : undefined;
+  const plugins = [...(dependencyAliasPlugin ? [dependencyAliasPlugin] : []), nativeAddonPlugin()];
   const bundle = await rolldownImpl({
     input: sourcePath,
     treeshake: false,
@@ -133,7 +135,7 @@ async function bundleWithBun({
   const bunBin = await verifyBunAvailable();
   const absTarget = path.resolve(targetPath);
   await fs.mkdir(path.dirname(absTarget), { recursive: true });
-  const tmpRoot = path.join(packageRoot, 'tmp');
+  const tmpRoot = os.tmpdir();
   await fs.mkdir(tmpRoot, { recursive: true });
   const stagingDir = await fs.mkdtemp(path.join(tmpRoot, 'bundle-'));
   const stagingEntry = path.join(stagingDir, path.basename(sourcePath));
@@ -142,19 +144,34 @@ async function bundleWithBun({
   await safeCopyFile(sourcePath, stagingEntry);
   await ensureBundlerDeps(stagingDir);
   try {
-    const args = ['build', stagingEntry, '--outfile', absTarget, '--target', runtimeKind === 'bun' ? 'bun' : 'node'];
-    if (minify) {
-      args.push('--minify');
-    }
-    await new Promise<void>((resolve, reject) => {
-      execFile(bunBin, args, { cwd: stagingDir, env: process.env, windowsHide: true }, (error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
+    if (typeof Bun !== 'undefined') {
+      const result = await Bun.build({
+        entrypoints: [stagingEntry],
+        outdir: path.dirname(absTarget),
+        naming: path.basename(absTarget),
+        target: runtimeKind,
+        minify,
+        plugins: [bunNativeAddonPlugin()],
       });
-    });
+      if (!result.success) throw new Error(`Bun bundle failed: ${result.logs.map((log) => log.message).join('\n')}`);
+    } else {
+      const driver = path.join(stagingDir, 'build.mjs');
+      const pluginUrl = new URL('./native-addon-plugin.js', import.meta.url).href;
+      await fs.writeFile(
+        driver,
+        `import {bunNativeAddonPlugin} from ${JSON.stringify(pluginUrl)};const result=await Bun.build({entrypoints:[${JSON.stringify(stagingEntry)}],outdir:${JSON.stringify(path.dirname(absTarget))},naming:${JSON.stringify(path.basename(absTarget))},target:${JSON.stringify(runtimeKind)},minify:${minify},plugins:[bunNativeAddonPlugin()]});if(!result.success)throw new AggregateError(result.logs,'Bun bundle failed');`
+      );
+      const args = [driver];
+      await new Promise<void>((resolve, reject) => {
+        execFile(bunBin, args, { cwd: stagingDir, env: process.env, windowsHide: true }, (error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+    }
   } finally {
     await fs.rm(stagingDir, { recursive: true, force: true }).catch(() => {});
   }
@@ -299,7 +316,7 @@ async function ensureBundlerDeps(stagingDir: string): Promise<void> {
   await Promise.all(
     BUNDLED_DEPENDENCIES.map(async (specifier) => {
       const sourceDir = resolveDependencyDirectory(specifier);
-      if (!sourceDir) {
+      if (!sourceDir || !fsSync.existsSync(path.join(sourceDir, 'package.json'))) {
         return;
       }
       const target = path.join(nodeModulesDir, specifier);
@@ -384,6 +401,8 @@ function resolveDependencyDirectory(specifier: (typeof BUNDLED_DEPENDENCIES)[num
 }
 
 async function linkOrCopyDependency(sourceDir: string, targetDir: string): Promise<void> {
+  // npm runs outside Bun and cannot follow symlinks into its embedded filesystem.
+  if (sourceDir.startsWith('/$bunfs/') || /^[a-z]:[\\/][~$]BUN[\\/]/i.test(sourceDir)) return;
   try {
     await fs.symlink(sourceDir, targetDir, 'dir');
   } catch (error) {

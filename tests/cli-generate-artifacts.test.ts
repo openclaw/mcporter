@@ -520,3 +520,14 @@ describe('resolveBundleTarget', () => {
     );
   });
 });
+
+it('does not leave npm symlinks into a standalone Bun virtual filesystem', async () => {
+  const link = vi.spyOn(fsPromises, 'symlink');
+  try {
+    await artifactsTestHooks.linkOrCopyDependency('/$bunfs/root/package', '/unused/staging');
+    await artifactsTestHooks.linkOrCopyDependency('B:/~BUN/root/package', '/unused/staging');
+    expect(link).not.toHaveBeenCalled();
+  } finally {
+    link.mockRestore();
+  }
+});

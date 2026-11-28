@@ -108,6 +108,15 @@ npm_archive="mcporter-${release_version}.tgz"
   exit 1
 }
 
+# Sign the libraries with the CLI's Team ID before embedding them; keep the npm payload upstream-prebuilt.
+SIGNED_NATIVE_ASSETS="$BUILD_ROOT/native"
+cp -R "$ROOT/dist/native" "$SIGNED_NATIVE_ASSETS"
+for native_arch in arm64 x64; do
+  addon="$SIGNED_NATIVE_ASSETS/darwin_$native_arch/koffi.node"
+  codesign --force --timestamp --sign "${CODESIGN_IDENTITY:-${MAC_RELEASE_CODESIGN_IDENTITY:-}}" "$addon"
+  codesign --verify --strict -R='anchor apple generic and certificate leaf[subject.OU] = "FWJYW4S8P8"' "$addon"
+done
+
 architectures=(arm64 x86_64)
 targets=(bun-darwin-arm64 bun-darwin-x64-baseline)
 for index in "${!architectures[@]}"; do
@@ -118,7 +127,7 @@ for index in "${!architectures[@]}"; do
   archive_name="mcporter_${release_version}_darwin_${release_arch}.tar.gz"
   mkdir -p "$build_dir"
 
-  MACOSX_DEPLOYMENT_TARGET=13.0 run_build bun scripts/build-bun.ts --target "$target" --output "$binary"
+  MCPORTER_SIGNED_NATIVE_ASSETS_DIR="$SIGNED_NATIVE_ASSETS" MACOSX_DEPLOYMENT_TARGET=13.0 run_build bun scripts/build-bun.ts --target "$target" --output "$binary"
   "$ROOT/scripts/check-macos-minimum.sh" "$binary"
   MCPORTER_OFFICIAL_RELEASE=1 "$ROOT/scripts/codesign-native.sh" "$binary"
   tar -czf "$PAYLOAD/$archive_name" -C "$build_dir" mcporter

@@ -3,9 +3,12 @@ import { legacyDaemons, stopVerifiedLegacyDaemons } from '../daemon/migration.js
 import path from 'node:path';
 import { DaemonClient, resolveDaemonPaths } from '../daemon/client.js';
 import { runDaemonHost } from '../daemon/host.js';
-import { launchDaemonDetached } from '../daemon/launch.js';
+import { prepareManagedWorker } from '../daemon/managed-owner.js';
+import { receiveBootstrap } from '../daemon/bootstrap.js';
+import { generationExitPath } from '../daemon/service-manager.js';
+import { writeFileSync } from 'node:fs';
+import { isGeneration } from '../daemon/lifecycle-state.js';
 import { getDaemonLogPath, secureDaemonDirectory } from '../daemon/paths.js';
-import { waitForDaemonReady } from '../daemon/startup-readiness.js';
 import { expandHome } from '../env.js';
 import { CliUsageError } from './errors.js';
 import { isHelpToken } from './help-output.js';
@@ -82,7 +85,7 @@ Commands:
            and retires verified owners (also works when old daemons are already stopped).
 
 Flags:
-  --foreground        Run the daemon in the current process (debug only).
+  --foreground        Follow daemon output and wait for exit (debug only); Ctrl-C stops this generation.
   --json              Print machine-readable status.
   --log               Enable bounded operation logging (OS-user .mcporter/daemon/user.log).
   --log-file <path>   Write daemon stdout/stderr to a specific log file.
@@ -98,10 +101,30 @@ async function handleDaemonStart(args: string[], options: DaemonCliOptions, clie
   const socketPath = paths.socketPath;
   const metadataPath = paths.metadataPath;
   await secureDaemonDirectory();
+  if (isChildLaunch && isGeneration(process.env.MCPORTER_DAEMON_GENERATION)) {
+    const generation = process.env.MCPORTER_DAEMON_GENERATION;
+    await prepareManagedWorker(generation);
+    process.once('exit', (code) => {
+      try {
+        writeFileSync(generationExitPath(generation), JSON.stringify({ generation, code }), { mode: 0o600 });
+      } catch {}
+    });
+    await receiveBootstrap({ generation, socketPath, metadataPath });
+  }
   const logging = await resolveDaemonLoggingOptions(args, paths.key);
 
-  if (foreground) {
+  const forwardedArgs: string[] = [];
+  if (logging.enabled && logging.logPath) {
+    forwardedArgs.push('--log-file', logging.logPath);
+  }
+  if (logging.serverFilter.size > 0) {
+    forwardedArgs.push('--log-servers', Array.from(logging.serverFilter).join(','));
+  }
+
+  if (isChildLaunch && isGeneration(process.env.MCPORTER_DAEMON_GENERATION)) {
+    const generation = process.env.MCPORTER_DAEMON_GENERATION;
     await runDaemonHost({
+      generation,
       socketPath,
       metadataPath,
       configPath: options.configPath,
@@ -114,30 +137,8 @@ async function handleDaemonStart(args: string[], options: DaemonCliOptions, clie
     return;
   }
 
-  const existing = await client.status();
-  if (existing) {
-    console.log(`Daemon already running (pid ${existing.pid}).`);
-    return;
-  }
-
-  const forwardedArgs: string[] = [];
-  if (logging.enabled && logging.logPath) {
-    forwardedArgs.push('--log-file', logging.logPath);
-  }
-  if (logging.serverFilter.size > 0) {
-    forwardedArgs.push('--log-servers', Array.from(logging.serverFilter).join(','));
-  }
-
-  await launchDaemonDetached({
-    configPath: options.configPath,
-    configExplicit: options.configExplicit,
-    rootDir: options.rootDir,
-    metadataPath,
-    socketPath,
-    extraArgs: forwardedArgs,
-  });
-  await waitForDaemonReady((timeoutMs) => client.status(timeoutMs));
-  console.log('Single-user daemon started.');
+  await client.ensureDaemon(undefined, { extraArgs: forwardedArgs, foreground });
+  if (!foreground) console.log('Single-user daemon ready.');
 }
 
 async function handleDaemonRestart(args: string[], options: DaemonCliOptions, client: DaemonClient): Promise<void> {

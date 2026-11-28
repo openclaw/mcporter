@@ -1,3 +1,4 @@
+import { authorizationBrowser } from '../oauth-browser-context.js';
 import { SdkHttpError } from '@modelcontextprotocol/client';
 import { ChromeDevtoolsRelayDiscoveryError } from '../chrome-devtools-relay.js';
 import { idleTimerDelay } from './idle-timer.js';
@@ -5,16 +6,19 @@ import fs from 'node:fs/promises';
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { withFileLock, writeJsonFile } from '../fs-json.js';
-import { DaemonBroker, BrokerError, ExpiredViewError } from './broker.js';
+import { DaemonBroker, BrokerError, ExpiredViewError, GenerationChangedError } from './broker.js';
 import { canonicalUserConfiguration } from './browser-owner.js';
 import { assertLegacyDrained } from './migration.js';
 import { ProcessObservationError } from './process-retirement.js';
+import { generationOutputPath, generationExitPath } from './service-manager.js';
 import { secureDaemonDirectory } from './paths.js';
 import { authenticateServer, daemonKey, requestDaemon, SocketFrames } from './socket-rpc.js';
+import { readLifecycle, writeLifecycle } from './lifecycle-state.js';
 import { createLogContext, disposeLogContext, logEvent } from './log-context.js';
 import { DAEMON_PROTOCOL_VERSION, resolveProgressInterval, type DaemonRequest, type StatusResult } from './protocol.js';
 
 export interface DaemonHostOptions {
+  readonly generation?: string;
   readonly socketPath: string;
   readonly metadataPath: string;
   readonly configPath: string;
@@ -34,7 +38,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
   await assertLegacyDrained();
   const key = await daemonKey();
   const canonical = await canonicalUserConfiguration();
-  const broker = new DaemonBroker(canonical.definitions);
+  const broker = new DaemonBroker(canonical.definitions, options.generation);
   const log = createLogContext({
     enabled: Boolean(options.logPath),
     logPath: options.logPath,
@@ -53,6 +57,17 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
     idleTimeoutMs: canonical.idleTimeoutMs,
     idleShutdownBlocked: !broker.canIdleShutdown(),
   });
+  const outputTimer =
+    options.generation && process.platform !== 'win32'
+      ? setInterval(() => {
+          void (async () => {
+            const file = generationOutputPath(options.generation!);
+            const info = await fs.stat(file);
+            if (info.size > 1024 * 1024) await fs.truncate(file, 0);
+          })().catch(() => {});
+        }, 1000)
+      : undefined;
+  outputTimer?.unref();
   let shuttingDown = false;
   let closing: Promise<void> | undefined;
   let lastActivity = Date.now();
@@ -79,11 +94,15 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
       await broker.close();
       shuttingDown = true;
       clearTimeout(idleTimer);
+      clearInterval(outputTimer);
       process.off('SIGINT', onSignal);
       process.off('SIGTERM', onSignal);
       server.close();
-      await cleanupDaemonArtifactsIfOwned(options, process.pid);
+      await cleanupDaemonArtifactsIfOwned(options, process.pid, broker.generation);
       await disposeLogContext(log);
+      // A Windows coordinator may close the Job before Node emits its exit event.
+      if (options.generation)
+        await writeJsonFile(generationExitPath(options.generation), { generation: options.generation, code: 0 });
       key.fill(0);
     })().catch((error: unknown) => {
       closing = undefined;
@@ -117,6 +136,13 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
           timer = setInterval(() => {
             if (!socket.destroyed) frames.write({ type: 'progress', id });
           }, resolveProgressInterval(request.progressIntervalMs));
+        if (options.generation && request.method !== 'status' && request.method !== 'stop') {
+          await withFileLock(options.metadataPath, async () => {
+            const state = await readLifecycle();
+            if (!state.active || state.active.generation !== options.generation || state.active.phase !== 'ready')
+              throw new GenerationChangedError();
+          });
+        }
         let result: unknown;
         let notices: string[] = [];
         const activityServer = 'server' in request.params ? request.params.server : undefined;
@@ -128,7 +154,26 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
           case 'status':
             result = status();
             break;
+          case 'bootstrap':
+            if (request.generation !== broker.generation) throw new GenerationChangedError();
+            result = true;
+            break;
           case 'registerView':
+            if (request.vault) {
+              const { password, policy } = request.vault;
+              if (
+                (password !== undefined &&
+                  (typeof password !== 'string' || password !== process.env.MCPORTER_VAULT_PASSWORD)) ||
+                (policy !== undefined &&
+                  (typeof policy !== 'string' ||
+                    policy.trim().toLowerCase() !==
+                      (process.env.MCPORTER_VAULT_ENCRYPTION ?? 'optional').trim().toLowerCase()))
+              )
+                throw new BrokerError(
+                  'daemon_vault_context_mismatch',
+                  'Daemon vault settings differ from this client. Drain and restart the daemon with the intended vault environment.'
+                );
+            }
             result = broker.register(request.params);
             break;
           case 'releaseView':
@@ -141,7 +186,20 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
             break;
           default:
             if (logActivity) logEvent(log, `${request.method} start`);
-            ({ result, notices } = await broker.invokeWithNotices(request));
+            ({ result, notices } = await authorizationBrowser.run(
+              (authorization, open) => {
+                if (!open || socket.destroyed || socket.writableEnded) return false;
+                frames.write({
+                  type: 'authorization',
+                  id,
+                  authorizationUrl: authorization.authorizationUrl,
+                  redirectUrl: authorization.redirectUrl,
+                  open,
+                });
+                return true;
+              },
+              () => broker.invokeWithNotices(request)
+            ));
             if (logActivity) logEvent(log, `${request.method} success`);
         }
         frames.write({ id, ok: true, result, notices });
@@ -158,7 +216,13 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
         frames.write({
           id,
           ok: false,
-          error: { code, message, ...(error instanceof ExpiredViewError ? { retry: 'renew_view' as const } : {}) },
+          error: {
+            code,
+            message,
+            ...(error instanceof ExpiredViewError || error instanceof GenerationChangedError
+              ? { retry: 'renew_view' as const }
+              : {}),
+          },
         });
         socket.end();
       } finally {
@@ -183,6 +247,11 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code !== 'ENOENT' && code !== 'ECONNREFUSED') throw error;
+    }
+    if (options.generation) {
+      const state = await readLifecycle();
+      if (state.active?.generation !== options.generation || state.active.phase !== 'starting')
+        throw new Error('Daemon launch reservation expired.');
     }
     if (live) {
       await writeJsonFile(options.metadataPath, live);
@@ -213,9 +282,15 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
     });
     if (process.platform !== 'win32') await fs.chmod(options.socketPath, 0o600);
     await writeJsonFile(options.metadataPath, status());
+    if (options.generation) {
+      const state = await readLifecycle();
+      state.active!.phase = 'ready';
+      await writeLifecycle(state);
+    }
     claimed = true;
   });
   if (!claimed) {
+    clearInterval(outputTimer);
     server.close();
     await disposeLogContext(log);
     key.fill(0);
@@ -229,18 +304,31 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<DaemonH
 
 export async function cleanupDaemonArtifactsIfOwned(
   paths: Pick<DaemonHostOptions, 'metadataPath' | 'socketPath'>,
-  ownerPid: number
+  ownerPid: number,
+  ownerGeneration?: string
 ): Promise<void> {
-  const metadata = await fs
-    .readFile(paths.metadataPath, 'utf8')
-    .then((raw) => JSON.parse(raw) as { pid: number; socketPath: string })
-    .catch(() => undefined);
-  if (metadata?.pid !== ownerPid || metadata.socketPath !== paths.socketPath) return;
-  if (process.platform !== 'win32')
-    await fs.unlink(paths.socketPath).catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== 'ENOENT') throw error;
-    });
-  await fs.unlink(paths.metadataPath);
+  await withFileLock(paths.metadataPath, async () => {
+    const metadata = await fs
+      .readFile(paths.metadataPath, 'utf8')
+      .then((raw) => JSON.parse(raw) as { pid: number; socketPath: string })
+      .catch(() => undefined);
+    if (
+      metadata?.pid !== ownerPid ||
+      metadata.socketPath !== paths.socketPath ||
+      (ownerGeneration !== undefined && (metadata as { generation?: string }).generation !== ownerGeneration)
+    )
+      return;
+    if (process.platform !== 'win32')
+      await fs.unlink(paths.socketPath).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error;
+      });
+    const state = await readLifecycle();
+    if (state.active && state.active.generation === (metadata as { generation?: string }).generation) {
+      state.active.cleanExit = true;
+      await writeLifecycle(state);
+    }
+    await fs.unlink(paths.metadataPath);
+  });
 }
 
 function httpStatusSuffix(error: unknown): string {

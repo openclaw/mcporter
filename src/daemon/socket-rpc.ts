@@ -1,3 +1,4 @@
+import { openExternal } from '../open-browser.js';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs/promises';
 import net from 'node:net';
@@ -6,27 +7,42 @@ import { withFileLock } from '../fs-json.js';
 import { daemonRunDir, secureDaemonDirectory } from './paths.js';
 import { MAX_DAEMON_PAYLOAD_BYTES, type DaemonRequest, type DaemonResponse } from './protocol.js';
 
-export async function daemonKey(): Promise<Buffer> {
+export async function daemonKey(timeoutMs?: number): Promise<Buffer> {
   await secureDaemonDirectory();
   const file = path.join(daemonRunDir(), 'user.key');
-  return withFileLock(file, async () => {
-    try {
-      await fs.writeFile(file, randomBytes(32), { flag: 'wx', mode: 0o600 });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-    }
-    const info = await fs.lstat(file);
-    if (
-      !info.isFile() ||
-      info.isSymbolicLink() ||
-      (process.platform !== 'win32' && (info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0))
-    )
-      throw new Error('Unsafe daemon authentication key ownership.');
-    const key = await fs.readFile(file);
-    if (key.length !== 32) throw new Error('Invalid daemon authentication key.');
-    return key;
-  });
+  try {
+    return await readDaemonKey(file);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && !(error instanceof InvalidDaemonKeyError)) throw error;
+  }
+  return withFileLock(
+    file,
+    async () => {
+      try {
+        await fs.writeFile(file, randomBytes(32), { flag: 'wx', mode: 0o600 });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      }
+      return readDaemonKey(file);
+    },
+    { timeoutMs }
+  );
 }
+
+async function readDaemonKey(file: string): Promise<Buffer> {
+  const info = await fs.lstat(file);
+  if (
+    !info.isFile() ||
+    info.isSymbolicLink() ||
+    (process.platform !== 'win32' && (info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0))
+  )
+    throw new Error('Unsafe daemon authentication key ownership.');
+  const key = await fs.readFile(file);
+  if (key.length !== 32) throw new InvalidDaemonKeyError('Invalid daemon authentication key.');
+  return key;
+}
+
+class InvalidDaemonKeyError extends Error {}
 
 class DaemonConnectionEndedError extends Error {
   readonly code = 'ECONNRESET';
@@ -126,9 +142,14 @@ async function authenticateClient(frames: SocketFrames, key: Buffer): Promise<vo
 export async function requestDaemon<T>(
   socketPath: string,
   request: DaemonRequest,
-  idleTimeoutMs: number
+  idleTimeoutMs: number,
+  absoluteTimeoutMs?: number,
+  onAuthorization?: (url: string, open: boolean) => void
 ): Promise<DaemonResponse<T>> {
-  const key = await daemonKey();
+  // Windows ACL verification starts a local helper; it is not evidence of an unresponsive daemon.
+  await secureDaemonDirectory();
+  const startedAt = Date.now();
+  const key = await daemonKey(absoluteTimeoutMs);
   const socket = net.createConnection(socketPath);
   const frames = new SocketFrames(socket);
   socket.setTimeout(idleTimeoutMs, () =>
@@ -136,24 +157,71 @@ export async function requestDaemon<T>(
       Object.assign(new Error('Daemon request timed out; outcome unknown, not replayed.'), { code: 'ETIMEDOUT' })
     )
   );
-  let authenticated = false;
+  const absoluteTimer =
+    absoluteTimeoutMs === undefined
+      ? undefined
+      : setTimeout(
+          () => socket.destroy(Object.assign(new Error('Daemon health deadline exceeded.'), { code: 'ETIMEDOUT' })),
+          Math.max(1, absoluteTimeoutMs - (Date.now() - startedAt))
+        );
+  let dispatched = false;
   try {
     await authenticateClient(frames, key);
-    authenticated = true;
+    dispatched = true;
     frames.write(request);
     for (;;) {
       const response = (await frames.read()) as DaemonResponse<T> & { type?: string };
       if (!response || response.id !== request.id) throw new Error('Mismatched daemon response.');
       if (response.type === 'progress') continue;
+      if (response.type === 'authorization') {
+        const frame = response as unknown as { authorizationUrl: unknown; open: unknown };
+        if (
+          typeof frame.authorizationUrl !== 'string' ||
+          frame.authorizationUrl.length > 65536 ||
+          typeof frame.open !== 'boolean'
+        )
+          throw new Error('Invalid daemon authorization frame.');
+        const url = new URL(frame.authorizationUrl);
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('Invalid daemon authorization URL.');
+        if (onAuthorization) onAuthorization(url.toString(), frame.open);
+        else {
+          console.warn(`[mcporter] Authorize in your browser: ${url}`);
+          if (frame.open) openExternal(url.toString());
+        }
+        continue;
+      }
       if (typeof response.ok !== 'boolean') throw new Error('Invalid daemon response.');
       return response;
     }
   } catch (error) {
-    if (!authenticated && error instanceof DaemonConnectionEndedError)
-      throw new Error('Daemon authentication ended before completion.', { cause: error });
+    if (!dispatched && isTransportFailure(error))
+      throw new UnsentDaemonRequestError(
+        error as Error & { code: string },
+        error instanceof DaemonConnectionEndedError
+      );
     throw error;
   } finally {
+    clearTimeout(absoluteTimer);
     key.fill(0);
     socket.destroy();
+  }
+}
+
+function isTransportFailure(error: unknown): boolean {
+  return (
+    !!error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    ['ENOENT', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT'].includes(String(error.code))
+  );
+}
+export class UnsentDaemonRequestError extends Error {
+  readonly code: string;
+  constructor(
+    cause: Error & { code: string },
+    readonly authenticationEnded = false
+  ) {
+    super(authenticationEnded ? 'Daemon authentication ended before completion.' : cause.message, { cause });
+    this.code = cause.code;
   }
 }

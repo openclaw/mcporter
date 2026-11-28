@@ -101,7 +101,7 @@ await server.connect(new StdioServerTransport());
   it('shares one host and child across concurrent cold config views', () => {
     expect(new Set(initialResults.map((value) => value.id)).size).toBe(1);
     expect(initialHost.servers).toHaveLength(1);
-    expect(initialHost.protocolVersion).toBe(3);
+    expect(initialHost.protocolVersion).toBe(4);
     expect(initialLaunchCount).toBe(1);
   });
 

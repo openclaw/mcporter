@@ -52,6 +52,8 @@ The shared `openclaw/release-workflows` npm archetype is not used here: mcporter
 
 ## 2. Local native package gate
 
+The packager signs the Darwin Koffi addons with the executable’s Team ID before embedding them. Release verification starts and stops the daemon from each signed executable.
+
 This step is secret-bearing and must wait for the exact-tag serialized release gate. It requires Apple Silicon plus Rosetta, the canonical managed Foundation release keychain supplied at runtime, and the existing notary profile name:
 
 ```bash
