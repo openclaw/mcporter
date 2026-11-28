@@ -236,17 +236,22 @@ function titleize(input) {
   return input.replaceAll('-', ' ').replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
-function markdownToHtml(markdown, currentRel) {
+function markdownToHtml(markdown, currentRel, { unwrapSingleParagraph = false } = {}) {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n');
   const html = [];
   let paragraph = [];
   let list = null;
+  let listIndent = 0;
   let fence = null;
   let blockquote = [];
 
   const flushParagraph = () => {
     if (!paragraph.length) return;
-    html.push(`<p>${inline(paragraph.join(' '), currentRel)}</p>`);
+    const content = paragraph
+      .join('\n')
+      .trimEnd()
+      .replace(/[ \t]*\n/g, (breakText) => (breakText.endsWith('  \n') ? '\n' : ' '));
+    html.push(`<p>${inline(content, currentRel)}</p>`);
     paragraph = [];
   };
   const closeList = () => {
@@ -290,6 +295,15 @@ function markdownToHtml(markdown, currentRel) {
     flushBlockquote();
     if (!line.trim()) {
       flushParagraph();
+      if (list === 'ol') {
+        let next = i + 1;
+        while (next < lines.length && !lines[next].trim()) next++;
+        const numbered = lines[next]?.match(/^(\s*)\d+\.\s+\S/);
+        if (numbered?.[1].length === listIndent) {
+          i = next - 1;
+          continue;
+        }
+      }
       closeList();
       continue;
     }
@@ -355,23 +369,44 @@ function markdownToHtml(markdown, currentRel) {
       if (list && list !== tag) closeList();
       if (!list) {
         list = tag;
+        listIndent = line.length - line.trimStart().length;
         html.push(`<${tag}>`);
       }
-      html.push(`<li>${inline((bullet || numbered)[1], currentRel)}</li>`);
+      const content = (bullet || numbered)[1];
+      const indent = ' '.repeat(line.length - content.length);
+      const itemLines = [content];
+      let lastContentLine = i;
+      for (let next = i + 1; next < lines.length; next++) {
+        const continuation = lines[next];
+        if (!continuation.trim()) continue;
+        if (!continuation.startsWith(indent)) break;
+        while (itemLines.length < next - i) itemLines.push('');
+        itemLines.push(continuation.slice(indent.length));
+        lastContentLine = next;
+      }
+      const itemHtml =
+        lastContentLine === i
+          ? inline(content, currentRel)
+          : markdownToHtml(itemLines.join('\n'), currentRel, { unwrapSingleParagraph: true });
+      html.push(`<li>${itemHtml}</li>`);
+      i = lastContentLine;
       continue;
     }
-    paragraph.push(line.trim());
+    paragraph.push(line.trimStart());
   }
   flushParagraph();
   closeList();
   flushBlockquote();
+  if (unwrapSingleParagraph && html.length === 1 && html[0].startsWith('<p>')) {
+    return html[0].slice('<p>'.length, -'</p>'.length);
+  }
   return html.join('\n');
 }
 
 function inline(text, currentRel) {
   const stash = [];
   let out = text.replace(/`([^`]+)`/g, (_, code) => {
-    stash.push(`<code>${escapeHtml(code)}</code>`);
+    stash.push(`<code>${escapeHtml(code.replace(/\n/g, ' '))}</code>`);
     return `\uE000${stash.length - 1}\uE000`;
   });
   out = escapeHtml(out)
@@ -385,6 +420,7 @@ function inline(text, currentRel) {
     .replace(/&lt;(https?:\/\/[^\s<>]+)&gt;/g, '<a href="$1">$1</a>');
   out = out.replace(/\\\|/g, '|');
   out = out.replace(/&lt;br&gt;/g, '<br>');
+  out = out.replace(/\n/g, '<br>\n');
   return out.replace(/\uE000(\d+)\uE000/g, (_, i) => stash[Number(i)]);
 }
 
