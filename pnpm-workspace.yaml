@@ -1,5 +1,15 @@
 # pnpm requires a hoisted install to pack bundled (patched) dependencies.
 nodeLinker: hoisted
+# Keep release addon targets available for cross-compilation.
+supportedArchitectures:
+  os:
+    - current
+    - darwin
+    - win32
+  cpu:
+    - current
+    - x64
+    - arm64
 minimumReleaseAge: 2880
 onlyBuiltDependencies:
   - esbuild
