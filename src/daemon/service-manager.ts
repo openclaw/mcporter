@@ -85,6 +85,7 @@ export function serviceEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     'TMPDIR',
     'XDG_RUNTIME_DIR',
     'DBUS_SESSION_BUS_ADDRESS',
+    'NODE_EXTRA_CA_CERTS',
     'MCPORTER_DAEMON_DIR',
     'MCPORTER_DAEMON_CHILD',
     'MCPORTER_DAEMON_WORKER',
@@ -93,7 +94,11 @@ export function serviceEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     'MCPORTER_DAEMON_METADATA',
     'MCPORTER_DISABLE_AUTORUN',
   ];
-  return Object.fromEntries(allowed.flatMap((name) => (env[name] === undefined ? [] : [[name, env[name]]])));
+  const result = Object.fromEntries(allowed.flatMap((name) => (env[name] === undefined ? [] : [[name, env[name]]])));
+  // Node reads this before bootstrap; preserve symlink/.. traversal when binding it to the caller cwd.
+  if (result.NODE_EXTRA_CA_CERTS && !path.isAbsolute(result.NODE_EXTRA_CA_CERTS))
+    result.NODE_EXTRA_CA_CERTS = `${process.cwd()}${path.sep}${result.NODE_EXTRA_CA_CERTS}`;
+  return result;
 }
 export async function verifyWorkerService(owner: ManagedOwner): Promise<void> {
   const ref = verified(owner);
